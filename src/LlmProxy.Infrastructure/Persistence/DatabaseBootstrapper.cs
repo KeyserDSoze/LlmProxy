@@ -15,7 +15,7 @@ public sealed class DatabaseBootstrapper(
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.Database.MigrateAsync(cancellationToken);
 
         if (configuration.GetValue("Bootstrap:Enabled", true) && !await dbContext.Nodes.AnyAsync(cancellationToken))
         {

@@ -22,9 +22,17 @@ The deployment workflow is manual until the production VM is ready. Once stabili
 
 ## Production `.env`
 
-Create `/opt/llmproxy/.env` with production values. Do not store this file in Git.
+Create `/opt/llmproxy/.env` with production values. Do not store this file in Git. Start from `docker/.env.example`.
 
-At minimum configure database credentials, the bootstrap inference API key, Entra values, DGX bootstrap endpoint and Cloudflare Tunnel token.
+The API-key pepper is part of credential validation and must be backed up securely. Losing or changing it invalidates existing stored API-key hashes.
+
+## Database migrations
+
+LlmProxy uses EF Core migrations. On application startup, pending migrations are applied before bootstrap data is evaluated and before the application begins serving traffic.
+
+This makes a normal container replacement sufficient for schema updates. Migration changes must be reviewed carefully: production migrations should remain compatible with the previous application version whenever rollback of the application image is expected.
+
+PostgreSQL backups are mandatory before destructive schema migrations. The initial release only contains additive/bootstrap schema creation.
 
 ## Deploy sequence
 
@@ -36,10 +44,11 @@ GitHub Actions
   -> self-hosted production job
        -> docker login GHCR
        -> docker compose pull
-       -> docker compose up -d --no-build
+       -> docker compose up -d
+       -> application applies pending EF migrations
        -> /healthz check
 ```
 
 ## Rollback
 
-Deployments use an explicit image tag. Rollback means redeploying the previous known-good tag; database schema changes must remain backward compatible across at least one deploy step or have an explicit migration rollback plan.
+Deployments use an explicit image tag. Rollback means redeploying the previous known-good tag. A previous image cannot necessarily reverse a destructive database migration, therefore destructive migrations require an explicit compatibility and restore plan.
