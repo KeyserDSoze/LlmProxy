@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -29,6 +29,7 @@ export const api = {
   routingTuning: () => request<RoutingTuningSettings>('/api/admin/routing/tuning'),
   routingPerformance: () => request<DeploymentPerformanceSnapshot[]>('/api/admin/routing/performance'),
   routingRuntime: () => request<NodeRuntimeMetricsSnapshot[]>('/api/admin/routing/runtime'),
+  hardware: () => request<NodeHardwareMetricsSnapshot[]>('/api/admin/hardware'),
   updateRouting: (strategy: RoutingSettings['strategy']) =>
     request<RoutingSettings>('/api/admin/routing', { method: 'PUT', body: JSON.stringify({ strategy }) }),
   updateRoutingTuning: (settings: Omit<RoutingTuningSettings, 'updatedAtUtc'>) =>
@@ -44,6 +45,8 @@ export const api = {
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>(`/api/admin/nodes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  updateNodeHardwareMetrics: (id: string, baseAddress: string | null) =>
+    request<{ id: string; hardwareMetricsBaseAddress: string | null }>(`/api/admin/nodes/${id}/hardware-metrics`, { method: 'PUT', body: JSON.stringify({ baseAddress }) }),
   testNodeConnection: (id: string) => request<NodeConnectionTest>(`/api/admin/nodes/${id}/test-connection`, { method: 'POST' }),
   drainNode: (id: string) => request<void>(`/api/admin/nodes/${id}/drain`, { method: 'POST' }),
   enableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' }),
