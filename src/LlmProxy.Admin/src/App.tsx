@@ -1,11 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics'
+type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
 
 const emptyOverview: Overview = {
-  nodes: { total: 0, healthy: 0, unhealthy: 0, draining: 0 },
+  nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
   models: 0,
   deployments: 0,
   activeRequests: 0,
@@ -26,6 +26,7 @@ export default function App() {
   const [deployments, setDeployments] = useState<Deployment[]>([])
   const [credentials, setCredentials] = useState<ApiCredential[]>([])
   const [metrics, setMetrics] = useState<RequestMetric[]>([])
+  const [audit, setAudit] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
@@ -33,8 +34,8 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics] = await Promise.all([
-        api.overview(), api.routing(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100)
+      const [nextOverview, nextRouting, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextAudit] = await Promise.all([
+        api.overview(), api.routing(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.audit(100)
       ])
       setOverview(nextOverview)
       setRouting(nextRouting)
@@ -43,6 +44,7 @@ export default function App() {
       setDeployments(nextDeployments)
       setCredentials(nextCredentials)
       setMetrics(nextMetrics)
+      setAudit(nextAudit)
       setAuthRequired(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -78,10 +80,9 @@ export default function App() {
           <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
+          <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
         </nav>
-        <div className="sidebarFooter">
-          <span className="dot" /> OpenAI-compatible gateway
-        </div>
+        <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
       </aside>
 
       <main>
@@ -101,6 +102,7 @@ export default function App() {
             {view === 'routing' && <Routing routing={routing} refresh={refresh} />}
             {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
             {view === 'metrics' && <Metrics metrics={metrics} nodeNames={nodeNames} credentialNames={credentialNames} />}
+            {view === 'audit' && <Audit events={audit} />}
           </>
         )}
       </main>
@@ -111,7 +113,7 @@ export default function App() {
 function Dashboard({ overview, nodes, routing }: { overview: Overview; nodes: Node[]; routing: RoutingSettings }) {
   return <>
     <section className="cards cardsFive">
-      <Metric label="Healthy DGX" value={`${overview.nodes.healthy}/${overview.nodes.total}`} />
+      <Metric label="Fleet health" value={`${overview.nodes.healthy} H / ${overview.nodes.degraded} D`} />
       <Metric label="Logical models" value={overview.models} />
       <Metric label="Deployments" value={overview.deployments} />
       <Metric label="Active requests" value={overview.activeRequests} />
@@ -119,8 +121,11 @@ function Dashboard({ overview, nodes, routing }: { overview: Overview; nodes: No
     </section>
     <section className="panel">
       <div className="panelTitle"><h2>Inference fleet</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
-      <table><thead><tr><th>Node</th><th>Status</th><th>Service root</th><th>Weight</th><th>Capacity</th><th>Last check</th></tr></thead>
-        <tbody>{nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.weight}</td><td>{node.maxConcurrency} concurrent</td><td>{formatDate(node.lastHealthCheckUtc)}</td></tr>)}</tbody>
+      <table><thead><tr><th>Node</th><th>Status</th><th>Service root</th><th>Latency</th><th>Health streak</th><th>Last check</th></tr></thead>
+        <tbody>{nodes.map(node => <tr key={node.id}>
+          <td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td>
+          <td>{formatLatency(node.lastHealthLatencyMilliseconds)}</td><td>{healthStreak(node)}</td><td>{formatDate(node.lastHealthCheckUtc)}</td>
+        </tr>)}</tbody>
       </table>
     </section>
   </>
@@ -145,6 +150,7 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
     try {
       const result = await api.testNodeConnection(node.id)
       setConnectionTests(current => ({ ...current, [node.id]: result }))
+      await refresh()
     } finally {
       setTestingNode(null)
     }
@@ -152,8 +158,15 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
 
   return <div className="gridTwo">
     <section className="panel"><div className="panelTitle"><h2>Nodes</h2><span>{nodes.length} registered</span></div>
-      <table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Weight</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
-        {nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.weight}</td><td>{node.maxConcurrency}</td><td className="actions"><button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button><button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button><button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button><button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button></td></tr>)}
+      <table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
+        {nodes.map(node => <tr key={node.id}>
+          <td><strong>{node.name}</strong><div className="muted">weight {node.weight}</div></td>
+          <td><Status value={node.status} /></td>
+          <td className="mono">{node.baseAddress}</td>
+          <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
+          <td>{node.maxConcurrency}</td>
+          <td className="actions"><button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button><button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button><button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button><button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button></td>
+        </tr>)}
       </tbody></table>
       {Object.values(connectionTests).map(result => <div className="secretBox" key={result.nodeId}>
         <strong>{result.success ? '✓' : '✕'} Connection test: {result.nodeName}</strong>
@@ -177,7 +190,6 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
 function Routing({ routing, refresh }: { routing: RoutingSettings; refresh: () => Promise<void> }) {
   const [strategy, setStrategy] = useState<RoutingSettings['strategy']>(routing.strategy)
   const [saved, setSaved] = useState(false)
-
   useEffect(() => setStrategy(routing.strategy), [routing.strategy])
 
   async function submit(event: FormEvent) {
@@ -208,13 +220,11 @@ function Routing({ routing, refresh }: { routing: RoutingSettings; refresh: () =
 function Models({ models, refresh }: { models: Model[]; refresh: () => Promise<void> }) {
   const [publicName, setPublicName] = useState('')
   const [providerModelName, setProviderModelName] = useState('')
-
   async function submit(event: FormEvent) {
     event.preventDefault()
     await api.createModel({ publicName, providerModelName, supportsStreaming: true, supportsTools: true })
     setPublicName(''); setProviderModelName(''); await refresh()
   }
-
   return <div className="gridTwo">
     <section className="panel"><div className="panelTitle"><h2>Logical models</h2><span>Client-facing aliases</span></div>
       <table><thead><tr><th>Public name</th><th>Provider model</th><th>Capabilities</th></tr></thead><tbody>
@@ -232,13 +242,11 @@ function Models({ models, refresh }: { models: Model[]; refresh: () => Promise<v
 function Deployments({ deployments, nodes, models, nodeNames, modelNames, refresh }: { deployments: Deployment[]; nodes: Node[]; models: Model[]; nodeNames: Map<string,string>; modelNames: Map<string,string>; refresh: () => Promise<void> }) {
   const [nodeId, setNodeId] = useState('')
   const [modelId, setModelId] = useState('')
-
   async function submit(event: FormEvent) {
     event.preventDefault()
     await api.createDeployment({ nodeId, modelId, weight: 1 })
     await refresh()
   }
-
   return <div className="gridTwo">
     <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → DGX</span></div>
       <table><thead><tr><th>Model</th><th>Node</th><th>Weight</th><th>Concurrency</th><th>State</th></tr></thead><tbody>
@@ -256,14 +264,12 @@ function Deployments({ deployments, nodes, models, nodeNames, modelNames, refres
 function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; refresh: () => Promise<void> }) {
   const [name, setName] = useState('GitHub Copilot')
   const [created, setCreated] = useState<CreatedApiCredential | null>(null)
-
   async function submit(event: FormEvent) {
     event.preventDefault()
     const result = await api.createApiCredential({ name })
     setCreated(result)
     await refresh()
   }
-
   return <div className="gridTwo">
     <section className="panel"><div className="panelTitle"><h2>Inference API credentials</h2><span>Raw secrets are never stored</span></div>
       <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Action</th></tr></thead><tbody>
@@ -287,12 +293,23 @@ function Metrics({ metrics, nodeNames, credentialNames }: { metrics: RequestMetr
   </section>
 }
 
+function Audit({ events }: { events: AuditEvent[] }) {
+  return <section className="panel"><div className="panelTitle"><h2>Administrative audit trail</h2><span>Configuration changes only; secrets and prompts are excluded</span></div>
+    <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Source</th><th>Details</th></tr></thead><tbody>
+      {events.map(event => <tr key={event.id}><td>{formatDate(event.occurredAtUtc)}</td><td><strong>{event.actor}</strong></td><td className="mono">{event.action}</td><td>{event.entityType} · {short(event.entityId)}</td><td className="mono">{event.sourceIp ?? '—'}</td><td className="mono">{formatAuditDetails(event.detailsJson)}</td></tr>)}
+    </tbody></table>
+  </section>
+}
+
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Request metrics' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Request metrics', audit: 'Audit trail' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
-function short(value: string) { return `${value.slice(0, 8)}…` }
+function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
+function healthStreak(node: Node) { return node.consecutiveHealthFailures > 0 ? `${node.consecutiveHealthFailures} fail` : `${node.consecutiveHealthSuccesses} ok` }
+function short(value: string) { return value.length > 12 ? `${value.slice(0, 8)}…` : value }
 function friendlyStrategy(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Weighted least loaded', RoundRobin: 'Round robin', WeightedRoundRobin: 'Weighted round robin' } as const)[value] }
 function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Routes to the least-loaded eligible deployment while accounting for capacity and weight. Recommended for long-running LLM streams.', RoundRobin: 'Cycles evenly through eligible deployments. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments proportionally to their effective weights.' } as const)[value] }
 function probeSummary(probe: NodeConnectionTest['health']) { return probe.success ? `✓ HTTP ${probe.statusCode} in ${probe.latencyMilliseconds} ms` : `✕ ${probe.error ?? `HTTP ${probe.statusCode}`} (${probe.latencyMilliseconds} ms)` }
+function formatAuditDetails(value?: string | null) { if (!value) return '—'; return value.length > 160 ? `${value.slice(0, 157)}…` : value }
