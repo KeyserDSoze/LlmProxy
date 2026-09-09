@@ -47,12 +47,14 @@ GitHub Copilot / OpenAI-compatible clients
 
 - **OpenAI-compatible contract**: clients integrate once against `/v1`.
 - **Logical models**: clients request aliases such as `agic-code-fast`; physical model names remain internal.
+- **Complete node service roots**: a DGX address may be `localhost`, DNS, IPv4/IPv6, a custom port and an optional path prefix such as `http://localhost:3450/primopath`.
 - **Single-domain DDD**: one bounded context, **AI Inference Gateway**, split into Domain, Application, Infrastructure and API layers.
 - **Multi-DGX from day one**: V1 can start with one node but the domain already supports N nodes, N models and N deployments.
-- **Capacity-aware routing**: weighted least-loaded selection, health state, drain and failover are gateway concerns.
+- **Multiple routing strategies**: `WeightedLeastLoaded`, `RoundRobin` and `WeightedRoundRobin`.
+- **Streaming is a first-class contract**: SSE is forwarded incrementally and never retried after response bytes have started.
 - **Enterprise security**: Entra ID protects administration; revocable bearer credentials protect inference.
 - **No prompt logging by default**: telemetry stores operational metadata, not prompts or generated source code.
-- **Testable boundaries**: external systems are mocked/faked in unit tests, while PostgreSQL and container wiring are exercised for real in integration tests.
+- **Testable boundaries**: external systems are mocked/faked in unit tests, while PostgreSQL, Docker, multi-runtime routing and SSE are exercised for real in integration tests.
 - **Immutable delivery**: validated images are published to GHCR and deployed to the VM by GitHub Actions.
 
 ## Repository structure
@@ -79,7 +81,7 @@ GitHub Copilot / OpenAI-compatible clients
 ├── tests/                        # All automated test code
 │   ├── backend/
 │   │   ├── LlmProxy.UnitTests/   # xUnit domain/application/infrastructure tests
-│   │   └── integration/          # Real Docker + PostgreSQL smoke/integration suite
+│   │   └── integration/          # Real Docker + PostgreSQL + mock inference runtimes
 │   └── frontend/
 │       ├── unit/                 # Vitest + Testing Library
 │       └── e2e/                  # Playwright Chromium tests
@@ -106,16 +108,28 @@ GitHub Copilot / OpenAI-compatible clients
 
 The core product concepts are:
 
-- **InferenceNode**: a physical DGX/inference machine with endpoint, weight, capacity, enabled state and health state.
+- **InferenceNode**: a physical DGX/inference machine with a complete service-root URL, node weight, capacity, enabled state and health state.
 - **ModelDefinition**: the logical model exposed to clients and the underlying provider model name.
-- **Deployment**: maps a logical model to a node and defines routing/capacity settings.
+- **Deployment**: maps a logical model to a node and defines deployment routing/capacity settings.
 - **ApiCredential**: a revocable inference credential; only its secure hash is persisted.
 - **RequestMetric**: operational telemetry for an inference request without prompt/response content.
+
+A node service root can be, for example:
+
+```text
+http://localhost:3450/primopath
+http://localhost:3451/altropath
+http://127.0.0.1:8000
+http://10.0.0.25:8000/vllm
+https://dgx-01.internal:8443/inference
+```
+
+LlmProxy appends `/health`, `/v1/chat/completions`, or `/v1/responses` while preserving the configured prefix.
 
 ## Request flow
 
 ```text
-POST /v1/chat/completions
+POST /v1/chat/completions or /v1/responses
         |
         v
 Validate bearer credential
@@ -130,16 +144,18 @@ Load eligible deployments
 Remove disabled / unhealthy / draining / full nodes
         |
         v
-Weighted least-loaded selection
+Apply configured routing strategy
         |
         v
-Forward unchanged OpenAI-style request to vLLM
+Forward OpenAI-style request to selected service root
         |
-        +---- transport failure before streaming? ----+
-        |                                             |
-        |                                   exclude deployment and retry
+        +---- failure before response commit? -------+
+        |                                            |
+        |                                  exclude deployment and retry
         v
-Stream response to client
+Stream/copy response to client
+        |
+        +---- stream already started? no failover ---+
         |
         v
 Persist metadata-only request metric
@@ -152,17 +168,44 @@ Current baseline:
 ```http
 GET  /v1/models
 POST /v1/chat/completions
+POST /v1/responses
 GET  /healthz
 GET  /readyz
 ```
 
 The proxy preserves OpenAI-compatible request payloads so streaming and tool/function calling can pass through to the inference runtime.
 
-Planned compatibility expansion:
+For `text/event-stream`, LlmProxy disables server-side buffering where supported and flushes upstream chunks incrementally to the caller.
 
-```http
-POST /v1/responses
+## Routing
+
+Routing is selected with:
+
+```text
+Routing__Strategy
 ```
+
+or in Docker:
+
+```text
+ROUTING_STRATEGY
+```
+
+Supported values:
+
+```text
+WeightedLeastLoaded  # default, optimized for long-running concurrent LLM requests
+RoundRobin           # equal sequential rotation
+WeightedRoundRobin   # sequential rotation proportional to effective weight
+```
+
+For weighted strategies the candidate weight is:
+
+```text
+node weight × deployment weight
+```
+
+Health, drain state and concurrency limits are always enforced first.
 
 ## Administration
 
@@ -194,14 +237,20 @@ The raw secret is shown once at creation time and is never stored in PostgreSQL.
 
 ## DGX runtime
 
-The gateway assumes each registered DGX exposes an OpenAI-compatible private endpoint, initially via vLLM, for example:
+Each registered node exposes an OpenAI-compatible private service root. A bare vLLM node may be:
 
 ```text
-http://dgx-01:8000/v1
-http://dgx-02:8000/v1
+http://dgx-01:8000
 ```
 
-Clients never receive these addresses. DGX health and routing are managed by LlmProxy.
+while a reverse-proxied or local test runtime may be:
+
+```text
+http://localhost:3450/primopath
+http://10.0.0.25:8000/vllm
+```
+
+Clients never receive these addresses. Health, routing and failover are managed by LlmProxy.
 
 ## Persistence
 
@@ -239,11 +288,14 @@ The CI quality gate includes:
 4. Vitest + Testing Library frontend tests;
 5. Playwright Chromium E2E tests;
 6. production Docker image build;
-7. real LlmProxy + PostgreSQL integration smoke tests.
+7. real PostgreSQL + LlmProxy integration;
+8. two local mock inference runtimes on different ports and path prefixes;
+9. path-aware multi-node weighted routing;
+10. actual SSE first-chunk delivery before stream completion.
 
-Mocking policy: **mock external boundaries, not domain behavior**. Application ports and browser HTTP calls are replaced with deterministic test doubles in fast tests. PostgreSQL/container wiring is tested with the real components rather than an in-memory substitute.
+Mocking policy: **mock external boundaries, not domain behavior**. Application ports and browser HTTP calls are replaced with deterministic test doubles in fast tests. PostgreSQL/container wiring and streaming proxy behavior are tested with real components rather than an in-memory substitute.
 
-See [`tests/README.md`](tests/README.md) and [`docs/testing.md`](docs/testing.md) for the complete strategy.
+See [`tests/README.md`](tests/README.md), [`docs/testing.md`](docs/testing.md), and [`docs/dgx-vllm.md`](docs/dgx-vllm.md).
 
 Backend unit tests:
 
@@ -271,7 +323,7 @@ tests/backend/integration/smoke.sh
 
 ### CI
 
-Pull requests and pushes to `main` execute the complete automated quality gate. Backend and frontend tests run in parallel; Docker/PostgreSQL integration starts only when both have succeeded.
+Pull requests and pushes to `main` execute the complete automated quality gate. Backend and frontend tests run in parallel; Docker/PostgreSQL/inference-runtime integration starts only when both have succeeded.
 
 ### Container publication
 
@@ -296,6 +348,7 @@ Secrets are supplied at runtime and must never be committed. Important productio
 ```text
 ConnectionStrings__Postgres
 Authentication__ApiKeyPepper
+Routing__Strategy
 EntraId__TenantId
 EntraId__ClientId
 EntraId__ClientSecret
@@ -306,6 +359,7 @@ CLOUDFLARE_TUNNEL_TOKEN
 
 - .NET 10 SDK
 - Node.js 22+
+- Python 3 for backend mock-runtime integration tests
 - Docker Engine / Docker Desktop
 - Docker Compose v2
 
@@ -338,15 +392,15 @@ GitHub Copilot
   -> model
 ```
 
-Validate `/v1/models`, chat completions, SSE streaming, tool calling, cancellation and authentication with an actual Copilot client.
+Validate `/v1/models`, Chat Completions, Responses, SSE streaming, tool calling, cancellation and authentication with an actual Copilot client.
 
 ### Milestone 2 — Multi-DGX hardening
 
-Benchmark and harden health, drain, capacity, failover and weighted routing across multiple Spark nodes.
+Benchmark and harden health, drain, capacity, failover and configurable routing across multiple Spark nodes.
 
 ### Milestone 3 — Enterprise administration
 
-Complete Entra ID setup, RBAC, audit trail, routing-policy configuration and richer operational dashboards.
+Complete Entra ID setup, RBAC, audit trail, dynamic routing-policy configuration and richer operational dashboards.
 
 ### Milestone 4 — Capacity and observability
 
@@ -354,7 +408,7 @@ Add TTFT, token throughput, queue metrics, DGX/GPU telemetry and capacity benchm
 
 ## Definition of done for V1
 
-V1 is complete when GitHub Copilot can select a logical model exposed by LlmProxy; requests stream through the gateway to vLLM on DGX; adding/removing DGX nodes does not require client reconfiguration; administrators can manage the platform through the React UI using Entra ID; inference uses revocable credentials; unhealthy/draining nodes stop receiving traffic; PostgreSQL survives container replacement; the full automated quality gate is green; and GitHub Actions can publish, deploy and roll back validated images.
+V1 is complete when GitHub Copilot can select a logical model exposed by LlmProxy; requests stream through the gateway to vLLM on DGX; full node URLs with host/IP/port/path are supported; adding/removing DGX nodes does not require client reconfiguration; administrators can manage the platform through the React UI using Entra ID; inference uses revocable credentials; unhealthy/draining nodes stop receiving traffic; PostgreSQL survives container replacement; the full automated quality gate is green; and GitHub Actions can publish, deploy and roll back validated images.
 
 ## License
 
