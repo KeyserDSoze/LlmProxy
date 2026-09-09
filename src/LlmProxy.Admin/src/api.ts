@@ -1,4 +1,4 @@
-import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -33,6 +33,7 @@ export const api = {
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
   apiCredentials: () => request<ApiCredential[]>('/api/admin/api-credentials'),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
+  audit: (take = 100) => request<AuditEvent[]>(`/api/admin/audit?take=${take}`),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
