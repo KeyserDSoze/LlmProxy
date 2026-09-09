@@ -37,7 +37,8 @@ public static class InferenceEndpoint
         }
 
         var normalizedPath = apiPath.Trim();
-        if (Uri.TryCreate(normalizedPath, UriKind.Absolute, out _))
+        if (Uri.TryCreate(normalizedPath, UriKind.Absolute, out var absolutePath) &&
+            (absolutePath.Scheme == Uri.UriSchemeHttp || absolutePath.Scheme == Uri.UriSchemeHttps))
         {
             throw new ArgumentException("API path must be relative to the node base address.", nameof(apiPath));
         }
