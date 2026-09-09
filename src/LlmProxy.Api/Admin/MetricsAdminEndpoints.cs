@@ -25,6 +25,9 @@ public static class MetricsAdminEndpoints
         group.MapGet("/routing/performance", (IDeploymentPerformanceTracker tracker) =>
             Results.Ok(tracker.GetSnapshots()));
 
+        group.MapGet("/routing/runtime", (INodeRuntimeMetricsTracker tracker) =>
+            Results.Ok(tracker.GetSnapshots()));
+
         return endpoints;
     }
 }
