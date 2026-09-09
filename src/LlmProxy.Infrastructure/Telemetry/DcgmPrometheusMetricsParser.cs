@@ -88,8 +88,8 @@ public static class DcgmPrometheusMetricsParser
             }
         }
 
-        var used = hasFramebufferUsed ? framebufferUsed : null;
-        var free = hasFramebufferFree ? framebufferFree : null;
+        double? used = hasFramebufferUsed ? framebufferUsed : null;
+        double? free = hasFramebufferFree ? framebufferFree : null;
         double? framebufferUsageRatio = null;
         if (used is double usedValue)
         {
