@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-llmproxy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-llmproxy-dev}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llmproxy} -d ${POSTGRES_DB:-llmproxy}"]
       interval: 5s
