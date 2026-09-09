@@ -49,6 +49,22 @@ export type NodeRuntimeMetricsSnapshot = {
   error?: string | null
 }
 
+export type NodeHardwareMetricsSnapshot = {
+  nodeId: string
+  available: boolean
+  gpuCount: number
+  averageGpuUtilizationPercent?: number | null
+  maxGpuUtilizationPercent?: number | null
+  framebufferUsedMiB?: number | null
+  framebufferFreeMiB?: number | null
+  framebufferUsageRatio?: number | null
+  maxTemperatureCelsius?: number | null
+  totalPowerUsageWatts?: number | null
+  collectedAtUtc?: string | null
+  lastAttemptAtUtc?: string | null
+  error?: string | null
+}
+
 export type EndpointProbe = {
   url: string
   success: boolean
@@ -74,6 +90,7 @@ export type Node = {
   id: string
   name: string
   baseAddress: string
+  hardwareMetricsBaseAddress?: string | null
   enabled: boolean
   status: string
   weight: number
