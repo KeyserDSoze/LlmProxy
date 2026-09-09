@@ -15,6 +15,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ModelDeployment> Deployments => Set<ModelDeployment>();
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
+    public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
@@ -65,6 +66,13 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.Strategy).HasConversion<string>().HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<RoutingTuningPolicy>(entity =>
+        {
+            entity.ToTable("routing_tuning_policy");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<RequestMetricRecord>(entity =>
