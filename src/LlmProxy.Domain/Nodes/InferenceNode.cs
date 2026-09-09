@@ -77,13 +77,7 @@ public sealed class InferenceNode
 
     private void SetBaseAddress(string baseAddress)
     {
-        if (!Uri.TryCreate(baseAddress, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new ArgumentException("Node base address must be an absolute HTTP(S) URI.", nameof(baseAddress));
-        }
-
-        BaseAddress = baseAddress.TrimEnd('/');
+        BaseAddress = InferenceEndpoint.NormalizeBaseAddress(baseAddress);
     }
 
     private void SetCapacity(int weight, int maxConcurrency)

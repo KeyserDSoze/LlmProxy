@@ -17,6 +17,7 @@ using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
+var routingStrategy = builder.Configuration["Routing:Strategy"]?.Trim() ?? "WeightedLeastLoaded";
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -28,7 +29,14 @@ builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
-builder.Services.AddSingleton<IRouteSelector, WeightedLeastLoadedRouteSelector>();
+builder.Services.AddSingleton<IRouteSelector>(_ => routingStrategy.ToLowerInvariant() switch
+{
+    "weightedleastloaded" => new WeightedLeastLoadedRouteSelector(),
+    "roundrobin" => new RoundRobinRouteSelector(),
+    "weightedroundrobin" => new WeightedRoundRobinRouteSelector(),
+    _ => throw new InvalidOperationException(
+        $"Unsupported Routing:Strategy '{routingStrategy}'. Supported values: WeightedLeastLoaded, RoundRobin, WeightedRoundRobin.")
+});
 builder.Services.AddScoped<RoutingService>();
 
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
@@ -79,6 +87,7 @@ app.MapGet("/healthz", () => Results.Ok(new
 {
     status = "ok",
     service = "llmproxy",
+    routingStrategy,
     utc = DateTimeOffset.UtcNow
 }));
 

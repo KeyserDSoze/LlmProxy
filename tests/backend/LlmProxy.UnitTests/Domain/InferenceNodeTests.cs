@@ -11,6 +11,22 @@ public sealed class InferenceNodeTests
     }
 
     [Fact]
+    public void Constructor_keeps_full_service_root_including_optional_path()
+    {
+        var node = new InferenceNode("local-primary", "http://localhost:3450/primopath/");
+
+        Assert.Equal("http://localhost:3450/primopath", node.BaseAddress);
+    }
+
+    [Fact]
+    public void Constructor_accepts_local_ip_address()
+    {
+        var node = new InferenceNode("dgx-ip", "http://10.0.0.25:8000/vllm");
+
+        Assert.Equal("http://10.0.0.25:8000/vllm", node.BaseAddress);
+    }
+
+    [Fact]
     public void Drain_keeps_node_enabled_but_marks_it_draining()
     {
         var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");

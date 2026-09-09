@@ -1,9 +1,12 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Nodes;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace LlmProxy.Api.OpenAi;
 
@@ -122,10 +125,40 @@ public static class OpenAiEndpoints
 
                 using var lease = loadTracker.Enter(route.DeploymentId);
                 using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath);
+                HttpResponseMessage upstream;
 
                 try
                 {
-                    using var upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                    upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                }
+                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                {
+                    finalStatusCode = 499;
+                    finalErrorCode = "client_cancelled";
+                    return;
+                }
+                catch (HttpRequestException exception)
+                {
+                    finalStatusCode = StatusCodes.Status502BadGateway;
+                    finalErrorCode = "upstream_unreachable";
+
+                    if (attempt < MaxUpstreamAttempts)
+                    {
+                        excluded.Add(route.DeploymentId);
+                        continue;
+                    }
+
+                    await WriteGatewayErrorAsync(
+                        context,
+                        finalStatusCode,
+                        "gateway_error",
+                        finalErrorCode,
+                        $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                    return;
+                }
+
+                using (upstream)
+                {
                     finalStatusCode = (int)upstream.StatusCode;
 
                     if ((int)upstream.StatusCode >= 500 && attempt < MaxUpstreamAttempts)
@@ -137,36 +170,40 @@ public static class OpenAiEndpoints
 
                     context.Response.StatusCode = finalStatusCode;
                     CopyResponseHeaders(upstream, context.Response);
-                    await upstream.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
-                    finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
-                    return;
-                }
-                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-                {
-                    finalStatusCode = 499;
-                    finalErrorCode = "client_cancelled";
-                    return;
-                }
-                catch (HttpRequestException) when (attempt < MaxUpstreamAttempts)
-                {
-                    excluded.Add(route.DeploymentId);
-                    finalStatusCode = StatusCodes.Status502BadGateway;
-                    finalErrorCode = "upstream_unreachable";
-                }
-                catch (HttpRequestException exception)
-                {
-                    finalStatusCode = StatusCodes.Status502BadGateway;
-                    finalErrorCode = "upstream_unreachable";
-                    if (!context.Response.HasStarted)
+
+                    try
                     {
+                        await CopyUpstreamBodyAsync(upstream, context);
+                        finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
+                        return;
+                    }
+                    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                    {
+                        finalStatusCode = 499;
+                        finalErrorCode = "client_cancelled";
+                        return;
+                    }
+                    catch (Exception exception) when (exception is HttpRequestException or IOException)
+                    {
+                        finalErrorCode = "upstream_stream_interrupted";
+
+                        // Once a response has started, retrying another DGX would concatenate two
+                        // different model streams into a single invalid OpenAI response.
+                        if (context.Response.HasStarted)
+                        {
+                            context.Abort();
+                            return;
+                        }
+
+                        finalStatusCode = StatusCodes.Status502BadGateway;
                         await WriteGatewayErrorAsync(
                             context,
                             finalStatusCode,
                             "gateway_error",
                             finalErrorCode,
-                            $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                            $"Inference stream from '{route.NodeName}' was interrupted: {exception.Message}");
+                        return;
                     }
-                    return;
                 }
             }
 
@@ -209,13 +246,51 @@ public static class OpenAiEndpoints
     {
         var destination = new HttpRequestMessage(
             HttpMethod.Post,
-            new Uri($"{route.BaseAddress.TrimEnd('/')}{upstreamPath}"))
+            InferenceEndpoint.Combine(route.BaseAddress, upstreamPath))
         {
             Content = new StringContent(requestObject.ToJsonString(), Encoding.UTF8, "application/json")
         };
 
         CopyRequestHeaders(source, destination);
         return destination;
+    }
+
+    private static async Task CopyUpstreamBodyAsync(HttpResponseMessage upstream, HttpContext context)
+    {
+        var mediaType = upstream.Content.Headers.ContentType?.MediaType;
+        if (!string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            await upstream.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+            return;
+        }
+
+        // SSE must remain genuinely streaming all the way to Copilot. Disable any server-side
+        // buffering and flush every chunk received from the inference runtime.
+        context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
+        await context.Response.StartAsync(context.RequestAborted);
+
+        await using var source = await upstream.Content.ReadAsStreamAsync(context.RequestAborted);
+        var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        try
+        {
+            while (true)
+            {
+                var read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), context.RequestAborted);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                await context.Response.Body.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)

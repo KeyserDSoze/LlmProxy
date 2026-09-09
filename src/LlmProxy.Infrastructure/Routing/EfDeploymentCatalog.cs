@@ -19,12 +19,13 @@ public sealed class EfDeploymentCatalog(GatewayDbContext dbContext) : IDeploymen
             select new
             {
                 deployment.Id,
-                deployment.Weight,
+                DeploymentWeight = deployment.Weight,
                 DeploymentMaxConcurrency = deployment.MaxConcurrency,
                 NodeId = node.Id,
                 NodeName = node.Name,
                 node.BaseAddress,
                 node.Status,
+                NodeWeight = node.Weight,
                 NodeMaxConcurrency = node.MaxConcurrency,
                 ModelId = model.Id,
                 model.PublicName,
@@ -40,7 +41,7 @@ public sealed class EfDeploymentCatalog(GatewayDbContext dbContext) : IDeploymen
                 row.ModelId,
                 row.PublicName,
                 row.ProviderModelName,
-                row.Weight,
+                EffectiveWeight(row.NodeWeight, row.DeploymentWeight),
                 row.DeploymentMaxConcurrency ?? row.NodeMaxConcurrency,
                 row.Status))
             .ToArray();
@@ -53,4 +54,7 @@ public sealed class EfDeploymentCatalog(GatewayDbContext dbContext) : IDeploymen
             .OrderBy(model => model.PublicName)
             .Select(model => new PublicModel(model.Id, model.PublicName, model.SupportsStreaming, model.SupportsTools))
             .ToListAsync(cancellationToken);
+
+    private static int EffectiveWeight(int nodeWeight, int deploymentWeight)
+        => (int)Math.Min((long)nodeWeight * deploymentWeight, int.MaxValue);
 }

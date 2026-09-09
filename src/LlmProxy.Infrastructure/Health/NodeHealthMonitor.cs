@@ -56,7 +56,7 @@ public sealed class NodeHealthMonitor(
     {
         try
         {
-            var healthUri = new Uri($"{node.BaseAddress.TrimEnd('/')}/health");
+            var healthUri = InferenceEndpoint.Combine(node.BaseAddress, "/health");
             using var response = await client.GetAsync(healthUri, cancellationToken);
             return response.IsSuccessStatusCode ? NodeStatus.Healthy : NodeStatus.Unhealthy;
         }
