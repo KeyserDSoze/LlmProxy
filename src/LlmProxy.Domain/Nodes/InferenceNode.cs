@@ -21,6 +21,11 @@ public sealed class InferenceNode
     public int Weight { get; private set; } = 1;
     public int MaxConcurrency { get; private set; } = 4;
     public DateTimeOffset? LastHealthCheckUtc { get; private set; }
+    public DateTimeOffset? LastHealthyAtUtc { get; private set; }
+    public long? LastHealthLatencyMilliseconds { get; private set; }
+    public string? LastHealthError { get; private set; }
+    public int ConsecutiveHealthSuccesses { get; private set; }
+    public int ConsecutiveHealthFailures { get; private set; }
 
     public void Update(string name, string baseAddress, int weight, int maxConcurrency)
     {
@@ -35,6 +40,9 @@ public sealed class InferenceNode
         if (Status == NodeStatus.Disabled)
         {
             Status = NodeStatus.Unknown;
+            ConsecutiveHealthSuccesses = 0;
+            ConsecutiveHealthFailures = 0;
+            LastHealthError = null;
         }
     }
 
@@ -54,15 +62,69 @@ public sealed class InferenceNode
         Status = NodeStatus.Draining;
     }
 
-    public void SetHealth(NodeStatus status, DateTimeOffset checkedAtUtc)
+    public void RecordHealthSuccess(
+        DateTimeOffset checkedAtUtc,
+        long latencyMilliseconds,
+        int healthyAfterSuccesses = 2)
     {
-        if (!Enabled || Status == NodeStatus.Draining)
+        if (!CanUpdateHealth())
         {
             return;
         }
 
-        Status = status;
+        if (healthyAfterSuccesses < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(healthyAfterSuccesses));
+        }
+
         LastHealthCheckUtc = checkedAtUtc;
+        LastHealthyAtUtc = checkedAtUtc;
+        LastHealthLatencyMilliseconds = Math.Max(0, latencyMilliseconds);
+        LastHealthError = null;
+        ConsecutiveHealthSuccesses++;
+        ConsecutiveHealthFailures = 0;
+        Status = ConsecutiveHealthSuccesses >= healthyAfterSuccesses
+            ? NodeStatus.Healthy
+            : NodeStatus.Degraded;
+    }
+
+    public void RecordHealthFailure(
+        DateTimeOffset checkedAtUtc,
+        long latencyMilliseconds,
+        string? error,
+        int unhealthyAfterFailures = 3)
+    {
+        if (!CanUpdateHealth())
+        {
+            return;
+        }
+
+        if (unhealthyAfterFailures < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unhealthyAfterFailures));
+        }
+
+        LastHealthCheckUtc = checkedAtUtc;
+        LastHealthLatencyMilliseconds = Math.Max(0, latencyMilliseconds);
+        LastHealthError = NormalizeError(error);
+        ConsecutiveHealthFailures++;
+        ConsecutiveHealthSuccesses = 0;
+        Status = ConsecutiveHealthFailures >= unhealthyAfterFailures
+            ? NodeStatus.Unhealthy
+            : NodeStatus.Degraded;
+    }
+
+    private bool CanUpdateHealth() => Enabled && Status != NodeStatus.Draining;
+
+    private static string? NormalizeError(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            return null;
+        }
+
+        var value = error.Trim();
+        return value.Length <= 1000 ? value : value[..1000];
     }
 
     private void Rename(string name)
