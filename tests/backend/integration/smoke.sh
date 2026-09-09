@@ -46,6 +46,20 @@ wait_ready() {
   fi
 }
 
+wait_node_status() {
+  local node_id="$1"
+  local expected="$2"
+  local attempts="${3:-20}"
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    status="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -r --arg id "$node_id" '.[] | select(.id == $id) | .status')"
+    if [[ "$status" == "$expected" ]]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  fail_with_diagnostics "Node ${node_id} did not reach ${expected}."
+}
+
 start_mock 3450 /primopath primary
 start_mock 3451 /altropath alternate
 sleep 1
@@ -59,6 +73,9 @@ export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
 export DGX_NODE_WEIGHT="1"
 export DGX_NODE_MAX_CONCURRENCY="4"
 export ROUTING_STRATEGY="WeightedRoundRobin"
+export HEALTH_INTERVAL_SECONDS="1"
+export HEALTH_HEALTHY_AFTER_SUCCESSES="2"
+export HEALTH_UNHEALTHY_AFTER_FAILURES="3"
 
 if ! "${COMPOSE[@]}" up -d --build; then
   fail_with_diagnostics "Docker Compose stack failed to start."
@@ -79,10 +96,7 @@ if [[ "$unauthorized_responses_status" != "401" ]]; then
   fail_with_diagnostics "Expected /v1/responses without bearer token to return 401, got ${unauthorized_responses_status}."
 fi
 
-curl --fail --silent \
-  -H 'Authorization: Bearer dev-change-me' \
-  http://127.0.0.1:8080/v1/models \
-  | grep --quiet 'agic-code-fast'
+curl --fail --silent -H 'Authorization: Bearer dev-change-me' http://127.0.0.1:8080/v1/models | grep --quiet 'agic-code-fast'
 
 primary_response="$(curl --fail --silent \
   -H 'Authorization: Bearer dev-change-me' \
@@ -104,18 +118,10 @@ curl --fail --silent \
   -d "{\"nodeId\":\"${node2_id}\",\"modelId\":\"${model_id}\",\"weight\":1,\"maxConcurrency\":4}" \
   http://127.0.0.1:8080/api/admin/deployments >/dev/null
 
-healthy=false
-for attempt in {1..20}; do
-  status="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -r --arg id "$node2_id" '.[] | select(.id == $id) | .status')"
-  if [[ "$status" == "Healthy" ]]; then
-    healthy=true
-    break
-  fi
-  sleep 1
-done
-if [[ "$healthy" != "true" ]]; then
-  fail_with_diagnostics "Path-prefixed alternate mock runtime did not become Healthy."
-fi
+wait_node_status "$node2_id" Healthy 30
+
+node_health_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node2_id" '.[] | select(.id == $id)')"
+echo "$node_health_json" | jq -e '.lastHealthLatencyMilliseconds != null and .consecutiveHealthSuccesses >= 2 and .lastHealthError == null' >/dev/null
 
 connection_test="$(curl --fail --silent -X POST http://127.0.0.1:8080/api/admin/nodes/${node2_id}/test-connection)"
 echo "$connection_test" | jq -e '.success == true and .health.statusCode == 200 and .openAi.statusCode == 200' >/dev/null
@@ -143,8 +149,6 @@ if [[ "$primary_count" -ne 2 || "$alternate_count" -ne 6 ]]; then
   fail_with_diagnostics "Expected weighted split primary=2 alternate=6, got primary=${primary_count} alternate=${alternate_count}."
 fi
 
-# Change the strategy through the control plane. The next request must see it immediately,
-# without recreating the gateway process.
 curl --fail --silent \
   -X PUT \
   -H 'Content-Type: application/json' \
@@ -171,7 +175,6 @@ if [[ "$rr_primary" -ne 2 || "$rr_alternate" -ne 2 ]]; then
   fail_with_diagnostics "Expected live round-robin split 2/2, got primary=${rr_primary} alternate=${rr_alternate}."
 fi
 
-# Persisted policy must win over the bootstrap environment after a process restart.
 "${COMPOSE[@]}" restart llmproxy >/dev/null
 wait_ready
 curl --fail --silent http://127.0.0.1:8080/api/admin/routing | grep --quiet 'RoundRobin'
@@ -184,10 +187,32 @@ curl --fail --silent \
   http://127.0.0.1:8080/v1/responses \
   | grep --quiet '"object":"response"'
 
-python3 tests/backend/integration/assert_streaming.py \
-  http://127.0.0.1:8080/v1/chat/completions \
-  dev-change-me
+python3 tests/backend/integration/assert_streaming.py http://127.0.0.1:8080/v1/chat/completions dev-change-me
+
+# Exercise health hysteresis against a real background monitor. One failed probe is
+# Degraded, the configured failure streak becomes Unhealthy, and recovery requires
+# the configured success streak before returning to Healthy.
+curl --fail --silent -X POST http://127.0.0.1:3451/__control/health/500 >/dev/null
+wait_node_status "$node2_id" Degraded 10
+wait_node_status "$node2_id" Unhealthy 15
+failed_health="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node2_id" '.[] | select(.id == $id)')"
+echo "$failed_health" | jq -e '.consecutiveHealthFailures >= 3 and (.lastHealthError | contains("HTTP 500"))' >/dev/null
+
+curl --fail --silent -X POST http://127.0.0.1:3451/__control/health/200 >/dev/null
+wait_node_status "$node2_id" Degraded 10
+wait_node_status "$node2_id" Healthy 15
+recovered_health="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node2_id" '.[] | select(.id == $id)')"
+echo "$recovered_health" | jq -e '.consecutiveHealthSuccesses >= 2 and .consecutiveHealthFailures == 0 and .lastHealthError == null' >/dev/null
+
+# Administrative changes must survive restart and be attributable. No raw API key,
+# prompt, or generated content is included in this audit stream.
+audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=100')"
+echo "$audit_json" | jq -e 'map(.action) | index("node.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("deployment.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("node.test_connection") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("routing.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/null
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, health hysteresis and audit verified."
