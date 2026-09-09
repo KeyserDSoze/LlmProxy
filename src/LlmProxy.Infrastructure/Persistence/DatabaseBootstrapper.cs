@@ -1,6 +1,8 @@
+using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Domain.Routing;
 using LlmProxy.Domain.Security;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +13,25 @@ namespace LlmProxy.Infrastructure.Persistence;
 public sealed class DatabaseBootstrapper(
     GatewayDbContext dbContext,
     IConfiguration configuration,
-    ApiKeyHasher apiKeyHasher)
+    ApiKeyHasher apiKeyHasher,
+    RoutingStrategyState routingStrategyState)
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await dbContext.Database.MigrateAsync(cancellationToken);
+
+        var configuredStrategy = ParseConfiguredStrategy(configuration["Routing:Strategy"]);
+        var routingPolicy = await dbContext.RoutingPolicies.SingleOrDefaultAsync(
+            item => item.Id == RoutingPolicy.SingletonId,
+            cancellationToken);
+
+        if (routingPolicy is null)
+        {
+            routingPolicy = new RoutingPolicy(configuredStrategy);
+            dbContext.RoutingPolicies.Add(routingPolicy);
+        }
+
+        routingStrategyState.Set(routingPolicy.Strategy);
 
         if (configuration.GetValue("Bootstrap:Enabled", true) && !await dbContext.Nodes.AnyAsync(cancellationToken))
         {
@@ -47,5 +63,14 @@ public sealed class DatabaseBootstrapper(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static RoutingStrategy ParseConfiguredStrategy(string? value)
+    {
+        var raw = string.IsNullOrWhiteSpace(value) ? nameof(RoutingStrategy.WeightedLeastLoaded) : value.Trim();
+        return Enum.TryParse<RoutingStrategy>(raw, ignoreCase: true, out var strategy) && Enum.IsDefined(strategy)
+            ? strategy
+            : throw new InvalidOperationException(
+                $"Unsupported Routing:Strategy '{raw}'. Supported values: {string.Join(", ", Enum.GetNames<RoutingStrategy>())}.");
     }
 }

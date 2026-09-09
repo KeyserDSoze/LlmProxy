@@ -1,4 +1,4 @@
-import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, Overview, RequestMetric } from './types'
+import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -25,6 +25,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   overview: () => request<Overview>('/api/admin/overview'),
+  routing: () => request<RoutingSettings>('/api/admin/routing'),
+  updateRouting: (strategy: RoutingSettings['strategy']) =>
+    request<RoutingSettings>('/api/admin/routing', { method: 'PUT', body: JSON.stringify({ strategy }) }),
   nodes: () => request<Node[]>('/api/admin/nodes'),
   models: () => request<Model[]>('/api/admin/models'),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
@@ -34,6 +37,7 @@ export const api = {
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>(`/api/admin/nodes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  testNodeConnection: (id: string) => request<NodeConnectionTest>(`/api/admin/nodes/${id}/test-connection`, { method: 'POST' }),
   drainNode: (id: string) => request<void>(`/api/admin/nodes/${id}/drain`, { method: 'POST' }),
   enableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' }),
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),

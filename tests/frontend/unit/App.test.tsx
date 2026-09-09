@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedApi = vi.hoisted(() => ({
   overview: vi.fn(),
+  routing: vi.fn(),
+  updateRouting: vi.fn(),
   nodes: vi.fn(),
   models: vi.fn(),
   deployments: vi.fn(),
@@ -11,6 +13,7 @@ const mockedApi = vi.hoisted(() => ({
   metrics: vi.fn(),
   createNode: vi.fn(),
   updateNode: vi.fn(),
+  testNodeConnection: vi.fn(),
   drainNode: vi.fn(),
   enableNode: vi.fn(),
   disableNode: vi.fn(),
@@ -27,6 +30,7 @@ import App from '../../../src/LlmProxy.Admin/src/App'
 
 describe('admin application', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     mockedApi.overview.mockResolvedValue({
       nodes: { total: 1, healthy: 1, unhealthy: 0, draining: 0 },
       models: 1,
@@ -34,10 +38,18 @@ describe('admin application', () => {
       activeRequests: 2,
       requestsToday: 42
     })
+    mockedApi.routing.mockResolvedValue({
+      strategy: 'WeightedLeastLoaded',
+      supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
+    })
+    mockedApi.updateRouting.mockResolvedValue({
+      strategy: 'RoundRobin',
+      supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
+    })
     mockedApi.nodes.mockResolvedValue([{
       id: 'node-1',
       name: 'dgx-01',
-      baseAddress: 'http://10.0.0.21:8000',
+      baseAddress: 'http://10.0.0.21:8000/vllm',
       weight: 1,
       maxConcurrency: 4,
       enabled: true,
@@ -48,6 +60,18 @@ describe('admin application', () => {
     mockedApi.deployments.mockResolvedValue([])
     mockedApi.apiCredentials.mockResolvedValue([])
     mockedApi.metrics.mockResolvedValue([])
+    mockedApi.testNodeConnection.mockResolvedValue({
+      nodeId: 'node-1',
+      nodeName: 'dgx-01',
+      serviceRoot: 'http://10.0.0.21:8000/vllm',
+      healthUrl: 'http://10.0.0.21:8000/vllm/health',
+      modelsUrl: 'http://10.0.0.21:8000/vllm/v1/models',
+      chatCompletionsUrl: 'http://10.0.0.21:8000/vllm/v1/chat/completions',
+      responsesUrl: 'http://10.0.0.21:8000/vllm/v1/responses',
+      success: true,
+      health: { url: 'http://10.0.0.21:8000/vllm/health', success: true, statusCode: 200, latencyMilliseconds: 12 },
+      openAi: { url: 'http://10.0.0.21:8000/vllm/v1/models', success: true, statusCode: 200, latencyMilliseconds: 15 }
+    })
   })
 
   it('renders fleet information returned by the API', async () => {
@@ -56,16 +80,30 @@ describe('admin application', () => {
     expect(await screen.findByText('dgx-01')).toBeInTheDocument()
     expect(screen.getByText('1/1')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
+    expect(screen.getByText('Routing: Weighted least loaded')).toBeInTheDocument()
   })
 
-  it('navigates to the DGX management view', async () => {
+  it('navigates to the DGX management view and tests the complete service root', async () => {
     const user = userEvent.setup()
     render(<App />)
 
     await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'DGX Nodes' }))
+    await user.click(screen.getByRole('button', { name: 'Test' }))
 
-    expect(screen.getByRole('heading', { name: 'DGX nodes' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Add DGX node' })).toBeInTheDocument()
+    expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
+    expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
+  })
+
+  it('exposes live routing policy management', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByText('dgx-01')
+    await user.click(screen.getByRole('button', { name: 'Routing' }))
+    await user.selectOptions(screen.getByLabelText('Routing strategy'), 'RoundRobin')
+    await user.click(screen.getByRole('button', { name: 'Apply routing strategy' }))
+
+    expect(mockedApi.updateRouting).toHaveBeenCalledWith('RoundRobin')
   })
 })

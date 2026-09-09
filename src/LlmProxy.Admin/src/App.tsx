@@ -1,8 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, Overview, RequestMetric } from './types'
+import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'credentials' | 'metrics'
+type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, unhealthy: 0, draining: 0 },
@@ -12,9 +12,15 @@ const emptyOverview: Overview = {
   requestsToday: 0
 }
 
+const emptyRouting: RoutingSettings = {
+  strategy: 'WeightedLeastLoaded',
+  supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
+}
+
 export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [overview, setOverview] = useState<Overview>(emptyOverview)
+  const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
   const [nodes, setNodes] = useState<Node[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [deployments, setDeployments] = useState<Deployment[]>([])
@@ -27,10 +33,11 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics] = await Promise.all([
-        api.overview(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100)
+      const [nextOverview, nextRouting, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics] = await Promise.all([
+        api.overview(), api.routing(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100)
       ])
       setOverview(nextOverview)
+      setRouting(nextRouting)
       setNodes(nextNodes)
       setModels(nextModels)
       setDeployments(nextDeployments)
@@ -68,6 +75,7 @@ export default function App() {
           <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>DGX Nodes</NavItem>
           <NavItem active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
           <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
+          <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
         </nav>
@@ -86,10 +94,11 @@ export default function App() {
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
-            {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} />}
+            {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} />}
             {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
+            {view === 'routing' && <Routing routing={routing} refresh={refresh} />}
             {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
             {view === 'metrics' && <Metrics metrics={metrics} nodeNames={nodeNames} credentialNames={credentialNames} />}
           </>
@@ -99,7 +108,7 @@ export default function App() {
   )
 }
 
-function Dashboard({ overview, nodes }: { overview: Overview; nodes: Node[] }) {
+function Dashboard({ overview, nodes, routing }: { overview: Overview; nodes: Node[]; routing: RoutingSettings }) {
   return <>
     <section className="cards cardsFive">
       <Metric label="Healthy DGX" value={`${overview.nodes.healthy}/${overview.nodes.total}`} />
@@ -109,9 +118,9 @@ function Dashboard({ overview, nodes }: { overview: Overview; nodes: Node[] }) {
       <Metric label="Requests today" value={overview.requestsToday} />
     </section>
     <section className="panel">
-      <div className="panelTitle"><h2>Inference fleet</h2><span>Health refreshes every 10 seconds</span></div>
-      <table><thead><tr><th>Node</th><th>Status</th><th>Endpoint</th><th>Capacity</th><th>Last check</th></tr></thead>
-        <tbody>{nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.maxConcurrency} concurrent</td><td>{formatDate(node.lastHealthCheckUtc)}</td></tr>)}</tbody>
+      <div className="panelTitle"><h2>Inference fleet</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
+      <table><thead><tr><th>Node</th><th>Status</th><th>Service root</th><th>Weight</th><th>Capacity</th><th>Last check</th></tr></thead>
+        <tbody>{nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.weight}</td><td>{node.maxConcurrency} concurrent</td><td>{formatDate(node.lastHealthCheckUtc)}</td></tr>)}</tbody>
       </table>
     </section>
   </>
@@ -120,25 +129,78 @@ function Dashboard({ overview, nodes }: { overview: Overview; nodes: Node[] }) {
 function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void> }) {
   const [name, setName] = useState('')
   const [baseAddress, setBaseAddress] = useState('http://')
+  const [weight, setWeight] = useState(1)
   const [maxConcurrency, setMaxConcurrency] = useState(4)
+  const [connectionTests, setConnectionTests] = useState<Record<string, NodeConnectionTest>>({})
+  const [testingNode, setTestingNode] = useState<string | null>(null)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    await api.createNode({ name, baseAddress, weight: 1, maxConcurrency })
-    setName(''); setBaseAddress('http://'); await refresh()
+    await api.createNode({ name, baseAddress, weight, maxConcurrency })
+    setName(''); setBaseAddress('http://'); setWeight(1); await refresh()
+  }
+
+  async function testConnection(node: Node) {
+    setTestingNode(node.id)
+    try {
+      const result = await api.testNodeConnection(node.id)
+      setConnectionTests(current => ({ ...current, [node.id]: result }))
+    } finally {
+      setTestingNode(null)
+    }
   }
 
   return <div className="gridTwo">
     <section className="panel"><div className="panelTitle"><h2>Nodes</h2><span>{nodes.length} registered</span></div>
-      <table><thead><tr><th>Name</th><th>Status</th><th>Endpoint</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
-        {nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.maxConcurrency}</td><td className="actions"><button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button><button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button><button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button></td></tr>)}
+      <table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Weight</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
+        {nodes.map(node => <tr key={node.id}><td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td><td>{node.weight}</td><td>{node.maxConcurrency}</td><td className="actions"><button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button><button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button><button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button><button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button></td></tr>)}
       </tbody></table>
+      {Object.values(connectionTests).map(result => <div className="secretBox" key={result.nodeId}>
+        <strong>{result.success ? '✓' : '✕'} Connection test: {result.nodeName}</strong>
+        <p className="mono">Root: {result.serviceRoot}</p>
+        <p>Health: {probeSummary(result.health)}</p>
+        <p>OpenAI models: {probeSummary(result.openAi)}</p>
+        <p className="mono">Chat: {result.chatCompletionsUrl}</p>
+        <p className="mono">Responses: {result.responsesUrl}</p>
+      </div>)}
     </section>
     <section className="panel formPanel"><h2>Add DGX node</h2><form onSubmit={submit}>
       <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="dgx-02" /></label>
-      <label>Base address<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000" /></label>
+      <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
+      <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
       <label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={e => setMaxConcurrency(Number(e.target.value))} /></label>
       <button className="primary">Add node</button>
+    </form></section>
+  </div>
+}
+
+function Routing({ routing, refresh }: { routing: RoutingSettings; refresh: () => Promise<void> }) {
+  const [strategy, setStrategy] = useState<RoutingSettings['strategy']>(routing.strategy)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => setStrategy(routing.strategy), [routing.strategy])
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    await api.updateRouting(strategy)
+    setSaved(true)
+    await refresh()
+  }
+
+  return <div className="gridTwo">
+    <section className="panel">
+      <div className="panelTitle"><h2>Current routing policy</h2><span>Applied live, no gateway restart</span></div>
+      <div className="metric"><span>Active strategy</span><strong>{friendlyStrategy(routing.strategy)}</strong></div>
+      <p>{strategyDescription(routing.strategy)}</p>
+      <p>The effective backend weight is node weight × deployment weight. Capacity limits are always respected before a route is selected.</p>
+    </section>
+    <section className="panel formPanel"><h2>Change strategy</h2><form onSubmit={submit}>
+      <label>Routing strategy<select value={strategy} onChange={e => { setStrategy(e.target.value as RoutingSettings['strategy']); setSaved(false) }}>
+        {routing.supportedStrategies.map(item => <option key={item} value={item}>{friendlyStrategy(item)}</option>)}
+      </select></label>
+      <p>{strategyDescription(strategy)}</p>
+      <button className="primary">Apply routing strategy</button>
+      {saved && <div className="notice">Routing policy updated live.</div>}
     </form></section>
   </div>
 }
@@ -228,6 +290,9 @@ function Metrics({ metrics, nodeNames, credentialNames }: { metrics: RequestMetr
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', credentials: 'API credentials', metrics: 'Request metrics' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Request metrics' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function short(value: string) { return `${value.slice(0, 8)}…` }
+function friendlyStrategy(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Weighted least loaded', RoundRobin: 'Round robin', WeightedRoundRobin: 'Weighted round robin' } as const)[value] }
+function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Routes to the least-loaded eligible deployment while accounting for capacity and weight. Recommended for long-running LLM streams.', RoundRobin: 'Cycles evenly through eligible deployments. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments proportionally to their effective weights.' } as const)[value] }
+function probeSummary(probe: NodeConnectionTest['health']) { return probe.success ? `✓ HTTP ${probe.statusCode} in ${probe.latencyMilliseconds} ms` : `✕ ${probe.error ?? `HTTP ${probe.statusCode}`} (${probe.latencyMilliseconds} ms)` }

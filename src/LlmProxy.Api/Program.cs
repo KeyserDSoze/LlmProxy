@@ -4,6 +4,7 @@ using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Routing;
 using LlmProxy.Infrastructure.Health;
 using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Routing;
@@ -17,7 +18,7 @@ using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
-var routingStrategy = builder.Configuration["Routing:Strategy"]?.Trim() ?? "WeightedLeastLoaded";
+var configuredRoutingStrategy = ParseRoutingStrategy(builder.Configuration["Routing:Strategy"]);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -29,14 +30,8 @@ builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
-builder.Services.AddSingleton<IRouteSelector>(_ => routingStrategy.ToLowerInvariant() switch
-{
-    "weightedleastloaded" => new WeightedLeastLoadedRouteSelector(),
-    "roundrobin" => new RoundRobinRouteSelector(),
-    "weightedroundrobin" => new WeightedRoundRobinRouteSelector(),
-    _ => throw new InvalidOperationException(
-        $"Unsupported Routing:Strategy '{routingStrategy}'. Supported values: WeightedLeastLoaded, RoundRobin, WeightedRoundRobin.")
-});
+builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
+builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
 builder.Services.AddScoped<RoutingService>();
 
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
@@ -45,6 +40,7 @@ builder.Services.AddHostedService(services => services.GetRequiredService<Buffer
 
 builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 
 builder.Services.AddAuthorization(options =>
@@ -83,11 +79,11 @@ if (entraEnabled)
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
 
-app.MapGet("/healthz", () => Results.Ok(new
+app.MapGet("/healthz", (RoutingStrategyState strategyState) => Results.Ok(new
 {
     status = "ok",
     service = "llmproxy",
-    routingStrategy,
+    routingStrategy = strategyState.Current,
     utc = DateTimeOffset.UtcNow
 }));
 
@@ -113,3 +109,12 @@ if (entraEnabled)
 app.MapGet("/", () => Results.Redirect("/admin/"));
 app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 app.Run();
+
+static RoutingStrategy ParseRoutingStrategy(string? value)
+{
+    var raw = string.IsNullOrWhiteSpace(value) ? nameof(RoutingStrategy.WeightedLeastLoaded) : value.Trim();
+    return Enum.TryParse<RoutingStrategy>(raw, ignoreCase: true, out var strategy) && Enum.IsDefined(strategy)
+        ? strategy
+        : throw new InvalidOperationException(
+            $"Unsupported Routing:Strategy '{raw}'. Supported values: {string.Join(", ", Enum.GetNames<RoutingStrategy>())}.");
+}

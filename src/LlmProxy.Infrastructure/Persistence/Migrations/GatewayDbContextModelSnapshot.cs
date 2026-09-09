@@ -61,6 +61,15 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("nodes");
         });
 
+        modelBuilder.Entity("LlmProxy.Domain.Routing.RoutingPolicy", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<string>("Strategy").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("routing_policy");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Security.ApiCredential", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");

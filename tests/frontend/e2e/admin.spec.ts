@@ -23,13 +23,14 @@ async function installAdminApi(page: Page) {
   const nodes: NodeRecord[] = [{
     id: 'node-1',
     name: 'dgx-01',
-    baseAddress: 'http://10.0.0.21:8000',
+    baseAddress: 'http://10.0.0.21:8000/vllm',
     weight: 1,
     maxConcurrency: 4,
     enabled: true,
     status: 'Healthy',
     lastHealthCheckUtc: '2026-09-09T10:00:00Z'
   }]
+  let routingStrategy = 'WeightedLeastLoaded'
 
   await page.route('**/api/admin/**', async route => {
     const request = route.request()
@@ -44,6 +45,15 @@ async function installAdminApi(page: Page) {
         activeRequests: 0,
         requestsToday: 12
       })
+    }
+
+    if (request.method() === 'GET' && path === '/api/admin/routing') {
+      return json(route, { strategy: routingStrategy, supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
+    }
+
+    if (request.method() === 'PUT' && path === '/api/admin/routing') {
+      routingStrategy = (request.postDataJSON() as { strategy: string }).strategy
+      return json(route, { strategy: routingStrategy, supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     }
 
     if (request.method() === 'GET' && path === '/api/admin/nodes') return json(route, nodes)
@@ -65,11 +75,29 @@ async function installAdminApi(page: Page) {
       return json(route, created, 201)
     }
 
+    const testMatch = path.match(/^\/api\/admin\/nodes\/([^/]+)\/test-connection$/)
+    if (request.method() === 'POST' && testMatch) {
+      const node = nodes.find(item => item.id === testMatch[1])!
+      const root = node.baseAddress.replace(/\/$/, '')
+      return json(route, {
+        nodeId: node.id,
+        nodeName: node.name,
+        serviceRoot: root,
+        healthUrl: `${root}/health`,
+        modelsUrl: `${root}/v1/models`,
+        chatCompletionsUrl: `${root}/v1/chat/completions`,
+        responsesUrl: `${root}/v1/responses`,
+        success: true,
+        health: { url: `${root}/health`, success: true, statusCode: 200, latencyMilliseconds: 9 },
+        openAi: { url: `${root}/v1/models`, success: true, statusCode: 200, latencyMilliseconds: 11 }
+      })
+    }
+
     return json(route, { error: `Unhandled test route ${request.method()} ${path}` }, 500)
   })
 }
 
-test('admin can inspect the fleet and add a DGX node', async ({ page }) => {
+test('admin can inspect the fleet, add a path-prefixed node and test it', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
 
@@ -78,12 +106,30 @@ test('admin can inspect the fleet and add a DGX node', async ({ page }) => {
 
   await page.getByRole('button', { name: 'DGX Nodes' }).click()
   await page.getByLabel('Name').fill('dgx-02')
-  await page.getByLabel('Base address').fill('http://10.0.0.22:8000')
+  await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath')
+  await page.getByLabel('Weight').fill('3')
   await page.getByLabel('Max concurrency').fill('8')
   await page.getByRole('button', { name: 'Add node' }).click()
 
   await expect(page.getByText('dgx-02')).toBeVisible()
-  await expect(page.getByText('http://10.0.0.22:8000')).toBeVisible()
+  await expect(page.getByText('http://localhost:3451/altropath')).toBeVisible()
+
+  const row = page.getByRole('row').filter({ hasText: 'dgx-02' })
+  await row.getByRole('button', { name: 'Test' }).click()
+  await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
+  await expect(page.getByText(/altropath\/v1\/chat\/completions/)).toBeVisible()
+})
+
+test('routing strategy can be changed live from the admin UI', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Routing' }).click()
+  await page.getByLabel('Routing strategy').selectOption('WeightedRoundRobin')
+  await page.getByRole('button', { name: 'Apply routing strategy' }).click()
+
+  await expect(page.getByText('Routing policy updated live.')).toBeVisible()
+  await expect(page.getByText('Weighted round robin').first()).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {

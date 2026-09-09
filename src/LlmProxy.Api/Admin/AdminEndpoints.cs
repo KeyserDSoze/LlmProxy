@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Domain.Routing;
 using LlmProxy.Domain.Security;
 using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Security;
@@ -43,6 +46,33 @@ public static class AdminEndpoints
             });
         });
 
+        group.MapGet("/routing", (RoutingStrategyState strategyState) => Results.Ok(new
+        {
+            strategy = strategyState.Current,
+            supportedStrategies = Enum.GetValues<RoutingStrategy>()
+        }));
+
+        var updateRouting = group.MapPut("/routing", async (
+            UpdateRoutingRequest request,
+            GatewayDbContext dbContext,
+            RoutingStrategyState strategyState,
+            CancellationToken cancellationToken) =>
+        {
+            var policy = await dbContext.RoutingPolicies.SingleAsync(
+                item => item.Id == RoutingPolicy.SingletonId,
+                cancellationToken);
+            policy.SetStrategy(request.Strategy);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            strategyState.Set(policy.Strategy);
+
+            return Results.Ok(new
+            {
+                strategy = strategyState.Current,
+                supportedStrategies = Enum.GetValues<RoutingStrategy>(),
+                policy.UpdatedAtUtc
+            });
+        });
+
         group.MapGet("/nodes", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken)));
 
@@ -61,6 +91,40 @@ public static class AdminEndpoints
             node.Update(request.Name, request.BaseAddress, request.Weight, request.MaxConcurrency);
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(node);
+        });
+
+        var testNodeConnection = group.MapPost("/nodes/{id:guid}/test-connection", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            IHttpClientFactory httpClientFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var node = await dbContext.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+            if (node is null) return Results.NotFound();
+
+            var serviceRoot = InferenceEndpoint.NormalizeBaseAddress(node.BaseAddress);
+            var healthUrl = InferenceEndpoint.Combine(serviceRoot, "/health");
+            var modelsUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/models");
+            var chatUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/chat/completions");
+            var responsesUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/responses");
+            var client = httpClientFactory.CreateClient("probe");
+
+            var health = await ProbeAsync(client, healthUrl, cancellationToken);
+            var openAi = await ProbeAsync(client, modelsUrl, cancellationToken);
+
+            return Results.Ok(new
+            {
+                nodeId = node.Id,
+                nodeName = node.Name,
+                serviceRoot,
+                healthUrl = healthUrl.ToString(),
+                modelsUrl = modelsUrl.ToString(),
+                chatCompletionsUrl = chatUrl.ToString(),
+                responsesUrl = responsesUrl.ToString(),
+                success = health.Success && openAi.Success,
+                health,
+                openAi
+            });
         });
 
         var drainNode = group.MapPost("/nodes/{id:guid}/drain", async (Guid id, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
@@ -179,7 +243,21 @@ public static class AdminEndpoints
 
         if (entraEnabled)
         {
-            foreach (var endpoint in new[] { createNode, updateNode, drainNode, enableNode, disableNode, createModel, createDeployment, updateDeployment, createCredential, revokeCredential })
+            foreach (var endpoint in new[]
+            {
+                updateRouting,
+                createNode,
+                updateNode,
+                testNodeConnection,
+                drainNode,
+                enableNode,
+                disableNode,
+                createModel,
+                createDeployment,
+                updateDeployment,
+                createCredential,
+                revokeCredential
+            })
             {
                 endpoint.RequireAuthorization("AdminWrite");
             }
@@ -188,10 +266,36 @@ public static class AdminEndpoints
         return endpoints;
     }
 
+    private static async Task<EndpointProbe> ProbeAsync(HttpClient client, Uri url, CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return new EndpointProbe(
+                url.ToString(),
+                response.IsSuccessStatusCode,
+                (int)response.StatusCode,
+                stopwatch.ElapsedMilliseconds,
+                response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".Trim());
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new EndpointProbe(url.ToString(), false, null, stopwatch.ElapsedMilliseconds, "Probe timed out.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return new EndpointProbe(url.ToString(), false, null, stopwatch.ElapsedMilliseconds, exception.Message);
+        }
+    }
+
     public sealed record CreateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
     public sealed record UpdateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
+    public sealed record UpdateRoutingRequest(RoutingStrategy Strategy);
     public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true);
     public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null);
     public sealed record UpdateDeploymentRequest(int Weight = 1, int? MaxConcurrency = null, bool Enabled = true);
     public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null);
+    public sealed record EndpointProbe(string Url, bool Success, int? StatusCode, long LatencyMilliseconds, string? Error);
 }

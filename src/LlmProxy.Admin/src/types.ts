@@ -6,6 +6,33 @@ export type Overview = {
   requestsToday: number
 }
 
+export type RoutingSettings = {
+  strategy: 'WeightedLeastLoaded' | 'RoundRobin' | 'WeightedRoundRobin'
+  supportedStrategies: Array<'WeightedLeastLoaded' | 'RoundRobin' | 'WeightedRoundRobin'>
+  updatedAtUtc?: string
+}
+
+export type EndpointProbe = {
+  url: string
+  success: boolean
+  statusCode?: number | null
+  latencyMilliseconds: number
+  error?: string | null
+}
+
+export type NodeConnectionTest = {
+  nodeId: string
+  nodeName: string
+  serviceRoot: string
+  healthUrl: string
+  modelsUrl: string
+  chatCompletionsUrl: string
+  responsesUrl: string
+  success: boolean
+  health: EndpointProbe
+  openAi: EndpointProbe
+}
+
 export type Node = {
   id: string
   name: string

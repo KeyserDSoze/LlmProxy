@@ -32,6 +32,20 @@ start_mock() {
   MOCK_PIDS+=("$!")
 }
 
+wait_ready() {
+  local ready=false
+  for attempt in {1..30}; do
+    if curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null; then
+      ready=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$ready" != "true" ]]; then
+    fail_with_diagnostics "Gateway did not become ready."
+  fi
+}
+
 start_mock 3450 /primopath primary
 start_mock 3451 /altropath alternate
 sleep 1
@@ -49,22 +63,11 @@ export ROUTING_STRATEGY="WeightedRoundRobin"
 if ! "${COMPOSE[@]}" up -d --build; then
   fail_with_diagnostics "Docker Compose stack failed to start."
 fi
-
-ready=false
-for attempt in {1..30}; do
-  if curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null; then
-    ready=true
-    break
-  fi
-  sleep 2
-done
-
-if [[ "$ready" != "true" ]]; then
-  fail_with_diagnostics "Gateway did not become ready."
-fi
+wait_ready
 
 curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet '"status":"ok"'
 curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet 'WeightedRoundRobin'
+curl --fail --silent http://127.0.0.1:8080/api/admin/routing | grep --quiet 'WeightedRoundRobin'
 
 unauthorized_models_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/v1/models)"
 if [[ "$unauthorized_models_status" != "401" ]]; then
@@ -81,7 +84,6 @@ curl --fail --silent \
   http://127.0.0.1:8080/v1/models \
   | grep --quiet 'agic-code-fast'
 
-# A path-prefixed local runtime must resolve to /primopath/v1/chat/completions.
 primary_response="$(curl --fail --silent \
   -H 'Authorization: Bearer dev-change-me' \
   -H 'Content-Type: application/json' \
@@ -115,9 +117,11 @@ if [[ "$healthy" != "true" ]]; then
   fail_with_diagnostics "Path-prefixed alternate mock runtime did not become Healthy."
 fi
 
-# Verify weighted round robin over two complete service-root URLs. Node weights are
-# multiplied by deployment weights, so alternate weight 3 vs primary weight 1 should
-# produce a 6/2 split across eight sequential requests regardless of starting slot.
+connection_test="$(curl --fail --silent -X POST http://127.0.0.1:8080/api/admin/nodes/${node2_id}/test-connection)"
+echo "$connection_test" | jq -e '.success == true and .health.statusCode == 200 and .openAi.statusCode == 200' >/dev/null
+echo "$connection_test" | grep --quiet 'altropath/v1/chat/completions'
+echo "$connection_test" | grep --quiet 'altropath/v1/responses'
+
 primary_count=0
 alternate_count=0
 for attempt in {1..8}; do
@@ -139,7 +143,40 @@ if [[ "$primary_count" -ne 2 || "$alternate_count" -ne 6 ]]; then
   fail_with_diagnostics "Expected weighted split primary=2 alternate=6, got primary=${primary_count} alternate=${alternate_count}."
 fi
 
-# Responses API uses the same endpoint-composition and routing pipeline.
+# Change the strategy through the control plane. The next request must see it immediately,
+# without recreating the gateway process.
+curl --fail --silent \
+  -X PUT \
+  -H 'Content-Type: application/json' \
+  -d '{"strategy":"RoundRobin"}' \
+  http://127.0.0.1:8080/api/admin/routing \
+  | grep --quiet 'RoundRobin'
+curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet 'RoundRobin'
+
+rr_primary=0
+rr_alternate=0
+for attempt in {1..4}; do
+  response="$(curl --fail --silent \
+    -H 'Authorization: Bearer dev-change-me' \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"round robin route"}]}' \
+    http://127.0.0.1:8080/v1/chat/completions)"
+  if echo "$response" | grep --quiet '"served_by":"primary"'; then
+    rr_primary=$((rr_primary + 1))
+  elif echo "$response" | grep --quiet '"served_by":"alternate"'; then
+    rr_alternate=$((rr_alternate + 1))
+  fi
+done
+if [[ "$rr_primary" -ne 2 || "$rr_alternate" -ne 2 ]]; then
+  fail_with_diagnostics "Expected live round-robin split 2/2, got primary=${rr_primary} alternate=${rr_alternate}."
+fi
+
+# Persisted policy must win over the bootstrap environment after a process restart.
+"${COMPOSE[@]}" restart llmproxy >/dev/null
+wait_ready
+curl --fail --silent http://127.0.0.1:8080/api/admin/routing | grep --quiet 'RoundRobin'
+curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet 'RoundRobin'
+
 curl --fail --silent \
   -H 'Authorization: Bearer dev-change-me' \
   -H 'Content-Type: application/json' \
@@ -147,11 +184,10 @@ curl --fail --silent \
   http://127.0.0.1:8080/v1/responses \
   | grep --quiet '"object":"response"'
 
-# Verify actual SSE behavior instead of merely checking the Content-Type header.
 python3 tests/backend/integration/assert_streaming.py \
   http://127.0.0.1:8080/v1/chat/completions \
   dev-change-me
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Routing: primary=${primary_count}, alternate=${alternate_count}."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}."

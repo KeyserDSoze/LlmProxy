@@ -34,6 +34,13 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         if self.path == self._expected("/health"):
             self._json(200, {"status": "ok", "served_by": self.server.runtime_name})
             return
+        if self.path == self._expected("/v1/models"):
+            self._json(200, {
+                "object": "list",
+                "data": [{"id": "bootstrap-model", "object": "model", "owned_by": "mock"}],
+                "served_by": self.server.runtime_name,
+            })
+            return
         self._json(404, {"error": "not_found", "path": self.path})
 
     def do_POST(self):
@@ -78,7 +85,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         chunks = ["first", "second"]
-        for index, text in enumerate(chunks):
+        for text in chunks:
             event = {
                 "id": f"chatcmpl_{self.server.runtime_name}",
                 "object": "chat.completion.chunk",
