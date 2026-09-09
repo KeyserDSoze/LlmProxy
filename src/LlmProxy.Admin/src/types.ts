@@ -3,6 +3,7 @@ export type Overview = {
   models: number
   deployments: number
   activeRequests: number
+  requestsToday: number
 }
 
 export type Node = {
@@ -32,4 +33,31 @@ export type Deployment = {
   enabled: boolean
   weight: number
   maxConcurrency?: number | null
+}
+
+export type ApiCredential = {
+  id: string
+  name: string
+  keyPrefix: string
+  enabled: boolean
+  createdAtUtc: string
+  expiresAtUtc?: string | null
+  lastUsedAtUtc?: string | null
+}
+
+export type CreatedApiCredential = ApiCredential & {
+  secret: string
+}
+
+export type RequestMetric = {
+  id: number
+  requestId: string
+  startedAtUtc: string
+  logicalModel: string
+  deploymentId?: string | null
+  nodeId?: string | null
+  apiCredentialId?: string | null
+  statusCode: number
+  durationMilliseconds: number
+  errorCode?: string | null
 }

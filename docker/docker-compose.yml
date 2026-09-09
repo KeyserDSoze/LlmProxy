@@ -25,6 +25,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD:-llmproxy-dev}
       Authentication__ApiKey: ${LLM_PROXY_API_KEY:-dev-change-me}
+      Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:-development-pepper-change-me}
       EntraId__Enabled: ${ENTRA_ENABLED:-false}
       EntraId__Instance: https://login.microsoftonline.com/
       EntraId__TenantId: ${ENTRA_TENANT_ID:-}

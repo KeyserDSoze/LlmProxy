@@ -1,4 +1,4 @@
-import type { Deployment, Model, Node, Overview } from './types'
+import type { ApiCredential, CreatedApiCredential, Deployment, Model, Node, Overview, RequestMetric } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -28,12 +28,22 @@ export const api = {
   nodes: () => request<Node[]>('/api/admin/nodes'),
   models: () => request<Model[]>('/api/admin/models'),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
+  apiCredentials: () => request<ApiCredential[]>('/api/admin/api-credentials'),
+  metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
+  updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
+    request<Node>(`/api/admin/nodes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   drainNode: (id: string) => request<void>(`/api/admin/nodes/${id}/drain`, { method: 'POST' }),
   enableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' }),
+  disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
   createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
   createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number }) =>
-    request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) })
+    request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),
+  updateDeployment: (id: string, body: { weight: number; maxConcurrency?: number | null; enabled: boolean }) =>
+    request<Deployment>(`/api/admin/deployments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
+    request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
+  revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })
 }
