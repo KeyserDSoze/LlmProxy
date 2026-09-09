@@ -1,5 +1,5 @@
 export type Overview = {
-  nodes: { total: number; healthy: number; unhealthy: number; draining: number }
+  nodes: { total: number; healthy: number; degraded: number; unhealthy: number; draining: number }
   models: number
   deployments: number
   activeRequests: number
@@ -42,6 +42,11 @@ export type Node = {
   weight: number
   maxConcurrency: number
   lastHealthCheckUtc?: string | null
+  lastHealthyAtUtc?: string | null
+  lastHealthLatencyMilliseconds?: number | null
+  lastHealthError?: string | null
+  consecutiveHealthSuccesses: number
+  consecutiveHealthFailures: number
 }
 
 export type Model = {
@@ -87,4 +92,15 @@ export type RequestMetric = {
   statusCode: number
   durationMilliseconds: number
   errorCode?: string | null
+}
+
+export type AuditEvent = {
+  id: number
+  occurredAtUtc: string
+  actor: string
+  action: string
+  entityType: string
+  entityId: string
+  sourceIp?: string | null
+  detailsJson?: string | null
 }
