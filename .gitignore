@@ -24,6 +24,8 @@ Thumbs.db
 # Test / coverage
 TestResults/
 coverage/
+**/playwright-report/
+**/test-results/
 
 # Docker local data
 docker/data/

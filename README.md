@@ -2,93 +2,99 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Status: initial product bootstrap.
+> Status: V1 under active development.
 
-## Vision
+## What this product is
 
-LlmProxy is designed as an internal AI gateway that hides the physical inference infrastructure from clients. Consumers such as GitHub Copilot see a stable OpenAI-compatible API and logical model names, while the gateway handles authentication, routing, health, load balancing, telemetry and administration of one or more DGX nodes.
+LlmProxy is the internal control plane between AI clients and the physical inference fleet. GitHub Copilot or any OpenAI-compatible client sees one stable endpoint and logical model names; the gateway decides which DGX/model deployment should serve each request.
 
-The initial deployment target is a single on-premises VM running Docker containers. The architecture starts with one DGX node and is intentionally designed to scale to multiple DGX nodes and multiple models without changing client configuration.
+The first production target is deliberately simple: one on-premises VM running Docker, PostgreSQL and Cloudflare Tunnel, connected over the private LAN to one or more DGX Spark nodes running an OpenAI-compatible inference runtime such as vLLM.
 
 ## High-level architecture
 
 ```text
-GitHub Copilot / OpenAI-compatible client
-                |
-                v
-        Cloudflare Tunnel
-                |
-                v
-+---------------------------------------------+
-| On-prem VM                                  |
-|                                             |
-|  +---------------------------------------+  |
-|  | LlmProxy (.NET 10)                    |  |
-|  |                                       |  |
-|  | /v1/*        OpenAI-compatible API    |  |
-|  | /api/admin/* Administration API       |  |
-|  | /admin/*     React administration UI |  |
-|  | /healthz     Health endpoint          |  |
-|  +-------------------+-------------------+  |
-|                      |                      |
-|              +-------v-------+              |
-|              | PostgreSQL    |              |
-|              +---------------+              |
-|                                             |
-|  cloudflared                                |
-+----------------------+----------------------+
-                       |
-                       | private LAN
-              +--------+---------+
-              |                  |
-              v                  v
-          DGX Spark 01       DGX Spark N
-             vLLM               vLLM
-        OpenAI API          OpenAI API
+GitHub Copilot / OpenAI-compatible clients
+                  |
+                  v
+          Cloudflare Tunnel
+                  |
+                  v
++--------------------------------------------------+
+| On-prem VM                                       |
+|                                                  |
+|  LlmProxy .NET 10                                |
+|  ├─ /v1/*          OpenAI-compatible inference   |
+|  ├─ /api/admin/*   Administration API            |
+|  ├─ /admin/*       React administration UI       |
+|  ├─ /healthz       Liveness                      |
+|  └─ /readyz        Readiness / PostgreSQL        |
+|                  |                               |
+|             PostgreSQL                           |
+|                                                  |
+|             cloudflared                          |
++------------------+-------------------------------+
+                   |
+                   | private LAN
+          +--------+---------+
+          |                  |
+          v                  v
+      DGX Spark 01        DGX Spark N
+         vLLM                vLLM
+       /v1 API             /v1 API
 ```
 
-## Core principles
+## Design principles
 
-1. **OpenAI-compatible contract**: clients integrate once against `/v1`; physical model/runtime details stay internal.
-2. **Logical models**: clients request names such as `agic-code-fast` or `agic-code-reasoning`; administrators decide which physical model and DGX deployment serves them.
-3. **Single-domain DDD**: the backend uses a pragmatic Domain-Driven Design structure around one bounded context: **AI Inference Gateway**. No unnecessary microservices.
-4. **Start simple, scale safely**: V1 supports one DGX, while the domain model already supports N nodes, N models and N deployments.
-5. **Security by default**: administration is intended to use Microsoft Entra ID and application roles; inference endpoints use dedicated API credentials compatible with GitHub Copilot BYOK.
-6. **No prompt logging by default**: operational telemetry records metadata, not prompts or generated code.
-7. **Immutable deployments**: GitHub Actions builds versioned images and production deployment supports straightforward rollback.
+- **OpenAI-compatible contract**: clients integrate once against `/v1`.
+- **Logical models**: clients request aliases such as `agic-code-fast`; physical model names remain internal.
+- **Single-domain DDD**: one bounded context, **AI Inference Gateway**, split into Domain, Application, Infrastructure and API layers.
+- **Multi-DGX from day one**: V1 can start with one node but the domain already supports N nodes, N models and N deployments.
+- **Capacity-aware routing**: weighted least-loaded selection, health state, drain and failover are gateway concerns.
+- **Enterprise security**: Entra ID protects administration; revocable bearer credentials protect inference.
+- **No prompt logging by default**: telemetry stores operational metadata, not prompts or generated source code.
+- **Testable boundaries**: external systems are mocked/faked in unit tests, while PostgreSQL and container wiring are exercised for real in integration tests.
+- **Immutable delivery**: validated images are published to GHCR and deployed to the VM by GitHub Actions.
 
 ## Repository structure
 
 ```text
 .
-├── docs/                         # Product, architecture and operational documentation
+├── docs/                         # Architecture, security, deployment and product documentation
 │   ├── architecture.md
-│   ├── roadmap.md
 │   ├── api-contract.md
 │   ├── deployment.md
-│   └── security.md
+│   ├── dgx-vllm.md
+│   ├── github-copilot.md
+│   ├── roadmap.md
+│   ├── security.md
+│   └── testing.md
 │
-├── src/                          # All application source code
-│   ├── LlmProxy.Domain/          # Domain entities, value objects and domain rules
-│   ├── LlmProxy.Application/     # Use cases, ports/interfaces and orchestration
-│   ├── LlmProxy.Infrastructure/  # EF Core, PostgreSQL, vLLM and external adapters
-│   ├── LlmProxy.Api/             # .NET 10 API, auth, OpenAI endpoints, admin endpoints
+├── src/                          # Product code only
+│   ├── LlmProxy.Domain/          # Entities, invariants and domain rules
+│   ├── LlmProxy.Application/     # Use cases, ports and orchestration
+│   ├── LlmProxy.Infrastructure/  # PostgreSQL, EF Core, routing adapters, health, telemetry
+│   ├── LlmProxy.Api/             # .NET 10 HTTP/API host
 │   └── LlmProxy.Admin/           # React + TypeScript administration UI
 │
-├── docker/                       # Docker and VM deployment assets
+├── tests/                        # All automated test code
+│   ├── backend/
+│   │   ├── LlmProxy.UnitTests/   # xUnit domain/application/infrastructure tests
+│   │   └── integration/          # Real Docker + PostgreSQL smoke/integration suite
+│   └── frontend/
+│       ├── unit/                 # Vitest + Testing Library
+│       └── e2e/                  # Playwright Chromium tests
+│
+├── docker/                       # Container and VM deployment assets
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── docker-compose.prod.yml
 │   ├── .env.example
 │   └── scripts/
-│       ├── deploy.sh
-│       └── rollback.sh
 │
-├── .github/
-│   └── workflows/                # GitHub Actions pipelines
-│       ├── ci.yml
-│       ├── container.yml
-│       └── deploy.yml
+├── .github/workflows/            # CI, image publication and production deployment
+│   ├── ci.yml
+│   ├── container.yml
+│   └── deploy.yml
 │
 ├── Directory.Build.props
 ├── Directory.Packages.props
@@ -98,14 +104,13 @@ GitHub Copilot / OpenAI-compatible client
 
 ## Domain model
 
-The first version models four primary concepts: `Node`, `ModelDefinition`, `Deployment` and `ApiCredential`.
+The core product concepts are:
 
-- A **Node** is a physical inference machine, initially a DGX Spark.
-- A **ModelDefinition** is a logical model visible to clients.
-- A **Deployment** maps a logical model to a node/runtime endpoint and capacity.
-- An **ApiCredential** represents a revocable bearer credential allowed to call `/v1/*`.
-
-This keeps public model names independent from physical runtimes. For example, `agic-code-fast` may move from one quantized model to another without requiring client reconfiguration.
+- **InferenceNode**: a physical DGX/inference machine with endpoint, weight, capacity, enabled state and health state.
+- **ModelDefinition**: the logical model exposed to clients and the underlying provider model name.
+- **Deployment**: maps a logical model to a node and defines routing/capacity settings.
+- **ApiCredential**: a revocable inference credential; only its secure hash is persisted.
+- **RequestMetric**: operational telemetry for an inference request without prompt/response content.
 
 ## Request flow
 
@@ -113,147 +118,180 @@ This keeps public model names independent from physical runtimes. For example, `
 POST /v1/chat/completions
         |
         v
-Authentication
+Validate bearer credential
         |
         v
 Resolve logical model
         |
         v
-Find eligible deployments
+Load eligible deployments
         |
         v
-Remove disabled/unhealthy/draining nodes
+Remove disabled / unhealthy / draining / full nodes
         |
         v
-Select destination
+Weighted least-loaded selection
         |
         v
-Forward request to vLLM
+Forward unchanged OpenAI-style request to vLLM
+        |
+        +---- transport failure before streaming? ----+
+        |                                             |
+        |                                   exclude deployment and retry
+        v
+Stream response to client
         |
         v
-Stream OpenAI-compatible response
+Persist metadata-only request metric
 ```
 
-The first routing implementation uses weighted least-active-request selection. The design can later include GPU load, queue depth, TTFT and tokens/sec without changing the public API.
+## Public API
 
-## Planned API surface
-
-### OpenAI-compatible
+Current baseline:
 
 ```http
 GET  /v1/models
 POST /v1/chat/completions
+GET  /healthz
+GET  /readyz
 ```
 
-Planned next:
+The proxy preserves OpenAI-compatible request payloads so streaming and tool/function calling can pass through to the inference runtime.
+
+Planned compatibility expansion:
 
 ```http
 POST /v1/responses
 ```
 
-The compatibility layer must support at least streaming via SSE, non-streaming responses, system/user/assistant messages, tool/function calling, request cancellation, OpenAI-style errors and logical model aliases.
+## Administration
 
-### Platform
+The React administration UI is served by the same application container and manages:
 
-```http
-GET /healthz
-GET /readyz
+- gateway overview;
+- DGX nodes;
+- logical models;
+- model deployments;
+- inference API credentials;
+- request metrics.
+
+Administration is designed for Entra ID OIDC with the initial application roles:
+
+```text
+LlmProxy.Admin
+LlmProxy.Reader
 ```
 
-### Administration
+## Inference authentication
+
+Inference uses static bearer credentials suitable for GitHub Copilot custom OpenAI-compatible providers:
 
 ```http
-GET/POST/PUT/DELETE /api/admin/nodes
-GET/POST/PUT/DELETE /api/admin/models
-GET/POST/PUT/DELETE /api/admin/deployments
-GET/POST/DELETE     /api/admin/api-credentials
-GET                 /api/admin/metrics
-GET                 /api/admin/audit
+Authorization: Bearer lp_xxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-## Authentication model
-
-### Administration
-
-The administration UI will use Microsoft Entra ID with OpenID Connect. Authorization will be based on application roles, initially `LlmProxy.Admin` and `LlmProxy.Reader`.
-
-The intended web architecture is a backend-for-frontend style flow where ASP.NET Core owns the OIDC session so that the React application does not need to persist privileged tokens in browser storage.
-
-### Inference
-
-The `/v1/*` API uses static bearer credentials compatible with GitHub Copilot custom OpenAI-compatible providers.
-
-```http
-Authorization: Bearer lp_xxxxxxxxxxxxxxxxxxxx
-```
-
-Only a secure hash of each credential is persisted.
+The raw secret is shown once at creation time and is never stored in PostgreSQL. Validation uses a keyed hash with a production-only pepper supplied through configuration.
 
 ## DGX runtime
 
-The baseline runtime on DGX Spark is **vLLM**, exposed only on the private network with an OpenAI-compatible endpoint.
+The gateway assumes each registered DGX exposes an OpenAI-compatible private endpoint, initially via vLLM, for example:
 
 ```text
 http://dgx-01:8000/v1
 http://dgx-02:8000/v1
-http://dgx-03:8000/v1
 ```
 
-Clients never receive or depend on these addresses.
+Clients never receive these addresses. DGX health and routing are managed by LlmProxy.
 
 ## Persistence
 
-PostgreSQL runs as a separate container on the VM. Initial persistence areas are nodes, models, deployments, API credentials, routing policies, health history, request metrics and audit events.
+PostgreSQL is a separate container. EF Core migrations are applied by the application at startup so application/container upgrades can evolve the schema reproducibly.
 
-Production PostgreSQL data lives on a persistent Docker volume and is never baked into the application image.
+Persisted areas currently include nodes, logical models, deployments, API credentials and request metrics. Prompt content and generated code are not persisted by default.
 
-## Observability
+## Docker
 
-Initial telemetry should include total requests, active requests, selected logical model, selected deployment/node, time to first token, end-to-end latency, token counts when available, status/error category and node health. Prompt content and generated code are not persisted by default.
-
-## Docker model
-
-The VM initially runs three containers:
-
-```text
-llmproxy
-postgres
-cloudflared
-```
-
-The application container contains the published .NET API and the compiled React static assets. PostgreSQL and Cloudflare Tunnel remain separate containers.
-
-Local development:
+Local full stack:
 
 ```bash
+cp docker/.env.example docker/.env
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-Production:
+Production composition adds the published GHCR image and Cloudflare Tunnel:
 
 ```bash
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+docker compose \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.prod.yml \
+  up -d
 ```
 
-## CI/CD strategy
+## Testing
 
-Pull requests and pushes to `main` execute backend restore/build/tests, frontend install/build and Docker build validation.
+All test code is kept outside `src/` in `tests/`.
 
-A successful push to `main` or a version tag publishes an immutable image to GHCR, for example:
+The CI quality gate includes:
+
+1. .NET restore and Release build;
+2. backend xUnit unit tests;
+3. React production build;
+4. Vitest + Testing Library frontend tests;
+5. Playwright Chromium E2E tests;
+6. production Docker image build;
+7. real LlmProxy + PostgreSQL integration smoke tests.
+
+Mocking policy: **mock external boundaries, not domain behavior**. Application ports and browser HTTP calls are replaced with deterministic test doubles in fast tests. PostgreSQL/container wiring is tested with the real components rather than an in-memory substitute.
+
+See [`tests/README.md`](tests/README.md) and [`docs/testing.md`](docs/testing.md) for the complete strategy.
+
+Backend unit tests:
+
+```bash
+dotnet test tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj -c Release
+```
+
+Frontend tests:
+
+```bash
+cd tests/frontend
+npm install
+npm test
+npx playwright install chromium
+npm run test:e2e
+```
+
+Backend Docker integration:
+
+```bash
+tests/backend/integration/smoke.sh
+```
+
+## CI/CD
+
+### CI
+
+Pull requests and pushes to `main` execute the complete automated quality gate. Backend and frontend tests run in parallel; Docker/PostgreSQL integration starts only when both have succeeded.
+
+### Container publication
+
+A `main` image is published to GHCR **only after the CI workflow for that exact commit succeeds**. Version tags (`v1.2.3`) can also publish immutable versioned images.
+
+Example tags:
 
 ```text
-ghcr.io/<owner>/llmproxy:sha-<commit>
 ghcr.io/<owner>/llmproxy:main
-ghcr.io/<owner>/llmproxy:1.0.0
+ghcr.io/<owner>/llmproxy:sha-abc1234
+ghcr.io/<owner>/llmproxy:1.2.3
 ```
 
-The target production VM hosts a GitHub Actions **self-hosted runner**. Deployment happens locally on the VM by pulling the desired image and running Docker Compose, avoiding a public SSH ingress solely for CI/CD.
+### Production deployment
+
+The target VM hosts a GitHub Actions self-hosted runner. The production workflow runs locally on that VM, pulls the requested GHCR image and executes Docker Compose. The VM therefore does not need a public SSH port merely for CI/CD.
 
 ## Configuration
 
-Configuration uses environment variables and ASP.NET Core configuration. Secrets must never be committed. The repository contains only placeholders in `docker/.env.example`.
-
-Expected production values include:
+Secrets are supplied at runtime and must never be committed. Important production values include:
 
 ```text
 ConnectionStrings__Postgres
@@ -263,28 +301,6 @@ EntraId__ClientId
 EntraId__ClientSecret
 CLOUDFLARE_TUNNEL_TOKEN
 ```
-
-## Development roadmap
-
-### Milestone 1 - End-to-end spike
-
-```text
-GitHub Copilot -> LlmProxy -> one DGX Spark -> vLLM -> model
-```
-
-Deliverables: `/v1/models`, `/v1/chat/completions`, streaming, tool/function calling compatibility, API key authentication, one configured DGX deployment, Cloudflare Tunnel validation and a real Copilot test.
-
-### Milestone 2 - Multi-node gateway
-
-Dynamic node/deployment registry, health checks, weighted least-load routing, capacity, failover and drain mode.
-
-### Milestone 3 - Administration
-
-React UI, Entra ID, RBAC, CRUD for nodes/models/deployments, API credential lifecycle and audit trail.
-
-### Milestone 4 - Observability and capacity
-
-Detailed metrics, GPU/runtime telemetry, capacity-aware routing, benchmark suite and DGX fleet capacity planning.
 
 ## Local prerequisites
 
@@ -298,27 +314,48 @@ Detailed metrics, GPU/runtime telemetry, capacity-aware routing, benchmark suite
 ```bash
 dotnet restore LlmProxy.slnx
 dotnet build LlmProxy.slnx
+dotnet test tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj
 ```
 
 ## Local admin UI
 
 ```bash
 cd src/LlmProxy.Admin
-npm ci
+npm install
 npm run dev
 ```
 
-## Local full stack
+## Roadmap
 
-```bash
-cp docker/.env.example docker/.env
-docker compose -f docker/docker-compose.yml up --build
+### Milestone 1 — Real Copilot spike
+
+```text
+GitHub Copilot
+  -> Cloudflare domain
+  -> LlmProxy
+  -> one DGX Spark
+  -> vLLM
+  -> model
 ```
+
+Validate `/v1/models`, chat completions, SSE streaming, tool calling, cancellation and authentication with an actual Copilot client.
+
+### Milestone 2 — Multi-DGX hardening
+
+Benchmark and harden health, drain, capacity, failover and weighted routing across multiple Spark nodes.
+
+### Milestone 3 — Enterprise administration
+
+Complete Entra ID setup, RBAC, audit trail, routing-policy configuration and richer operational dashboards.
+
+### Milestone 4 — Capacity and observability
+
+Add TTFT, token throughput, queue metrics, DGX/GPU telemetry and capacity benchmarks under realistic Copilot concurrency.
 
 ## Definition of done for V1
 
-V1 is complete when GitHub Copilot can select a logical model exposed by LlmProxy; requests stream through the gateway to vLLM on DGX; adding DGX nodes does not change client configuration; administrators can manage nodes/models/deployments through the UI; admin access uses Entra ID; inference access uses revocable credentials; unhealthy nodes stop receiving new traffic; GitHub Actions can deploy and roll back the application; PostgreSQL data survives container replacement; and operational telemetry does not persist prompts or generated code by default.
+V1 is complete when GitHub Copilot can select a logical model exposed by LlmProxy; requests stream through the gateway to vLLM on DGX; adding/removing DGX nodes does not require client reconfiguration; administrators can manage the platform through the React UI using Entra ID; inference uses revocable credentials; unhealthy/draining nodes stop receiving traffic; PostgreSQL survives container replacement; the full automated quality gate is green; and GitHub Actions can publish, deploy and roll back validated images.
 
 ## License
 
-Internal project. Licensing and distribution terms will be defined before external productization.
+Internal project. Licensing and external distribution terms will be defined before productization.
