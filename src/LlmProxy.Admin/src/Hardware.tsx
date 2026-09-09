@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { api } from './api'
 import type { Node, NodeHardwareMetricsSnapshot } from './types'
 
@@ -9,7 +9,6 @@ type Props = {
 }
 
 export default function Hardware({ nodes, hardware, refresh }: Props) {
-  const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
   const [nodeId, setNodeId] = useState(nodes[0]?.id ?? '')
   const [baseAddress, setBaseAddress] = useState('')
   const [saved, setSaved] = useState(false)
@@ -21,7 +20,6 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
   useEffect(() => {
     const selected = nodes.find(node => node.id === nodeId)
     setBaseAddress(selected?.hardwareMetricsBaseAddress ?? '')
-    setSaved(false)
   }, [nodeId, nodes])
 
   async function submit(event: FormEvent) {
@@ -40,13 +38,15 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
     await refresh()
   }
 
+  const available = hardware.filter(item => item.available)
+
   return <div className="stack">
     <section className="cards cardsFive">
       <Metric label="Configured nodes" value={nodes.filter(node => node.hardwareMetricsBaseAddress).length} />
-      <Metric label="Telemetry available" value={hardware.filter(item => item.available).length} />
-      <Metric label="GPUs observed" value={hardware.filter(item => item.available).reduce((total, item) => total + item.gpuCount, 0)} />
-      <Metric label="Max GPU util" value={formatMax(hardware.map(item => item.maxGpuUtilizationPercent), '%')} />
-      <Metric label="Max temperature" value={formatMax(hardware.map(item => item.maxTemperatureCelsius), ' °C')} />
+      <Metric label="Telemetry available" value={available.length} />
+      <Metric label="GPUs observed" value={available.reduce((total, item) => total + item.gpuCount, 0)} />
+      <Metric label="Max GPU util" value={formatMax(available.map(item => item.maxGpuUtilizationPercent), '%')} />
+      <Metric label="Max temperature" value={formatMax(available.map(item => item.maxTemperatureCelsius), ' °C')} />
     </section>
 
     <div className="gridTwo">
@@ -74,7 +74,7 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
         <h2>DCGM exporter endpoint</h2>
         <p className="muted">Optional and independent from the vLLM service root. LlmProxy appends <span className="mono">/metrics</span>.</p>
         <form onSubmit={submit}>
-          <label>DGX node<select aria-label="Hardware DGX node" value={nodeId} onChange={event => setNodeId(event.target.value)} disabled={nodes.length === 0}>
+          <label>DGX node<select aria-label="Hardware DGX node" value={nodeId} onChange={event => { setNodeId(event.target.value); setSaved(false) }} disabled={nodes.length === 0}>
             {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
           </select></label>
           <label>Hardware metrics service root<input aria-label="Hardware metrics service root" value={baseAddress} onChange={event => { setBaseAddress(event.target.value); setSaved(false) }} placeholder="http://10.0.0.21:9400" /></label>
