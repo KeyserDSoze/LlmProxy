@@ -12,6 +12,20 @@ export type RoutingSettings = {
   updatedAtUtc?: string
 }
 
+export type RoutingTuningSettings = {
+  warmupSamples: number
+  ttftTargetMilliseconds: number
+  ttftPenaltyWeight: number
+  failurePenaltyWeight: number
+  externalLoadPenaltyWeight: number
+  queuePenaltyWeight: number
+  kvCacheThreshold: number
+  kvCachePenaltyWeight: number
+  degradedNodePenalty: number
+  unknownNodePenalty: number
+  updatedAtUtc?: string
+}
+
 export type DeploymentPerformanceSnapshot = {
   deploymentId: string
   sampleCount: number
