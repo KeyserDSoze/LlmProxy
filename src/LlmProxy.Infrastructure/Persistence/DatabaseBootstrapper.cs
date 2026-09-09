@@ -14,7 +14,8 @@ public sealed class DatabaseBootstrapper(
     GatewayDbContext dbContext,
     IConfiguration configuration,
     ApiKeyHasher apiKeyHasher,
-    RoutingStrategyState routingStrategyState)
+    RoutingStrategyState routingStrategyState,
+    RoutingTuningState routingTuningState)
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -32,6 +33,17 @@ public sealed class DatabaseBootstrapper(
         }
 
         routingStrategyState.Set(routingPolicy.Strategy);
+
+        var tuningPolicy = await dbContext.RoutingTuningPolicies.SingleOrDefaultAsync(
+            item => item.Id == RoutingTuningPolicy.SingletonId,
+            cancellationToken);
+        if (tuningPolicy is null)
+        {
+            tuningPolicy = new RoutingTuningPolicy(RoutingTuningSettings.Default);
+            dbContext.RoutingTuningPolicies.Add(tuningPolicy);
+        }
+
+        routingTuningState.Set(tuningPolicy.ToSettings());
 
         if (configuration.GetValue("Bootstrap:Enabled", true) && !await dbContext.Nodes.AnyAsync(cancellationToken))
         {
