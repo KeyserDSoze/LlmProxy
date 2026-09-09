@@ -1,3 +1,4 @@
+using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
@@ -15,6 +16,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +26,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.BaseAddress).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.LastHealthError).HasMaxLength(1000);
             entity.HasIndex(x => x.Name).IsUnique();
         });
 
@@ -73,6 +76,20 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => x.StartedAtUtc);
             entity.HasIndex(x => x.RequestId).IsUnique();
             entity.HasIndex(x => x.ApiCredentialId);
+        });
+
+        modelBuilder.Entity<AuditEvent>(entity =>
+        {
+            entity.ToTable("audit_events");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Actor).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.Action).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.EntityType).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.EntityId).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.SourceIp).HasMaxLength(64);
+            entity.Property(x => x.DetailsJson).HasMaxLength(4000);
+            entity.HasIndex(x => x.OccurredAtUtc);
+            entity.HasIndex(x => new { x.EntityType, x.EntityId });
         });
     }
 }
