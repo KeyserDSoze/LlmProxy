@@ -1,0 +1,29 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+**/appsettings.Production.json
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+TestResults/
+coverage/
+
+# Docker local data
+docker/data/

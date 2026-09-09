@@ -1,0 +1,11 @@
+.git
+.github
+**/bin
+**/obj
+**/node_modules
+**/dist
+docker/data
+.env
+.env.*
+.vs
+.idea
