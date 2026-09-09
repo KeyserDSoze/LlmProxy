@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -26,10 +26,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
+  routingTuning: () => request<RoutingTuningSettings>('/api/admin/routing/tuning'),
   routingPerformance: () => request<DeploymentPerformanceSnapshot[]>('/api/admin/routing/performance'),
   routingRuntime: () => request<NodeRuntimeMetricsSnapshot[]>('/api/admin/routing/runtime'),
   updateRouting: (strategy: RoutingSettings['strategy']) =>
     request<RoutingSettings>('/api/admin/routing', { method: 'PUT', body: JSON.stringify({ strategy }) }),
+  updateRoutingTuning: (settings: Omit<RoutingTuningSettings, 'updatedAtUtc'>) =>
+    request<RoutingTuningSettings>('/api/admin/routing/tuning', { method: 'PUT', body: JSON.stringify(settings) }),
   nodes: () => request<Node[]>('/api/admin/nodes'),
   models: () => request<Model[]>('/api/admin/models'),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
