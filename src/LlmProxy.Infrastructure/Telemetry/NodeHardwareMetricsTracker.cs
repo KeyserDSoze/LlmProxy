@@ -80,6 +80,12 @@ public sealed class NodeHardwareMetricsTracker : INodeHardwareMetricsTracker
             });
     }
 
+    public void Remove(Guid nodeId)
+    {
+        ValidateNodeId(nodeId);
+        _snapshots.TryRemove(nodeId, out _);
+    }
+
     private static NodeHardwareMetricsSnapshot Empty(Guid nodeId) =>
         new(nodeId, false, 0, null, null, null, null, null, null, null, null, null, null);
 
