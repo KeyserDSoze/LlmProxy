@@ -33,7 +33,7 @@ describe('admin api client', () => {
   })
 
   it('requests both in-memory routing telemetry feeds', async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response('[]', {
+    vi.mocked(fetch).mockImplementation(async () => new Response('[]', {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     }))
