@@ -13,13 +13,12 @@ permissions:
   contents: read
   packages: read
 
-environment:
-  name: production
-
 jobs:
   deploy:
     runs-on: [self-hosted, linux, x64, llmproxy-prod]
     timeout-minutes: 20
+    environment:
+      name: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
