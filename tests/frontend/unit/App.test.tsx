@@ -11,6 +11,7 @@ const mockedApi = vi.hoisted(() => ({
   deployments: vi.fn(),
   apiCredentials: vi.fn(),
   metrics: vi.fn(),
+  audit: vi.fn(),
   createNode: vi.fn(),
   updateNode: vi.fn(),
   testNodeConnection: vi.fn(),
@@ -32,7 +33,7 @@ describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockedApi.overview.mockResolvedValue({
-      nodes: { total: 1, healthy: 1, unhealthy: 0, draining: 0 },
+      nodes: { total: 1, healthy: 1, degraded: 0, unhealthy: 0, draining: 0 },
       models: 1,
       deployments: 1,
       activeRequests: 2,
@@ -54,12 +55,27 @@ describe('admin application', () => {
       maxConcurrency: 4,
       enabled: true,
       status: 'Healthy',
-      lastHealthCheckUtc: '2026-09-09T10:00:00Z'
+      lastHealthCheckUtc: '2026-09-09T10:00:00Z',
+      lastHealthyAtUtc: '2026-09-09T10:00:00Z',
+      lastHealthLatencyMilliseconds: 12,
+      lastHealthError: null,
+      consecutiveHealthSuccesses: 4,
+      consecutiveHealthFailures: 0
     }])
     mockedApi.models.mockResolvedValue([])
     mockedApi.deployments.mockResolvedValue([])
     mockedApi.apiCredentials.mockResolvedValue([])
     mockedApi.metrics.mockResolvedValue([])
+    mockedApi.audit.mockResolvedValue([{
+      id: 1,
+      occurredAtUtc: '2026-09-09T10:01:00Z',
+      actor: 'admin@agic.it',
+      action: 'routing.update',
+      entityType: 'routing_policy',
+      entityId: '1',
+      sourceIp: '10.0.0.5',
+      detailsJson: '{"previous":"WeightedLeastLoaded","current":"RoundRobin"}'
+    }])
     mockedApi.testNodeConnection.mockResolvedValue({
       nodeId: 'node-1',
       nodeName: 'dgx-01',
@@ -74,11 +90,13 @@ describe('admin application', () => {
     })
   })
 
-  it('renders fleet information returned by the API', async () => {
+  it('renders fleet information and health diagnostics returned by the API', async () => {
     render(<App />)
 
     expect(await screen.findByText('dgx-01')).toBeInTheDocument()
-    expect(screen.getByText('1/1')).toBeInTheDocument()
+    expect(screen.getByText('1 H / 0 D')).toBeInTheDocument()
+    expect(screen.getByText('12 ms')).toBeInTheDocument()
+    expect(screen.getByText('4 ok')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
     expect(screen.getByText('Routing: Weighted least loaded')).toBeInTheDocument()
   })
@@ -105,5 +123,16 @@ describe('admin application', () => {
     await user.click(screen.getByRole('button', { name: 'Apply routing strategy' }))
 
     expect(mockedApi.updateRouting).toHaveBeenCalledWith('RoundRobin')
+  })
+
+  it('shows the administrative audit trail', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await screen.findByText('dgx-01')
+    await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
+
+    expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
+    expect(screen.getByText('routing.update')).toBeInTheDocument()
   })
 })
