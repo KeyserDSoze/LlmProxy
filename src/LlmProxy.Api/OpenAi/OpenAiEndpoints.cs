@@ -309,15 +309,15 @@ internal static class OpenAiRequestPayload
         }
 
         if (requestObject["model"] is not JsonValue modelValue ||
-            !modelValue.TryGetValue<string>(out logicalModelName) ||
-            string.IsNullOrWhiteSpace(logicalModelName))
+            !modelValue.TryGetValue<string>(out var parsedModelName) ||
+            string.IsNullOrWhiteSpace(parsedModelName))
         {
-            logicalModelName = string.Empty;
             errorCode = "model_required";
             errorMessage = "A logical model name is required.";
             return false;
         }
 
+        logicalModelName = parsedModelName;
         return true;
     }
 
