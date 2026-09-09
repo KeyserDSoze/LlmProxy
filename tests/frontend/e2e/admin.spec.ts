@@ -4,6 +4,7 @@ type NodeRecord = {
   id: string
   name: string
   baseAddress: string
+  hardwareMetricsBaseAddress?: string | null
   weight: number
   maxConcurrency: number
   enabled: boolean
@@ -22,7 +23,7 @@ async function json(route: Route, body: unknown, status = 200) {
 
 async function installAdminApi(page: Page) {
   const nodes: NodeRecord[] = [{
-    id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+    id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
     lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 9, lastHealthError: null,
     consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
   }]
@@ -32,6 +33,12 @@ async function installAdminApi(page: Page) {
     externalLoadPenaltyWeight: 0.4, queuePenaltyWeight: 0.75, kvCacheThreshold: 0.7, kvCachePenaltyWeight: 0.6,
     degradedNodePenalty: 0.35, unknownNodePenalty: 0.1, updatedAtUtc: '2026-09-09T10:04:00Z'
   }
+  const hardware = [{
+    nodeId: 'node-1', available: true, gpuCount: 2, averageGpuUtilizationPercent: 60, maxGpuUtilizationPercent: 80,
+    framebufferUsedMiB: 4096, framebufferFreeMiB: 12288, framebufferUsageRatio: 0.25,
+    maxTemperatureCelsius: 67, totalPowerUsageWatts: 261,
+    collectedAtUtc: '2026-09-09T10:04:00Z', lastAttemptAtUtc: '2026-09-09T10:04:00Z', error: null
+  }]
   const audit = [{ id: 1, occurredAtUtc: '2026-09-09T10:05:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }]
   const metrics = [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions', deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1047, attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 49, inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null }]
   const metricsSummary = {
@@ -51,6 +58,7 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/routing/tuning') return json(route, tuning)
     if (request.method() === 'GET' && path === '/api/admin/routing/performance') return json(route, [{ deploymentId: 'deployment-1', sampleCount: 12, ewmaTimeToFirstByteMilliseconds: 140, ewmaDurationMilliseconds: 980, infrastructureFailureScore: 0.04, lastObservedAtUtc: '2026-09-09T10:04:00Z' }])
     if (request.method() === 'GET' && path === '/api/admin/routing/runtime') return json(route, [{ nodeId: 'node-1', available: true, modelName: 'bootstrap-model', runningRequests: 2, waitingRequests: 1, kvCacheUsageRatio: 0.55, promptTokensTotal: 1234, generationTokensTotal: 567, collectedAtUtc: '2026-09-09T10:04:00Z', lastAttemptAtUtc: '2026-09-09T10:04:00Z', error: null }])
+    if (request.method() === 'GET' && path === '/api/admin/hardware') return json(route, hardware)
 
     if (request.method() === 'PUT' && path === '/api/admin/routing') {
       routingStrategy = (request.postDataJSON() as { strategy: string }).strategy
@@ -71,9 +79,17 @@ async function installAdminApi(page: Page) {
 
     if (request.method() === 'POST' && path === '/api/admin/nodes') {
       const input = request.postDataJSON() as Pick<NodeRecord, 'name' | 'baseAddress' | 'weight' | 'maxConcurrency'>
-      const created: NodeRecord = { id: `node-${nodes.length + 1}`, ...input, enabled: true, status: 'Unknown', lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: null, lastHealthLatencyMilliseconds: null, lastHealthError: null, consecutiveHealthSuccesses: 0, consecutiveHealthFailures: 0 }
+      const created: NodeRecord = { id: `node-${nodes.length + 1}`, ...input, hardwareMetricsBaseAddress: null, enabled: true, status: 'Unknown', lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: null, lastHealthLatencyMilliseconds: null, lastHealthError: null, consecutiveHealthSuccesses: 0, consecutiveHealthFailures: 0 }
       nodes.push(created)
       return json(route, created, 201)
+    }
+
+    const hardwareMatch = path.match(/^\/api\/admin\/nodes\/([^/]+)\/hardware-metrics$/)
+    if (request.method() === 'PUT' && hardwareMatch) {
+      const node = nodes.find(item => item.id === hardwareMatch[1])!
+      const input = request.postDataJSON() as { baseAddress: string | null }
+      node.hardwareMetricsBaseAddress = input.baseAddress?.replace(/\/$/, '') ?? null
+      return json(route, { id: node.id, hardwareMetricsBaseAddress: node.hardwareMetricsBaseAddress })
     }
 
     const testMatch = path.match(/^\/api\/admin\/nodes\/([^/]+)\/test-connection$/)
@@ -94,6 +110,21 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await page.getByRole('button', { name: 'DGX Nodes' }).click()
   await page.getByLabel('Name').fill('dgx-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
   await expect(page.getByText('dgx-02')).toBeVisible(); const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
+})
+
+test('DGX hardware view exposes DCGM telemetry and separate endpoint configuration', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'DGX Hardware' }).click()
+  await expect(page.getByRole('heading', { name: 'DGX hardware', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeVisible()
+  await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
+  await expect(page.getByText('4.0 GiB used · 25.0%')).toBeVisible()
+  await expect(page.getByText('67 °C')).toBeVisible()
+  await expect(page.getByText('261 W')).toBeVisible()
+  await expect(page.getByText('Routing isolation')).toBeVisible()
+
+  await page.getByLabel('Hardware metrics service root').fill('http://10.0.0.21:9400/new-dcgm/')
+  await page.getByRole('button', { name: 'Save endpoint' }).click()
+  await expect(page.getByText('Hardware telemetry configuration updated.')).toBeVisible()
 })
 
 test('inference observability exposes latency, token and failover telemetry', async ({ page }) => {
