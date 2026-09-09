@@ -32,7 +32,12 @@ class MockLlmHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == self._expected("/health"):
-            self._json(200, {"status": "ok", "served_by": self.server.runtime_name})
+            status = self.server.health_status
+            self._json(status, {
+                "status": "ok" if 200 <= status < 300 else "failed",
+                "served_by": self.server.runtime_name,
+                "configured_status": status,
+            })
             return
         if self.path == self._expected("/v1/models"):
             self._json(200, {
@@ -44,6 +49,19 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not_found", "path": self.path})
 
     def do_POST(self):
+        if self.path.startswith("/__control/health/"):
+            try:
+                status = int(self.path.rsplit("/", 1)[-1])
+            except ValueError:
+                self._json(400, {"error": "invalid_status"})
+                return
+            if status < 100 or status > 599:
+                self._json(400, {"error": "invalid_status"})
+                return
+            self.server.health_status = status
+            self._json(200, {"health_status": status, "served_by": self.server.runtime_name})
+            return
+
         if self.path not in {
             self._expected("/v1/chat/completions"),
             self._expected("/v1/responses"),
@@ -84,8 +102,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
 
-        chunks = ["first", "second"]
-        for text in chunks:
+        for text in ["first", "second"]:
             event = {
                 "id": f"chatcmpl_{self.server.runtime_name}",
                 "object": "chat.completion.chunk",
@@ -112,6 +129,7 @@ def main():
     server = ThreadingHTTPServer(("0.0.0.0", args.port), MockLlmHandler)
     server.prefix = normalize_prefix(args.prefix)
     server.runtime_name = args.name
+    server.health_status = 200
     server.serve_forever()
 
 
