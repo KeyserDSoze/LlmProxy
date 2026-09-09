@@ -30,6 +30,8 @@ services:
       Health__IntervalSeconds: ${HEALTH_INTERVAL_SECONDS:-10}
       Health__HealthyAfterSuccesses: ${HEALTH_HEALTHY_AFTER_SUCCESSES:-2}
       Health__UnhealthyAfterFailures: ${HEALTH_UNHEALTHY_AFTER_FAILURES:-3}
+      RuntimeMetrics__Enabled: ${RUNTIME_METRICS_ENABLED:-true}
+      RuntimeMetrics__IntervalSeconds: ${RUNTIME_METRICS_INTERVAL_SECONDS:-5}
       EntraId__Enabled: ${ENTRA_ENABLED:-false}
       EntraId__Instance: https://login.microsoftonline.com/
       EntraId__TenantId: ${ENTRA_TENANT_ID:-}
