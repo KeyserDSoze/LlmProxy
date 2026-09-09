@@ -8,6 +8,7 @@ const mockedApi = vi.hoisted(() => ({
   routingTuning: vi.fn(),
   routingPerformance: vi.fn(),
   routingRuntime: vi.fn(),
+  hardware: vi.fn(),
   updateRouting: vi.fn(),
   updateRoutingTuning: vi.fn(),
   nodes: vi.fn(),
@@ -19,6 +20,7 @@ const mockedApi = vi.hoisted(() => ({
   audit: vi.fn(),
   createNode: vi.fn(),
   updateNode: vi.fn(),
+  updateNodeHardwareMetrics: vi.fn(),
   testNodeConnection: vi.fn(),
   drainNode: vi.fn(),
   enableNode: vi.fn(),
@@ -69,12 +71,19 @@ describe('admin application', () => {
       nodeId: 'node-1', available: true, modelName: 'Qwen/Test', runningRequests: 2, waitingRequests: 1, kvCacheUsageRatio: 0.72,
       promptTokensTotal: 1200, generationTokensTotal: 650, collectedAtUtc: '2026-09-09T10:03:00Z', lastAttemptAtUtc: '2026-09-09T10:03:00Z', error: null
     }])
+    mockedApi.hardware.mockResolvedValue([{
+      nodeId: 'node-1', available: true, gpuCount: 2, averageGpuUtilizationPercent: 60, maxGpuUtilizationPercent: 80,
+      framebufferUsedMiB: 4096, framebufferFreeMiB: 12288, framebufferUsageRatio: 0.25,
+      maxTemperatureCelsius: 67, totalPowerUsageWatts: 261, collectedAtUtc: '2026-09-09T10:03:00Z', lastAttemptAtUtc: '2026-09-09T10:03:00Z', error: null
+    }])
     mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
-      id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+      id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
+      weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
       lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 12,
       lastHealthError: null, consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
     }])
+    mockedApi.updateNodeHardwareMetrics.mockResolvedValue({ id: 'node-1', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm' })
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
@@ -117,6 +126,23 @@ describe('admin application', () => {
     await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
+  })
+
+  it('shows DGX hardware telemetry and can update the separate DCGM root', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
+    await user.click(screen.getByRole('button', { name: 'DGX Hardware' }))
+    expect(screen.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeInTheDocument()
+    expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
+    expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
+    expect(screen.getByText('67 °C')).toBeInTheDocument()
+    expect(screen.getByText('261 W')).toBeInTheDocument()
+    expect(screen.getByText('Routing isolation')).toBeInTheDocument()
+
+    const input = screen.getByLabelText('Hardware metrics service root')
+    await user.clear(input)
+    await user.type(input, 'http://10.0.0.21:9400/new-dcgm')
+    await user.click(screen.getByRole('button', { name: 'Save endpoint' }))
+    expect(mockedApi.updateNodeHardwareMetrics).toHaveBeenCalledWith('node-1', 'http://10.0.0.21:9400/new-dcgm')
   })
 
   it('exposes live routing strategy, tuning and capacity signals', async () => {
