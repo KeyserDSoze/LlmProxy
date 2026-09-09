@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Infrastructure.Persistence;
 
@@ -19,6 +20,7 @@ public static class NodeHardwareMetricsEndpoints
             Guid id,
             UpdateHardwareMetricsRequest request,
             GatewayDbContext dbContext,
+            INodeHardwareMetricsTracker tracker,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -51,6 +53,11 @@ public static class NodeHardwareMetricsEndpoints
                 })));
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (node.HardwareMetricsBaseAddress is null)
+            {
+                tracker.Remove(node.Id);
+            }
+
             return Results.Ok(new
             {
                 node.Id,
