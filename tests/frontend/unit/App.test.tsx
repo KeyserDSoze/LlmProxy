@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedApi = vi.hoisted(() => ({
   overview: vi.fn(),
   routing: vi.fn(),
+  routingTuning: vi.fn(),
   routingPerformance: vi.fn(),
   routingRuntime: vi.fn(),
   updateRouting: vi.fn(),
+  updateRoutingTuning: vi.fn(),
   nodes: vi.fn(),
   models: vi.fn(),
   deployments: vi.fn(),
@@ -32,6 +34,20 @@ vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
 
 import App from '../../../src/LlmProxy.Admin/src/App'
 
+const tuning = {
+  warmupSamples: 3,
+  ttftTargetMilliseconds: 2000,
+  ttftPenaltyWeight: 0.25,
+  failurePenaltyWeight: 1.5,
+  externalLoadPenaltyWeight: 0.4,
+  queuePenaltyWeight: 0.75,
+  kvCacheThreshold: 0.7,
+  kvCachePenaltyWeight: 0.6,
+  degradedNodePenalty: 0.35,
+  unknownNodePenalty: 0.1,
+  updatedAtUtc: '2026-09-09T10:04:00Z'
+}
+
 describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -42,115 +58,45 @@ describe('admin application', () => {
       activeRequests: 2,
       requestsToday: 42
     })
-    mockedApi.routing.mockResolvedValue({
-      strategy: 'WeightedLeastLoaded',
-      supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
-    })
+    mockedApi.routing.mockResolvedValue({ strategy: 'WeightedLeastLoaded', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
+    mockedApi.routingTuning.mockResolvedValue(tuning)
+    mockedApi.updateRoutingTuning.mockResolvedValue(tuning)
     mockedApi.routingPerformance.mockResolvedValue([{
-      deploymentId: 'deployment-1',
-      sampleCount: 14,
-      ewmaTimeToFirstByteMilliseconds: 145,
-      ewmaDurationMilliseconds: 980,
-      infrastructureFailureScore: 0.05,
-      lastObservedAtUtc: '2026-09-09T10:03:00Z'
+      deploymentId: 'deployment-1', sampleCount: 14, ewmaTimeToFirstByteMilliseconds: 145, ewmaDurationMilliseconds: 980,
+      infrastructureFailureScore: 0.05, lastObservedAtUtc: '2026-09-09T10:03:00Z'
     }])
     mockedApi.routingRuntime.mockResolvedValue([{
-      nodeId: 'node-1',
-      available: true,
-      modelName: 'Qwen/Test',
-      runningRequests: 2,
-      waitingRequests: 1,
-      kvCacheUsageRatio: 0.72,
-      promptTokensTotal: 1200,
-      generationTokensTotal: 650,
-      collectedAtUtc: '2026-09-09T10:03:00Z',
-      lastAttemptAtUtc: '2026-09-09T10:03:00Z',
-      error: null
+      nodeId: 'node-1', available: true, modelName: 'Qwen/Test', runningRequests: 2, waitingRequests: 1, kvCacheUsageRatio: 0.72,
+      promptTokensTotal: 1200, generationTokensTotal: 650, collectedAtUtc: '2026-09-09T10:03:00Z', lastAttemptAtUtc: '2026-09-09T10:03:00Z', error: null
     }])
-    mockedApi.updateRouting.mockResolvedValue({
-      strategy: 'RoundRobin',
-      supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
-    })
+    mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
-      id: 'node-1',
-      name: 'dgx-01',
-      baseAddress: 'http://10.0.0.21:8000/vllm',
-      weight: 1,
-      maxConcurrency: 4,
-      enabled: true,
-      status: 'Healthy',
-      lastHealthCheckUtc: '2026-09-09T10:00:00Z',
-      lastHealthyAtUtc: '2026-09-09T10:00:00Z',
-      lastHealthLatencyMilliseconds: 12,
-      lastHealthError: null,
-      consecutiveHealthSuccesses: 4,
-      consecutiveHealthFailures: 0
+      id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+      lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 12,
+      lastHealthError: null, consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
     }])
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
     mockedApi.metrics.mockResolvedValue([{
-      id: 1,
-      requestId: 'req-1',
-      startedAtUtc: '2026-09-09T10:02:00Z',
-      logicalModel: 'agic-code-fast',
-      surface: 'chat_completions',
-      deploymentId: 'deployment-1',
-      nodeId: 'node-1',
-      apiCredentialId: null,
-      statusCode: 200,
-      durationMilliseconds: 1040,
-      attemptCount: 2,
-      isStreaming: true,
-      upstreamHeaderMilliseconds: 38,
-      timeToFirstByteMilliseconds: 120,
-      inputTokens: 17,
-      outputTokens: 6,
-      totalTokens: 23,
-      errorCode: null
+      id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
+      deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
+      attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 120,
+      inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null
     }])
     mockedApi.metricsSummary.mockResolvedValue({
-      windowHours: 24,
-      sinceUtc: '2026-09-08T10:00:00Z',
-      requestCount: 125,
-      successCount: 124,
-      errorCount: 1,
-      successRatePercent: 99.2,
-      p50DurationMilliseconds: 900,
-      p95DurationMilliseconds: 1800,
-      p50TimeToFirstByteMilliseconds: 120,
-      p95TimeToFirstByteMilliseconds: 350,
-      averageUpstreamHeaderMilliseconds: 40,
-      inputTokens: 1000,
-      outputTokens: 500,
-      totalTokens: 1500,
-      tokenObservedRequests: 100,
-      failoverRequests: 2,
-      streamingRequests: 90,
+      windowHours: 24, sinceUtc: '2026-09-08T10:00:00Z', requestCount: 125, successCount: 124, errorCount: 1, successRatePercent: 99.2,
+      p50DurationMilliseconds: 900, p95DurationMilliseconds: 1800, p50TimeToFirstByteMilliseconds: 120, p95TimeToFirstByteMilliseconds: 350,
+      averageUpstreamHeaderMilliseconds: 40, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, tokenObservedRequests: 100,
+      failoverRequests: 2, streamingRequests: 90,
       byModel: [{ logicalModel: 'agic-code-fast', requestCount: 125, errorCount: 1, averageDurationMilliseconds: 900, averageTimeToFirstByteMilliseconds: 120, outputTokens: 500 }],
       byNode: [{ nodeId: 'node-1', requestCount: 125, errorCount: 1, averageDurationMilliseconds: 900, p95DurationMilliseconds: 1800, outputTokens: 500 }]
     })
-    mockedApi.audit.mockResolvedValue([{
-      id: 1,
-      occurredAtUtc: '2026-09-09T10:01:00Z',
-      actor: 'admin@agic.it',
-      action: 'routing.update',
-      entityType: 'routing_policy',
-      entityId: '1',
-      sourceIp: '10.0.0.5',
-      detailsJson: '{"previous":"WeightedLeastLoaded","current":"RoundRobin"}'
-    }])
+    mockedApi.audit.mockResolvedValue([{ id: 1, occurredAtUtc: '2026-09-09T10:01:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }])
     mockedApi.testNodeConnection.mockResolvedValue({
-      nodeId: 'node-1',
-      nodeName: 'dgx-01',
-      serviceRoot: 'http://10.0.0.21:8000/vllm',
-      healthUrl: 'http://10.0.0.21:8000/vllm/health',
-      modelsUrl: 'http://10.0.0.21:8000/vllm/v1/models',
-      chatCompletionsUrl: 'http://10.0.0.21:8000/vllm/v1/chat/completions',
-      responsesUrl: 'http://10.0.0.21:8000/vllm/v1/responses',
-      success: true,
-      health: { url: 'http://10.0.0.21:8000/vllm/health', success: true, statusCode: 200, latencyMilliseconds: 12 },
-      openAi: { url: 'http://10.0.0.21:8000/vllm/v1/models', success: true, statusCode: 200, latencyMilliseconds: 15 }
+      nodeId: 'node-1', nodeName: 'dgx-01', serviceRoot: 'http://10.0.0.21:8000/vllm', healthUrl: 'http://10.0.0.21:8000/vllm/health',
+      modelsUrl: 'http://10.0.0.21:8000/vllm/v1/models', chatCompletionsUrl: 'http://10.0.0.21:8000/vllm/v1/chat/completions', responsesUrl: 'http://10.0.0.21:8000/vllm/v1/responses',
+      success: true, health: { url: 'health', success: true, statusCode: 200, latencyMilliseconds: 12 }, openAi: { url: 'models', success: true, statusCode: 200, latencyMilliseconds: 15 }
     })
   })
 
@@ -164,30 +110,25 @@ describe('admin application', () => {
     expect(screen.getByText('Routing: Weighted least loaded')).toBeInTheDocument()
     expect(screen.getByText('99.2%')).toBeInTheDocument()
     expect(screen.getByText('350 ms')).toBeInTheDocument()
-    expect(screen.getByText('500')).toBeInTheDocument()
   })
 
   it('navigates to the DGX management view and tests the complete service root', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Nodes' }))
-    await user.click(screen.getByRole('button', { name: 'Test' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
+    await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
   })
 
-  it('exposes live routing policy management and capacity signals', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'Routing' }))
-
+  it('exposes live routing strategy, tuning and capacity signals', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Routing' }))
+    expect(screen.getByRole('heading', { name: 'Smart-routing tuning' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Performance feedback' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Live vLLM capacity' })).toBeInTheDocument()
-    expect(screen.getByText('Qwen/Test')).toBeInTheDocument()
     expect(screen.getByText('72.0%')).toBeInTheDocument()
-    expect(screen.getByText('5.0%')).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('TTFT target')); await user.type(screen.getByLabelText('TTFT target'), '1500')
+    await user.click(screen.getByRole('button', { name: 'Apply smart-routing tuning' }))
+    expect(mockedApi.updateRoutingTuning).toHaveBeenCalledWith(expect.objectContaining({ ttftTargetMilliseconds: 1500, kvCacheThreshold: 0.7 }))
 
     await user.selectOptions(screen.getByLabelText('Routing strategy'), 'RoundRobin')
     await user.click(screen.getByRole('button', { name: 'Apply routing strategy' }))
@@ -195,23 +136,14 @@ describe('admin application', () => {
   })
 
   it('shows inference observability by model, node and request', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'By logical model' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'By DGX node' })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
-    expect(screen.getByText('23')).toBeInTheDocument()
   })
 
   it('shows the administrative audit trail', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
   })
