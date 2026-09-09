@@ -19,6 +19,22 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+        modelBuilder.Entity("LlmProxy.Domain.Audit.AuditEvent", b =>
+        {
+            b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+            b.Property<string>("Action").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<string>("Actor").IsRequired().HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<string>("DetailsJson").HasMaxLength(4000).HasColumnType("character varying(4000)");
+            b.Property<string>("EntityId").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("EntityType").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<DateTimeOffset>("OccurredAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("SourceIp").HasMaxLength(64).HasColumnType("character varying(64)");
+            b.HasKey("Id");
+            b.HasIndex("OccurredAtUtc");
+            b.HasIndex("EntityType", "EntityId");
+            b.ToTable("audit_events");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
@@ -50,8 +66,13 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
             b.Property<string>("BaseAddress").IsRequired().HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<int>("ConsecutiveHealthFailures").HasColumnType("integer");
+            b.Property<int>("ConsecutiveHealthSuccesses").HasColumnType("integer");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<DateTimeOffset?>("LastHealthCheckUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("LastHealthError").HasMaxLength(1000).HasColumnType("character varying(1000)");
+            b.Property<long?>("LastHealthLatencyMilliseconds").HasColumnType("bigint");
+            b.Property<DateTimeOffset?>("LastHealthyAtUtc").HasColumnType("timestamp with time zone");
             b.Property<int>("MaxConcurrency").HasColumnType("integer");
             b.Property<string>("Name").IsRequired().HasMaxLength(120).HasColumnType("character varying(120)");
             b.Property<int>("Status").HasColumnType("integer");
