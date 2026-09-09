@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, MetricsSummary, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -26,6 +26,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
+  routingPerformance: () => request<DeploymentPerformanceSnapshot[]>('/api/admin/routing/performance'),
+  routingRuntime: () => request<NodeRuntimeMetricsSnapshot[]>('/api/admin/routing/runtime'),
   updateRouting: (strategy: RoutingSettings['strategy']) =>
     request<RoutingSettings>('/api/admin/routing', { method: 'PUT', body: JSON.stringify({ strategy }) }),
   nodes: () => request<Node[]>('/api/admin/nodes'),
