@@ -44,3 +44,37 @@ jobs:
 
       - name: Validate production image build
         run: docker build -f docker/Dockerfile -t llmproxy:ci .
+
+      - name: Start Docker smoke stack
+        run: docker compose -f docker/docker-compose.yml up -d --build
+
+      - name: Smoke test gateway and database
+        shell: bash
+        run: |
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ready" != "true" ]; then
+            echo "Gateway did not become ready." >&2
+            exit 1
+          fi
+
+          curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null
+          curl --fail --silent \
+            -H 'Authorization: Bearer dev-change-me' \
+            http://127.0.0.1:8080/v1/models \
+            | grep --quiet 'agic-code-fast'
+
+      - name: Print Docker logs on failure
+        if: failure()
+        run: docker compose -f docker/docker-compose.yml logs --no-color
+
+      - name: Stop Docker smoke stack
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v --remove-orphans
