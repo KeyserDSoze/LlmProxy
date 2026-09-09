@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
+using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
 
@@ -7,6 +9,8 @@ namespace LlmProxy.Api.OpenAi;
 
 public static class OpenAiEndpoints
 {
+    private const int MaxUpstreamAttempts = 3;
+
     public static IEndpointRouteBuilder MapOpenAiEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/v1/models", async (IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
@@ -33,76 +37,149 @@ public static class OpenAiEndpoints
         HttpContext context,
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
+        IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory)
     {
-        string rawBody;
-        using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
-        {
-            rawBody = await reader.ReadToEndAsync(context.RequestAborted);
-        }
+        var requestId = Guid.NewGuid();
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+        Guid? finalDeploymentId = null;
+        Guid? finalNodeId = null;
+        var finalStatusCode = StatusCodes.Status500InternalServerError;
+        string? finalErrorCode = null;
+        string? publicModelName = null;
 
-        JsonObject? requestObject;
         try
         {
-            requestObject = JsonNode.Parse(rawBody) as JsonObject;
-        }
-        catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
-        {
-            await WriteGatewayErrorAsync(context, StatusCodes.Status400BadRequest, "invalid_request_error", "invalid_json", "Request body is not valid JSON.");
-            return;
-        }
+            string rawBody;
+            using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
+            {
+                rawBody = await reader.ReadToEndAsync(context.RequestAborted);
+            }
 
-        if (requestObject is null || requestObject["model"] is not JsonValue modelValue || !modelValue.TryGetValue<string>(out var publicModelName) || string.IsNullOrWhiteSpace(publicModelName))
-        {
-            await WriteGatewayErrorAsync(context, StatusCodes.Status400BadRequest, "invalid_request_error", "model_required", "A logical model name is required.");
-            return;
-        }
+            JsonObject? requestObject;
+            try
+            {
+                requestObject = JsonNode.Parse(rawBody) as JsonObject;
+            }
+            catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
+            {
+                finalStatusCode = StatusCodes.Status400BadRequest;
+                finalErrorCode = "invalid_json";
+                await WriteGatewayErrorAsync(context, finalStatusCode, "invalid_request_error", finalErrorCode, "Request body is not valid JSON.");
+                return;
+            }
 
-        var route = await routingService.SelectAsync(publicModelName, context.RequestAborted);
-        if (route is null)
-        {
+            if (requestObject is null || requestObject["model"] is not JsonValue modelValue || !modelValue.TryGetValue<string>(out publicModelName) || string.IsNullOrWhiteSpace(publicModelName))
+            {
+                finalStatusCode = StatusCodes.Status400BadRequest;
+                finalErrorCode = "model_required";
+                await WriteGatewayErrorAsync(context, finalStatusCode, "invalid_request_error", finalErrorCode, "A logical model name is required.");
+                return;
+            }
+
+            var excluded = new HashSet<Guid>();
+            var client = httpClientFactory.CreateClient("vllm");
+
+            for (var attempt = 1; attempt <= MaxUpstreamAttempts; attempt++)
+            {
+                var route = await routingService.SelectAsync(publicModelName, excluded, context.RequestAborted);
+                if (route is null)
+                {
+                    break;
+                }
+
+                finalDeploymentId = route.DeploymentId;
+                finalNodeId = route.NodeId;
+                requestObject["model"] = route.ProviderModelName;
+
+                using var lease = loadTracker.Enter(route.DeploymentId);
+                using var outbound = CreateOutboundRequest(context.Request, requestObject, route);
+
+                try
+                {
+                    using var upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                    finalStatusCode = (int)upstream.StatusCode;
+
+                    if ((int)upstream.StatusCode >= 500 && attempt < MaxUpstreamAttempts)
+                    {
+                        excluded.Add(route.DeploymentId);
+                        finalErrorCode = "upstream_server_error";
+                        continue;
+                    }
+
+                    context.Response.StatusCode = finalStatusCode;
+                    CopyResponseHeaders(upstream, context.Response);
+                    await upstream.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+                    finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
+                    return;
+                }
+                catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                {
+                    finalStatusCode = 499;
+                    finalErrorCode = "client_cancelled";
+                    return;
+                }
+                catch (HttpRequestException) when (attempt < MaxUpstreamAttempts)
+                {
+                    excluded.Add(route.DeploymentId);
+                    finalStatusCode = StatusCodes.Status502BadGateway;
+                    finalErrorCode = "upstream_unreachable";
+                }
+                catch (HttpRequestException exception)
+                {
+                    finalStatusCode = StatusCodes.Status502BadGateway;
+                    finalErrorCode = "upstream_unreachable";
+                    if (!context.Response.HasStarted)
+                    {
+                        await WriteGatewayErrorAsync(context, finalStatusCode, "gateway_error", finalErrorCode, $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                    }
+                    return;
+                }
+            }
+
+            finalStatusCode = StatusCodes.Status503ServiceUnavailable;
+            finalErrorCode = "no_healthy_deployment";
             await WriteGatewayErrorAsync(
                 context,
-                StatusCodes.Status503ServiceUnavailable,
+                finalStatusCode,
                 "gateway_unavailable",
-                "no_healthy_deployment",
+                finalErrorCode,
                 $"No healthy deployment is available for model '{publicModelName}'.");
-            return;
         }
-
-        requestObject["model"] = route.ProviderModelName;
-        using var lease = loadTracker.Enter(route.DeploymentId);
-        using var outbound = new HttpRequestMessage(
-            HttpMethod.Post,
-            new Uri($"{route.BaseAddress.TrimEnd('/')}/v1/chat/completions"));
-
-        outbound.Content = new StringContent(requestObject.ToJsonString(), Encoding.UTF8, "application/json");
-        CopyRequestHeaders(context.Request, outbound);
-
-        var client = httpClientFactory.CreateClient("vllm");
-
-        try
+        finally
         {
-            using var upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
-            context.Response.StatusCode = (int)upstream.StatusCode;
-            CopyResponseHeaders(upstream, context.Response);
-            await upstream.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-        }
-        catch (HttpRequestException exception)
-        {
-            if (!context.Response.HasStarted)
+            if (!string.IsNullOrWhiteSpace(publicModelName))
             {
-                await WriteGatewayErrorAsync(
-                    context,
-                    StatusCodes.Status502BadGateway,
-                    "gateway_error",
-                    "upstream_unreachable",
-                    $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                var apiCredentialId = context.Items.TryGetValue(InferenceApiKeyMiddleware.ApiCredentialIdItem, out var value) && value is Guid id
+                    ? id
+                    : (Guid?)null;
+
+                metricsSink.Write(new GatewayRequestMetric(
+                    requestId,
+                    startedAtUtc,
+                    publicModelName,
+                    finalDeploymentId,
+                    finalNodeId,
+                    apiCredentialId,
+                    finalStatusCode,
+                    stopwatch.ElapsedMilliseconds,
+                    finalErrorCode));
             }
         }
+    }
+
+    private static HttpRequestMessage CreateOutboundRequest(HttpRequest source, JsonObject requestObject, RouteSelection route)
+    {
+        var destination = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri($"{route.BaseAddress.TrimEnd('/')}/v1/chat/completions"))
+        {
+            Content = new StringContent(requestObject.ToJsonString(), Encoding.UTF8, "application/json")
+        };
+
+        CopyRequestHeaders(source, destination);
+        return destination;
     }
 
     private static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)

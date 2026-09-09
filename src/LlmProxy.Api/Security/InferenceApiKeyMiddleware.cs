@@ -1,31 +1,18 @@
-using System.Security.Cryptography;
-using System.Text;
+using LlmProxy.Infrastructure.Persistence;
+using LlmProxy.Infrastructure.Security;
+using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.Security;
 
-public sealed class InferenceApiKeyMiddleware(
-    RequestDelegate next,
-    IConfiguration configuration,
-    IHostEnvironment environment)
+public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
 {
-    public async Task InvokeAsync(HttpContext context)
+    public const string ApiCredentialIdItem = "LlmProxy.ApiCredentialId";
+
+    public async Task InvokeAsync(HttpContext context, GatewayDbContext dbContext, ApiKeyHasher apiKeyHasher)
     {
         if (!context.Request.Path.StartsWithSegments("/v1"))
         {
             await next(context);
-            return;
-        }
-
-        var expected = configuration["Authentication:ApiKey"];
-        if (string.IsNullOrWhiteSpace(expected))
-        {
-            if (environment.IsDevelopment())
-            {
-                await next(context);
-                return;
-            }
-
-            await WriteErrorAsync(context, StatusCodes.Status503ServiceUnavailable, "gateway_not_configured", "Inference authentication is not configured.");
             return;
         }
 
@@ -37,20 +24,31 @@ public sealed class InferenceApiKeyMiddleware(
         }
 
         var supplied = authorization.ToString()["Bearer ".Length..].Trim();
-        if (!FixedTimeEquals(supplied, expected))
+        if (string.IsNullOrWhiteSpace(supplied))
         {
             await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid.");
             return;
         }
 
-        await next(context);
-    }
+        var hash = apiKeyHasher.Hash(supplied);
+        var credential = await dbContext.ApiCredentials.SingleOrDefaultAsync(item => item.KeyHash == hash, context.RequestAborted);
+        var now = DateTimeOffset.UtcNow;
 
-    private static bool FixedTimeEquals(string supplied, string expected)
-    {
-        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
-        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
-        return CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash);
+        if (credential is null || !credential.IsUsable(now))
+        {
+            await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid, revoked or expired.");
+            return;
+        }
+
+        context.Items[ApiCredentialIdItem] = credential.Id;
+        var previousLastUsed = credential.LastUsedAtUtc;
+        credential.Touch(now);
+        if (credential.LastUsedAtUtc != previousLastUsed)
+        {
+            await dbContext.SaveChangesAsync(context.RequestAborted);
+        }
+
+        await next(context);
     }
 
     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code, string message)

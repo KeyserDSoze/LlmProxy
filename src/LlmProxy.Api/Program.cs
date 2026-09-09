@@ -7,6 +7,8 @@ using LlmProxy.Application.Routing;
 using LlmProxy.Infrastructure.Health;
 using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Routing;
+using LlmProxy.Infrastructure.Security;
+using LlmProxy.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -22,11 +24,16 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddDbContext<GatewayDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
+builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IRouteSelector, WeightedLeastLoadedRouteSelector>();
 builder.Services.AddScoped<RoutingService>();
+
+builder.Services.AddSingleton<BufferedRequestMetricsSink>();
+builder.Services.AddSingleton<IRequestMetricsSink>(services => services.GetRequiredService<BufferedRequestMetricsSink>());
+builder.Services.AddHostedService(services => services.GetRequiredService<BufferedRequestMetricsSink>());
 
 builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
