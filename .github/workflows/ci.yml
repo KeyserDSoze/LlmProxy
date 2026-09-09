@@ -92,3 +92,6 @@ jobs:
 
       - name: Backend integration smoke suite
         run: tests/backend/integration/smoke.sh
+
+      - name: DGX hardware telemetry smoke suite
+        run: tests/backend/integration/hardware_smoke.sh
