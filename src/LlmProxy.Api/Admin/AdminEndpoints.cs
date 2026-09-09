@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Security.Claims;
+using System.Text.Json;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
@@ -36,6 +39,7 @@ public static class AdminEndpoints
                 {
                     total = nodes.Count,
                     healthy = nodes.Count(node => node.Status == NodeStatus.Healthy),
+                    degraded = nodes.Count(node => node.Status == NodeStatus.Degraded),
                     unhealthy = nodes.Count(node => node.Status == NodeStatus.Unhealthy),
                     draining = nodes.Count(node => node.Status == NodeStatus.Draining)
                 },
@@ -56,12 +60,19 @@ public static class AdminEndpoints
             UpdateRoutingRequest request,
             GatewayDbContext dbContext,
             RoutingStrategyState strategyState,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var policy = await dbContext.RoutingPolicies.SingleAsync(
                 item => item.Id == RoutingPolicy.SingletonId,
                 cancellationToken);
+            var previous = policy.Strategy;
             policy.SetStrategy(request.Strategy);
+            AddAudit(dbContext, httpContext, "routing.update", "routing_policy", policy.Id.ToString(), new
+            {
+                previous,
+                current = policy.Strategy
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             strategyState.Set(policy.Strategy);
 
@@ -76,19 +87,41 @@ public static class AdminEndpoints
         group.MapGet("/nodes", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken)));
 
-        var createNode = group.MapPost("/nodes", async (CreateNodeRequest request, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var createNode = group.MapPost("/nodes", async (
+            CreateNodeRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var node = new InferenceNode(request.Name, request.BaseAddress, request.Weight, request.MaxConcurrency);
             dbContext.Nodes.Add(node);
+            AddAudit(dbContext, httpContext, "node.create", "node", node.Id.ToString(), new
+            {
+                node.Name,
+                node.BaseAddress,
+                node.Weight,
+                node.MaxConcurrency
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Created($"/api/admin/nodes/{node.Id}", node);
         });
 
-        var updateNode = group.MapPut("/nodes/{id:guid}", async (Guid id, UpdateNodeRequest request, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var updateNode = group.MapPut("/nodes/{id:guid}", async (
+            Guid id,
+            UpdateNodeRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
             if (node is null) return Results.NotFound();
+            var before = new { node.Name, node.BaseAddress, node.Weight, node.MaxConcurrency };
             node.Update(request.Name, request.BaseAddress, request.Weight, request.MaxConcurrency);
+            AddAudit(dbContext, httpContext, "node.update", "node", node.Id.ToString(), new
+            {
+                before,
+                after = new { node.Name, node.BaseAddress, node.Weight, node.MaxConcurrency }
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(node);
         });
@@ -97,6 +130,7 @@ public static class AdminEndpoints
             Guid id,
             GatewayDbContext dbContext,
             IHttpClientFactory httpClientFactory,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -111,6 +145,17 @@ public static class AdminEndpoints
 
             var health = await ProbeAsync(client, healthUrl, cancellationToken);
             var openAi = await ProbeAsync(client, modelsUrl, cancellationToken);
+            var success = health.Success && openAi.Success;
+
+            AddAudit(dbContext, httpContext, "node.test_connection", "node", node.Id.ToString(), new
+            {
+                node.Name,
+                serviceRoot,
+                success,
+                health = new { health.Success, health.StatusCode, health.LatencyMilliseconds, health.Error },
+                openAi = new { openAi.Success, openAi.StatusCode, openAi.LatencyMilliseconds, openAi.Error }
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
 
             return Results.Ok(new
             {
@@ -121,35 +166,50 @@ public static class AdminEndpoints
                 modelsUrl = modelsUrl.ToString(),
                 chatCompletionsUrl = chatUrl.ToString(),
                 responsesUrl = responsesUrl.ToString(),
-                success = health.Success && openAi.Success,
+                success,
                 health,
                 openAi
             });
         });
 
-        var drainNode = group.MapPost("/nodes/{id:guid}/drain", async (Guid id, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var drainNode = group.MapPost("/nodes/{id:guid}/drain", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
             if (node is null) return Results.NotFound();
             node.StartDrain();
+            AddAudit(dbContext, httpContext, "node.drain", "node", node.Id.ToString(), new { node.Name });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
         });
 
-        var enableNode = group.MapPost("/nodes/{id:guid}/enable", async (Guid id, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var enableNode = group.MapPost("/nodes/{id:guid}/enable", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
             if (node is null) return Results.NotFound();
             node.Enable();
+            AddAudit(dbContext, httpContext, "node.enable", "node", node.Id.ToString(), new { node.Name });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
         });
 
-        var disableNode = group.MapPost("/nodes/{id:guid}/disable", async (Guid id, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var disableNode = group.MapPost("/nodes/{id:guid}/disable", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
             if (node is null) return Results.NotFound();
             node.Disable();
+            AddAudit(dbContext, httpContext, "node.disable", "node", node.Id.ToString(), new { node.Name });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
         });
@@ -157,10 +217,21 @@ public static class AdminEndpoints
         group.MapGet("/models", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Models.AsNoTracking().OrderBy(model => model.PublicName).ToListAsync(cancellationToken)));
 
-        var createModel = group.MapPost("/models", async (CreateModelRequest request, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var createModel = group.MapPost("/models", async (
+            CreateModelRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var model = new ModelDefinition(request.PublicName, request.ProviderModelName, request.SupportsStreaming, request.SupportsTools);
             dbContext.Models.Add(model);
+            AddAudit(dbContext, httpContext, "model.create", "model", model.Id.ToString(), new
+            {
+                model.PublicName,
+                model.ProviderModelName,
+                model.SupportsStreaming,
+                model.SupportsTools
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Created($"/api/admin/models/{model.Id}", model);
         });
@@ -168,7 +239,11 @@ public static class AdminEndpoints
         group.MapGet("/deployments", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken)));
 
-        var createDeployment = group.MapPost("/deployments", async (CreateDeploymentRequest request, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var createDeployment = group.MapPost("/deployments", async (
+            CreateDeploymentRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var nodeExists = await dbContext.Nodes.AnyAsync(node => node.Id == request.NodeId, cancellationToken);
             var modelExists = await dbContext.Models.AnyAsync(model => model.Id == request.ModelId, cancellationToken);
@@ -179,16 +254,34 @@ public static class AdminEndpoints
 
             var deployment = new ModelDeployment(request.NodeId, request.ModelId, request.Weight, request.MaxConcurrency);
             dbContext.Deployments.Add(deployment);
+            AddAudit(dbContext, httpContext, "deployment.create", "deployment", deployment.Id.ToString(), new
+            {
+                deployment.NodeId,
+                deployment.ModelId,
+                deployment.Weight,
+                deployment.MaxConcurrency
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Created($"/api/admin/deployments/{deployment.Id}", deployment);
         });
 
-        var updateDeployment = group.MapPut("/deployments/{id:guid}", async (Guid id, UpdateDeploymentRequest request, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var updateDeployment = group.MapPut("/deployments/{id:guid}", async (
+            Guid id,
+            UpdateDeploymentRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
             if (deployment is null) return Results.NotFound();
+            var before = new { deployment.Weight, deployment.MaxConcurrency, deployment.Enabled };
             deployment.SetCapacity(request.Weight, request.MaxConcurrency);
             if (request.Enabled) deployment.Enable(); else deployment.Disable();
+            AddAudit(dbContext, httpContext, "deployment.update", "deployment", deployment.Id.ToString(), new
+            {
+                before,
+                after = new { deployment.Weight, deployment.MaxConcurrency, deployment.Enabled }
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(deployment);
         });
@@ -205,11 +298,22 @@ public static class AdminEndpoints
                 item.LastUsedAtUtc
             }).ToListAsync(cancellationToken)));
 
-        var createCredential = group.MapPost("/api-credentials", async (CreateApiCredentialRequest request, GatewayDbContext dbContext, ApiKeyHasher hasher, CancellationToken cancellationToken) =>
+        var createCredential = group.MapPost("/api-credentials", async (
+            CreateApiCredentialRequest request,
+            GatewayDbContext dbContext,
+            ApiKeyHasher hasher,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var secret = ApiKeyHasher.GenerateSecret();
             var credential = new ApiCredential(request.Name, ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret), request.ExpiresAtUtc);
             dbContext.ApiCredentials.Add(credential);
+            AddAudit(dbContext, httpContext, "credential.create", "api_credential", credential.Id.ToString(), new
+            {
+                credential.Name,
+                credential.KeyPrefix,
+                credential.ExpiresAtUtc
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(new
             {
@@ -222,11 +326,20 @@ public static class AdminEndpoints
             });
         });
 
-        var revokeCredential = group.MapPost("/api-credentials/{id:guid}/revoke", async (Guid id, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        var revokeCredential = group.MapPost("/api-credentials/{id:guid}/revoke", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             var credential = await dbContext.ApiCredentials.FindAsync([id], cancellationToken);
             if (credential is null) return Results.NotFound();
             credential.Revoke();
+            AddAudit(dbContext, httpContext, "credential.revoke", "api_credential", credential.Id.ToString(), new
+            {
+                credential.Name,
+                credential.KeyPrefix
+            });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
         });
@@ -236,6 +349,16 @@ public static class AdminEndpoints
             var size = Math.Clamp(take ?? 100, 1, 500);
             var rows = await dbContext.RequestMetrics.AsNoTracking()
                 .OrderByDescending(metric => metric.StartedAtUtc)
+                .Take(size)
+                .ToListAsync(cancellationToken);
+            return Results.Ok(rows);
+        });
+
+        group.MapGet("/audit", async (int? take, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
+        {
+            var size = Math.Clamp(take ?? 100, 1, 500);
+            var rows = await dbContext.AuditEvents.AsNoTracking()
+                .OrderByDescending(item => item.OccurredAtUtc)
                 .Take(size)
                 .ToListAsync(cancellationToken);
             return Results.Ok(rows);
@@ -264,6 +387,34 @@ public static class AdminEndpoints
         }
 
         return endpoints;
+    }
+
+    private static void AddAudit(
+        GatewayDbContext dbContext,
+        HttpContext httpContext,
+        string action,
+        string entityType,
+        string entityId,
+        object? details = null)
+    {
+        var actor = ResolveActor(httpContext);
+        var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
+        var detailsJson = details is null ? null : JsonSerializer.Serialize(details);
+        dbContext.AuditEvents.Add(new AuditEvent(actor, action, entityType, entityId, sourceIp, detailsJson));
+    }
+
+    private static string ResolveActor(HttpContext httpContext)
+    {
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            return "local-admin";
+        }
+
+        return httpContext.User.FindFirst("preferred_username")?.Value
+            ?? httpContext.User.FindFirst(ClaimTypes.Email)?.Value
+            ?? httpContext.User.Identity?.Name
+            ?? httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? "authenticated-admin";
     }
 
     private static async Task<EndpointProbe> ProbeAsync(HttpClient client, Uri url, CancellationToken cancellationToken)
