@@ -41,4 +41,19 @@ public sealed class NodeHardwareMetricsTrackerTests
         Assert.Equal(failed, snapshot.LastAttemptAtUtc);
         Assert.Equal("HTTP 503", snapshot.Error);
     }
+
+    [Fact]
+    public void Remove_discards_snapshot_after_explicit_hardware_telemetry_disable()
+    {
+        var tracker = new NodeHardwareMetricsTracker();
+        var nodeId = Guid.NewGuid();
+        tracker.RecordSuccess(nodeId, 1, 50, 50, 1000, 3000, 0.25, 60, 100, DateTimeOffset.UtcNow);
+
+        tracker.Remove(nodeId);
+
+        Assert.Empty(tracker.GetSnapshots());
+        var snapshot = tracker.GetSnapshot(nodeId);
+        Assert.False(snapshot.Available);
+        Assert.Null(snapshot.CollectedAtUtc);
+    }
 }
