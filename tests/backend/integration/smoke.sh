@@ -5,10 +5,24 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE=(docker compose -f docker/docker-compose.yml)
+FAILED=0
 
 cleanup() {
+  if [[ "$FAILED" == "1" ]]; then
+    echo "--- Docker compose state ---" >&2
+    "${COMPOSE[@]}" ps -a >&2 || true
+    echo "--- Docker compose logs ---" >&2
+    "${COMPOSE[@]}" logs --no-color >&2 || true
+  fi
+
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 }
+
+on_error() {
+  FAILED=1
+}
+
+trap on_error ERR
 trap cleanup EXIT
 
 export LLM_PROXY_API_KEY="dev-change-me"
@@ -29,7 +43,6 @@ done
 
 if [[ "$ready" != "true" ]]; then
   echo "Gateway did not become ready." >&2
-  "${COMPOSE[@]}" logs --no-color >&2
   exit 1
 fi
 
