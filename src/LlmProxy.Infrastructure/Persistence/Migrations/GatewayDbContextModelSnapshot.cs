@@ -91,6 +91,24 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("routing_policy");
         });
 
+        modelBuilder.Entity("LlmProxy.Domain.Routing.RoutingTuningPolicy", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<double>("DegradedNodePenalty").HasColumnType("double precision");
+            b.Property<double>("ExternalLoadPenaltyWeight").HasColumnType("double precision");
+            b.Property<double>("FailurePenaltyWeight").HasColumnType("double precision");
+            b.Property<double>("KvCachePenaltyWeight").HasColumnType("double precision");
+            b.Property<double>("KvCacheThreshold").HasColumnType("double precision");
+            b.Property<double>("QueuePenaltyWeight").HasColumnType("double precision");
+            b.Property<double>("TtftPenaltyWeight").HasColumnType("double precision");
+            b.Property<double>("TtftTargetMilliseconds").HasColumnType("double precision");
+            b.Property<double>("UnknownNodePenalty").HasColumnType("double precision");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<int>("WarmupSamples").HasColumnType("integer");
+            b.HasKey("Id");
+            b.ToTable("routing_tuning_policy");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Security.ApiCredential", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
