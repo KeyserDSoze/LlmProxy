@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockedApi = vi.hoisted(() => ({
   overview: vi.fn(),
   routing: vi.fn(),
+  routingPerformance: vi.fn(),
+  routingRuntime: vi.fn(),
   updateRouting: vi.fn(),
   nodes: vi.fn(),
   models: vi.fn(),
@@ -44,6 +46,27 @@ describe('admin application', () => {
       strategy: 'WeightedLeastLoaded',
       supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
     })
+    mockedApi.routingPerformance.mockResolvedValue([{
+      deploymentId: 'deployment-1',
+      sampleCount: 14,
+      ewmaTimeToFirstByteMilliseconds: 145,
+      ewmaDurationMilliseconds: 980,
+      infrastructureFailureScore: 0.05,
+      lastObservedAtUtc: '2026-09-09T10:03:00Z'
+    }])
+    mockedApi.routingRuntime.mockResolvedValue([{
+      nodeId: 'node-1',
+      available: true,
+      modelName: 'Qwen/Test',
+      runningRequests: 2,
+      waitingRequests: 1,
+      kvCacheUsageRatio: 0.72,
+      promptTokensTotal: 1200,
+      generationTokensTotal: 650,
+      collectedAtUtc: '2026-09-09T10:03:00Z',
+      lastAttemptAtUtc: '2026-09-09T10:03:00Z',
+      error: null
+    }])
     mockedApi.updateRouting.mockResolvedValue({
       strategy: 'RoundRobin',
       supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
@@ -63,8 +86,8 @@ describe('admin application', () => {
       consecutiveHealthSuccesses: 4,
       consecutiveHealthFailures: 0
     }])
-    mockedApi.models.mockResolvedValue([])
-    mockedApi.deployments.mockResolvedValue([])
+    mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
+    mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
     mockedApi.metrics.mockResolvedValue([{
       id: 1,
@@ -104,22 +127,8 @@ describe('admin application', () => {
       tokenObservedRequests: 100,
       failoverRequests: 2,
       streamingRequests: 90,
-      byModel: [{
-        logicalModel: 'agic-code-fast',
-        requestCount: 125,
-        errorCount: 1,
-        averageDurationMilliseconds: 900,
-        averageTimeToFirstByteMilliseconds: 120,
-        outputTokens: 500
-      }],
-      byNode: [{
-        nodeId: 'node-1',
-        requestCount: 125,
-        errorCount: 1,
-        averageDurationMilliseconds: 900,
-        p95DurationMilliseconds: 1800,
-        outputTokens: 500
-      }]
+      byModel: [{ logicalModel: 'agic-code-fast', requestCount: 125, errorCount: 1, averageDurationMilliseconds: 900, averageTimeToFirstByteMilliseconds: 120, outputTokens: 500 }],
+      byNode: [{ nodeId: 'node-1', requestCount: 125, errorCount: 1, averageDurationMilliseconds: 900, p95DurationMilliseconds: 1800, outputTokens: 500 }]
     })
     mockedApi.audit.mockResolvedValue([{
       id: 1,
@@ -147,7 +156,6 @@ describe('admin application', () => {
 
   it('renders fleet and inference observability on the dashboard', async () => {
     render(<App />)
-
     expect(await screen.findByText('dgx-01')).toBeInTheDocument()
     expect(screen.getByText('1 H / 0 D')).toBeInTheDocument()
     expect(screen.getByText('12 ms')).toBeInTheDocument()
@@ -162,34 +170,35 @@ describe('admin application', () => {
   it('navigates to the DGX management view and tests the complete service root', async () => {
     const user = userEvent.setup()
     render(<App />)
-
     await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'DGX Nodes' }))
     await user.click(screen.getByRole('button', { name: 'Test' }))
-
     expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
   })
 
-  it('exposes live routing policy management', async () => {
+  it('exposes live routing policy management and capacity signals', async () => {
     const user = userEvent.setup()
     render(<App />)
-
     await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'Routing' }))
+
+    expect(screen.getByRole('heading', { name: 'Performance feedback' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Live vLLM capacity' })).toBeInTheDocument()
+    expect(screen.getByText('Qwen/Test')).toBeInTheDocument()
+    expect(screen.getByText('72.0%')).toBeInTheDocument()
+    expect(screen.getByText('5.0%')).toBeInTheDocument()
+
     await user.selectOptions(screen.getByLabelText('Routing strategy'), 'RoundRobin')
     await user.click(screen.getByRole('button', { name: 'Apply routing strategy' }))
-
     expect(mockedApi.updateRouting).toHaveBeenCalledWith('RoundRobin')
   })
 
   it('shows inference observability by model, node and request', async () => {
     const user = userEvent.setup()
     render(<App />)
-
     await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
-
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'By logical model' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'By DGX node' })).toBeInTheDocument()
@@ -201,10 +210,8 @@ describe('admin application', () => {
   it('shows the administrative audit trail', async () => {
     const user = userEvent.setup()
     render(<App />)
-
     await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
-
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
   })
