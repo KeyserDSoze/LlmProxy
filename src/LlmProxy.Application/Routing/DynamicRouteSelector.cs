@@ -6,9 +6,10 @@ namespace LlmProxy.Application.Routing;
 public sealed class DynamicRouteSelector(
     RoutingStrategyState strategyState,
     IDeploymentPerformanceTracker? performanceTracker = null,
-    INodeRuntimeMetricsTracker? runtimeMetricsTracker = null) : IRouteSelector
+    INodeRuntimeMetricsTracker? runtimeMetricsTracker = null,
+    RoutingTuningState? tuningState = null) : IRouteSelector
 {
-    private readonly WeightedLeastLoadedRouteSelector _weightedLeastLoaded = new(performanceTracker, runtimeMetricsTracker);
+    private readonly WeightedLeastLoadedRouteSelector _weightedLeastLoaded = new(performanceTracker, runtimeMetricsTracker, tuningState);
     private readonly RoundRobinRouteSelector _roundRobin = new();
     private readonly WeightedRoundRobinRouteSelector _weightedRoundRobin = new();
 
