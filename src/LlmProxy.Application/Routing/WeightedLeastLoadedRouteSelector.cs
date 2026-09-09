@@ -4,10 +4,13 @@ using LlmProxy.Domain.Nodes;
 namespace LlmProxy.Application.Routing;
 
 public sealed class WeightedLeastLoadedRouteSelector(
-    IDeploymentPerformanceTracker? performanceTracker = null) : IRouteSelector
+    IDeploymentPerformanceTracker? performanceTracker = null,
+    INodeRuntimeMetricsTracker? runtimeMetricsTracker = null) : IRouteSelector
 {
     private readonly IDeploymentPerformanceTracker _performanceTracker =
         performanceTracker ?? NullDeploymentPerformanceTracker.Instance;
+    private readonly INodeRuntimeMetricsTracker _runtimeMetricsTracker =
+        runtimeMetricsTracker ?? NullNodeRuntimeMetricsTracker.Instance;
 
     public RouteSelection? Select(IReadOnlyList<DeploymentCandidate> candidates, IRequestLoadTracker loadTracker)
     {
@@ -16,9 +19,10 @@ public sealed class WeightedLeastLoadedRouteSelector(
             {
                 Candidate = candidate,
                 Active = loadTracker.GetActive(candidate.DeploymentId),
-                Performance = _performanceTracker.GetSnapshot(candidate.DeploymentId)
+                Performance = _performanceTracker.GetSnapshot(candidate.DeploymentId),
+                Runtime = _runtimeMetricsTracker.GetSnapshot(candidate.NodeId)
             })
-            .OrderBy(item => Score(item.Candidate, item.Active, item.Performance))
+            .OrderBy(item => Score(item.Candidate, item.Active, item.Performance, item.Runtime))
             .ThenBy(item => item.Active)
             .ThenBy(item => item.Candidate.NodeName, StringComparer.OrdinalIgnoreCase)
             .Select(item => item.Candidate)
@@ -30,7 +34,8 @@ public sealed class WeightedLeastLoadedRouteSelector(
     internal static double Score(
         DeploymentCandidate candidate,
         int active,
-        DeploymentPerformanceSnapshot performance)
+        DeploymentPerformanceSnapshot performance,
+        NodeRuntimeMetricsSnapshot? runtime = null)
     {
         var loadScore = (active + 1d) / (candidate.MaxConcurrency * candidate.Weight);
         var healthPenalty = candidate.NodeStatus switch
@@ -40,17 +45,30 @@ public sealed class WeightedLeastLoadedRouteSelector(
             _ => 0d
         };
 
-        // Ignore very small samples so a single slow warm-up request cannot permanently bias routing.
-        if (performance.SampleCount < 3)
+        var performancePenalty = 0d;
+        if (performance.SampleCount >= 3)
         {
-            return loadScore + healthPenalty;
+            var latencyPenalty = performance.EwmaTimeToFirstByteMilliseconds is double timeToFirstByte
+                ? Math.Min(timeToFirstByte / 2_000d, 1d) * 0.25d
+                : 0d;
+            var failurePenalty = Math.Clamp(performance.InfrastructureFailureScore, 0d, 1d) * 1.50d;
+            performancePenalty = latencyPenalty + failurePenalty;
         }
 
-        var latencyPenalty = performance.EwmaTimeToFirstByteMilliseconds is double timeToFirstByte
-            ? Math.Min(timeToFirstByte / 2_000d, 1d) * 0.25d
-            : 0d;
-        var failurePenalty = Math.Clamp(performance.InfrastructureFailureScore, 0d, 1d) * 1.50d;
+        var runtimePenalty = 0d;
+        if (runtime?.Available == true)
+        {
+            // Gateway active-request accounting is authoritative for traffic flowing through us.
+            // vLLM running requests beyond that number reveal work coming from other clients.
+            var externalRunning = Math.Max(0d, runtime.RunningRequests - active);
+            var externalLoadPenalty = Math.Min(externalRunning / candidate.MaxConcurrency, 1d) * 0.40d;
+            var queuePenalty = Math.Min(runtime.WaitingRequests / candidate.MaxConcurrency, 2d) * 0.75d;
+            var kvPenalty = runtime.KvCacheUsageRatio is double kv && kv > 0.70d
+                ? Math.Min((kv - 0.70d) / 0.30d, 1d) * 0.60d
+                : 0d;
+            runtimePenalty = externalLoadPenalty + queuePenalty + kvPenalty;
+        }
 
-        return loadScore + healthPenalty + latencyPenalty + failurePenalty;
+        return loadScore + healthPenalty + performancePenalty + runtimePenalty;
     }
 }
