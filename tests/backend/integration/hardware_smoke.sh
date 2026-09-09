@@ -123,13 +123,13 @@ done
 node_after_dcgm_failure="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node_id" '.[] | select(.id == $id)')"
 echo "$node_after_dcgm_failure" | jq -e '.status == "Healthy"' >/dev/null || fail_with_diagnostics "DCGM failure incorrectly changed inference node health."
 
-# Last successful hardware values are intentionally retained for diagnostics.
+# Last successful hardware values are intentionally retained for diagnostics during a temporary exporter failure.
 echo "$hardware_json" | jq -e --arg id "$node_id" 'map(select(.nodeId == $id and .averageGpuUtilizationPercent == 60 and .maxTemperatureCelsius == 67)) | length == 1' >/dev/null
 
 audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=100')"
 echo "$audit_json" | jq -e 'map(.action) | index("node.hardware_metrics.update") != null' >/dev/null
 
-# Clear the optional endpoint and verify persistence in the node record.
+# Explicitly clearing the endpoint removes the stale runtime snapshot as well as the persisted configuration.
 curl --fail --silent \
   -X PUT \
   -H 'Content-Type: application/json' \
@@ -139,5 +139,6 @@ curl --fail --silent \
 
 node_cleared="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node_id" '.[] | select(.id == $id)')"
 echo "$node_cleared" | jq -e '.hardwareMetricsBaseAddress == null' >/dev/null
+curl --fail --silent http://127.0.0.1:8080/api/admin/hardware | jq -e --arg id "$node_id" 'map(select(.nodeId == $id)) | length == 0' >/dev/null
 
-echo "DGX hardware telemetry smoke suite passed: path-prefixed DCGM metrics, aggregation, audit and health isolation verified."
+echo "DGX hardware telemetry smoke suite passed: path-prefixed DCGM metrics, aggregation, audit, health isolation and explicit disable verified."
