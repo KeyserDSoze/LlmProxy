@@ -12,6 +12,29 @@ export type RoutingSettings = {
   updatedAtUtc?: string
 }
 
+export type DeploymentPerformanceSnapshot = {
+  deploymentId: string
+  sampleCount: number
+  ewmaTimeToFirstByteMilliseconds?: number | null
+  ewmaDurationMilliseconds?: number | null
+  infrastructureFailureScore: number
+  lastObservedAtUtc?: string | null
+}
+
+export type NodeRuntimeMetricsSnapshot = {
+  nodeId: string
+  available: boolean
+  modelName?: string | null
+  runningRequests: number
+  waitingRequests: number
+  kvCacheUsageRatio?: number | null
+  promptTokensTotal?: number | null
+  generationTokensTotal?: number | null
+  collectedAtUtc?: string | null
+  lastAttemptAtUtc?: string | null
+  error?: string | null
+}
+
 export type EndpointProbe = {
   url: string
   success: boolean
