@@ -19,6 +19,19 @@ describe('admin api client', () => {
     }))
   })
 
+  it('requests the inference summary for the requested time window', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+
+    await api.metricsSummary(12)
+
+    expect(fetch).toHaveBeenCalledWith('/api/admin/metrics/summary?hours=12', expect.objectContaining({
+      credentials: 'same-origin'
+    }))
+  })
+
   it('serializes JSON commands with the correct content type', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 'node-1' }), {
       status: 200,

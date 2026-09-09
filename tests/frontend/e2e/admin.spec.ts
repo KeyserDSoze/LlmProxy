@@ -47,6 +47,61 @@ async function installAdminApi(page: Page) {
     sourceIp: '10.0.0.5',
     detailsJson: '{"previous":"RoundRobin","current":"WeightedLeastLoaded"}'
   }]
+  const metrics = [{
+    id: 1,
+    requestId: 'request-1',
+    startedAtUtc: '2026-09-09T10:03:00Z',
+    logicalModel: 'agic-code-fast',
+    surface: 'chat_completions',
+    deploymentId: 'deployment-1',
+    nodeId: 'node-1',
+    apiCredentialId: null,
+    statusCode: 200,
+    durationMilliseconds: 1047,
+    attemptCount: 2,
+    isStreaming: true,
+    upstreamHeaderMilliseconds: 38,
+    timeToFirstByteMilliseconds: 49,
+    inputTokens: 17,
+    outputTokens: 6,
+    totalTokens: 23,
+    errorCode: null
+  }]
+  const metricsSummary = {
+    windowHours: 24,
+    sinceUtc: '2026-09-08T10:00:00Z',
+    requestCount: 125,
+    successCount: 124,
+    errorCount: 1,
+    successRatePercent: 99.2,
+    p50DurationMilliseconds: 900,
+    p95DurationMilliseconds: 1800,
+    p50TimeToFirstByteMilliseconds: 120,
+    p95TimeToFirstByteMilliseconds: 350,
+    averageUpstreamHeaderMilliseconds: 40,
+    inputTokens: 1000,
+    outputTokens: 500,
+    totalTokens: 1500,
+    tokenObservedRequests: 100,
+    failoverRequests: 2,
+    streamingRequests: 90,
+    byModel: [{
+      logicalModel: 'agic-code-fast',
+      requestCount: 125,
+      errorCount: 1,
+      averageDurationMilliseconds: 900,
+      averageTimeToFirstByteMilliseconds: 120,
+      outputTokens: 500
+    }],
+    byNode: [{
+      nodeId: 'node-1',
+      requestCount: 125,
+      errorCount: 1,
+      averageDurationMilliseconds: 900,
+      p95DurationMilliseconds: 1800,
+      outputTokens: 500
+    }]
+  }
 
   await page.route('**/api/admin/**', async route => {
     const request = route.request()
@@ -82,7 +137,8 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/deployments') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/api-credentials') return json(route, [])
-    if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, [])
+    if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
+    if (request.method() === 'GET' && path === '/api/admin/metrics/summary') return json(route, metricsSummary)
     if (request.method() === 'GET' && path === '/api/admin/audit') return json(route, audit)
 
     if (request.method() === 'POST' && path === '/api/admin/nodes') {
@@ -125,7 +181,7 @@ async function installAdminApi(page: Page) {
   })
 }
 
-test('admin can inspect health, add a path-prefixed node and test it', async ({ page }) => {
+test('admin can inspect health, observability, add a path-prefixed node and test it', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
 
@@ -133,6 +189,8 @@ test('admin can inspect health, add a path-prefixed node and test it', async ({ 
   await expect(page.getByText('dgx-01')).toBeVisible()
   await expect(page.getByText('9 ms')).toBeVisible()
   await expect(page.getByText('4 ok')).toBeVisible()
+  await expect(page.getByText('99.2%')).toBeVisible()
+  await expect(page.getByText('350 ms')).toBeVisible()
 
   await page.getByRole('button', { name: 'DGX Nodes' }).click()
   await page.getByLabel('Name').fill('dgx-02')
@@ -148,6 +206,20 @@ test('admin can inspect health, add a path-prefixed node and test it', async ({ 
   await row.getByRole('button', { name: 'Test' }).click()
   await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
   await expect(page.getByText(/altropath\/v1\/chat\/completions/)).toBeVisible()
+})
+
+test('inference observability exposes latency, token and failover telemetry', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Request Metrics' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Inference observability', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'By logical model' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'By DGX node' })).toBeVisible()
+  await expect(page.getByText('Chat Completions · SSE')).toBeVisible()
+  await expect(page.getByText('2 · failover')).toBeVisible()
+  await expect(page.getByText('23')).toBeVisible()
 })
 
 test('routing strategy can be changed live from the admin UI', async ({ page }) => {

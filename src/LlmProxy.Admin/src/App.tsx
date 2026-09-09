@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, MetricsSummary, Model, Node, NodeConnectionTest, Overview, RequestMetric, RoutingSettings } from './types'
 
 type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
 
@@ -17,10 +17,33 @@ const emptyRouting: RoutingSettings = {
   supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
 }
 
+const emptyMetricsSummary: MetricsSummary = {
+  windowHours: 24,
+  sinceUtc: '',
+  requestCount: 0,
+  successCount: 0,
+  errorCount: 0,
+  successRatePercent: 0,
+  p50DurationMilliseconds: null,
+  p95DurationMilliseconds: null,
+  p50TimeToFirstByteMilliseconds: null,
+  p95TimeToFirstByteMilliseconds: null,
+  averageUpstreamHeaderMilliseconds: null,
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  tokenObservedRequests: 0,
+  failoverRequests: 0,
+  streamingRequests: 0,
+  byModel: [],
+  byNode: []
+}
+
 export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
+  const [metricsSummary, setMetricsSummary] = useState<MetricsSummary>(emptyMetricsSummary)
   const [nodes, setNodes] = useState<Node[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [deployments, setDeployments] = useState<Deployment[]>([])
@@ -34,8 +57,8 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextAudit] = await Promise.all([
-        api.overview(), api.routing(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.audit(100)
+      const [nextOverview, nextRouting, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.overview(), api.routing(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
       ])
       setOverview(nextOverview)
       setRouting(nextRouting)
@@ -44,6 +67,7 @@ export default function App() {
       setDeployments(nextDeployments)
       setCredentials(nextCredentials)
       setMetrics(nextMetrics)
+      setMetricsSummary(nextMetricsSummary)
       setAudit(nextAudit)
       setAuthRequired(false)
     } catch (err) {
@@ -95,13 +119,13 @@ export default function App() {
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
-            {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} />}
+            {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
             {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} refresh={refresh} />}
             {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
-            {view === 'metrics' && <Metrics metrics={metrics} nodeNames={nodeNames} credentialNames={credentialNames} />}
+            {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
             {view === 'audit' && <Audit events={audit} />}
           </>
         )}
@@ -110,7 +134,7 @@ export default function App() {
   )
 }
 
-function Dashboard({ overview, nodes, routing }: { overview: Overview; nodes: Node[]; routing: RoutingSettings }) {
+function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Overview; nodes: Node[]; routing: RoutingSettings; metricsSummary: MetricsSummary }) {
   return <>
     <section className="cards cardsFive">
       <Metric label="Fleet health" value={`${overview.nodes.healthy} H / ${overview.nodes.degraded} D`} />
@@ -118,6 +142,13 @@ function Dashboard({ overview, nodes, routing }: { overview: Overview; nodes: No
       <Metric label="Deployments" value={overview.deployments} />
       <Metric label="Active requests" value={overview.activeRequests} />
       <Metric label="Requests today" value={overview.requestsToday} />
+    </section>
+    <section className="cards cardsFive">
+      <Metric label={`${metricsSummary.windowHours}h requests`} value={formatNumber(metricsSummary.requestCount)} />
+      <Metric label="Success rate" value={formatPercent(metricsSummary.successRatePercent)} />
+      <Metric label="P50 TTFT" value={formatMetricLatency(metricsSummary.p50TimeToFirstByteMilliseconds)} />
+      <Metric label="P95 TTFT" value={formatMetricLatency(metricsSummary.p95TimeToFirstByteMilliseconds)} />
+      <Metric label="Output tokens" value={formatNumber(metricsSummary.outputTokens)} />
     </section>
     <section className="panel">
       <div className="panelTitle"><h2>Inference fleet</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
@@ -285,12 +316,47 @@ function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; r
   </div>
 }
 
-function Metrics({ metrics, nodeNames, credentialNames }: { metrics: RequestMetric[]; nodeNames: Map<string,string>; credentialNames: Map<string,string> }) {
-  return <section className="panel"><div className="panelTitle"><h2>Latest inference requests</h2><span>No prompt or generated content is stored</span></div>
-    <table><thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Credential</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead><tbody>
-      {metrics.map(metric => <tr key={metric.requestId}><td>{formatDate(metric.startedAtUtc)}</td><td><strong>{metric.logicalModel}</strong></td><td>{metric.nodeId ? nodeNames.get(metric.nodeId) ?? short(metric.nodeId) : '—'}</td><td>{metric.apiCredentialId ? credentialNames.get(metric.apiCredentialId) ?? short(metric.apiCredentialId) : '—'}</td><td>{metric.statusCode}</td><td>{metric.durationMilliseconds} ms</td><td className="mono">{metric.errorCode ?? '—'}</td></tr>)}
-    </tbody></table>
-  </section>
+function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: RequestMetric[]; summary: MetricsSummary; nodeNames: Map<string,string>; credentialNames: Map<string,string> }) {
+  return <div className="stack">
+    <section className="cards cardsFive">
+      <Metric label={`${summary.windowHours}h requests`} value={formatNumber(summary.requestCount)} />
+      <Metric label="Success rate" value={formatPercent(summary.successRatePercent)} />
+      <Metric label="P50 TTFT" value={formatMetricLatency(summary.p50TimeToFirstByteMilliseconds)} />
+      <Metric label="P95 TTFT" value={formatMetricLatency(summary.p95TimeToFirstByteMilliseconds)} />
+      <Metric label="Failover requests" value={formatNumber(summary.failoverRequests)} />
+    </section>
+
+    <div className="gridTwo">
+      <section className="panel"><div className="panelTitle"><h2>By logical model</h2><span>{formatNumber(summary.totalTokens)} observed tokens</span></div>
+        <table><thead><tr><th>Model</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>Avg TTFT</th><th>Output tokens</th></tr></thead><tbody>
+          {summary.byModel.map(item => <tr key={item.logicalModel}><td><strong>{item.logicalModel}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.averageTimeToFirstByteMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
+        </tbody></table>
+      </section>
+      <section className="panel"><div className="panelTitle"><h2>By DGX node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
+        <table><thead><tr><th>Node</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>P95 duration</th><th>Output tokens</th></tr></thead><tbody>
+          {summary.byNode.map(item => <tr key={item.nodeId}><td><strong>{nodeNames.get(item.nodeId) ?? short(item.nodeId)}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.p95DurationMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
+        </tbody></table>
+      </section>
+    </div>
+
+    <section className="panel"><div className="panelTitle"><h2>Latest inference requests</h2><span>No prompt or generated content is stored</span></div>
+      <table><thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Credential</th><th>Surface</th><th>Status</th><th>TTFT</th><th>Duration</th><th>Tokens</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
+        {metrics.map(metric => <tr key={metric.requestId}>
+          <td>{formatDate(metric.startedAtUtc)}</td>
+          <td><strong>{metric.logicalModel}</strong></td>
+          <td>{metric.nodeId ? nodeNames.get(metric.nodeId) ?? short(metric.nodeId) : '—'}</td>
+          <td>{metric.apiCredentialId ? credentialNames.get(metric.apiCredentialId) ?? short(metric.apiCredentialId) : '—'}</td>
+          <td>{friendlySurface(metric.surface)}{metric.isStreaming ? ' · SSE' : ''}</td>
+          <td>{metric.statusCode}</td>
+          <td>{formatMetricLatency(metric.timeToFirstByteMilliseconds)}</td>
+          <td>{metric.durationMilliseconds} ms</td>
+          <td>{metric.totalTokens ?? '—'}</td>
+          <td>{metric.attemptCount}{metric.attemptCount > 1 ? ' · failover' : ''}</td>
+          <td className="mono">{metric.errorCode ?? '—'}</td>
+        </tr>)}
+      </tbody></table>
+    </section>
+  </div>
 }
 
 function Audit({ events }: { events: AuditEvent[] }) {
@@ -304,12 +370,16 @@ function Audit({ events }: { events: AuditEvent[] }) {
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Request metrics', audit: 'Audit trail' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', audit: 'Audit trail' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
+function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
+function formatPercent(value: number) { return `${value.toFixed(1)}%` }
+function formatNumber(value: number) { return new Intl.NumberFormat().format(value) }
 function healthStreak(node: Node) { return node.consecutiveHealthFailures > 0 ? `${node.consecutiveHealthFailures} fail` : `${node.consecutiveHealthSuccesses} ok` }
 function short(value: string) { return value.length > 12 ? `${value.slice(0, 8)}…` : value }
 function friendlyStrategy(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Weighted least loaded', RoundRobin: 'Round robin', WeightedRoundRobin: 'Weighted round robin' } as const)[value] }
 function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Routes to the least-loaded eligible deployment while accounting for capacity and weight. Recommended for long-running LLM streams.', RoundRobin: 'Cycles evenly through eligible deployments. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments proportionally to their effective weights.' } as const)[value] }
+function friendlySurface(value: string) { return value === 'chat_completions' ? 'Chat Completions' : value === 'responses' ? 'Responses' : value }
 function probeSummary(probe: NodeConnectionTest['health']) { return probe.success ? `✓ HTTP ${probe.statusCode} in ${probe.latencyMilliseconds} ms` : `✕ ${probe.error ?? `HTTP ${probe.statusCode}`} (${probe.latencyMilliseconds} ms)` }
 function formatAuditDetails(value?: string | null) { if (!value) return '—'; return value.length > 160 ? `${value.slice(0, 157)}…` : value }

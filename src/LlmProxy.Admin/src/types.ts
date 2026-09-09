@@ -86,12 +86,60 @@ export type RequestMetric = {
   requestId: string
   startedAtUtc: string
   logicalModel: string
+  surface: string
   deploymentId?: string | null
   nodeId?: string | null
   apiCredentialId?: string | null
   statusCode: number
   durationMilliseconds: number
+  attemptCount: number
+  isStreaming: boolean
+  upstreamHeaderMilliseconds?: number | null
+  timeToFirstByteMilliseconds?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
   errorCode?: string | null
+}
+
+export type ModelMetricSummary = {
+  logicalModel: string
+  requestCount: number
+  errorCount: number
+  averageDurationMilliseconds?: number | null
+  averageTimeToFirstByteMilliseconds?: number | null
+  outputTokens: number
+}
+
+export type NodeMetricSummary = {
+  nodeId: string
+  requestCount: number
+  errorCount: number
+  averageDurationMilliseconds?: number | null
+  p95DurationMilliseconds?: number | null
+  outputTokens: number
+}
+
+export type MetricsSummary = {
+  windowHours: number
+  sinceUtc: string
+  requestCount: number
+  successCount: number
+  errorCount: number
+  successRatePercent: number
+  p50DurationMilliseconds?: number | null
+  p95DurationMilliseconds?: number | null
+  p50TimeToFirstByteMilliseconds?: number | null
+  p95TimeToFirstByteMilliseconds?: number | null
+  averageUpstreamHeaderMilliseconds?: number | null
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  tokenObservedRequests: number
+  failoverRequests: number
+  streamingRequests: number
+  byModel: ModelMetricSummary[]
+  byNode: NodeMetricSummary[]
 }
 
 export type AuditEvent = {
