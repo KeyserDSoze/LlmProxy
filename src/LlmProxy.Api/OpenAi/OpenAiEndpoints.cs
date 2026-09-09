@@ -30,15 +30,45 @@ public static class OpenAiEndpoints
         });
 
         endpoints.MapPost("/v1/chat/completions", ForwardChatCompletionsAsync);
+        endpoints.MapPost("/v1/responses", ForwardResponsesAsync);
         return endpoints;
     }
 
-    private static async Task ForwardChatCompletionsAsync(
+    private static Task ForwardChatCompletionsAsync(
         HttpContext context,
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
         IRequestMetricsSink metricsSink,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory) =>
+        ForwardInferenceAsync(
+            context,
+            routingService,
+            loadTracker,
+            metricsSink,
+            httpClientFactory,
+            "/v1/chat/completions");
+
+    private static Task ForwardResponsesAsync(
+        HttpContext context,
+        RoutingService routingService,
+        IRequestLoadTracker loadTracker,
+        IRequestMetricsSink metricsSink,
+        IHttpClientFactory httpClientFactory) =>
+        ForwardInferenceAsync(
+            context,
+            routingService,
+            loadTracker,
+            metricsSink,
+            httpClientFactory,
+            "/v1/responses");
+
+    private static async Task ForwardInferenceAsync(
+        HttpContext context,
+        RoutingService routingService,
+        IRequestLoadTracker loadTracker,
+        IRequestMetricsSink metricsSink,
+        IHttpClientFactory httpClientFactory,
+        string upstreamPath)
     {
         var requestId = Guid.NewGuid();
         var startedAtUtc = DateTimeOffset.UtcNow;
@@ -57,24 +87,21 @@ public static class OpenAiEndpoints
                 rawBody = await reader.ReadToEndAsync(context.RequestAborted);
             }
 
-            JsonObject? requestObject;
-            try
-            {
-                requestObject = JsonNode.Parse(rawBody) as JsonObject;
-            }
-            catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
-            {
-                finalStatusCode = StatusCodes.Status400BadRequest;
-                finalErrorCode = "invalid_json";
-                await WriteGatewayErrorAsync(context, finalStatusCode, "invalid_request_error", finalErrorCode, "Request body is not valid JSON.");
-                return;
-            }
-
-            if (requestObject is null || requestObject["model"] is not JsonValue modelValue || !modelValue.TryGetValue<string>(out publicModelName) || string.IsNullOrWhiteSpace(publicModelName))
+            if (!OpenAiRequestPayload.TryParse(
+                    rawBody,
+                    out var requestObject,
+                    out publicModelName,
+                    out var parseErrorCode,
+                    out var parseErrorMessage))
             {
                 finalStatusCode = StatusCodes.Status400BadRequest;
-                finalErrorCode = "model_required";
-                await WriteGatewayErrorAsync(context, finalStatusCode, "invalid_request_error", finalErrorCode, "A logical model name is required.");
+                finalErrorCode = parseErrorCode;
+                await WriteGatewayErrorAsync(
+                    context,
+                    finalStatusCode,
+                    "invalid_request_error",
+                    parseErrorCode,
+                    parseErrorMessage);
                 return;
             }
 
@@ -91,10 +118,10 @@ public static class OpenAiEndpoints
 
                 finalDeploymentId = route.DeploymentId;
                 finalNodeId = route.NodeId;
-                requestObject["model"] = route.ProviderModelName;
+                OpenAiRequestPayload.RewriteModel(requestObject, route.ProviderModelName);
 
                 using var lease = loadTracker.Enter(route.DeploymentId);
-                using var outbound = CreateOutboundRequest(context.Request, requestObject, route);
+                using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath);
 
                 try
                 {
@@ -132,7 +159,12 @@ public static class OpenAiEndpoints
                     finalErrorCode = "upstream_unreachable";
                     if (!context.Response.HasStarted)
                     {
-                        await WriteGatewayErrorAsync(context, finalStatusCode, "gateway_error", finalErrorCode, $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                        await WriteGatewayErrorAsync(
+                            context,
+                            finalStatusCode,
+                            "gateway_error",
+                            finalErrorCode,
+                            $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
                     }
                     return;
                 }
@@ -169,11 +201,15 @@ public static class OpenAiEndpoints
         }
     }
 
-    private static HttpRequestMessage CreateOutboundRequest(HttpRequest source, JsonObject requestObject, RouteSelection route)
+    private static HttpRequestMessage CreateOutboundRequest(
+        HttpRequest source,
+        JsonObject requestObject,
+        RouteSelection route,
+        string upstreamPath)
     {
         var destination = new HttpRequestMessage(
             HttpMethod.Post,
-            new Uri($"{route.BaseAddress.TrimEnd('/')}/v1/chat/completions"))
+            new Uri($"{route.BaseAddress.TrimEnd('/')}{upstreamPath}"))
         {
             Content = new StringContent(requestObject.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -237,5 +273,57 @@ public static class OpenAiEndpoints
                 code
             }
         });
+    }
+}
+
+internal static class OpenAiRequestPayload
+{
+    public static bool TryParse(
+        string rawBody,
+        out JsonObject requestObject,
+        out string logicalModelName,
+        out string errorCode,
+        out string errorMessage)
+    {
+        requestObject = null!;
+        logicalModelName = string.Empty;
+        errorCode = string.Empty;
+        errorMessage = string.Empty;
+
+        try
+        {
+            requestObject = JsonNode.Parse(rawBody) as JsonObject ?? null!;
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
+        {
+            errorCode = "invalid_json";
+            errorMessage = "Request body is not valid JSON.";
+            return false;
+        }
+
+        if (requestObject is null)
+        {
+            errorCode = "invalid_json";
+            errorMessage = "Request body must be a JSON object.";
+            return false;
+        }
+
+        if (requestObject["model"] is not JsonValue modelValue ||
+            !modelValue.TryGetValue<string>(out logicalModelName) ||
+            string.IsNullOrWhiteSpace(logicalModelName))
+        {
+            logicalModelName = string.Empty;
+            errorCode = "model_required";
+            errorMessage = "A logical model name is required.";
+            return false;
+        }
+
+        return true;
+    }
+
+    public static void RewriteModel(JsonObject requestObject, string providerModelName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerModelName);
+        requestObject["model"] = providerModelName;
     }
 }

@@ -26,7 +26,7 @@ Example:
 
 ## `POST /v1/chat/completions`
 
-The gateway accepts an OpenAI-style request. The incoming logical `model` value is rewritten to the provider model configured on the selected deployment before forwarding the request to vLLM.
+The gateway accepts an OpenAI-style Chat Completions request. The incoming logical `model` value is rewritten to the provider model configured on the selected deployment before forwarding the request to the selected inference runtime.
 
 Example request:
 
@@ -40,7 +40,47 @@ Example request:
 }
 ```
 
-The gateway must preserve unknown compatible fields rather than deserializing into a restrictive DTO. This is important for tool calling and future OpenAI-compatible fields.
+## `POST /v1/responses`
+
+The gateway also exposes the OpenAI Responses API path. Routing, authentication, failover, concurrency accounting and request metrics are shared with Chat Completions; only the upstream path differs.
+
+Example request:
+
+```json
+{
+  "model": "agic-code-fast",
+  "input": "Review this method",
+  "stream": true
+}
+```
+
+Responses API fields such as structured `input`, tools, metadata and future compatible properties are passed through to the inference runtime. As with Chat Completions, the public logical model is replaced only for the upstream call.
+
+## Payload preservation
+
+The gateway deliberately does not deserialize inference requests into restrictive endpoint-specific DTOs. It validates only the logical `model`, preserves unknown compatible JSON fields and rewrites that one property before forwarding.
+
+This is important for:
+
+- streaming;
+- tool/function calling;
+- structured Responses API input;
+- metadata;
+- future OpenAI-compatible fields that the gateway does not yet know about.
+
+## Routing and failover
+
+Both `POST /v1/chat/completions` and `POST /v1/responses` use the same routing pipeline:
+
+1. validate the bearer credential;
+2. resolve the logical model;
+3. load eligible deployments;
+4. exclude disabled, unhealthy, draining or saturated capacity;
+5. select a deployment using weighted least-loaded routing;
+6. rewrite the logical model to the deployment provider model;
+7. forward the request to the corresponding upstream path;
+8. retry another eligible deployment for transport failures or upstream 5xx responses before the downstream response has started;
+9. persist metadata-only request metrics.
 
 ## Errors
 
@@ -64,7 +104,7 @@ Inference endpoints require:
 Authorization: Bearer <gateway-api-key>
 ```
 
-The first bootstrap release supports one environment-provided credential. The product backlog replaces it with database-backed, hashed, revocable credentials with expiry and allowed-model policies.
+Credentials are database-backed, hashed, revocable and may have an expiry date. The raw secret is returned only once when an administrator creates a credential.
 
 ## Administration
 

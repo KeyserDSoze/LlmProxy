@@ -5,32 +5,28 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE=(docker compose -f docker/docker-compose.yml)
-FAILED=0
 
 cleanup() {
-  if [[ "$FAILED" == "1" ]]; then
-    echo "--- Docker compose state ---" >&2
-    "${COMPOSE[@]}" ps -a >&2 || true
-    echo "--- Docker compose logs ---" >&2
-    "${COMPOSE[@]}" logs --no-color >&2 || true
-  fi
-
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 }
-
-on_error() {
-  FAILED=1
-}
-
-trap on_error ERR
 trap cleanup EXIT
+
+fail_with_diagnostics() {
+  local message="$1"
+  echo "$message" >&2
+  "${COMPOSE[@]}" ps -a >&2 || true
+  "${COMPOSE[@]}" logs --no-color >&2 || true
+  exit 1
+}
 
 export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="ci-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
 
-"${COMPOSE[@]}" up -d --build
+if ! "${COMPOSE[@]}" up -d --build; then
+  fail_with_diagnostics "Docker Compose stack failed to start."
+fi
 
 ready=false
 for attempt in {1..30}; do
@@ -42,16 +38,19 @@ for attempt in {1..30}; do
 done
 
 if [[ "$ready" != "true" ]]; then
-  echo "Gateway did not become ready." >&2
-  exit 1
+  fail_with_diagnostics "Gateway did not become ready."
 fi
 
 curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet '"status":"ok"'
 
-unauthorized_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/v1/models)"
-if [[ "$unauthorized_status" != "401" ]]; then
-  echo "Expected /v1/models without bearer token to return 401, got ${unauthorized_status}." >&2
-  exit 1
+unauthorized_models_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/v1/models)"
+if [[ "$unauthorized_models_status" != "401" ]]; then
+  fail_with_diagnostics "Expected /v1/models without bearer token to return 401, got ${unauthorized_models_status}."
+fi
+
+unauthorized_responses_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"model":"agic-code-fast","input":"hello"}' http://127.0.0.1:8080/v1/responses)"
+if [[ "$unauthorized_responses_status" != "401" ]]; then
+  fail_with_diagnostics "Expected /v1/responses without bearer token to return 401, got ${unauthorized_responses_status}."
 fi
 
 curl --fail --silent \
