@@ -9,14 +9,15 @@ type NodeRecord = {
   enabled: boolean
   status: string
   lastHealthCheckUtc: string
+  lastHealthyAtUtc: string | null
+  lastHealthLatencyMilliseconds: number | null
+  lastHealthError: string | null
+  consecutiveHealthSuccesses: number
+  consecutiveHealthFailures: number
 }
 
 async function json(route: Route, body: unknown, status = 200) {
-  await route.fulfill({
-    status,
-    contentType: 'application/json',
-    body: JSON.stringify(body)
-  })
+  await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
 async function installAdminApi(page: Page) {
@@ -28,9 +29,24 @@ async function installAdminApi(page: Page) {
     maxConcurrency: 4,
     enabled: true,
     status: 'Healthy',
-    lastHealthCheckUtc: '2026-09-09T10:00:00Z'
+    lastHealthCheckUtc: '2026-09-09T10:00:00Z',
+    lastHealthyAtUtc: '2026-09-09T10:00:00Z',
+    lastHealthLatencyMilliseconds: 9,
+    lastHealthError: null,
+    consecutiveHealthSuccesses: 4,
+    consecutiveHealthFailures: 0
   }]
   let routingStrategy = 'WeightedLeastLoaded'
+  const audit = [{
+    id: 1,
+    occurredAtUtc: '2026-09-09T10:05:00Z',
+    actor: 'admin@agic.it',
+    action: 'routing.update',
+    entityType: 'routing_policy',
+    entityId: '1',
+    sourceIp: '10.0.0.5',
+    detailsJson: '{"previous":"RoundRobin","current":"WeightedLeastLoaded"}'
+  }]
 
   await page.route('**/api/admin/**', async route => {
     const request = route.request()
@@ -39,7 +55,13 @@ async function installAdminApi(page: Page) {
 
     if (request.method() === 'GET' && path === '/api/admin/overview') {
       return json(route, {
-        nodes: { total: nodes.length, healthy: nodes.filter(item => item.status === 'Healthy').length, unhealthy: 0, draining: 0 },
+        nodes: {
+          total: nodes.length,
+          healthy: nodes.filter(item => item.status === 'Healthy').length,
+          degraded: nodes.filter(item => item.status === 'Degraded').length,
+          unhealthy: nodes.filter(item => item.status === 'Unhealthy').length,
+          draining: nodes.filter(item => item.status === 'Draining').length
+        },
         models: 1,
         deployments: 1,
         activeRequests: 0,
@@ -61,6 +83,7 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/deployments') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/api-credentials') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, [])
+    if (request.method() === 'GET' && path === '/api/admin/audit') return json(route, audit)
 
     if (request.method() === 'POST' && path === '/api/admin/nodes') {
       const input = request.postDataJSON() as Pick<NodeRecord, 'name' | 'baseAddress' | 'weight' | 'maxConcurrency'>
@@ -69,7 +92,12 @@ async function installAdminApi(page: Page) {
         ...input,
         enabled: true,
         status: 'Unknown',
-        lastHealthCheckUtc: '2026-09-09T10:00:00Z'
+        lastHealthCheckUtc: '2026-09-09T10:00:00Z',
+        lastHealthyAtUtc: null,
+        lastHealthLatencyMilliseconds: null,
+        lastHealthError: null,
+        consecutiveHealthSuccesses: 0,
+        consecutiveHealthFailures: 0
       }
       nodes.push(created)
       return json(route, created, 201)
@@ -97,12 +125,14 @@ async function installAdminApi(page: Page) {
   })
 }
 
-test('admin can inspect the fleet, add a path-prefixed node and test it', async ({ page }) => {
+test('admin can inspect health, add a path-prefixed node and test it', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
   await expect(page.getByText('dgx-01')).toBeVisible()
+  await expect(page.getByText('9 ms')).toBeVisible()
+  await expect(page.getByText('4 ok')).toBeVisible()
 
   await page.getByRole('button', { name: 'DGX Nodes' }).click()
   await page.getByLabel('Name').fill('dgx-02')
@@ -130,6 +160,17 @@ test('routing strategy can be changed live from the admin UI', async ({ page }) 
 
   await expect(page.getByText('Routing policy updated live.')).toBeVisible()
   await expect(page.getByText('Weighted round robin').first()).toBeVisible()
+})
+
+test('audit trail is visible to administrators', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Audit Trail' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible()
+  await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await expect(page.getByText('routing.update')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
