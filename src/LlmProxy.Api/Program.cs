@@ -30,6 +30,7 @@ builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
+builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
 builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
 builder.Services.AddScoped<RoutingService>();

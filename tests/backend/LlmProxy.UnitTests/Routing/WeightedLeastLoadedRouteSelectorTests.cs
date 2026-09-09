@@ -1,6 +1,7 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Infrastructure.Routing;
 
 namespace LlmProxy.UnitTests.Routing;
 
@@ -44,6 +45,52 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
 
         Assert.NotNull(route);
         Assert.Equal(highWeightId, route.DeploymentId);
+    }
+
+    [Fact]
+    public void Select_avoids_a_high_weight_backend_with_recent_infrastructure_failures()
+    {
+        var stableId = Guid.NewGuid();
+        var failingId = Guid.NewGuid();
+        var candidates = new[]
+        {
+            Candidate(stableId, "dgx-stable", maxConcurrency: 4, weight: 1),
+            Candidate(failingId, "dgx-fast-but-failing", maxConcurrency: 4, weight: 4)
+        };
+        var performance = new InMemoryDeploymentPerformanceTracker();
+        var now = DateTimeOffset.UtcNow;
+        for (var index = 0; index < 3; index++)
+        {
+            performance.Observe(failingId, infrastructureHealthy: false, 900, 100, now.AddSeconds(index));
+        }
+        for (var index = 0; index < 3; index++)
+        {
+            performance.Observe(stableId, infrastructureHealthy: true, 1000, 150, now.AddSeconds(index));
+        }
+
+        var route = new WeightedLeastLoadedRouteSelector(performance)
+            .Select(candidates, new StubLoadTracker());
+
+        Assert.NotNull(route);
+        Assert.Equal(stableId, route.DeploymentId);
+    }
+
+    [Fact]
+    public void Select_uses_health_penalty_before_tie_breaking()
+    {
+        var degradedId = Guid.NewGuid();
+        var healthyId = Guid.NewGuid();
+        var candidates = new[]
+        {
+            Candidate(degradedId, "a-degraded", status: NodeStatus.Degraded),
+            Candidate(healthyId, "z-healthy", status: NodeStatus.Healthy)
+        };
+
+        var route = new WeightedLeastLoadedRouteSelector()
+            .Select(candidates, new StubLoadTracker());
+
+        Assert.NotNull(route);
+        Assert.Equal(healthyId, route.DeploymentId);
     }
 
     [Fact]

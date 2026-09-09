@@ -3,9 +3,11 @@ using LlmProxy.Domain.Routing;
 
 namespace LlmProxy.Application.Routing;
 
-public sealed class DynamicRouteSelector(RoutingStrategyState strategyState) : IRouteSelector
+public sealed class DynamicRouteSelector(
+    RoutingStrategyState strategyState,
+    IDeploymentPerformanceTracker? performanceTracker = null) : IRouteSelector
 {
-    private readonly WeightedLeastLoadedRouteSelector _weightedLeastLoaded = new();
+    private readonly WeightedLeastLoadedRouteSelector _weightedLeastLoaded = new(performanceTracker);
     private readonly RoundRobinRouteSelector _roundRobin = new();
     private readonly WeightedRoundRobinRouteSelector _weightedRoundRobin = new();
 

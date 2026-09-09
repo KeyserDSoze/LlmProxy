@@ -41,12 +41,14 @@ public static class OpenAiEndpoints
         HttpContext context,
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
+        IDeploymentPerformanceTracker performanceTracker,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory) =>
         ForwardInferenceAsync(
             context,
             routingService,
             loadTracker,
+            performanceTracker,
             metricsSink,
             httpClientFactory,
             "/v1/chat/completions");
@@ -55,12 +57,14 @@ public static class OpenAiEndpoints
         HttpContext context,
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
+        IDeploymentPerformanceTracker performanceTracker,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory) =>
         ForwardInferenceAsync(
             context,
             routingService,
             loadTracker,
+            performanceTracker,
             metricsSink,
             httpClientFactory,
             "/v1/responses");
@@ -69,6 +73,7 @@ public static class OpenAiEndpoints
         HttpContext context,
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
+        IDeploymentPerformanceTracker performanceTracker,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory,
         string upstreamPath)
@@ -137,6 +142,7 @@ public static class OpenAiEndpoints
                 using var lease = loadTracker.Enter(route.DeploymentId);
                 using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath, requestId);
                 HttpResponseMessage upstream;
+                var attemptStartedMilliseconds = stopwatch.ElapsedMilliseconds;
                 var upstreamStopwatch = Stopwatch.StartNew();
 
                 try
@@ -154,6 +160,12 @@ public static class OpenAiEndpoints
                 {
                     finalStatusCode = StatusCodes.Status502BadGateway;
                     finalErrorCode = "upstream_unreachable";
+                    performanceTracker.Observe(
+                        route.DeploymentId,
+                        infrastructureHealthy: false,
+                        upstreamStopwatch.ElapsedMilliseconds,
+                        timeToFirstByteMilliseconds: null,
+                        DateTimeOffset.UtcNow);
 
                     if (attempt < MaxUpstreamAttempts)
                     {
@@ -176,6 +188,12 @@ public static class OpenAiEndpoints
 
                     if ((int)upstream.StatusCode >= 500 && attempt < MaxUpstreamAttempts)
                     {
+                        performanceTracker.Observe(
+                            route.DeploymentId,
+                            infrastructureHealthy: false,
+                            upstreamStopwatch.ElapsedMilliseconds,
+                            timeToFirstByteMilliseconds: null,
+                            DateTimeOffset.UtcNow);
                         excluded.Add(route.DeploymentId);
                         finalErrorCode = "upstream_server_error";
                         continue;
@@ -191,6 +209,13 @@ public static class OpenAiEndpoints
                     {
                         await CopyUpstreamBodyAsync(upstream, context, observer);
                         finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
+                        ObserveCompletedAttempt(
+                            performanceTracker,
+                            route.DeploymentId,
+                            infrastructureHealthy: finalStatusCode < 500,
+                            stopwatch,
+                            attemptStartedMilliseconds,
+                            observer.TimeToFirstByteMilliseconds);
                         return;
                     }
                     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -202,6 +227,13 @@ public static class OpenAiEndpoints
                     catch (Exception exception) when (exception is HttpRequestException or IOException)
                     {
                         finalErrorCode = "upstream_stream_interrupted";
+                        ObserveCompletedAttempt(
+                            performanceTracker,
+                            route.DeploymentId,
+                            infrastructureHealthy: false,
+                            stopwatch,
+                            attemptStartedMilliseconds,
+                            observer.TimeToFirstByteMilliseconds);
 
                         // Once a response has started, retrying another DGX would concatenate two
                         // different model streams into a single invalid OpenAI response.
@@ -267,6 +299,27 @@ public static class OpenAiEndpoints
                     finalErrorCode));
             }
         }
+    }
+
+    private static void ObserveCompletedAttempt(
+        IDeploymentPerformanceTracker performanceTracker,
+        Guid deploymentId,
+        bool infrastructureHealthy,
+        Stopwatch requestStopwatch,
+        long attemptStartedMilliseconds,
+        long? requestTimeToFirstByteMilliseconds)
+    {
+        var durationMilliseconds = Math.Max(0, requestStopwatch.ElapsedMilliseconds - attemptStartedMilliseconds);
+        var backendTimeToFirstByteMilliseconds = requestTimeToFirstByteMilliseconds is long timeToFirstByte
+            ? Math.Max(0, timeToFirstByte - attemptStartedMilliseconds)
+            : (long?)null;
+
+        performanceTracker.Observe(
+            deploymentId,
+            infrastructureHealthy,
+            durationMilliseconds,
+            backendTimeToFirstByteMilliseconds,
+            DateTimeOffset.UtcNow);
     }
 
     private static HttpRequestMessage CreateOutboundRequest(

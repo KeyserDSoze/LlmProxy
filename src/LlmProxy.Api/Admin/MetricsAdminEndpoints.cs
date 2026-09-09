@@ -1,3 +1,4 @@
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Infrastructure.Telemetry;
 
 namespace LlmProxy.Api.Admin;
@@ -20,6 +21,9 @@ public static class MetricsAdminEndpoints
             var windowHours = Math.Clamp(hours ?? 24, 1, 168);
             return Results.Ok(await summaryReader.ReadAsync(windowHours, cancellationToken));
         });
+
+        group.MapGet("/routing/performance", (IDeploymentPerformanceTracker tracker) =>
+            Results.Ok(tracker.GetSnapshots()));
 
         return endpoints;
     }
