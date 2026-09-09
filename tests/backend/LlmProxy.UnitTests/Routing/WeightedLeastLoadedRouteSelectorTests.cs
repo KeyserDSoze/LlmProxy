@@ -2,6 +2,7 @@ using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Routing;
+using LlmProxy.Infrastructure.Telemetry;
 
 namespace LlmProxy.UnitTests.Routing;
 
@@ -76,6 +77,30 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
     }
 
     [Fact]
+    public void Select_avoids_backend_with_a_vllm_queue_and_high_kv_cache_pressure()
+    {
+        var clearId = Guid.NewGuid();
+        var busyId = Guid.NewGuid();
+        var clearNode = Guid.NewGuid();
+        var busyNode = Guid.NewGuid();
+        var candidates = new[]
+        {
+            Candidate(clearId, "dgx-clear", maxConcurrency: 8, weight: 1, nodeId: clearNode),
+            Candidate(busyId, "dgx-busy", maxConcurrency: 8, weight: 3, nodeId: busyNode)
+        };
+        var runtime = new VllmRuntimeMetricsTracker();
+        var now = DateTimeOffset.UtcNow;
+        runtime.RecordSuccess(clearNode, "model", 0, 0, 0.25, 100, 50, now);
+        runtime.RecordSuccess(busyNode, "model", 8, 6, 0.96, 100, 50, now);
+
+        var route = new WeightedLeastLoadedRouteSelector(runtimeMetricsTracker: runtime)
+            .Select(candidates, new StubLoadTracker());
+
+        Assert.NotNull(route);
+        Assert.Equal(clearId, route.DeploymentId);
+    }
+
+    [Fact]
     public void Select_uses_health_penalty_before_tie_breaking()
     {
         var degradedId = Guid.NewGuid();
@@ -131,10 +156,11 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         string nodeName,
         int maxConcurrency = 4,
         int weight = 1,
-        NodeStatus status = NodeStatus.Healthy)
+        NodeStatus status = NodeStatus.Healthy,
+        Guid? nodeId = null)
         => new(
             deploymentId,
-            Guid.NewGuid(),
+            nodeId ?? Guid.NewGuid(),
             nodeName,
             $"http://{nodeName}:8000",
             Guid.NewGuid(),
