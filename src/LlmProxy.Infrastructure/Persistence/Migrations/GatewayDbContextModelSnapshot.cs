@@ -69,6 +69,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("ConsecutiveHealthFailures").HasColumnType("integer");
             b.Property<int>("ConsecutiveHealthSuccesses").HasColumnType("integer");
             b.Property<bool>("Enabled").HasColumnType("boolean");
+            b.Property<string>("HardwareMetricsBaseAddress").HasMaxLength(500).HasColumnType("character varying(500)");
             b.Property<DateTimeOffset?>("LastHealthCheckUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("LastHealthError").HasMaxLength(1000).HasColumnType("character varying(1000)");
             b.Property<long?>("LastHealthLatencyMilliseconds").HasColumnType("bigint");

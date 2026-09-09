@@ -27,6 +27,26 @@ public sealed class InferenceNodeTests
     }
 
     [Fact]
+    public void Hardware_metrics_address_is_optional_and_normalized_as_service_root()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+
+        node.SetHardwareMetricsBaseAddress("http://10.0.0.21:9400/dcgm/");
+
+        Assert.Equal("http://10.0.0.21:9400/dcgm", node.HardwareMetricsBaseAddress);
+        node.SetHardwareMetricsBaseAddress(null);
+        Assert.Null(node.HardwareMetricsBaseAddress);
+    }
+
+    [Fact]
+    public void Hardware_metrics_address_rejects_non_http_uri()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+
+        Assert.Throws<ArgumentException>(() => node.SetHardwareMetricsBaseAddress("not-a-uri"));
+    }
+
+    [Fact]
     public void Drain_keeps_node_enabled_but_marks_it_draining()
     {
         var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");

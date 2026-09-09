@@ -16,6 +16,7 @@ public sealed class InferenceNode
     public Guid Id { get; private set; } = Guid.NewGuid();
     public string Name { get; private set; } = string.Empty;
     public string BaseAddress { get; private set; } = string.Empty;
+    public string? HardwareMetricsBaseAddress { get; private set; }
     public bool Enabled { get; private set; } = true;
     public NodeStatus Status { get; private set; } = NodeStatus.Unknown;
     public int Weight { get; private set; } = 1;
@@ -32,6 +33,13 @@ public sealed class InferenceNode
         Rename(name);
         SetBaseAddress(baseAddress);
         SetCapacity(weight, maxConcurrency);
+    }
+
+    public void SetHardwareMetricsBaseAddress(string? baseAddress)
+    {
+        HardwareMetricsBaseAddress = string.IsNullOrWhiteSpace(baseAddress)
+            ? null
+            : InferenceEndpoint.NormalizeBaseAddress(baseAddress);
     }
 
     public void Enable()

@@ -52,6 +52,7 @@ public sealed class DatabaseBootstrapper(
                 configuration["Bootstrap:NodeBaseAddress"] ?? "http://localhost:8000",
                 configuration.GetValue("Bootstrap:NodeWeight", 1),
                 configuration.GetValue("Bootstrap:NodeMaxConcurrency", 4));
+            node.SetHardwareMetricsBaseAddress(configuration["Bootstrap:HardwareMetricsBaseAddress"]);
 
             var model = new ModelDefinition(
                 configuration["Bootstrap:PublicModelName"] ?? "agic-code-fast",

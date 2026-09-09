@@ -28,6 +28,9 @@ public static class MetricsAdminEndpoints
         group.MapGet("/routing/runtime", (INodeRuntimeMetricsTracker tracker) =>
             Results.Ok(tracker.GetSnapshots()));
 
+        group.MapGet("/hardware", (INodeHardwareMetricsTracker tracker) =>
+            Results.Ok(tracker.GetSnapshots()));
+
         return endpoints;
     }
 }

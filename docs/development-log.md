@@ -51,6 +51,20 @@ Introduced root `AGENTS.md` as the primary project handover for AI agents and ma
 
 CI is configured to cancel superseded runs for the same branch or pull request so rapid development on `main` does not waste runners testing obsolete commits.
 
+## 2026-09-09 - DGX/DCGM hardware telemetry backend - IN DEVELOPMENT
+
+Started the first hardware-observability increment. The key architectural decision is to keep NVIDIA/DCGM telemetry separate from both vLLM runtime pressure and node health.
+
+Added an optional `HardwareMetricsBaseAddress` to each `InferenceNode`, persisted through an EF Core migration. This allows vLLM and DCGM exporter to live on different ports or path-prefixed service roots. Added a dedicated runtime endpoint to configure or clear that address with an audit event.
+
+Added a DCGM Prometheus parser for `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_FB_FREE`, optional `DCGM_FI_DEV_FB_TOTAL`, `DCGM_FI_DEV_GPU_TEMP` and `DCGM_FI_DEV_POWER_USAGE`. Multi-GPU snapshots aggregate average/max utilization, total framebuffer usage/free memory, memory usage ratio, maximum temperature and total power.
+
+Added an in-memory hardware snapshot tracker and background collector. HTTP/parse failures mark only the hardware snapshot unavailable while preserving the last successful sample; they do not update `InferenceNode.Status` and do not block inference. Added `GET /api/admin/hardware` and `PUT /api/admin/nodes/{id}/hardware-metrics`.
+
+Added Docker/bootstrap settings and backend unit coverage for address normalization, DCGM parsing and failure-state preservation. Detailed behavior is documented in `docs/hardware-telemetry.md`.
+
+This increment is **not complete yet**: backend CI must pass, then Docker integration plus React/Vitest/Playwright visibility must be added before changing the status to validated.
+
 ## Next increment
 
-Implement optional NVIDIA/DGX hardware telemetry. The first version will ingest Prometheus metrics from a per-node hardware metrics endpoint (typically NVIDIA DCGM exporter), keep snapshots in memory, expose them to administrators, and keep hardware telemetry observational until real DGX Spark benchmarks justify routing thresholds.
+Validate the hardware backend quality gate, add fake-DCGM integration coverage, then expose hardware telemetry and node hardware-endpoint configuration in the React admin UI. After that, move to the real GitHub Copilot BYOK spike and benchmark harness.

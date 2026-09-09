@@ -32,6 +32,7 @@ builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
+builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
 builder.Services.AddSingleton(new RoutingTuningState(RoutingTuningSettings.Default));
 builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
@@ -46,8 +47,10 @@ builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.Infini
 builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
+builder.Services.AddHostedService<NodeHardwareMetricsCollector>();
 
 builder.Services.AddAuthorization(options =>
 {
@@ -102,6 +105,7 @@ app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
+app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 
 if (entraEnabled)
 {

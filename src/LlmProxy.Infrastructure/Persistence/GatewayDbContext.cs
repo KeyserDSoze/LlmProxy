@@ -27,6 +27,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
             entity.Property(x => x.BaseAddress).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.HardwareMetricsBaseAddress).HasMaxLength(500);
             entity.Property(x => x.LastHealthError).HasMaxLength(1000);
             entity.HasIndex(x => x.Name).IsUnique();
         });

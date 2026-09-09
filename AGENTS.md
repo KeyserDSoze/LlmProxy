@@ -58,7 +58,7 @@ docs/
 
 Last reviewed: **2026-09-09**.
 
-The following is implemented and has passed the repository quality gate on `main`:
+Validated before the current hardware-telemetry increment:
 
 - .NET 10 solution and React/TypeScript admin application.
 - PostgreSQL persistence and EF Core migrations.
@@ -78,11 +78,26 @@ The following is implemented and has passed the repository quality gate on `main
 - In-memory vLLM runtime snapshots: running requests, waiting requests, KV-cache usage, prompt/generated counters and model label.
 - Per-deployment performance EWMA: TTFT, duration and infrastructure-failure feedback.
 - Performance-aware `WeightedLeastLoaded` routing.
-- Persisted **Smart Routing Tuning** policy with live in-memory publication and no restart required.
+- Persisted Smart Routing Tuning policy with live in-memory publication and no restart required.
 - React Routing view showing performance feedback, live vLLM capacity and editable tuning coefficients.
 - Docker/PostgreSQL integration smoke suite with two path-prefixed fake vLLM runtimes.
 - Backend unit tests, frontend Vitest tests, Playwright E2E tests and Docker integration tests in CI.
 - Container publication to GHCR after successful CI.
+
+Current increment in development:
+
+- optional `HardwareMetricsBaseAddress` on each inference node;
+- PostgreSQL migration for that optional hardware service root;
+- NVIDIA DCGM Prometheus parser;
+- in-memory `INodeHardwareMetricsTracker` / `NodeHardwareMetricsTracker`;
+- background `NodeHardwareMetricsCollector`;
+- `GET /api/admin/hardware` for current snapshots;
+- `PUT /api/admin/nodes/{id}/hardware-metrics` to configure/clear the hardware root with audit;
+- Docker/bootstrap settings for hardware collection;
+- backend unit coverage for address normalization, DCGM parsing and snapshot failure behavior;
+- focused documentation in `docs/hardware-telemetry.md`.
+
+Do not call this current increment complete until CI is green and frontend/integration coverage has been added.
 
 The smart-routing tuning policy currently controls:
 
@@ -120,6 +135,22 @@ The routing selector uses in-memory trackers/states. Database reads do not happe
 
 vLLM telemetry failure is deliberately non-fatal. The router falls back to gateway load, health and recent request performance if `/metrics` cannot be read.
 
+## Hardware telemetry boundary
+
+Hardware telemetry is separate from vLLM runtime telemetry and node health.
+
+```text
+InferenceNode.BaseAddress
+    -> vLLM health, /v1/* and vLLM /metrics
+
+InferenceNode.HardwareMetricsBaseAddress (optional)
+    -> NVIDIA/DCGM /metrics
+```
+
+The first DCGM parser recognizes GPU utilization, framebuffer used/free/total, GPU temperature and power usage. Hardware collection failures only affect the hardware snapshot; they do not modify `InferenceNode.Status` and do not block inference.
+
+Hardware telemetry is initially observational. Do **not** add GPU utilization, temperature or power directly to `WeightedLeastLoaded` until representative DGX Spark benchmarks show that doing so improves latency/throughput. vLLM queue and KV-cache pressure remain the primary runtime scheduling signals.
+
 ## Important admin endpoints
 
 ```http
@@ -130,8 +161,10 @@ GET  /api/admin/routing/tuning
 PUT  /api/admin/routing/tuning
 GET  /api/admin/routing/performance
 GET  /api/admin/routing/runtime
+GET  /api/admin/hardware
 GET  /api/admin/nodes
 POST /api/admin/nodes/{id}/test-connection
+PUT  /api/admin/nodes/{id}/hardware-metrics
 GET  /api/admin/metrics
 GET  /api/admin/metrics/summary
 GET  /api/admin/audit
@@ -165,19 +198,11 @@ When implementing a feature:
 
 ## Current next step
 
-**Implement DGX hardware telemetry without coupling it directly to node health.**
-
-Planned first increment:
-
-- optional per-node hardware metrics endpoint, because DCGM exporter commonly runs on a different port/service root than vLLM;
-- Prometheus parser for NVIDIA DCGM exporter signals;
-- in-memory node hardware snapshots;
-- collector with graceful degradation when DCGM is unavailable;
-- admin API and React visibility for GPU utilization, framebuffer memory, temperature and power;
-- unit/integration/Playwright coverage using fake Prometheus metrics;
-- document how to expose DCGM exporter on a DGX node and firewall it so only the gateway VM can reach it.
-
-Hardware telemetry should initially be **observational only**. Do not feed GPU temperature/utilization directly into routing until real DGX Spark benchmark data establishes useful thresholds. vLLM queue/KV pressure remains the primary runtime routing signal.
+1. Commit the DGX/DCGM backend hardware-telemetry increment and make backend CI green.
+2. Add Docker integration coverage with a fake DCGM Prometheus endpoint, including a path-prefixed hardware service root.
+3. Add React/TypeScript hardware visibility and node hardware-endpoint configuration, plus Vitest/Playwright coverage.
+4. Update this file and `docs/development-log.md` from “in development” to validated only after the full quality gate passes.
+5. Then move to the real GitHub Copilot BYOK spike and benchmark harness.
 
 After hardware telemetry the next major work items are:
 
