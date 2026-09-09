@@ -34,4 +34,6 @@ public interface INodeHardwareMetricsTracker
         DateTimeOffset collectedAtUtc);
 
     void RecordFailure(Guid nodeId, string error, DateTimeOffset attemptedAtUtc);
+
+    void Remove(Guid nodeId);
 }
