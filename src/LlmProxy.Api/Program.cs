@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using LlmProxy.Api.Admin;
 using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Security;
@@ -14,6 +15,9 @@ using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddDbContext<GatewayDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
@@ -90,5 +94,6 @@ if (entraEnabled)
         [CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme]));
 }
 
+app.MapGet("/", () => Results.Redirect("/admin/"));
 app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 app.Run();

@@ -1,0 +1,42 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: GHCR image tag to deploy (main, sha-..., or semantic version)
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+environment:
+  name: production
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, llmproxy-prod]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve deployment variables
+        shell: bash
+        run: |
+          echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+          echo "LLMPROXY_IMAGE_TAG=${{ inputs.image_tag }}" >> "$GITHUB_ENV"
+          echo "LLMPROXY_ENV_FILE=/opt/llmproxy/.env" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        shell: bash
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Deploy
+        shell: bash
+        run: |
+          chmod +x docker/scripts/deploy.sh
+          docker/scripts/deploy.sh "${{ inputs.image_tag }}"

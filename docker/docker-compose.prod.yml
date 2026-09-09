@@ -1,0 +1,17 @@
+services:
+  postgres:
+    restart: unless-stopped
+
+  llmproxy:
+    image: ghcr.io/${GHCR_OWNER}/llmproxy:${LLMPROXY_IMAGE_TAG:-main}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      llmproxy:
+        condition: service_started
