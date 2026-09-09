@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>()
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
+builder.Services.AddSingleton(new RoutingTuningState(RoutingTuningSettings.Default));
 builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
 builder.Services.AddScoped<RoutingService>();
 builder.Services.AddScoped<MetricsSummaryReader>();
@@ -100,6 +101,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
 app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
+app.MapRoutingTuningEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
