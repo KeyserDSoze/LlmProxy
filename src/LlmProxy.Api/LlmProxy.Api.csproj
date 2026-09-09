@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="../LlmProxy.Domain/LlmProxy.Domain.csproj" />
+    <ProjectReference Include="../LlmProxy.Application/LlmProxy.Application.csproj" />
+    <ProjectReference Include="../LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Identity.Web" />
+  </ItemGroup>
+</Project>

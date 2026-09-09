@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../LlmProxy.Domain/LlmProxy.Domain.csproj" />
+  </ItemGroup>
+</Project>
