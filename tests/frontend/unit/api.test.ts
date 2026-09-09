@@ -32,6 +32,19 @@ describe('admin api client', () => {
     }))
   })
 
+  it('requests both in-memory routing telemetry feeds', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('[]', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+
+    await api.routingPerformance()
+    await api.routingRuntime()
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/admin/routing/performance', expect.objectContaining({ credentials: 'same-origin' }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/admin/routing/runtime', expect.objectContaining({ credentials: 'same-origin' }))
+  })
+
   it('serializes JSON commands with the correct content type', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 'node-1' }), {
       status: 200,
