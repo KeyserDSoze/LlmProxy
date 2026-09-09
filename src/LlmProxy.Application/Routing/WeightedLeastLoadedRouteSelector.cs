@@ -1,19 +1,24 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Domain.Routing;
 
 namespace LlmProxy.Application.Routing;
 
 public sealed class WeightedLeastLoadedRouteSelector(
     IDeploymentPerformanceTracker? performanceTracker = null,
-    INodeRuntimeMetricsTracker? runtimeMetricsTracker = null) : IRouteSelector
+    INodeRuntimeMetricsTracker? runtimeMetricsTracker = null,
+    RoutingTuningState? tuningState = null) : IRouteSelector
 {
     private readonly IDeploymentPerformanceTracker _performanceTracker =
         performanceTracker ?? NullDeploymentPerformanceTracker.Instance;
     private readonly INodeRuntimeMetricsTracker _runtimeMetricsTracker =
         runtimeMetricsTracker ?? NullNodeRuntimeMetricsTracker.Instance;
+    private readonly RoutingTuningState _tuningState =
+        tuningState ?? new RoutingTuningState(RoutingTuningSettings.Default);
 
     public RouteSelection? Select(IReadOnlyList<DeploymentCandidate> candidates, IRequestLoadTracker loadTracker)
     {
+        var tuning = _tuningState.Current;
         var selected = RouteSelectorSupport.Eligible(candidates, loadTracker)
             .Select(candidate => new
             {
@@ -22,7 +27,7 @@ public sealed class WeightedLeastLoadedRouteSelector(
                 Performance = _performanceTracker.GetSnapshot(candidate.DeploymentId),
                 Runtime = _runtimeMetricsTracker.GetSnapshot(candidate.NodeId)
             })
-            .OrderBy(item => Score(item.Candidate, item.Active, item.Performance, item.Runtime))
+            .OrderBy(item => Score(item.Candidate, item.Active, item.Performance, item.Runtime, tuning))
             .ThenBy(item => item.Active)
             .ThenBy(item => item.Candidate.NodeName, StringComparer.OrdinalIgnoreCase)
             .Select(item => item.Candidate)
@@ -35,36 +40,36 @@ public sealed class WeightedLeastLoadedRouteSelector(
         DeploymentCandidate candidate,
         int active,
         DeploymentPerformanceSnapshot performance,
-        NodeRuntimeMetricsSnapshot? runtime = null)
+        NodeRuntimeMetricsSnapshot? runtime = null,
+        RoutingTuningSettings? tuning = null)
     {
+        var settings = tuning ?? RoutingTuningSettings.Default;
         var loadScore = (active + 1d) / (candidate.MaxConcurrency * candidate.Weight);
         var healthPenalty = candidate.NodeStatus switch
         {
-            NodeStatus.Degraded => 0.35d,
-            NodeStatus.Unknown => 0.10d,
+            NodeStatus.Degraded => settings.DegradedNodePenalty,
+            NodeStatus.Unknown => settings.UnknownNodePenalty,
             _ => 0d
         };
 
         var performancePenalty = 0d;
-        if (performance.SampleCount >= 3)
+        if (performance.SampleCount >= settings.WarmupSamples)
         {
             var latencyPenalty = performance.EwmaTimeToFirstByteMilliseconds is double timeToFirstByte
-                ? Math.Min(timeToFirstByte / 2_000d, 1d) * 0.25d
+                ? Math.Min(timeToFirstByte / settings.TtftTargetMilliseconds, 1d) * settings.TtftPenaltyWeight
                 : 0d;
-            var failurePenalty = Math.Clamp(performance.InfrastructureFailureScore, 0d, 1d) * 1.50d;
+            var failurePenalty = Math.Clamp(performance.InfrastructureFailureScore, 0d, 1d) * settings.FailurePenaltyWeight;
             performancePenalty = latencyPenalty + failurePenalty;
         }
 
         var runtimePenalty = 0d;
         if (runtime?.Available == true)
         {
-            // Gateway active-request accounting is authoritative for traffic flowing through us.
-            // vLLM running requests beyond that number reveal work coming from other clients.
             var externalRunning = Math.Max(0d, runtime.RunningRequests - active);
-            var externalLoadPenalty = Math.Min(externalRunning / candidate.MaxConcurrency, 1d) * 0.40d;
-            var queuePenalty = Math.Min(runtime.WaitingRequests / candidate.MaxConcurrency, 2d) * 0.75d;
-            var kvPenalty = runtime.KvCacheUsageRatio is double kv && kv > 0.70d
-                ? Math.Min((kv - 0.70d) / 0.30d, 1d) * 0.60d
+            var externalLoadPenalty = Math.Min(externalRunning / candidate.MaxConcurrency, 1d) * settings.ExternalLoadPenaltyWeight;
+            var queuePenalty = Math.Min(runtime.WaitingRequests / candidate.MaxConcurrency, 2d) * settings.QueuePenaltyWeight;
+            var kvPenalty = runtime.KvCacheUsageRatio is double kv && kv > settings.KvCacheThreshold
+                ? Math.Min((kv - settings.KvCacheThreshold) / Math.Max(1d - settings.KvCacheThreshold, 0.01d), 1d) * settings.KvCachePenaltyWeight
                 : 0d;
             runtimePenalty = externalLoadPenalty + queuePenalty + kvPenalty;
         }
