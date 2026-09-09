@@ -2,7 +2,7 @@ using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Nodes;
 
-namespace LlmProxy.Tests.Routing;
+namespace LlmProxy.UnitTests.Routing;
 
 public sealed class WeightedLeastLoadedRouteSelectorTests
 {

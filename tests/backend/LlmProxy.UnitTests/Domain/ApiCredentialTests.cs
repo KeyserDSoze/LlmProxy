@@ -1,6 +1,6 @@
 using LlmProxy.Domain.Security;
 
-namespace LlmProxy.Tests.Domain;
+namespace LlmProxy.UnitTests.Domain;
 
 public sealed class ApiCredentialTests
 {

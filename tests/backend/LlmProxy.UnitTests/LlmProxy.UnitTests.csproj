@@ -8,7 +8,8 @@
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../LlmProxy.Domain/LlmProxy.Domain.csproj" />
-    <ProjectReference Include="../LlmProxy.Application/LlmProxy.Application.csproj" />
+    <ProjectReference Include="../../../src/LlmProxy.Domain/LlmProxy.Domain.csproj" />
+    <ProjectReference Include="../../../src/LlmProxy.Application/LlmProxy.Application.csproj" />
+    <ProjectReference Include="../../../src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

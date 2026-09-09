@@ -1,0 +1,64 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '../../../src/LlmProxy.Admin/src/api'
+
+describe('admin api client', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  it('requests metrics with the requested take value and same-origin credentials', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('[]', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+
+    await api.metrics(25)
+
+    expect(fetch).toHaveBeenCalledWith('/api/admin/metrics?take=25', expect.objectContaining({
+      credentials: 'same-origin'
+    }))
+  })
+
+  it('serializes JSON commands with the correct content type', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 'node-1' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+
+    await api.createNode({
+      name: 'dgx-02',
+      baseAddress: 'http://10.0.0.22:8000',
+      weight: 1,
+      maxConcurrency: 4
+    })
+
+    expect(fetch).toHaveBeenCalledWith('/api/admin/nodes', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        name: 'dgx-02',
+        baseAddress: 'http://10.0.0.22:8000',
+        weight: 1,
+        maxConcurrency: 4
+      })
+    }))
+  })
+
+  it.each([401, 403])('maps HTTP %s to AUTH_REQUIRED', async status => {
+    vi.mocked(fetch).mockResolvedValue(new Response('', { status }))
+
+    await expect(api.overview()).rejects.toThrow('AUTH_REQUIRED')
+  })
+
+  it('propagates the server error body for non-success responses', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('gateway exploded', { status: 500 }))
+
+    await expect(api.nodes()).rejects.toThrow('gateway exploded')
+  })
+
+  it('accepts 204 commands without trying to parse JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }))
+
+    await expect(api.revokeApiCredential('credential-1')).resolves.toBeUndefined()
+  })
+})

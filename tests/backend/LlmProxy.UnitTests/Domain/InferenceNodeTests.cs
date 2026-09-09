@@ -1,6 +1,6 @@
 using LlmProxy.Domain.Nodes;
 
-namespace LlmProxy.Tests.Domain;
+namespace LlmProxy.UnitTests.Domain;
 
 public sealed class InferenceNodeTests
 {
