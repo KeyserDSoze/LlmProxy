@@ -76,6 +76,8 @@ export ROUTING_STRATEGY="WeightedRoundRobin"
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="2"
 export HEALTH_UNHEALTHY_AFTER_FAILURES="3"
+export RUNTIME_METRICS_ENABLED="true"
+export RUNTIME_METRICS_INTERVAL_SECONDS="1"
 
 if ! "${COMPOSE[@]}" up -d --build; then
   fail_with_diagnostics "Docker Compose stack failed to start."
@@ -124,6 +126,19 @@ wait_node_status "$node2_id" Healthy 30
 node_health_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node2_id" '.[] | select(.id == $id)')"
 echo "$node_health_json" | jq -e '.lastHealthLatencyMilliseconds != null and .consecutiveHealthSuccesses >= 2 and .lastHealthError == null' >/dev/null
 
+runtime_ready=false
+for attempt in {1..20}; do
+  runtime_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/runtime)"
+  if echo "$runtime_json" | jq -e --arg id "$node2_id" 'map(select(.nodeId == $id and .available == true and .runningRequests == 2 and .waitingRequests == 1 and .kvCacheUsageRatio > 0.5 and .modelName == "bootstrap-model")) | length == 1' >/dev/null; then
+    runtime_ready=true
+    break
+  fi
+  sleep 0.25
+done
+if [[ "$runtime_ready" != "true" ]]; then
+  fail_with_diagnostics "vLLM runtime metrics were not collected from the path-prefixed alternate node."
+fi
+
 connection_test="$(curl --fail --silent -X POST http://127.0.0.1:8080/api/admin/nodes/${node2_id}/test-connection)"
 echo "$connection_test" | jq -e '.success == true and .health.statusCode == 200 and .openAi.statusCode == 200' >/dev/null
 echo "$connection_test" | grep --quiet 'altropath/v1/chat/completions'
@@ -149,6 +164,9 @@ done
 if [[ "$primary_count" -ne 2 || "$alternate_count" -ne 6 ]]; then
   fail_with_diagnostics "Expected weighted split primary=2 alternate=6, got primary=${primary_count} alternate=${alternate_count}."
 fi
+
+performance_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/performance)"
+echo "$performance_json" | jq -e 'map(select(.sampleCount > 0)) | length > 0' >/dev/null
 
 curl --fail --silent \
   -X PUT \
@@ -191,8 +209,6 @@ echo "$responses_payload" | jq -e '.usage.input_tokens == 13 and .usage.output_t
 
 python3 tests/backend/integration/assert_streaming.py http://127.0.0.1:8080/v1/chat/completions dev-change-me
 
-# Request metrics are buffered asynchronously. Wait until a streaming request with
-# usage data appears, then verify latency, surface, attempt, token and summary fields.
 observability_ready=false
 metrics_json='[]'
 for attempt in {1..30}; do
@@ -214,9 +230,6 @@ echo "$metrics_json" | jq -e 'map(select(.isStreaming == true and .inputTokens =
 summary_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/metrics/summary?hours=24')"
 echo "$summary_json" | jq -e '.windowHours == 24 and .requestCount > 0 and .successCount > 0 and .p50DurationMilliseconds != null and .p95DurationMilliseconds != null and .p50TimeToFirstByteMilliseconds != null and .p95TimeToFirstByteMilliseconds != null and .outputTokens > 0 and .tokenObservedRequests > 0 and (.byModel | length) > 0 and (.byNode | length) > 0' >/dev/null
 
-# Exercise health hysteresis against a real background monitor. One failed probe is
-# Degraded, the configured failure streak becomes Unhealthy, and recovery requires
-# the configured success streak before returning to Healthy.
 curl --fail --silent -X POST http://127.0.0.1:3451/__control/health/500 >/dev/null
 wait_node_status "$node2_id" Degraded 10
 wait_node_status "$node2_id" Unhealthy 15
@@ -229,8 +242,6 @@ wait_node_status "$node2_id" Healthy 15
 recovered_health="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -c --arg id "$node2_id" '.[] | select(.id == $id)')"
 echo "$recovered_health" | jq -e '.consecutiveHealthSuccesses >= 2 and .consecutiveHealthFailures == 0 and .lastHealthError == null' >/dev/null
 
-# Administrative changes must survive restart and be attributable. No raw API key,
-# prompt, or generated content is included in this audit stream.
 audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=100')"
 echo "$audit_json" | jq -e 'map(.action) | index("node.create") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("deployment.create") != null' >/dev/null
@@ -240,4 +251,4 @@ echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/nu
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, observability, health hysteresis and audit verified."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, vLLM runtime telemetry, observability, health hysteresis and audit verified."
