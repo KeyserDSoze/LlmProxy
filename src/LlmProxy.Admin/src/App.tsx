@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings } from './types'
+import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
 type View = 'dashboard' | 'nodes' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
 
@@ -15,6 +15,19 @@ const emptyOverview: Overview = {
 const emptyRouting: RoutingSettings = {
   strategy: 'WeightedLeastLoaded',
   supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin']
+}
+
+const emptyRoutingTuning: RoutingTuningSettings = {
+  warmupSamples: 3,
+  ttftTargetMilliseconds: 2000,
+  ttftPenaltyWeight: 0.25,
+  failurePenaltyWeight: 1.5,
+  externalLoadPenaltyWeight: 0.4,
+  queuePenaltyWeight: 0.75,
+  kvCacheThreshold: 0.7,
+  kvCachePenaltyWeight: 0.6,
+  degradedNodePenalty: 0.35,
+  unknownNodePenalty: 0.1
 }
 
 const emptyMetricsSummary: MetricsSummary = {
@@ -43,6 +56,7 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
+  const [routingTuning, setRoutingTuning] = useState<RoutingTuningSettings>(emptyRoutingTuning)
   const [routingPerformance, setRoutingPerformance] = useState<DeploymentPerformanceSnapshot[]>([])
   const [routingRuntime, setRoutingRuntime] = useState<NodeRuntimeMetricsSnapshot[]>([])
   const [metricsSummary, setMetricsSummary] = useState<MetricsSummary>(emptyMetricsSummary)
@@ -59,11 +73,12 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextPerformance, nextRuntime, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
-        api.overview(), api.routing(), api.routingPerformance(), api.routingRuntime(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
+      const [nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
       ])
       setOverview(nextOverview)
       setRouting(nextRouting)
+      setRoutingTuning(nextTuning)
       setRoutingPerformance(nextPerformance)
       setRoutingRuntime(nextRuntime)
       setNodes(nextNodes)
@@ -127,7 +142,7 @@ export default function App() {
             {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
-            {view === 'routing' && <Routing routing={routing} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
+            {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
             {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
             {view === 'audit' && <Audit events={audit} />}
@@ -222,10 +237,13 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
   </div>
 }
 
-function Routing({ routing, performance, runtime, deployments, nodes, models, refresh }: { routing: RoutingSettings; performance: DeploymentPerformanceSnapshot[]; runtime: NodeRuntimeMetricsSnapshot[]; deployments: Deployment[]; nodes: Node[]; models: Model[]; refresh: () => Promise<void> }) {
+function Routing({ routing, tuning, performance, runtime, deployments, nodes, models, refresh }: { routing: RoutingSettings; tuning: RoutingTuningSettings; performance: DeploymentPerformanceSnapshot[]; runtime: NodeRuntimeMetricsSnapshot[]; deployments: Deployment[]; nodes: Node[]; models: Model[]; refresh: () => Promise<void> }) {
   const [strategy, setStrategy] = useState<RoutingSettings['strategy']>(routing.strategy)
   const [saved, setSaved] = useState(false)
+  const [tuningDraft, setTuningDraft] = useState<RoutingTuningSettings>(tuning)
+  const [tuningSaved, setTuningSaved] = useState(false)
   useEffect(() => setStrategy(routing.strategy), [routing.strategy])
+  useEffect(() => setTuningDraft(tuning), [tuning])
 
   const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
   const modelNames = useMemo(() => new Map(models.map(model => [model.id, model.publicName])), [models])
@@ -235,6 +253,29 @@ function Routing({ routing, performance, runtime, deployments, nodes, models, re
     event.preventDefault()
     await api.updateRouting(strategy)
     setSaved(true)
+    await refresh()
+  }
+
+  function setTuning<K extends keyof RoutingTuningSettings>(key: K, value: number) {
+    setTuningDraft(current => ({ ...current, [key]: value }))
+    setTuningSaved(false)
+  }
+
+  async function submitTuning(event: FormEvent) {
+    event.preventDefault()
+    await api.updateRoutingTuning({
+      warmupSamples: tuningDraft.warmupSamples,
+      ttftTargetMilliseconds: tuningDraft.ttftTargetMilliseconds,
+      ttftPenaltyWeight: tuningDraft.ttftPenaltyWeight,
+      failurePenaltyWeight: tuningDraft.failurePenaltyWeight,
+      externalLoadPenaltyWeight: tuningDraft.externalLoadPenaltyWeight,
+      queuePenaltyWeight: tuningDraft.queuePenaltyWeight,
+      kvCacheThreshold: tuningDraft.kvCacheThreshold,
+      kvCachePenaltyWeight: tuningDraft.kvCachePenaltyWeight,
+      degradedNodePenalty: tuningDraft.degradedNodePenalty,
+      unknownNodePenalty: tuningDraft.unknownNodePenalty
+    })
+    setTuningSaved(true)
     await refresh()
   }
 
@@ -256,6 +297,23 @@ function Routing({ routing, performance, runtime, deployments, nodes, models, re
         {saved && <div className="notice">Routing policy updated live.</div>}
       </form></section>
     </div>
+
+    <section className="panel formPanel">
+      <div className="panelTitle tuningTitle"><h2>Smart-routing tuning</h2><span>Persisted in PostgreSQL · applied immediately · last update {formatDate(tuning.updatedAtUtc)}</span></div>
+      <form onSubmit={submitTuning} className="tuningGrid">
+        <label>Warm-up samples<input aria-label="Warm-up samples" type="number" min="0" max="100" value={tuningDraft.warmupSamples} onChange={e => setTuning('warmupSamples', Number(e.target.value))} /></label>
+        <label>TTFT target (ms)<input aria-label="TTFT target" type="number" min="1" max="120000" value={tuningDraft.ttftTargetMilliseconds} onChange={e => setTuning('ttftTargetMilliseconds', Number(e.target.value))} /></label>
+        <label>TTFT penalty weight<input aria-label="TTFT penalty weight" type="number" min="0" max="10" step="0.05" value={tuningDraft.ttftPenaltyWeight} onChange={e => setTuning('ttftPenaltyWeight', Number(e.target.value))} /></label>
+        <label>Failure penalty weight<input aria-label="Failure penalty weight" type="number" min="0" max="10" step="0.05" value={tuningDraft.failurePenaltyWeight} onChange={e => setTuning('failurePenaltyWeight', Number(e.target.value))} /></label>
+        <label>External-load penalty<input aria-label="External load penalty" type="number" min="0" max="10" step="0.05" value={tuningDraft.externalLoadPenaltyWeight} onChange={e => setTuning('externalLoadPenaltyWeight', Number(e.target.value))} /></label>
+        <label>Queue penalty weight<input aria-label="Queue penalty weight" type="number" min="0" max="10" step="0.05" value={tuningDraft.queuePenaltyWeight} onChange={e => setTuning('queuePenaltyWeight', Number(e.target.value))} /></label>
+        <label>KV-cache threshold<input aria-label="KV cache threshold" type="number" min="0" max="1" step="0.01" value={tuningDraft.kvCacheThreshold} onChange={e => setTuning('kvCacheThreshold', Number(e.target.value))} /></label>
+        <label>KV-cache penalty weight<input aria-label="KV cache penalty weight" type="number" min="0" max="10" step="0.05" value={tuningDraft.kvCachePenaltyWeight} onChange={e => setTuning('kvCachePenaltyWeight', Number(e.target.value))} /></label>
+        <label>Degraded-node penalty<input aria-label="Degraded node penalty" type="number" min="0" max="10" step="0.05" value={tuningDraft.degradedNodePenalty} onChange={e => setTuning('degradedNodePenalty', Number(e.target.value))} /></label>
+        <label>Unknown-node penalty<input aria-label="Unknown node penalty" type="number" min="0" max="10" step="0.05" value={tuningDraft.unknownNodePenalty} onChange={e => setTuning('unknownNodePenalty', Number(e.target.value))} /></label>
+        <div className="tuningActions"><button className="primary">Apply smart-routing tuning</button><button type="button" className="secondary" onClick={() => { setTuningDraft(emptyRoutingTuning); setTuningSaved(false) }}>Load defaults</button>{tuningSaved && <span className="notice inlineNotice">Tuning updated live.</span>}</div>
+      </form>
+    </section>
 
     <div className="gridTwo">
       <section className="panel"><div className="panelTitle"><h2>Performance feedback</h2><span>In-memory EWMA used by Weighted least loaded</span></div>
