@@ -27,6 +27,9 @@ services:
       Authentication__ApiKey: ${LLM_PROXY_API_KEY:-dev-change-me}
       Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:-development-pepper-change-me}
       Routing__Strategy: ${ROUTING_STRATEGY:-WeightedLeastLoaded}
+      Health__IntervalSeconds: ${HEALTH_INTERVAL_SECONDS:-10}
+      Health__HealthyAfterSuccesses: ${HEALTH_HEALTHY_AFTER_SUCCESSES:-2}
+      Health__UnhealthyAfterFailures: ${HEALTH_UNHEALTHY_AFTER_FAILURES:-3}
       EntraId__Enabled: ${ENTRA_ENABLED:-false}
       EntraId__Instance: https://login.microsoftonline.com/
       EntraId__TenantId: ${ENTRA_TENANT_ID:-}
