@@ -134,7 +134,7 @@ describe('admin application', () => {
     expect(screen.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
-    expect(screen.getByText('67 °C')).toBeInTheDocument()
+    expect(screen.getAllByText('67 °C')).toHaveLength(2)
     expect(screen.getByText('261 W')).toBeInTheDocument()
     expect(screen.getByText('Routing isolation')).toBeInTheDocument()
 
