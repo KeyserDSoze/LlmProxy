@@ -4,5 +4,6 @@
     <Project Path="src/LlmProxy.Application/LlmProxy.Application.csproj" />
     <Project Path="src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
     <Project Path="src/LlmProxy.Api/LlmProxy.Api.csproj" />
+    <Project Path="src/LlmProxy.Tests/LlmProxy.Tests.csproj" />
   </Folder>
 </Solution>
