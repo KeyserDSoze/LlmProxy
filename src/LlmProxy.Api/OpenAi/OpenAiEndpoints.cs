@@ -76,11 +76,21 @@ public static class OpenAiEndpoints
         var requestId = Guid.NewGuid();
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
+        var surface = upstreamPath.EndsWith("/responses", StringComparison.Ordinal)
+            ? "responses"
+            : "chat_completions";
         Guid? finalDeploymentId = null;
         Guid? finalNodeId = null;
         var finalStatusCode = StatusCodes.Status500InternalServerError;
+        var attemptCount = 0;
+        var isStreaming = false;
+        long? upstreamHeaderMilliseconds = null;
+        long? timeToFirstByteMilliseconds = null;
+        TokenUsage? tokenUsage = null;
         string? finalErrorCode = null;
         string? publicModelName = null;
+
+        context.Response.Headers["X-LlmProxy-Request-Id"] = requestId.ToString();
 
         try
         {
@@ -119,17 +129,20 @@ public static class OpenAiEndpoints
                     break;
                 }
 
+                attemptCount++;
                 finalDeploymentId = route.DeploymentId;
                 finalNodeId = route.NodeId;
                 OpenAiRequestPayload.RewriteModel(requestObject, route.ProviderModelName);
 
                 using var lease = loadTracker.Enter(route.DeploymentId);
-                using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath);
+                using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath, requestId);
                 HttpResponseMessage upstream;
+                var upstreamStopwatch = Stopwatch.StartNew();
 
                 try
                 {
                     upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                    upstreamHeaderMilliseconds = upstreamStopwatch.ElapsedMilliseconds;
                 }
                 catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
                 {
@@ -170,10 +183,13 @@ public static class OpenAiEndpoints
 
                     context.Response.StatusCode = finalStatusCode;
                     CopyResponseHeaders(upstream, context.Response);
+                    var observer = new OpenAiResponseObserver(
+                        IsEventStream(upstream),
+                        () => stopwatch.ElapsedMilliseconds);
 
                     try
                     {
-                        await CopyUpstreamBodyAsync(upstream, context);
+                        await CopyUpstreamBodyAsync(upstream, context, observer);
                         finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
                         return;
                     }
@@ -204,6 +220,13 @@ public static class OpenAiEndpoints
                             $"Inference stream from '{route.NodeName}' was interrupted: {exception.Message}");
                         return;
                     }
+                    finally
+                    {
+                        observer.Complete();
+                        isStreaming = observer.IsStreaming;
+                        timeToFirstByteMilliseconds = observer.TimeToFirstByteMilliseconds;
+                        tokenUsage = observer.Usage;
+                    }
                 }
             }
 
@@ -228,11 +251,19 @@ public static class OpenAiEndpoints
                     requestId,
                     startedAtUtc,
                     publicModelName,
+                    surface,
                     finalDeploymentId,
                     finalNodeId,
                     apiCredentialId,
                     finalStatusCode,
                     stopwatch.ElapsedMilliseconds,
+                    attemptCount,
+                    isStreaming,
+                    upstreamHeaderMilliseconds,
+                    timeToFirstByteMilliseconds,
+                    tokenUsage?.InputTokens,
+                    tokenUsage?.OutputTokens,
+                    tokenUsage?.TotalTokens,
                     finalErrorCode));
             }
         }
@@ -242,7 +273,8 @@ public static class OpenAiEndpoints
         HttpRequest source,
         JsonObject requestObject,
         RouteSelection route,
-        string upstreamPath)
+        string upstreamPath,
+        Guid requestId)
     {
         var destination = new HttpRequestMessage(
             HttpMethod.Post,
@@ -252,24 +284,25 @@ public static class OpenAiEndpoints
         };
 
         CopyRequestHeaders(source, destination);
+        destination.Headers.Remove("X-LlmProxy-Request-Id");
+        destination.Headers.TryAddWithoutValidation("X-LlmProxy-Request-Id", requestId.ToString());
         return destination;
     }
 
-    private static async Task CopyUpstreamBodyAsync(HttpResponseMessage upstream, HttpContext context)
+    private static async Task CopyUpstreamBodyAsync(
+        HttpResponseMessage upstream,
+        HttpContext context,
+        OpenAiResponseObserver observer)
     {
-        var mediaType = upstream.Content.Headers.ContentType?.MediaType;
-        if (!string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        if (observer.IsStreaming)
         {
-            await upstream.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
-            return;
+            // SSE must remain genuinely streaming all the way to Copilot. Disable any server-side
+            // buffering and flush every chunk received from the inference runtime.
+            context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            context.Response.Headers.CacheControl = "no-cache";
+            context.Response.Headers["X-Accel-Buffering"] = "no";
+            await context.Response.StartAsync(context.RequestAborted);
         }
-
-        // SSE must remain genuinely streaming all the way to Copilot. Disable any server-side
-        // buffering and flush every chunk received from the inference runtime.
-        context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
-        context.Response.Headers.CacheControl = "no-cache";
-        context.Response.Headers["X-Accel-Buffering"] = "no";
-        await context.Response.StartAsync(context.RequestAborted);
 
         await using var source = await upstream.Content.ReadAsStreamAsync(context.RequestAborted);
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
@@ -283,8 +316,12 @@ public static class OpenAiEndpoints
                     break;
                 }
 
+                observer.Observe(buffer.AsSpan(0, read));
                 await context.Response.Body.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
-                await context.Response.Body.FlushAsync(context.RequestAborted);
+                if (observer.IsStreaming)
+                {
+                    await context.Response.Body.FlushAsync(context.RequestAborted);
+                }
             }
         }
         finally
@@ -292,6 +329,12 @@ public static class OpenAiEndpoints
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
+
+    private static bool IsEventStream(HttpResponseMessage response) =>
+        string.Equals(
+            response.Content.Headers.ContentType?.MediaType,
+            "text/event-stream",
+            StringComparison.OrdinalIgnoreCase);
 
     private static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)
     {

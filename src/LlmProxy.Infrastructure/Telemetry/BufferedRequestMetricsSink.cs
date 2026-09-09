@@ -52,11 +52,19 @@ public sealed class BufferedRequestMetricsSink(
                     RequestId = metric.RequestId,
                     StartedAtUtc = metric.StartedAtUtc,
                     LogicalModel = metric.LogicalModel,
+                    Surface = metric.Surface,
                     DeploymentId = metric.DeploymentId,
                     NodeId = metric.NodeId,
                     ApiCredentialId = metric.ApiCredentialId,
                     StatusCode = metric.StatusCode,
                     DurationMilliseconds = metric.DurationMilliseconds,
+                    AttemptCount = metric.AttemptCount,
+                    IsStreaming = metric.IsStreaming,
+                    UpstreamHeaderMilliseconds = metric.UpstreamHeaderMilliseconds,
+                    TimeToFirstByteMilliseconds = metric.TimeToFirstByteMilliseconds,
+                    InputTokens = metric.InputTokens,
+                    OutputTokens = metric.OutputTokens,
+                    TotalTokens = metric.TotalTokens,
                     ErrorCode = metric.ErrorCode
                 }));
                 await dbContext.SaveChangesAsync(stoppingToken);

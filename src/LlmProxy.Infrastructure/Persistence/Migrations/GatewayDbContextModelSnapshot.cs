@@ -111,18 +111,28 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
         {
             b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
             b.Property<Guid?>("ApiCredentialId").HasColumnType("uuid");
+            b.Property<int>("AttemptCount").HasColumnType("integer");
             b.Property<Guid?>("DeploymentId").HasColumnType("uuid");
             b.Property<long>("DurationMilliseconds").HasColumnType("bigint");
             b.Property<string>("ErrorCode").HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<int?>("InputTokens").HasColumnType("integer");
+            b.Property<bool>("IsStreaming").HasColumnType("boolean");
             b.Property<string>("LogicalModel").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
             b.Property<Guid?>("NodeId").HasColumnType("uuid");
+            b.Property<int?>("OutputTokens").HasColumnType("integer");
             b.Property<Guid>("RequestId").HasColumnType("uuid");
             b.Property<DateTimeOffset>("StartedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<int>("StatusCode").HasColumnType("integer");
+            b.Property<string>("Surface").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<long?>("TimeToFirstByteMilliseconds").HasColumnType("bigint");
+            b.Property<int?>("TotalTokens").HasColumnType("integer");
+            b.Property<long?>("UpstreamHeaderMilliseconds").HasColumnType("bigint");
             b.HasKey("Id");
             b.HasIndex("ApiCredentialId");
             b.HasIndex("RequestId").IsUnique();
             b.HasIndex("StartedAtUtc");
+            b.HasIndex("LogicalModel", "StartedAtUtc");
+            b.HasIndex("NodeId", "StartedAtUtc");
             b.ToTable("request_metrics");
         });
 

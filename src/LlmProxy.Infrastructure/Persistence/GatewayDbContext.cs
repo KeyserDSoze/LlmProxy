@@ -72,10 +72,13 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.ToTable("request_metrics");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.LogicalModel).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Surface).HasMaxLength(64).IsRequired();
             entity.Property(x => x.ErrorCode).HasMaxLength(100);
             entity.HasIndex(x => x.StartedAtUtc);
             entity.HasIndex(x => x.RequestId).IsUnique();
             entity.HasIndex(x => x.ApiCredentialId);
+            entity.HasIndex(x => new { x.LogicalModel, x.StartedAtUtc });
+            entity.HasIndex(x => new { x.NodeId, x.StartedAtUtc });
         });
 
         modelBuilder.Entity<AuditEvent>(entity =>

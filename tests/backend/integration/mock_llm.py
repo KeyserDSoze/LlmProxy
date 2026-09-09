@@ -84,6 +84,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
                 "model": payload.get("model"),
                 "served_by": self.server.runtime_name,
                 "output": [],
+                "usage": {"input_tokens": 13, "output_tokens": 5, "total_tokens": 18},
             })
             return
 
@@ -93,6 +94,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
             "model": payload.get("model"),
             "served_by": self.server.runtime_name,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": "mock response"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
         })
 
     def _stream(self, payload: dict):
@@ -114,6 +116,16 @@ class MockLlmHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
             time.sleep(0.5)
 
+        usage_event = {
+            "id": f"chatcmpl_{self.server.runtime_name}",
+            "object": "chat.completion.chunk",
+            "model": payload.get("model"),
+            "served_by": self.server.runtime_name,
+            "choices": [],
+            "usage": {"prompt_tokens": 17, "completion_tokens": 6, "total_tokens": 23},
+        }
+        self.wfile.write(f"data: {json.dumps(usage_event, separators=(',', ':'))}\n\n".encode("utf-8"))
+        self.wfile.flush()
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
         self.close_connection = True

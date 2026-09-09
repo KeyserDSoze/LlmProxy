@@ -105,6 +105,7 @@ primary_response="$(curl --fail --silent \
   http://127.0.0.1:8080/v1/chat/completions)"
 echo "$primary_response" | grep --quiet '"served_by":"primary"'
 echo "$primary_response" | grep --quiet '"model":"bootstrap-model"'
+echo "$primary_response" | jq -e '.usage.total_tokens == 18' >/dev/null
 
 model_id="$(curl --fail --silent http://127.0.0.1:8080/api/admin/models | jq -r '.[0].id')"
 node2_json="$(curl --fail --silent \
@@ -180,14 +181,38 @@ wait_ready
 curl --fail --silent http://127.0.0.1:8080/api/admin/routing | grep --quiet 'RoundRobin'
 curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet 'RoundRobin'
 
-curl --fail --silent \
+responses_payload="$(curl --fail --silent \
   -H 'Authorization: Bearer dev-change-me' \
   -H 'Content-Type: application/json' \
   -d '{"model":"agic-code-fast","input":"hello responses"}' \
-  http://127.0.0.1:8080/v1/responses \
-  | grep --quiet '"object":"response"'
+  http://127.0.0.1:8080/v1/responses)"
+echo "$responses_payload" | grep --quiet '"object":"response"'
+echo "$responses_payload" | jq -e '.usage.input_tokens == 13 and .usage.output_tokens == 5' >/dev/null
 
 python3 tests/backend/integration/assert_streaming.py http://127.0.0.1:8080/v1/chat/completions dev-change-me
+
+# Request metrics are buffered asynchronously. Wait until a streaming request with
+# usage data appears, then verify latency, surface, attempt, token and summary fields.
+observability_ready=false
+metrics_json='[]'
+for attempt in {1..30}; do
+  metrics_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/metrics?take=200')"
+  if echo "$metrics_json" | jq -e 'map(select(.isStreaming == true and .timeToFirstByteMilliseconds != null and .totalTokens == 23)) | length > 0' >/dev/null; then
+    observability_ready=true
+    break
+  fi
+  sleep 0.25
+done
+if [[ "$observability_ready" != "true" ]]; then
+  fail_with_diagnostics "Inference observability metrics did not contain the completed SSE request."
+fi
+
+echo "$metrics_json" | jq -e 'map(select(.surface == "chat_completions" and .attemptCount >= 1 and .upstreamHeaderMilliseconds != null and .totalTokens != null)) | length > 0' >/dev/null
+echo "$metrics_json" | jq -e 'map(select(.surface == "responses" and .inputTokens == 13 and .outputTokens == 5 and .totalTokens == 18)) | length > 0' >/dev/null
+echo "$metrics_json" | jq -e 'map(select(.isStreaming == true and .inputTokens == 17 and .outputTokens == 6 and .totalTokens == 23)) | length > 0' >/dev/null
+
+summary_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/metrics/summary?hours=24')"
+echo "$summary_json" | jq -e '.windowHours == 24 and .requestCount > 0 and .successCount > 0 and .p50DurationMilliseconds != null and .p95DurationMilliseconds != null and .p50TimeToFirstByteMilliseconds != null and .p95TimeToFirstByteMilliseconds != null and .outputTokens > 0 and .tokenObservedRequests > 0 and (.byModel | length) > 0 and (.byNode | length) > 0' >/dev/null
 
 # Exercise health hysteresis against a real background monitor. One failed probe is
 # Degraded, the configured failure streak becomes Unhealthy, and recovery requires
@@ -215,4 +240,4 @@ echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/nu
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, health hysteresis and audit verified."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, observability, health hysteresis and audit verified."

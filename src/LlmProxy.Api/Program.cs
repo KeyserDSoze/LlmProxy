@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>()
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
 builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
 builder.Services.AddScoped<RoutingService>();
+builder.Services.AddScoped<MetricsSummaryReader>();
 
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
 builder.Services.AddSingleton<IRequestMetricsSink>(services => services.GetRequiredService<BufferedRequestMetricsSink>());
@@ -94,6 +95,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
 
 app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
+app.MapMetricsAdminEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
