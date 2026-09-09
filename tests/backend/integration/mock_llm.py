@@ -30,6 +30,15 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         self.wfile.flush()
 
+    def _text(self, status: int, content_type: str, text: str):
+        body = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        self.wfile.flush()
+
     def do_GET(self):
         if self.path == self._expected("/health"):
             status = self.server.health_status
@@ -45,6 +54,23 @@ class MockLlmHandler(BaseHTTPRequestHandler):
                 "data": [{"id": "bootstrap-model", "object": "model", "owned_by": "mock"}],
                 "served_by": self.server.runtime_name,
             })
+            return
+        if self.path == self._expected("/metrics"):
+            running = 1 if self.server.runtime_name == "primary" else 2
+            waiting = 0 if self.server.runtime_name == "primary" else 1
+            kv_cache = 0.22 if self.server.runtime_name == "primary" else 0.55
+            model = "bootstrap-model"
+            exposition = f"""# HELP vllm:num_requests_running Number of requests in model execution batches.
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{{model_name=\"{model}\"}} {running}
+# HELP vllm:num_requests_waiting Number of requests waiting to be processed.
+vllm:num_requests_waiting{{model_name=\"{model}\"}} {waiting}
+# HELP vllm:kv_cache_usage_perc KV cache usage.
+vllm:kv_cache_usage_perc{{model_name=\"{model}\"}} {kv_cache}
+vllm:prompt_tokens_total{{model_name=\"{model}\"}} 1234
+vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
+"""
+            self._text(200, "text/plain; version=0.0.4", exposition)
             return
         self._json(404, {"error": "not_found", "path": self.path})
 
