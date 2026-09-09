@@ -47,13 +47,88 @@ public sealed class InferenceNodeTests
     }
 
     [Fact]
+    public void Node_requires_consecutive_successes_before_becoming_healthy()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var now = DateTimeOffset.UtcNow;
+
+        node.RecordHealthSuccess(now, 12, healthyAfterSuccesses: 2);
+        Assert.Equal(NodeStatus.Degraded, node.Status);
+        Assert.Equal(1, node.ConsecutiveHealthSuccesses);
+
+        node.RecordHealthSuccess(now.AddSeconds(1), 10, healthyAfterSuccesses: 2);
+        Assert.Equal(NodeStatus.Healthy, node.Status);
+        Assert.Equal(2, node.ConsecutiveHealthSuccesses);
+        Assert.Equal(0, node.ConsecutiveHealthFailures);
+        Assert.Equal(10, node.LastHealthLatencyMilliseconds);
+        Assert.Null(node.LastHealthError);
+        Assert.Equal(now.AddSeconds(1), node.LastHealthyAtUtc);
+    }
+
+    [Fact]
+    public void Node_degrades_before_becoming_unhealthy_after_repeated_failures()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var now = DateTimeOffset.UtcNow;
+        node.RecordHealthSuccess(now, 10, healthyAfterSuccesses: 1);
+
+        node.RecordHealthFailure(now.AddSeconds(1), 30, "HTTP 500", unhealthyAfterFailures: 3);
+        Assert.Equal(NodeStatus.Degraded, node.Status);
+        Assert.Equal(1, node.ConsecutiveHealthFailures);
+
+        node.RecordHealthFailure(now.AddSeconds(2), 31, "HTTP 500", unhealthyAfterFailures: 3);
+        Assert.Equal(NodeStatus.Degraded, node.Status);
+
+        node.RecordHealthFailure(now.AddSeconds(3), 32, "HTTP 500", unhealthyAfterFailures: 3);
+        Assert.Equal(NodeStatus.Unhealthy, node.Status);
+        Assert.Equal(3, node.ConsecutiveHealthFailures);
+        Assert.Equal("HTTP 500", node.LastHealthError);
+        Assert.Equal(32, node.LastHealthLatencyMilliseconds);
+    }
+
+    [Fact]
+    public void Unhealthy_node_requires_success_streak_to_recover()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var now = DateTimeOffset.UtcNow;
+        node.RecordHealthFailure(now, 5, "down", unhealthyAfterFailures: 1);
+        Assert.Equal(NodeStatus.Unhealthy, node.Status);
+
+        node.RecordHealthSuccess(now.AddSeconds(1), 8, healthyAfterSuccesses: 2);
+        Assert.Equal(NodeStatus.Degraded, node.Status);
+
+        node.RecordHealthSuccess(now.AddSeconds(2), 7, healthyAfterSuccesses: 2);
+        Assert.Equal(NodeStatus.Healthy, node.Status);
+        Assert.Equal(2, node.ConsecutiveHealthSuccesses);
+        Assert.Equal(0, node.ConsecutiveHealthFailures);
+    }
+
+    [Fact]
     public void Health_result_does_not_override_draining_state()
     {
         var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
         node.StartDrain();
 
-        node.SetHealth(NodeStatus.Healthy, DateTimeOffset.UtcNow);
+        node.RecordHealthSuccess(DateTimeOffset.UtcNow, 4);
+        node.RecordHealthFailure(DateTimeOffset.UtcNow, 4, "ignored");
 
         Assert.Equal(NodeStatus.Draining, node.Status);
+        Assert.Null(node.LastHealthCheckUtc);
+    }
+
+    [Fact]
+    public void Enabling_disabled_node_resets_health_streaks()
+    {
+        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        node.RecordHealthFailure(DateTimeOffset.UtcNow, 10, "down", unhealthyAfterFailures: 1);
+        node.Disable();
+
+        node.Enable();
+
+        Assert.True(node.Enabled);
+        Assert.Equal(NodeStatus.Unknown, node.Status);
+        Assert.Equal(0, node.ConsecutiveHealthFailures);
+        Assert.Equal(0, node.ConsecutiveHealthSuccesses);
+        Assert.Null(node.LastHealthError);
     }
 }
