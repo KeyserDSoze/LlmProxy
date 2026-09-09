@@ -7,12 +7,10 @@ export default defineConfig({
     dedupe: ['react', 'react-dom']
   },
   test: {
+    include: ['unit/**/*.test.{ts,tsx}'],
     environment: 'jsdom',
     setupFiles: ['./unit/setup.ts'],
     clearMocks: true,
-    restoreMocks: true,
-    coverage: {
-      reporter: ['text', 'html']
-    }
+    restoreMocks: true
   }
 })
