@@ -168,7 +168,7 @@ test('audit trail is visible to administrators', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Audit Trail' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Audit trail', exact: true })).toBeVisible()
   await expect(page.getByText('admin@agic.it')).toBeVisible()
   await expect(page.getByText('routing.update')).toBeVisible()
 })
