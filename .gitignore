@@ -21,9 +21,10 @@
 .DS_Store
 Thumbs.db
 
-# Test / coverage
+# Test / coverage / benchmark output
 TestResults/
 coverage/
+benchmark-results/
 **/playwright-report/
 **/test-results/
 

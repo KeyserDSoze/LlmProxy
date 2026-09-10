@@ -51,20 +51,34 @@ Introduced root `AGENTS.md` as the primary project handover for AI agents and ma
 
 CI is configured to cancel superseded runs for the same branch or pull request so rapid development on `main` does not waste runners testing obsolete commits.
 
-## 2026-09-09 - DGX/DCGM hardware telemetry backend - IN DEVELOPMENT
+## 2026-09-10 - DGX/DCGM hardware telemetry - VALIDATED
 
-Started the first hardware-observability increment. The key architectural decision is to keep NVIDIA/DCGM telemetry separate from both vLLM runtime pressure and node health.
+Completed optional NVIDIA/DCGM hardware observability while keeping hardware telemetry independent from vLLM runtime pressure and inference node health.
 
-Added an optional `HardwareMetricsBaseAddress` to each `InferenceNode`, persisted through an EF Core migration. This allows vLLM and DCGM exporter to live on different ports or path-prefixed service roots. Added a dedicated runtime endpoint to configure or clear that address with an audit event.
+Each `InferenceNode` can persist a separate path-safe `HardwareMetricsBaseAddress`. A background collector parses DCGM Prometheus GPU utilization, framebuffer used/free/total, GPU temperature and power series into an in-memory multi-GPU snapshot. `GET /api/admin/hardware` exposes runtime state and `PUT /api/admin/nodes/{id}/hardware-metrics` configures/clears the service root with audit.
 
-Added a DCGM Prometheus parser for `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_FB_FREE`, optional `DCGM_FI_DEV_FB_TOTAL`, `DCGM_FI_DEV_GPU_TEMP` and `DCGM_FI_DEV_POWER_USAGE`. Multi-GPU snapshots aggregate average/max utilization, total framebuffer usage/free memory, memory usage ratio, maximum temperature and total power.
+Transient DCGM failures mark only the hardware snapshot unavailable and retain the last successful numeric sample for diagnostics. Explicitly clearing the endpoint now removes the in-memory hardware snapshot. Neither case modifies `InferenceNode.Status`; inference health remains controlled by vLLM health checks.
 
-Added an in-memory hardware snapshot tracker and background collector. HTTP/parse failures mark only the hardware snapshot unavailable while preserving the last successful sample; they do not update `InferenceNode.Status` and do not block inference. Added `GET /api/admin/hardware` and `PUT /api/admin/nodes/{id}/hardware-metrics`.
+Added the React **DGX Hardware** view, Vitest coverage, Playwright administrator flow and a dedicated integration suite using a fake DCGM exporter on a different port/path from the fake vLLM runtime. The smoke test verifies two-GPU aggregation, path-prefix preservation, DCGM 503 isolation, retained diagnostics, audit and clear semantics against the real Docker/PostgreSQL stack.
 
-Added Docker/bootstrap settings and backend unit coverage for address normalization, DCGM parsing and failure-state preservation. Detailed behavior is documented in `docs/hardware-telemetry.md`.
+Full backend, frontend and integration quality gate passed on commit `6c238a095273843e713a72fb2e26b2c7c434fc62`.
 
-This increment is **not complete yet**: backend CI must pass, then Docker integration plus React/Vitest/Playwright visibility must be added before changing the status to validated.
+## 2026-09-10 - Custom architecture decision
+
+NVIDIA Personal AI Router (PAIR) was reviewed as a possible alternative for the southbound inference fabric. The project decision is to continue with the existing LlmProxy + vLLM architecture and not adopt PAIR. Continue investing in our own gateway/routing/control-plane implementation unless this decision is explicitly revisited.
+
+## 2026-09-10 - Benchmark harness - IN DEVELOPMENT
+
+Started a dedicated .NET 10 capacity benchmark under `tests/performance/`. The harness can target either LlmProxy or a direct vLLM service root, including path-prefixed roots, and supports Chat Completions/Responses plus streaming/non-streaming execution.
+
+The planned/implemented measurement model includes warm-up, concurrency sweeps, success/error breakdown, p50/p95/p99 TTFT and total duration, requests/second and token throughput when upstream usage is available. Streaming TTFT is measured from the first meaningful output delta rather than response headers or metadata-only SSE chunks.
+
+Secrets are intentionally kept out of command-line arguments: the harness reads bearer credentials from an environment variable named with `--api-key-env`. Prompt bodies and bearer tokens are excluded from JSON/CSV output. The built-in default is a small synthetic coding prompt; custom prompts are loaded from a file but only a safe label and character count are reported.
+
+CI will compile and unit-test the benchmark harness but will not generate load against a remote endpoint. Real DGX capacity sweeps remain deliberate environment tests.
+
+Detailed protocol: `docs/benchmarking.md`.
 
 ## Next increment
 
-Validate the hardware backend quality gate, add fake-DCGM integration coverage, then expose hardware telemetry and node hardware-endpoint configuration in the React admin UI. After that, move to the real GitHub Copilot BYOK spike and benchmark harness.
+Make the benchmark-harness build/tests green in CI, then use it to derive model/deployment capacity profiles when a real DGX/vLLM environment is available. The real GitHub Copilot BYOK spike remains an external validation item and can run in parallel once tenant/public-endpoint access is ready.

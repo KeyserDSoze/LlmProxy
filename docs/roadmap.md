@@ -41,14 +41,15 @@ Status legend: `DONE` implemented and validated; `ACTIVE` current development fo
 - DONE: administrative audit trail.
 - EXTERNAL: register/configure the real Entra application and production role assignments.
 
-## M4 - Observability — ACTIVE
+## M4 - Observability — DONE FOR CURRENT MVP / MORE EXPORTS PLANNED
 
 - DONE: request metrics and per-request status/duration.
 - DONE: TTFT/upstream latency and percentiles.
 - DONE: token usage extraction when reported by upstream.
 - DONE: failover/attempt visibility.
 - DONE: vLLM runtime running/waiting/KV-cache telemetry.
-- ACTIVE: NVIDIA/DGX hardware telemetry for GPU utilization, framebuffer memory, temperature and power.
+- DONE: optional NVIDIA/DCGM hardware telemetry for GPU utilization, framebuffer memory, temperature and power, isolated from inference health/routing.
+- DONE: React DGX Hardware administration/visibility and dedicated Docker integration smoke coverage.
 - PLANNED: OpenTelemetry export.
 - PLANNED: Prometheus/Grafana integration option for gateway metrics.
 
@@ -59,7 +60,8 @@ Status legend: `DONE` implemented and validated; `ACTIVE` current development fo
 - DONE: KV-cache pressure signal.
 - DONE: per-deployment EWMA TTFT/failure feedback.
 - DONE: live, persisted, audited smart-routing tuning profile.
-- PLANNED: representative Copilot coding load tests.
+- ACTIVE: repeatable .NET benchmark harness for gateway-vs-direct-vLLM concurrency profiling.
+- PLANNED/EXTERNAL: representative Copilot coding load tests on real DGX Spark.
 - PLANNED: model-specific concurrency profiles.
 - PLANNED: calibration of tuning coefficients from measured DGX Spark data.
 - PLANNED: capacity planning for roughly 200 assigned developers based on measured concurrency, not license count.
@@ -78,8 +80,10 @@ Status legend: `DONE` implemented and validated; `ACTIVE` current development fo
 
 ## Current development order
 
-1. NVIDIA/DCGM hardware telemetry and admin visibility.
-2. Real GitHub Copilot BYOK spike through the public/tunnel endpoint.
-3. Benchmark harness and measured concurrency profiles.
+1. Complete and validate the benchmark harness under `tests/performance/`.
+2. Run measured concurrency profiles on real DGX/vLLM once hardware is available and derive model/deployment capacity profiles.
+3. Validate real GitHub Copilot BYOK through the public/tunnel endpoint when tenant/infrastructure access is available.
 4. Tune smart-routing parameters from benchmark evidence.
-5. Gateway metrics export, rate limits and production hardening.
+5. Add gateway metrics export, rate limits/quotas and production hardening.
+
+NVIDIA Personal AI Router (PAIR) was reviewed as a possible southbound alternative, but the project decision is to continue with the current LlmProxy/vLLM architecture rather than adopt PAIR.

@@ -8,4 +8,8 @@
   <Folder Name="/tests/">
     <Project Path="tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/tests/performance/">
+    <Project Path="tests/performance/LlmProxy.Benchmark/LlmProxy.Benchmark.csproj" />
+    <Project Path="tests/performance/LlmProxy.Benchmark.Tests/LlmProxy.Benchmark.Tests.csproj" />
+  </Folder>
 </Solution>

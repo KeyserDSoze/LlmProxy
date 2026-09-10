@@ -91,15 +91,24 @@ Current in-memory snapshots are exposed through:
 GET /api/admin/hardware
 ```
 
-## Failure behavior
+## Failure and clear behavior
 
 Hardware telemetry is best effort:
 
-- HTTP failures mark the hardware snapshot unavailable but preserve the last successful values for diagnostics;
+- HTTP failures mark the hardware snapshot unavailable but preserve the last successful numeric values for diagnostics;
 - unrelated Prometheus payloads are rejected as `No recognized NVIDIA DCGM Prometheus metrics were exposed.`;
 - collection errors do not update `InferenceNode.Status`;
 - inference traffic continues when DCGM is absent or unavailable;
-- the collector only polls enabled nodes that have a hardware metrics root configured.
+- the collector only polls enabled nodes that have a hardware metrics root configured;
+- explicitly clearing `HardwareMetricsBaseAddress` removes the in-memory snapshot, so stale hardware data is not presented as a current configured source.
+
+The distinction is intentional: a temporary exporter outage retains the last sample for troubleshooting, while an administrator deliberately removing the endpoint also removes its runtime state.
+
+## Admin UI
+
+The React console has a dedicated **DGX Hardware** view. It shows current collector availability, GPU count, utilization, framebuffer usage, temperature and power, and allows the independent DCGM service root to be configured or cleared per node.
+
+The page deliberately labels this data as observational and includes a **Routing isolation** note. Aggregate cards use only currently available snapshots; retained values from a transient failed collector are shown only as diagnostics for that node.
 
 ## Security/networking
 
@@ -117,13 +126,26 @@ The DCGM exporter endpoint should not be publicly exposed. Firewall it so only t
 
 Hardware signals are **not part of the routing score yet**. This is deliberate. High GPU utilization is often a sign that batching is working efficiently, while queue depth/KV-cache pressure are usually more directly related to inference latency. We will only introduce hardware-aware routing after representative DGX Spark benchmarks demonstrate useful thresholds.
 
-The future benchmark should correlate at least:
+The benchmark should correlate at least:
 
 - concurrency;
-- TTFT p50/p95;
+- TTFT p50/p95/p99;
 - output tokens/sec;
 - vLLM running/waiting requests;
 - KV-cache pressure;
 - GPU utilization;
 - framebuffer usage;
 - temperature/power where operationally useful.
+
+See `docs/benchmarking.md` for the benchmark protocol and capacity-profile format.
+
+## Automated validation
+
+The hardware increment is covered at multiple levels:
+
+- backend unit tests for service-root normalization, DCGM parsing and snapshot state;
+- Vitest/Testing Library for the React hardware view and endpoint updates;
+- Playwright for the administrator hardware workflow;
+- `tests/backend/integration/hardware_smoke.sh`, which starts a fake path-prefixed DCGM exporter separately from the fake vLLM runtime, validates multi-GPU aggregation, simulates a DCGM `503`, proves inference health remains `Healthy`, verifies audit persistence and verifies explicit endpoint clearing removes the runtime snapshot.
+
+The complete quality gate passed on commit `6c238a095273843e713a72fb2e26b2c7c434fc62` on 2026-09-10.
