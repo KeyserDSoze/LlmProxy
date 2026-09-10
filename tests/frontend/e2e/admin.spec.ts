@@ -118,7 +118,7 @@ test('DGX hardware view exposes DCGM telemetry and separate endpoint configurati
   await expect(page.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
   await expect(page.getByText('4.0 GiB used · 25.0%')).toBeVisible()
-  await expect(page.getByText('67 °C')).toBeVisible()
+  await expect(page.getByRole('cell', { name: '67 °C' })).toBeVisible()
   await expect(page.getByText('261 W')).toBeVisible()
   await expect(page.getByText('Routing isolation')).toBeVisible()
 
