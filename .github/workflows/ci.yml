@@ -98,3 +98,6 @@ jobs:
 
       - name: DGX hardware telemetry smoke suite
         run: bash tests/backend/integration/hardware_smoke.sh
+
+      - name: Capacity and backpressure smoke suite
+        run: bash tests/backend/integration/capacity_smoke.sh

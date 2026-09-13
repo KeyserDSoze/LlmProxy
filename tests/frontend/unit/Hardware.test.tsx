@@ -62,8 +62,8 @@ describe('DGX capacity administration', () => {
     expect(screen.getByText('Deployment active limit: 2')).toBeInTheDocument()
 
     const recommended = screen.getByLabelText('Recommended max concurrency')
-    await user.clear(recommended)
-    await user.type(recommended, '3')
+    await user.click(recommended)
+    await user.keyboard('{Control>}a{/Control}3')
     await user.type(screen.getByLabelText('Capacity P95 TTFT'), '420')
     await user.type(screen.getByLabelText('Benchmark source'), 'benchmark-results/run-001.json')
     await user.click(screen.getByRole('button', { name: 'Save recommendation' }))
