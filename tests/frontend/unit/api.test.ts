@@ -45,6 +45,28 @@ describe('admin api client', () => {
     expect(fetch).toHaveBeenNthCalledWith(2, '/api/admin/routing/runtime', expect.objectContaining({ credentials: 'same-origin' }))
   })
 
+  it('requests capacity state and keeps profile save separate from apply', async () => {
+    vi.mocked(fetch).mockImplementation(async () => new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+
+    await api.capacity()
+    await api.updateCapacityProfile('deployment-1', {
+      recommendedMaxConcurrency: 4,
+      p95TtftMilliseconds: 420,
+      p95DurationMilliseconds: 4800,
+      sustainableOutputTokensPerSecond: 92,
+      benchmarkSource: 'benchmark-results/run.json',
+      measuredAtUtc: '2026-09-13T07:00:00Z'
+    })
+    await api.applyCapacityProfile('deployment-1')
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/admin/capacity', expect.objectContaining({ credentials: 'same-origin' }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/admin/deployments/deployment-1/capacity-profile', expect.objectContaining({ method: 'PUT' }))
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/admin/deployments/deployment-1/capacity-profile/apply', expect.objectContaining({ method: 'POST' }))
+  })
+
   it('serializes JSON commands with the correct content type', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ id: 'node-1' }), {
       status: 200,

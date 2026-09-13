@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
+import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -30,6 +30,7 @@ export const api = {
   routingPerformance: () => request<DeploymentPerformanceSnapshot[]>('/api/admin/routing/performance'),
   routingRuntime: () => request<NodeRuntimeMetricsSnapshot[]>('/api/admin/routing/runtime'),
   hardware: () => request<NodeHardwareMetricsSnapshot[]>('/api/admin/hardware'),
+  capacity: () => request<CapacitySnapshot>('/api/admin/capacity'),
   updateRouting: (strategy: RoutingSettings['strategy']) =>
     request<RoutingSettings>('/api/admin/routing', { method: 'PUT', body: JSON.stringify({ strategy }) }),
   updateRoutingTuning: (settings: Omit<RoutingTuningSettings, 'updatedAtUtc'>) =>
@@ -57,6 +58,12 @@ export const api = {
     request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),
   updateDeployment: (id: string, body: { weight: number; maxConcurrency?: number | null; enabled: boolean }) =>
     request<Deployment>(`/api/admin/deployments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  updateCapacityProfile: (id: string, body: CapacityProfileInput) =>
+    request<Deployment>(`/api/admin/deployments/${id}/capacity-profile`, { method: 'PUT', body: JSON.stringify(body) }),
+  clearCapacityProfile: (id: string) =>
+    request<void>(`/api/admin/deployments/${id}/capacity-profile`, { method: 'DELETE' }),
+  applyCapacityProfile: (id: string) =>
+    request<Deployment>(`/api/admin/deployments/${id}/capacity-profile/apply`, { method: 'POST' }),
   createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })

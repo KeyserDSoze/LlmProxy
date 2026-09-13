@@ -17,6 +17,21 @@ type NodeRecord = {
   consecutiveHealthFailures: number
 }
 
+type DeploymentRecord = {
+  id: string
+  nodeId: string
+  modelId: string
+  enabled: boolean
+  weight: number
+  maxConcurrency: number | null
+  recommendedMaxConcurrency: number | null
+  benchmarkP95TtftMilliseconds: number | null
+  benchmarkP95DurationMilliseconds: number | null
+  sustainableOutputTokensPerSecond: number | null
+  benchmarkSource: string | null
+  benchmarkMeasuredAtUtc: string | null
+}
+
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -26,6 +41,11 @@ async function installAdminApi(page: Page) {
     id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
     lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 9, lastHealthError: null,
     consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
+  }]
+  const deployments: DeploymentRecord[] = [{
+    id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4,
+    recommendedMaxConcurrency: null, benchmarkP95TtftMilliseconds: null, benchmarkP95DurationMilliseconds: null,
+    sustainableOutputTokensPerSecond: null, benchmarkSource: null, benchmarkMeasuredAtUtc: null
   }]
   let routingStrategy = 'WeightedLeastLoaded'
   let tuning = {
@@ -53,12 +73,16 @@ async function installAdminApi(page: Page) {
     const request = route.request()
     const path = new URL(request.url()).pathname
 
-    if (request.method() === 'GET' && path === '/api/admin/overview') return json(route, { nodes: { total: nodes.length, healthy: nodes.filter(item => item.status === 'Healthy').length, degraded: 0, unhealthy: 0, draining: 0 }, models: 1, deployments: 1, activeRequests: 0, requestsToday: 12 })
+    if (request.method() === 'GET' && path === '/api/admin/overview') return json(route, { nodes: { total: nodes.length, healthy: nodes.filter(item => item.status === 'Healthy').length, degraded: 0, unhealthy: 0, draining: 0 }, models: 1, deployments: deployments.length, activeRequests: 0, requestsToday: 12 })
     if (request.method() === 'GET' && path === '/api/admin/routing') return json(route, { strategy: routingStrategy, supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     if (request.method() === 'GET' && path === '/api/admin/routing/tuning') return json(route, tuning)
     if (request.method() === 'GET' && path === '/api/admin/routing/performance') return json(route, [{ deploymentId: 'deployment-1', sampleCount: 12, ewmaTimeToFirstByteMilliseconds: 140, ewmaDurationMilliseconds: 980, infrastructureFailureScore: 0.04, lastObservedAtUtc: '2026-09-09T10:04:00Z' }])
     if (request.method() === 'GET' && path === '/api/admin/routing/runtime') return json(route, [{ nodeId: 'node-1', available: true, modelName: 'bootstrap-model', runningRequests: 2, waitingRequests: 1, kvCacheUsageRatio: 0.55, promptTokensTotal: 1234, generationTokensTotal: 567, collectedAtUtc: '2026-09-09T10:04:00Z', lastAttemptAtUtc: '2026-09-09T10:04:00Z', error: null }])
     if (request.method() === 'GET' && path === '/api/admin/hardware') return json(route, hardware)
+    if (request.method() === 'GET' && path === '/api/admin/capacity') return json(route, {
+      nodes: nodes.map(node => ({ id: node.id, name: node.name, maxConcurrency: node.maxConcurrency, activeRequests: 0, remaining: node.maxConcurrency })),
+      deployments: deployments.map(item => ({ ...item, effectiveMaxConcurrency: item.maxConcurrency ?? nodes.find(node => node.id === item.nodeId)!.maxConcurrency, activeRequests: 0 }))
+    })
 
     if (request.method() === 'PUT' && path === '/api/admin/routing') {
       routingStrategy = (request.postDataJSON() as { strategy: string }).strategy
@@ -71,7 +95,7 @@ async function installAdminApi(page: Page) {
 
     if (request.method() === 'GET' && path === '/api/admin/nodes') return json(route, nodes)
     if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'bootstrap-model', supportsStreaming: true, supportsTools: true, enabled: true }])
-    if (request.method() === 'GET' && path === '/api/admin/deployments') return json(route, [{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
+    if (request.method() === 'GET' && path === '/api/admin/deployments') return json(route, deployments)
     if (request.method() === 'GET' && path === '/api/admin/api-credentials') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
     if (request.method() === 'GET' && path === '/api/admin/metrics/summary') return json(route, metricsSummary)
@@ -90,6 +114,43 @@ async function installAdminApi(page: Page) {
       const input = request.postDataJSON() as { baseAddress: string | null }
       node.hardwareMetricsBaseAddress = input.baseAddress?.replace(/\/$/, '') ?? null
       return json(route, { id: node.id, hardwareMetricsBaseAddress: node.hardwareMetricsBaseAddress })
+    }
+
+    const capacityMatch = path.match(/^\/api\/admin\/deployments\/([^/]+)\/capacity-profile$/)
+    if (request.method() === 'PUT' && capacityMatch) {
+      const deployment = deployments.find(item => item.id === capacityMatch[1])!
+      const input = request.postDataJSON() as {
+        recommendedMaxConcurrency: number
+        p95TtftMilliseconds: number | null
+        p95DurationMilliseconds: number | null
+        sustainableOutputTokensPerSecond: number | null
+        benchmarkSource: string
+        measuredAtUtc: string
+      }
+      deployment.recommendedMaxConcurrency = input.recommendedMaxConcurrency
+      deployment.benchmarkP95TtftMilliseconds = input.p95TtftMilliseconds
+      deployment.benchmarkP95DurationMilliseconds = input.p95DurationMilliseconds
+      deployment.sustainableOutputTokensPerSecond = input.sustainableOutputTokensPerSecond
+      deployment.benchmarkSource = input.benchmarkSource
+      deployment.benchmarkMeasuredAtUtc = input.measuredAtUtc
+      return json(route, deployment)
+    }
+    if (request.method() === 'DELETE' && capacityMatch) {
+      const deployment = deployments.find(item => item.id === capacityMatch[1])!
+      deployment.recommendedMaxConcurrency = null
+      deployment.benchmarkP95TtftMilliseconds = null
+      deployment.benchmarkP95DurationMilliseconds = null
+      deployment.sustainableOutputTokensPerSecond = null
+      deployment.benchmarkSource = null
+      deployment.benchmarkMeasuredAtUtc = null
+      return route.fulfill({ status: 204, body: '' })
+    }
+
+    const applyCapacityMatch = path.match(/^\/api\/admin\/deployments\/([^/]+)\/capacity-profile\/apply$/)
+    if (request.method() === 'POST' && applyCapacityMatch) {
+      const deployment = deployments.find(item => item.id === applyCapacityMatch[1])!
+      deployment.maxConcurrency = deployment.recommendedMaxConcurrency
+      return json(route, deployment)
     }
 
     const testMatch = path.match(/^\/api\/admin\/nodes\/([^/]+)\/test-connection$/)
@@ -112,7 +173,7 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await expect(page.getByText('dgx-02')).toBeVisible(); const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
 })
 
-test('DGX hardware view exposes DCGM telemetry and separate endpoint configuration', async ({ page }) => {
+test('DGX hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
   await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'DGX Hardware' }).click()
   await expect(page.getByRole('heading', { name: 'DGX hardware', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeVisible()
@@ -121,10 +182,21 @@ test('DGX hardware view exposes DCGM telemetry and separate endpoint configurati
   await expect(page.getByRole('cell', { name: '67 °C' })).toBeVisible()
   await expect(page.getByText('261 W')).toBeVisible()
   await expect(page.getByText('Routing isolation')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Physical DGX capacity' })).toBeVisible()
+  await expect(page.getByText('HTTP 429 · Retry-After: 1')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Benchmark capacity profiles' })).toBeVisible()
 
   await page.getByLabel('Hardware metrics service root').fill('http://10.0.0.21:9400/new-dcgm/')
   await page.getByRole('button', { name: 'Save endpoint' }).click()
   await expect(page.getByText('Hardware telemetry configuration updated.')).toBeVisible()
+
+  await page.getByLabel('Benchmark source').fill('benchmark-results/run-001.json')
+  await page.getByLabel('Capacity P95 TTFT').fill('420')
+  await page.getByRole('button', { name: 'Save recommendation' }).click()
+  await expect(page.getByText('Capacity recommendation saved. Active production limits were not changed.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Apply recommended' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Apply recommended' }).click()
+  await expect(page.getByText('Recommended deployment capacity applied explicitly.')).toBeVisible()
 })
 
 test('inference observability exposes latency, token and failover telemetry', async ({ page }) => {

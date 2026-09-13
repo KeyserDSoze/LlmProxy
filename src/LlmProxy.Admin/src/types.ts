@@ -119,6 +119,50 @@ export type Deployment = {
   enabled: boolean
   weight: number
   maxConcurrency?: number | null
+  recommendedMaxConcurrency?: number | null
+  benchmarkP95TtftMilliseconds?: number | null
+  benchmarkP95DurationMilliseconds?: number | null
+  sustainableOutputTokensPerSecond?: number | null
+  benchmarkSource?: string | null
+  benchmarkMeasuredAtUtc?: string | null
+}
+
+export type NodeCapacitySnapshot = {
+  id: string
+  name: string
+  maxConcurrency: number
+  activeRequests: number
+  remaining: number
+}
+
+export type DeploymentCapacitySnapshot = {
+  id: string
+  nodeId: string
+  modelId: string
+  enabled: boolean
+  maxConcurrency?: number | null
+  effectiveMaxConcurrency: number
+  activeRequests: number
+  recommendedMaxConcurrency?: number | null
+  benchmarkP95TtftMilliseconds?: number | null
+  benchmarkP95DurationMilliseconds?: number | null
+  sustainableOutputTokensPerSecond?: number | null
+  benchmarkSource?: string | null
+  benchmarkMeasuredAtUtc?: string | null
+}
+
+export type CapacitySnapshot = {
+  nodes: NodeCapacitySnapshot[]
+  deployments: DeploymentCapacitySnapshot[]
+}
+
+export type CapacityProfileInput = {
+  recommendedMaxConcurrency: number
+  p95TtftMilliseconds?: number | null
+  p95DurationMilliseconds?: number | null
+  sustainableOutputTokensPerSecond?: number | null
+  benchmarkSource: string
+  measuredAtUtc: string
 }
 
 export type ApiCredential = {
