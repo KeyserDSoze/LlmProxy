@@ -9,11 +9,21 @@ internal static class RouteSelectorSupport
         IReadOnlyList<DeploymentCandidate> candidates,
         IRequestLoadTracker loadTracker) =>
         candidates
-            .Where(candidate => candidate.NodeStatus is NodeStatus.Healthy or NodeStatus.Degraded or NodeStatus.Unknown)
-            .Where(candidate => loadTracker.GetActive(candidate.DeploymentId) < candidate.MaxConcurrency)
+            .Where(IsOperational)
+            .Where(candidate => HasDeploymentCapacity(candidate, loadTracker))
+            .Where(candidate => HasNodeCapacity(candidate, loadTracker))
             .OrderBy(candidate => candidate.NodeName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(candidate => candidate.DeploymentId)
             .ToArray();
+
+    public static bool IsOperational(DeploymentCandidate candidate)
+        => candidate.NodeStatus is NodeStatus.Healthy or NodeStatus.Degraded or NodeStatus.Unknown;
+
+    public static bool HasDeploymentCapacity(DeploymentCandidate candidate, IRequestLoadTracker loadTracker)
+        => loadTracker.GetActive(candidate.DeploymentId) < candidate.MaxConcurrency;
+
+    public static bool HasNodeCapacity(DeploymentCandidate candidate, IRequestLoadTracker loadTracker)
+        => loadTracker.GetNodeActive(candidate.NodeId) < candidate.NodeMaxConcurrency;
 
     public static RouteSelection ToSelection(DeploymentCandidate selected) =>
         new(
@@ -23,5 +33,6 @@ internal static class RouteSelectorSupport
             selected.BaseAddress,
             selected.PublicModelName,
             selected.ProviderModelName,
-            selected.MaxConcurrency);
+            selected.MaxConcurrency,
+            selected.NodeMaxConcurrency);
 }

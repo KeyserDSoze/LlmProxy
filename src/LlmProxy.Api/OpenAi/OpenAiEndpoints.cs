@@ -94,6 +94,8 @@ public static class OpenAiEndpoints
         TokenUsage? tokenUsage = null;
         string? finalErrorCode = null;
         string? publicModelName = null;
+        var routingFailure = RoutingSelectionFailure.Unavailable;
+        var capacityRaceObserved = false;
 
         context.Response.Headers["X-LlmProxy-Request-Id"] = requestId.ToString();
 
@@ -128,18 +130,33 @@ public static class OpenAiEndpoints
 
             for (var attempt = 1; attempt <= MaxUpstreamAttempts; attempt++)
             {
-                var route = await routingService.SelectAsync(publicModelName, excluded, context.RequestAborted);
+                var selection = await routingService.SelectDetailedAsync(publicModelName, excluded, context.RequestAborted);
+                var route = selection.Route;
                 if (route is null)
                 {
+                    routingFailure = selection.Failure;
                     break;
                 }
 
+                if (!loadTracker.TryEnter(
+                        route.DeploymentId,
+                        route.NodeId,
+                        route.MaxConcurrency,
+                        route.NodeMaxConcurrency,
+                        out var acquiredLease) || acquiredLease is null)
+                {
+                    capacityRaceObserved = true;
+                    excluded.Add(route.DeploymentId);
+                    attempt--;
+                    continue;
+                }
+
+                using var lease = acquiredLease;
                 attemptCount++;
                 finalDeploymentId = route.DeploymentId;
                 finalNodeId = route.NodeId;
                 OpenAiRequestPayload.RewriteModel(requestObject, route.ProviderModelName);
 
-                using var lease = loadTracker.Enter(route.DeploymentId);
                 using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath, requestId);
                 HttpResponseMessage upstream;
                 var attemptStartedMilliseconds = stopwatch.ElapsedMilliseconds;
@@ -260,6 +277,20 @@ public static class OpenAiEndpoints
                         tokenUsage = observer.Usage;
                     }
                 }
+            }
+
+            if (routingFailure == RoutingSelectionFailure.CapacityExhausted || capacityRaceObserved)
+            {
+                finalStatusCode = StatusCodes.Status429TooManyRequests;
+                finalErrorCode = "capacity_exhausted";
+                context.Response.Headers.RetryAfter = "1";
+                await WriteGatewayErrorAsync(
+                    context,
+                    finalStatusCode,
+                    "rate_limit_error",
+                    finalErrorCode,
+                    $"Inference capacity is temporarily exhausted for model '{publicModelName}'. Retry shortly.");
+                return;
             }
 
             finalStatusCode = StatusCodes.Status503ServiceUnavailable;

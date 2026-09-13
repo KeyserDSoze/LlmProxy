@@ -12,7 +12,8 @@ public sealed record DeploymentCandidate(
     string ProviderModelName,
     int Weight,
     int MaxConcurrency,
-    NodeStatus NodeStatus);
+    NodeStatus NodeStatus,
+    int NodeMaxConcurrency = int.MaxValue);
 
 public sealed record PublicModel(
     Guid Id,
@@ -27,4 +28,18 @@ public sealed record RouteSelection(
     string BaseAddress,
     string PublicModelName,
     string ProviderModelName,
-    int MaxConcurrency);
+    int MaxConcurrency,
+    int NodeMaxConcurrency = int.MaxValue);
+
+public enum RoutingSelectionFailure
+{
+    None = 0,
+    Unavailable = 1,
+    CapacityExhausted = 2
+}
+
+public sealed record RoutingSelectionResult(RouteSelection? Route, RoutingSelectionFailure Failure)
+{
+    public static RoutingSelectionResult Success(RouteSelection route) => new(route, RoutingSelectionFailure.None);
+    public static RoutingSelectionResult Failed(RoutingSelectionFailure failure) => new(null, failure);
+}

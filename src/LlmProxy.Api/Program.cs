@@ -106,6 +106,7 @@ app.MapAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
+app.MapCapacityAdminEndpoints(entraEnabled);
 
 if (entraEnabled)
 {

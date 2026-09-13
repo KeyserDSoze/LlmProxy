@@ -38,10 +38,16 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<DateTimeOffset?>("BenchmarkMeasuredAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<double?>("BenchmarkP95DurationMilliseconds").HasColumnType("double precision");
+            b.Property<double?>("BenchmarkP95TtftMilliseconds").HasColumnType("double precision");
+            b.Property<string>("BenchmarkSource").HasMaxLength(500).HasColumnType("character varying(500)");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<int?>("MaxConcurrency").HasColumnType("integer");
             b.Property<Guid>("ModelId").HasColumnType("uuid");
             b.Property<Guid>("NodeId").HasColumnType("uuid");
+            b.Property<int?>("RecommendedMaxConcurrency").HasColumnType("integer");
+            b.Property<double?>("SustainableOutputTokensPerSecond").HasColumnType("double precision");
             b.Property<int>("Weight").HasColumnType("integer");
             b.HasKey("Id");
             b.HasIndex("ModelId");

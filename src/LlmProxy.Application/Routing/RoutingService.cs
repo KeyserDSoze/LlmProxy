@@ -7,10 +7,16 @@ public sealed class RoutingService(
     IRouteSelector selector,
     IRequestLoadTracker loadTracker)
 {
-    public Task<RouteSelection?> SelectAsync(string publicModelName, CancellationToken cancellationToken)
-        => SelectAsync(publicModelName, excludedDeploymentIds: null, cancellationToken);
+    public async Task<RouteSelection?> SelectAsync(string publicModelName, CancellationToken cancellationToken)
+        => (await SelectDetailedAsync(publicModelName, excludedDeploymentIds: null, cancellationToken)).Route;
 
     public async Task<RouteSelection?> SelectAsync(
+        string publicModelName,
+        IReadOnlySet<Guid>? excludedDeploymentIds,
+        CancellationToken cancellationToken)
+        => (await SelectDetailedAsync(publicModelName, excludedDeploymentIds, cancellationToken)).Route;
+
+    public async Task<RoutingSelectionResult> SelectDetailedAsync(
         string publicModelName,
         IReadOnlySet<Guid>? excludedDeploymentIds,
         CancellationToken cancellationToken)
@@ -21,6 +27,20 @@ public sealed class RoutingService(
             candidates = candidates.Where(candidate => !excludedDeploymentIds.Contains(candidate.DeploymentId)).ToArray();
         }
 
-        return selector.Select(candidates, loadTracker);
+        var selected = selector.Select(candidates, loadTracker);
+        if (selected is not null)
+        {
+            return RoutingSelectionResult.Success(selected);
+        }
+
+        var operational = candidates.Where(RouteSelectorSupport.IsOperational).ToArray();
+        if (operational.Length > 0 && operational.All(candidate =>
+                !RouteSelectorSupport.HasDeploymentCapacity(candidate, loadTracker) ||
+                !RouteSelectorSupport.HasNodeCapacity(candidate, loadTracker)))
+        {
+            return RoutingSelectionResult.Failed(RoutingSelectionFailure.CapacityExhausted);
+        }
+
+        return RoutingSelectionResult.Failed(RoutingSelectionFailure.Unavailable);
     }
 }

@@ -45,6 +45,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
         {
             entity.ToTable("deployments");
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.BenchmarkSource).HasMaxLength(500);
             entity.HasIndex(x => new { x.NodeId, x.ModelId }).IsUnique();
             entity.HasOne<InferenceNode>().WithMany().HasForeignKey(x => x.NodeId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<ModelDefinition>().WithMany().HasForeignKey(x => x.ModelId).OnDelete(DeleteBehavior.Cascade);

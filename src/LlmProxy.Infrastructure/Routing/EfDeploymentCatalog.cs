@@ -43,7 +43,8 @@ public sealed class EfDeploymentCatalog(GatewayDbContext dbContext) : IDeploymen
                 row.ProviderModelName,
                 EffectiveWeight(row.NodeWeight, row.DeploymentWeight),
                 row.DeploymentMaxConcurrency ?? row.NodeMaxConcurrency,
-                row.Status))
+                row.Status,
+                row.NodeMaxConcurrency))
             .ToArray();
     }
 
