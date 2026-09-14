@@ -1,0 +1,191 @@
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { api } from './api'
+import type { GovernanceCredential, Model, RateLimitPolicy, UsageGroup, UsageReport } from './types'
+
+const emptyUsage: UsageReport = {
+  windowDays: 30,
+  sinceUtc: '',
+  requestCount: 0,
+  errorCount: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  rateLimitedRequests: 0,
+  capacityExhaustedRequests: 0,
+  groups: [],
+  credentials: [],
+  models: []
+}
+
+export default function Governance() {
+  const [days, setDays] = useState(30)
+  const [groups, setGroups] = useState<UsageGroup[]>([])
+  const [credentials, setCredentials] = useState<GovernanceCredential[]>([])
+  const [rateLimits, setRateLimits] = useState<RateLimitPolicy[]>([])
+  const [models, setModels] = useState<Model[]>([])
+  const [usage, setUsage] = useState<UsageReport>(emptyUsage)
+  const [groupName, setGroupName] = useState('')
+  const [groupDescription, setGroupDescription] = useState('')
+  const [rateCredentialId, setRateCredentialId] = useState('')
+  const [rateModel, setRateModel] = useState('')
+  const [requestsPerWindow, setRequestsPerWindow] = useState(60)
+  const [windowSeconds, setWindowSeconds] = useState(60)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    try {
+      setError(null)
+      const [nextGroups, nextCredentials, nextRateLimits, nextUsage, nextModels] = await Promise.all([
+        api.usageGroups(),
+        api.governanceCredentials(),
+        api.rateLimits(),
+        api.usageSummary(days),
+        api.models()
+      ])
+      setGroups(nextGroups)
+      setCredentials(nextCredentials)
+      setRateLimits(nextRateLimits)
+      setUsage(nextUsage)
+      setModels(nextModels)
+      setRateCredentialId(current => current || nextCredentials[0]?.id || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [days])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  const groupNames = useMemo(() => new Map(groups.map(group => [group.id, group.name])), [groups])
+
+  async function createGroup(event: FormEvent) {
+    event.preventDefault()
+    setMessage(null)
+    await api.createUsageGroup({ name: groupName, description: groupDescription || null })
+    setGroupName('')
+    setGroupDescription('')
+    setMessage('Usage group created.')
+    await refresh()
+  }
+
+  async function changeCredentialGroup(credentialId: string, usageGroupId: string) {
+    setMessage(null)
+    if (usageGroupId) await api.assignCredentialUsageGroup(credentialId, usageGroupId)
+    else await api.clearCredentialUsageGroup(credentialId)
+    setMessage('Credential group updated. New requests use the new group; historical usage is unchanged.')
+    await refresh()
+  }
+
+  async function createRateLimit(event: FormEvent) {
+    event.preventDefault()
+    if (!rateCredentialId) return
+    setMessage(null)
+    await api.createRateLimit({ apiCredentialId: rateCredentialId, logicalModel: rateModel || null, requestsPerWindow, windowSeconds, enabled: true })
+    setMessage('Rate-limit policy created and applied live.')
+    await refresh()
+  }
+
+  async function toggleRateLimit(policy: RateLimitPolicy) {
+    await api.updateRateLimit(policy.id, {
+      logicalModel: policy.logicalModel ?? null,
+      requestsPerWindow: policy.requestsPerWindow,
+      windowSeconds: policy.windowSeconds,
+      enabled: !policy.enabled
+    })
+    setMessage(`Rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
+    await refresh()
+  }
+
+  async function deleteRateLimit(policy: RateLimitPolicy) {
+    await api.deleteRateLimit(policy.id)
+    setMessage('Rate-limit policy removed.')
+    await refresh()
+  }
+
+  if (loading) return <div className="loading">Loading usage governance…</div>
+
+  return <>
+    {error && <div className="error">{error}</div>}
+    {message && <div className="notice">{message}</div>}
+
+    <section className="panel">
+      <div className="panelTitle">
+        <div><h2>Usage & Governance</h2><span>Caller identity, group attribution, rate limits and consolidated usage.</span></div>
+        <div className="actions">
+          <select aria-label="Usage window" value={days} onChange={event => setDays(Number(event.target.value))}>
+            <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+          </select>
+          <button className="secondary" onClick={() => void refresh()}>Refresh</button>
+        </div>
+      </div>
+      <div className="cards cardsFive">
+        <GovernanceMetric label="Requests" value={formatNumber(usage.requestCount)} />
+        <GovernanceMetric label="Total tokens" value={formatNumber(usage.totalTokens)} />
+        <GovernanceMetric label="Output tokens" value={formatNumber(usage.outputTokens)} />
+        <GovernanceMetric label="Rate limited" value={formatNumber(usage.rateLimitedRequests)} />
+        <GovernanceMetric label="Capacity exhausted" value={formatNumber(usage.capacityExhaustedRequests)} />
+      </div>
+    </section>
+
+    <section className="panel">
+      <div className="panelTitle"><h2>Usage by group</h2><span>Historical attribution uses the group snapshot captured at request time.</span></div>
+      <table><thead><tr><th>Group</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th><th>Avg TTFT</th></tr></thead>
+        <tbody>{usage.groups.length === 0 ? <tr><td colSpan={7}>No usage in this window.</td></tr> : usage.groups.map(row => <tr key={row.usageGroupId ?? 'ungrouped'}>
+          <td><strong>{row.name}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.inputTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td><td>{formatLatency(row.averageTtftMilliseconds)}</td>
+        </tr>)}</tbody>
+      </table>
+    </section>
+
+    <div className="gridTwo">
+      <section className="panel">
+        <div className="panelTitle"><h2>Usage groups</h2><span>{groups.length} configured</span></div>
+        <table><thead><tr><th>Name</th><th>Description</th><th>Credentials</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td><strong>{group.name}</strong></td><td>{group.description ?? '—'}</td><td>{group.credentialCount}</td></tr>)}</tbody></table>
+      </section>
+      <section className="panel formPanel"><h2>Create usage group</h2><form onSubmit={event => void createGroup(event)}>
+        <label>Name<input value={groupName} onChange={event => setGroupName(event.target.value)} required placeholder="Development CRM" /></label>
+        <label>Description<input value={groupDescription} onChange={event => setGroupDescription(event.target.value)} placeholder="Copilot usage for the CRM team" /></label>
+        <button className="primary">Create group</button>
+      </form></section>
+    </div>
+
+    <section className="panel">
+      <div className="panelTitle"><h2>Credential → group membership</h2><span>One primary accounting group per credential in V1.</span></div>
+      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
+        <td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td>
+        <td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
+      </tr>)}</tbody></table>
+    </section>
+
+    <div className="gridTwo">
+      <section className="panel">
+        <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from DGX capacity backpressure.</span></div>
+        <table><thead><tr><th>Credential</th><th>Model</th><th>Limit</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={5}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}>
+          <td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
+          <td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td>
+        </tr>)}</tbody></table>
+      </section>
+      <section className="panel formPanel"><h2>Add rate limit</h2><form onSubmit={event => void createRateLimit(event)}>
+        <label>Credential<select value={rateCredentialId} onChange={event => setRateCredentialId(event.target.value)} required><option value="">Select credential</option>{credentials.map(credential => <option key={credential.id} value={credential.id}>{credential.name}</option>)}</select></label>
+        <label>Logical model<select value={rateModel} onChange={event => setRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
+        <label>Requests per window<input type="number" min="1" value={requestsPerWindow} onChange={event => setRequestsPerWindow(Number(event.target.value))} /></label>
+        <label>Window seconds<input type="number" min="1" value={windowSeconds} onChange={event => setWindowSeconds(Number(event.target.value))} /></label>
+        <button className="primary">Add rate limit</button>
+      </form></section>
+    </div>
+
+    <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day window</span></div>
+      <table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table>
+    </section>
+
+    <section className="panel"><div className="panelTitle"><h2>Usage by credential</h2><span>Gateway identity, not inferred end-user identity.</span></div>
+      <table><thead><tr><th>Credential</th><th>Group</th><th>Requests</th><th>Total tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.credentials.map(row => <tr key={`${row.apiCredentialId}-${row.usageGroupId ?? 'none'}`}><td><strong>{row.name}</strong><div className="muted mono">{row.keyPrefix}</div></td><td>{row.usageGroupId ? groupNames.get(row.usageGroupId) ?? row.usageGroupId : 'Ungrouped'}</td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table>
+    </section>
+  </>
+}
+
+function GovernanceMetric({ label, value }: { label: string; value: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
+function formatNumber(value: number) { return new Intl.NumberFormat().format(value) }
+function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

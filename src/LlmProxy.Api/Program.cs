@@ -111,6 +111,7 @@ app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
+app.MapGovernanceCredentialEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
