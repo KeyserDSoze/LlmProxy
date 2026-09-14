@@ -1,3 +1,4 @@
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Deployments;
@@ -15,6 +16,7 @@ public sealed class DatabaseBootstrapper(
     GatewayDbContext dbContext,
     IConfiguration configuration,
     ApiKeyHasher apiKeyHasher,
+    IApiCredentialCache credentialCache,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -78,6 +80,9 @@ public sealed class DatabaseBootstrapper(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        var credentials = await dbContext.ApiCredentials.AsNoTracking().ToListAsync(cancellationToken);
+        credentialCache.Replace(credentials.Select(ApiCredentialSnapshot.From));
 
         var ratePolicies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
         requestRateLimiter.ReplacePolicies(ratePolicies.Select(policy => new RateLimitPolicySnapshot(

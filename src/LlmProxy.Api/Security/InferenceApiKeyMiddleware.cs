@@ -1,6 +1,5 @@
-using LlmProxy.Infrastructure.Persistence;
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Infrastructure.Security;
-using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.Security;
 
@@ -9,7 +8,11 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
     public const string ApiCredentialIdItem = "LlmProxy.ApiCredentialId";
     public const string UsageGroupIdItem = "LlmProxy.UsageGroupId";
 
-    public async Task InvokeAsync(HttpContext context, GatewayDbContext dbContext, ApiKeyHasher apiKeyHasher)
+    public async Task InvokeAsync(
+        HttpContext context,
+        ApiKeyHasher apiKeyHasher,
+        IApiCredentialCache credentialCache,
+        ICredentialUsageSink credentialUsageSink)
     {
         if (!context.Request.Path.StartsWithSegments("/v1"))
         {
@@ -32,10 +35,8 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
         }
 
         var hash = apiKeyHasher.Hash(supplied);
-        var credential = await dbContext.ApiCredentials.SingleOrDefaultAsync(item => item.KeyHash == hash, context.RequestAborted);
         var now = DateTimeOffset.UtcNow;
-
-        if (credential is null || !credential.IsUsable(now))
+        if (!credentialCache.TryGetUsableByHash(hash, now, out var credential))
         {
             await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid, revoked or expired.");
             return;
@@ -47,13 +48,7 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             context.Items[UsageGroupIdItem] = usageGroupId;
         }
 
-        var previousLastUsed = credential.LastUsedAtUtc;
-        credential.Touch(now);
-        if (credential.LastUsedAtUtc != previousLastUsed)
-        {
-            await dbContext.SaveChangesAsync(context.RequestAborted);
-        }
-
+        credentialUsageSink.RecordUsage(credential.Id, now);
         await next(context);
     }
 

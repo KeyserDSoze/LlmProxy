@@ -24,8 +24,12 @@ var configuredRoutingStrategy = ParseRoutingStrategy(builder.Configuration["Rout
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-builder.Services.AddDbContext<GatewayDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
+builder.Services.AddSingleton<ApiCredentialCacheSaveChangesInterceptor>();
+builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
+    options
+        .UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
+        .AddInterceptors(services.GetRequiredService<ApiCredentialCacheSaveChangesInterceptor>()));
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
@@ -45,6 +49,10 @@ builder.Services.AddScoped<UsageReportingReader>();
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
 builder.Services.AddSingleton<IRequestMetricsSink>(services => services.GetRequiredService<BufferedRequestMetricsSink>());
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedRequestMetricsSink>());
+
+builder.Services.AddSingleton<BufferedCredentialUsageSink>();
+builder.Services.AddSingleton<ICredentialUsageSink>(services => services.GetRequiredService<BufferedCredentialUsageSink>());
+builder.Services.AddHostedService(services => services.GetRequiredService<BufferedCredentialUsageSink>());
 
 builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
