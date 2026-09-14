@@ -8,6 +8,7 @@ using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Routing;
 using LlmProxy.Infrastructure.Health;
 using LlmProxy.Infrastructure.Persistence;
+using LlmProxy.Infrastructure.Retention;
 using LlmProxy.Infrastructure.Routing;
 using LlmProxy.Infrastructure.Security;
 using LlmProxy.Infrastructure.Telemetry;
@@ -38,6 +39,8 @@ builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
+builder.Services.AddScoped<DataRetentionService>();
+builder.Services.AddHostedService<DataRetentionWorker>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
@@ -125,6 +128,7 @@ app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
+app.MapDataRetentionAdminEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
