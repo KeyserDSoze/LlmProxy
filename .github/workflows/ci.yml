@@ -108,3 +108,6 @@ jobs:
 
       - name: Capacity and backpressure smoke suite
         run: bash tests/backend/integration/capacity_smoke.sh
+
+      - name: Usage governance and rate-limit smoke suite
+        run: bash tests/backend/integration/governance_smoke.sh
