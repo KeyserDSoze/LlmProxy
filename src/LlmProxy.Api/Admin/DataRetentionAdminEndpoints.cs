@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using LlmProxy.Domain.Audit;
+using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Retention;
 
 namespace LlmProxy.Api.Admin;
@@ -23,6 +24,7 @@ public static class DataRetentionAdminEndpoints
 
         var run = endpoints.MapPost("/api/admin/retention/run", async (
             DataRetentionService service,
+            GatewayDbContext dbContext,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -37,14 +39,14 @@ public static class DataRetentionAdminEndpoints
                 result.AuditEventsCutoffUtc
             });
 
-            serviceDbContext(service).AuditEvents.Add(new AuditEvent(
+            dbContext.AuditEvents.Add(new AuditEvent(
                 actor,
                 "retention.cleanup.run",
                 "data_retention",
                 "manual",
                 sourceIp,
                 details));
-            await serviceDbContext(service).SaveChangesAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
             return Results.Ok(result);
         });
@@ -56,13 +58,6 @@ public static class DataRetentionAdminEndpoints
         }
 
         return endpoints;
-    }
-
-    private static LlmProxy.Infrastructure.Persistence.GatewayDbContext serviceDbContext(DataRetentionService service)
-    {
-        var field = typeof(DataRetentionService).GetField("<dbContext>P", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        return field?.GetValue(service) as LlmProxy.Infrastructure.Persistence.GatewayDbContext
-            ?? throw new InvalidOperationException("DataRetentionService DbContext is unavailable.");
     }
 
     private static string ResolveActor(HttpContext httpContext)
