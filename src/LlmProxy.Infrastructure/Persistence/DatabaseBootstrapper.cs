@@ -17,6 +17,7 @@ public sealed class DatabaseBootstrapper(
     IConfiguration configuration,
     ApiKeyHasher apiKeyHasher,
     IApiCredentialCache credentialCache,
+    IRouteCatalog routeCatalog,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -83,6 +84,14 @@ public sealed class DatabaseBootstrapper(
 
         var credentials = await dbContext.ApiCredentials.AsNoTracking().ToListAsync(cancellationToken);
         credentialCache.Replace(credentials.Select(ApiCredentialSnapshot.From));
+
+        var nodes = await dbContext.Nodes.AsNoTracking().ToListAsync(cancellationToken);
+        var models = await dbContext.Models.AsNoTracking().ToListAsync(cancellationToken);
+        var deployments = await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken);
+        routeCatalog.Replace(
+            nodes.Select(RouteNodeSnapshot.From),
+            models.Select(RouteModelSnapshot.From),
+            deployments.Select(RouteDeploymentSnapshot.From));
 
         var ratePolicies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
         requestRateLimiter.ReplacePolicies(ratePolicies.Select(policy => new RateLimitPolicySnapshot(
