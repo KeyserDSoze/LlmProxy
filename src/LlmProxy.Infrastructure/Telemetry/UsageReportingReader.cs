@@ -24,48 +24,93 @@ public sealed class UsageReportingReader(GatewayDbContext dbContext)
             .SingleOrDefaultAsync(cancellationToken)
             ?? new UsageTotals(0, 0, 0, 0, 0, 0, 0);
 
-        var groupRows = await query
+        // Keep aggregation in PostgreSQL. Materialize only aggregate rows before mapping to
+        // domain-facing records: EF/Npgsql cannot reliably translate OrderBy over a custom
+        // record constructor that also contains nullable Average expressions.
+        var groupAggregates = await query
             .GroupBy(metric => metric.UsageGroupId)
-            .Select(group => new UsageGroupAggregate(
-                group.Key,
-                group.LongCount(),
-                group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
-                group.Sum(metric => (long)(metric.InputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
-                group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded"),
-                group.Average(metric => (double?)metric.TimeToFirstByteMilliseconds),
-                group.Average(metric => (double?)metric.DurationMilliseconds)))
-            .OrderByDescending(row => row.RequestCount)
+            .Select(group => new
+            {
+                UsageGroupId = group.Key,
+                RequestCount = group.LongCount(),
+                ErrorCount = group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
+                InputTokens = group.Sum(metric => (long)(metric.InputTokens ?? 0)),
+                OutputTokens = group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
+                TotalTokens = group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
+                RateLimitedRequests = group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded"),
+                AverageTtftMilliseconds = group.Average(metric => (double?)metric.TimeToFirstByteMilliseconds),
+                AverageDurationMilliseconds = group.Average(metric => (double)metric.DurationMilliseconds)
+            })
             .ToListAsync(cancellationToken);
 
-        var credentialRows = await query
+        var groupRows = groupAggregates
+            .OrderByDescending(row => row.RequestCount)
+            .Select(row => new UsageGroupAggregate(
+                row.UsageGroupId,
+                row.RequestCount,
+                row.ErrorCount,
+                row.InputTokens,
+                row.OutputTokens,
+                row.TotalTokens,
+                row.RateLimitedRequests,
+                row.AverageTtftMilliseconds,
+                row.AverageDurationMilliseconds))
+            .ToList();
+
+        var credentialAggregates = await query
             .Where(metric => metric.ApiCredentialId != null)
             .GroupBy(metric => new { metric.ApiCredentialId, metric.UsageGroupId })
-            .Select(group => new UsageCredentialAggregate(
-                group.Key.ApiCredentialId!.Value,
+            .Select(group => new
+            {
+                ApiCredentialId = group.Key.ApiCredentialId!.Value,
                 group.Key.UsageGroupId,
-                group.LongCount(),
-                group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
-                group.Sum(metric => (long)(metric.InputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
-                group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded")))
-            .OrderByDescending(row => row.RequestCount)
+                RequestCount = group.LongCount(),
+                ErrorCount = group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
+                InputTokens = group.Sum(metric => (long)(metric.InputTokens ?? 0)),
+                OutputTokens = group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
+                TotalTokens = group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
+                RateLimitedRequests = group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded")
+            })
             .ToListAsync(cancellationToken);
 
-        var modelRows = await query
-            .GroupBy(metric => metric.LogicalModel)
-            .Select(group => new UsageModelAggregate(
-                group.Key,
-                group.LongCount(),
-                group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
-                group.Sum(metric => (long)(metric.InputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
-                group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
-                group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded")))
+        var credentialRows = credentialAggregates
             .OrderByDescending(row => row.RequestCount)
+            .Select(row => new UsageCredentialAggregate(
+                row.ApiCredentialId,
+                row.UsageGroupId,
+                row.RequestCount,
+                row.ErrorCount,
+                row.InputTokens,
+                row.OutputTokens,
+                row.TotalTokens,
+                row.RateLimitedRequests))
+            .ToList();
+
+        var modelAggregates = await query
+            .GroupBy(metric => metric.LogicalModel)
+            .Select(group => new
+            {
+                LogicalModel = group.Key,
+                RequestCount = group.LongCount(),
+                ErrorCount = group.LongCount(metric => metric.StatusCode < 200 || metric.StatusCode >= 400),
+                InputTokens = group.Sum(metric => (long)(metric.InputTokens ?? 0)),
+                OutputTokens = group.Sum(metric => (long)(metric.OutputTokens ?? 0)),
+                TotalTokens = group.Sum(metric => (long)(metric.TotalTokens ?? 0)),
+                RateLimitedRequests = group.LongCount(metric => metric.ErrorCode == "rate_limit_exceeded")
+            })
             .ToListAsync(cancellationToken);
+
+        var modelRows = modelAggregates
+            .OrderByDescending(row => row.RequestCount)
+            .Select(row => new UsageModelAggregate(
+                row.LogicalModel,
+                row.RequestCount,
+                row.ErrorCount,
+                row.InputTokens,
+                row.OutputTokens,
+                row.TotalTokens,
+                row.RateLimitedRequests))
+            .ToList();
 
         var usageGroupNames = await dbContext.UsageGroups.AsNoTracking()
             .ToDictionaryAsync(group => group.Id, group => group.Name, cancellationToken);
