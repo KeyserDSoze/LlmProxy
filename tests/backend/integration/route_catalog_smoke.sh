@@ -71,8 +71,19 @@ for attempt in {1..30}; do
 done
 [[ "$healthy" == "true" ]] || fail_with_diagnostics "Bootstrap node did not become Healthy before PostgreSQL outage test."
 
+node_id="$(echo "$nodes_json" | jq -r 'map(select(.name == "dgx-route-catalog"))[0].id')"
+node_base_address="$(echo "$nodes_json" | jq -r 'map(select(.name == "dgx-route-catalog"))[0].baseAddress')"
 catalog_before="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
+version_before="$(echo "$catalog_before" | jq -r '.version')"
 echo "$catalog_before" | jq -e '.provider == "in-memory" and .version >= 1 and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
+
+# Mutate durable configuration after startup. The successful SaveChanges must publish
+# the new node snapshot immediately into the route catalog before the admin call returns.
+curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d "{\"name\":\"dgx-route-catalog\",\"baseAddress\":\"${node_base_address}\",\"weight\":2,\"maxConcurrency\":4}" \
+  "http://127.0.0.1:8080/api/admin/nodes/${node_id}" >/dev/null
+catalog_after_mutation="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
+echo "$catalog_after_mutation" | jq -e --argjson previous "$version_before" '.version > $previous and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
 
 # Stop the durable store after startup. /readyz is expected to become unavailable,
 # but already-published inference authentication + route resolution must keep working.
@@ -96,4 +107,4 @@ chat_status="$(curl --silent --output /tmp/route-chat.json --write-out '%{http_c
 [[ "$chat_status" == "200" ]] || fail_with_diagnostics "Expected chat completion to work with PostgreSQL stopped; got HTTP ${chat_status}."
 jq -e '.served_by == "route-catalog" and .model == "bootstrap-model"' /tmp/route-chat.json >/dev/null
 
-echo "Route-catalog smoke suite passed: catalog diagnostics, /v1/models and chat completion remained available with PostgreSQL stopped after startup."
+echo "Route-catalog smoke suite passed: live publication, catalog diagnostics, /v1/models and chat completion remained available with PostgreSQL stopped after startup."
