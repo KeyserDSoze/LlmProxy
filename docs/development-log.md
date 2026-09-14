@@ -1,6 +1,6 @@
 # Development log
 
-This file is the chronological engineering trace for LlmProxy. Keep entries concise but specific enough that a new maintainer can understand what changed and how it was validated. For the current snapshot and exact resume point, use `docs/project-status.md`.
+This file is the chronological engineering trace for LlmProxy. For the current snapshot and exact resume point, use `docs/project-status.md`.
 
 ## 2026-09-09 - Repository and gateway foundation
 
@@ -10,102 +10,119 @@ Implemented the initial OpenAI-compatible surface with `/v1/models`, `/v1/chat/c
 
 ## 2026-09-09 - Multi-DGX routing and failover
 
-Added routing strategies `WeightedLeastLoaded`, `RoundRobin` and `WeightedRoundRobin`, node/deployment weights, concurrency ceilings and pre-response failover. Routing excludes unavailable, draining, disabled and saturated candidates. Streaming responses are never retried after bytes have been exposed to the caller.
+Added `WeightedLeastLoaded`, `RoundRobin` and `WeightedRoundRobin`, node/deployment weights, concurrency ceilings and pre-response failover. Routing excludes unavailable, draining, disabled and saturated candidates. Streaming responses are never retried after bytes have been exposed to the caller.
 
-Added path-safe service-root handling so a DGX can be configured as `http://host:port`, `http://host:port/vllm` or another prefixed HTTP(S) root without losing the prefix when `/health`, `/metrics` or `/v1/*` paths are appended.
+Added path-safe service-root handling for host/IP/port/path-prefixed inference roots.
 
-## 2026-09-09 - Health diagnostics, audit and inference observability
+## 2026-09-09 - Health, audit and inference observability
 
-Added health-monitor hysteresis, last-health latency/error timestamps and explicit connection-test diagnostics. Added request metrics for status, duration, attempts, upstream-header latency, TTFT, token counts and streaming/failover visibility. Added summary endpoints and React observability views. Prompt and generated content are deliberately excluded from telemetry.
+Added health-monitor hysteresis, last-health diagnostics and connection tests. Added request metrics for status, duration, attempts, upstream-header latency, TTFT, token counts and streaming/failover visibility. Prompt and generated content are deliberately excluded from telemetry.
 
-## 2026-09-09 - Performance-aware routing
+## 2026-09-09 - Performance-aware routing and vLLM telemetry
 
-Added an in-memory per-deployment performance tracker. Completed requests feed exponentially weighted moving averages for TTFT and duration plus an infrastructure-failure score. `WeightedLeastLoaded` uses these signals only after a warm-up sample threshold so one cold start cannot dominate routing decisions.
+Added per-deployment EWMA TTFT/duration/infrastructure-failure feedback. Added a vLLM Prometheus collector for running/waiting requests, KV-cache utilization, token counters and model labels.
 
-## 2026-09-09 - vLLM runtime telemetry
-
-Added a background collector for the Prometheus exposition returned by `<DGX service root>/metrics`. The collector tracks vLLM running requests, waiting requests, KV-cache utilization, cumulative prompt/generated token counters and the reported model label. Collection failures are non-fatal and do not change node health.
-
-The router compares vLLM running requests with the gateway's own active count. Excess running work is treated as external load, while queue depth and KV-cache pressure add routing penalties. The React Routing page exposes both vLLM runtime snapshots and per-deployment performance feedback.
-
-Validated with backend tests plus the Docker/PostgreSQL smoke suite using two fake path-prefixed vLLM endpoints.
+`WeightedLeastLoaded` combines configured capacity/weights, gateway active work, health, EWMA feedback and vLLM runtime pressure. PostgreSQL is not queried per inference request.
 
 ## 2026-09-09 - Persisted smart-routing tuning
 
-Moved smart-routing coefficients out of hard-coded scoring logic into a singleton `RoutingTuningPolicy` persisted in PostgreSQL and published into a thread-safe in-memory `RoutingTuningState`.
+Moved routing coefficients into a persisted/audited `RoutingTuningPolicy` and thread-safe in-memory state. Changes apply live without restart.
 
-The policy controls warm-up samples, TTFT target/weight, infrastructure failure weight, external-load weight, queue weight, KV-cache threshold/weight and degraded/unknown node penalties. Values are range-validated, changes are audited and are applied to new requests without a gateway restart. Persistence is verified across container restart.
-
-Added:
-
-```http
-GET /api/admin/routing/tuning
-PUT /api/admin/routing/tuning
-```
-
-The React Routing view exposes the tuning profile and a reset-to-default workflow. Backend unit tests, Vitest, Playwright and the Docker/PostgreSQL integration suite cover the feature. Commit `6f9557262ce25f1084214bf8f99768245d5fc80b` completed successfully in CI and the container publish workflow succeeded.
+Full backend/frontend/Docker integration passed for the tuning increment; container publication succeeded.
 
 ## 2026-09-09 - Documentation/handover discipline
 
-Introduced root `AGENTS.md` as the primary working rules/handover entry point for AI agents and maintainers. From this point forward every meaningful technical increment must update focused documentation, append this development log, update roadmap status when relevant and keep the current resume point accurate.
+Introduced root `AGENTS.md` and established repository-first handover rules. Meaningful increments must update focused docs, project status, development log, roadmap where relevant and the agent resume point.
 
-CI is configured to cancel superseded runs for the same branch or pull request so rapid development on `main` does not waste runners testing obsolete commits.
+CI cancels superseded runs for the same branch/PR.
 
 ## 2026-09-10 - DGX/DCGM hardware telemetry - VALIDATED
 
-Completed optional NVIDIA/DCGM hardware observability while keeping hardware telemetry independent from vLLM runtime pressure and inference node health.
+Added optional per-node NVIDIA/DCGM hardware telemetry on a service root separate from vLLM. Collector parses GPU utilization, framebuffer memory, temperature and power into an in-memory multi-GPU snapshot.
 
-Each `InferenceNode` can persist a separate path-safe `HardwareMetricsBaseAddress`. A background collector parses DCGM Prometheus GPU utilization, framebuffer used/free/total, GPU temperature and power series into an in-memory multi-GPU snapshot. `GET /api/admin/hardware` exposes runtime state and `PUT /api/admin/nodes/{id}/hardware-metrics` configures/clears the service root with audit.
+Transient DCGM failures do not change inference health. Explicit endpoint clear removes the runtime snapshot. React DGX Hardware and dedicated fake-DCGM Docker smoke were added.
 
-Transient DCGM failures mark only the hardware snapshot unavailable and retain the last successful numeric sample for diagnostics. Explicitly clearing the endpoint removes the in-memory hardware snapshot. Neither case modifies `InferenceNode.Status`; inference health remains controlled by vLLM health checks.
+Full quality gate passed on commit:
 
-Added the React **DGX Hardware** view, Vitest coverage, Playwright administrator flow and a dedicated integration suite using a fake DCGM exporter on a different port/path from the fake vLLM runtime. The smoke test verifies two-GPU aggregation, path-prefix preservation, DCGM 503 isolation, retained diagnostics, audit and clear semantics against the real Docker/PostgreSQL stack.
+```text
+6c238a095273843e713a72fb2e26b2c7c434fc62
+```
 
-Full backend, frontend and integration quality gate passed on commit `6c238a095273843e713a72fb2e26b2c7c434fc62`.
+## 2026-09-10 - Architecture decision: no NVIDIA PAIR
 
-## 2026-09-10 - Custom architecture decision
-
-NVIDIA Personal AI Router (PAIR) was reviewed as a possible alternative for the southbound inference fabric. The project decision is to continue with the existing LlmProxy + vLLM architecture and not adopt PAIR. Continue investing in our own gateway/routing/control-plane implementation unless this decision is explicitly revisited.
+NVIDIA Personal AI Router was evaluated. Project owner chose to continue with the custom LlmProxy + vLLM architecture.
 
 ## 2026-09-10 - Benchmark harness - VALIDATED
 
-Added a dedicated .NET 10 capacity benchmark under `tests/performance/`. The harness can target either LlmProxy or a direct vLLM service root, including path-prefixed roots, and supports Chat Completions/Responses plus streaming/non-streaming execution.
+Added `tests/performance/`, a .NET 10 benchmark harness that can target LlmProxy or direct vLLM, including path-prefixed service roots, Chat Completions/Responses and stream/non-stream runs.
 
-The measurement model includes warm-up, concurrency sweeps, success/error breakdown, p50/p95/p99 TTFT and total duration, requests/second and token throughput when upstream usage is available. Streaming TTFT is measured from the first meaningful output delta rather than response headers or metadata-only SSE chunks.
+Measurements include concurrency sweep, success/error rate, p50/p95/p99 TTFT/duration, requests/sec and token throughput when available. Credentials are read from environment variables and prompt bodies are excluded from reports.
 
-Secrets are intentionally kept out of command-line arguments: the harness reads bearer credentials from an environment variable named with `--api-key-env`. Prompt bodies and bearer tokens are excluded from JSON/CSV output. The built-in default is a small synthetic coding prompt; custom prompts are loaded from a file but only a safe label and character count are reported.
-
-CI compiles and unit-tests the benchmark harness but does not generate load against a remote endpoint. Real DGX capacity sweeps remain deliberate environment tests.
-
-The full quality gate passed on commit `49e7932f14118be403eec042a1393946143776ae`, including backend tests, benchmark tests, React/Vitest/Playwright, Docker/PostgreSQL inference smoke and DCGM smoke.
-
-Detailed protocol: `docs/benchmarking.md`.
-
-## 2026-09-13 - Canonical project handover snapshot
-
-Added `docs/project-status.md` as the canonical current-state/resume document so future chats, maintainers and other LLMs do not need previous conversation history.
-
-Updated `AGENTS.md` with a mandatory read order and source-of-truth precedence:
+Full quality gate passed on commit:
 
 ```text
-code/tests/successful CI
-  > docs/project-status.md
-  > docs/development-log.md
-  > docs/roadmap.md
-  > focused documentation
-  > old chat context
+49e7932f14118be403eec042a1393946143776ae
 ```
 
-The handover now explicitly distinguishes implemented/validated work, external validation still required and the exact next product increment.
+## 2026-09-13 - Canonical handover snapshot
+
+Added `docs/project-status.md` as the canonical “where are we / what is missing / where do I resume?” document and linked it from `AGENTS.md` with explicit source-of-truth precedence.
+
+## 2026-09-13 - Capacity Profile + node-wide admission/backpressure - VALIDATED
+
+Implemented persisted benchmark-derived Capacity Profiles while keeping recommendations independent from live production limits. Added explicit audited Save / Apply / Clear workflows and React capacity administration.
+
+Extended request-load tracking to atomically acquire both deployment-level and physical-node slots. Multiple deployments on the same DGX can no longer overcommit the physical node simply because each deployment has its own limit.
+
+Defined deliberate saturation behavior:
+
+```text
+429 Too Many Requests
+Retry-After: 1
+error.code = capacity_exhausted
+```
+
+This remains distinct from `503 no_healthy_deployment`.
+
+A dedicated Docker smoke test starts a real SSE request that holds the only slot, verifies a concurrent request receives `429 capacity_exhausted`, then verifies a new request succeeds once the stream releases the lease. Capacity Profile persistence/restart behavior is also covered.
+
+Full backend, benchmark, React/Vitest, Playwright, Docker/PostgreSQL, DCGM and capacity smoke quality gate passed on commit:
+
+```text
+600ad42cc53ad1e97a259819654ca5cf5480e1db
+```
+
+## 2026-09-14 - Operator quickstart and private GHCR deployment path
+
+Added a repository-native onboarding path for installing/testing LlmProxy without compiling the source:
+
+```text
+QUICKSTART.md
+  -> docs/quickstart.md
+```
+
+Added:
+
+```text
+docker/docker-compose.quickstart.yml
+docker/.env.quickstart.example
+```
+
+The guide covers Ubuntu Docker Engine/Compose installation, Windows Docker Desktop + WSL 2, GitHub Container Registry private package authentication using a PAT classic with `read:packages`, pulling `ghcr.io/keyserdsoze/llmproxy:*`, PostgreSQL/env configuration, real vLLM or mock runtime, health/readiness/Admin/OpenAI smoke tests, update/reset and optional Entra setup.
+
+CI was extended to validate that the quickstart Compose file can be rendered with required secrets supplied through environment variables.
+
+The operator quickstart commits must be considered validated only after the latest CI run on the final documentation/configuration head is green.
 
 ## Next increment
 
-Implement **Capacity Profile + node-wide capacity enforcement/backpressure**:
+Implement rate limits/quotas by inference credential and logical model, deliberately distinct from physical-capacity backpressure:
 
-- persist benchmark-derived recommended capacity separately from the active runtime limit;
-- make application of recommendations explicit and audited;
-- enforce a physical DGX aggregate concurrency ceiling across all deployments sharing that node;
-- define OpenAI-compatible saturation/backpressure behavior;
-- add API/UI/unit/integration coverage before marking the increment validated.
+```text
+credential/model policy exceeded -> 429 rate_limit_exceeded
+physical DGX admission exhausted -> 429 capacity_exhausted
+```
 
-Real DGX benchmark sweeps and the real GitHub Copilot BYOK spike remain external validation activities and can proceed once the required hardware/tenant/public-endpoint access exists.
+Start with requests-per-minute/window limits backed by persisted policy and in-memory enforcement, then add Admin API/UI, audit, metrics and concurrent integration coverage. Token quotas can follow separately because actual output token usage is known only after inference.
+
+Real DGX benchmark sweeps, Entra production registration, Cloudflare/public endpoint and the real GitHub Copilot BYOK spike remain external validation activities.
