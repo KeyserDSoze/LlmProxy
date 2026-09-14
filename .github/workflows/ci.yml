@@ -111,3 +111,6 @@ jobs:
 
       - name: Usage governance and rate-limit smoke suite
         run: bash tests/backend/integration/governance_smoke.sh
+
+      - name: Route catalog PostgreSQL outage smoke suite
+        run: bash tests/backend/integration/route_catalog_smoke.sh
