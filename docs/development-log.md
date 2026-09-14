@@ -22,11 +22,11 @@ Added health-monitor hysteresis, last-health diagnostics and connection tests. A
 
 Added per-deployment EWMA TTFT/duration/infrastructure-failure feedback. Added a vLLM Prometheus collector for running/waiting requests, KV-cache utilization, token counters and model labels.
 
-`WeightedLeastLoaded` combines configured capacity/weights, gateway active work, health, EWMA feedback and vLLM runtime pressure. Performance/load feedback is in-memory; durable route-catalog resolution still uses PostgreSQL per inference request and is the next hot-path optimization.
+`WeightedLeastLoaded` combines configured capacity/weights, gateway active work, health, EWMA feedback and vLLM runtime pressure.
 
 ## 2026-09-09 - Persisted smart-routing tuning
 
-Moved routing coefficients into a persisted/audited `RoutingTuningPolicy` and thread-safe in-memory state. Changes apply live without restart.
+Moved routing coefficients into a persisted/audited `RoutingTuningPolicy` and thread-safe runtime state. Changes apply live without restart.
 
 Full backend/frontend/Docker integration passed for the tuning increment; container publication succeeded.
 
@@ -113,7 +113,7 @@ V1 accounting deliberately uses one primary group per API credential. Shared Git
 
 ## 2026-09-14 - Caller Governance + Usage Groups - VALIDATED
 
-Implemented persisted `UsageGroup`, nullable primary group membership on `ApiCredential`, request-time `UsageGroupId` snapshots in request metrics, persisted credential rate policies with optional logical-model override and a thread-safe fixed-window in-memory limiter.
+Implemented persisted `UsageGroup`, nullable primary group membership on `ApiCredential`, request-time `UsageGroupId` snapshots in request metrics, persisted credential rate policies with optional logical-model override and a thread-safe fixed-window runtime limiter.
 
 Caller policy is enforced before routing/physical capacity admission and is intentionally distinct from DGX saturation:
 
@@ -139,8 +139,6 @@ commit 798f0a460dcc4f89b17e2ce89df66f511d324241
 CI     34859931084
 ```
 
-All backend/unit/benchmark/frontend/Playwright and Docker/PostgreSQL backend/hardware/capacity/governance jobs passed.
-
 ## 2026-09-14 - In-memory inference credential authentication - VALIDATED
 
 Removed the API-credential PostgreSQL lookup from the `/v1` authentication path.
@@ -154,8 +152,6 @@ Added:
 - buffered background `LastUsedAtUtc` persistence so authentication middleware does not perform synchronous database writes;
 - concurrent unit coverage for atomic cache publication.
 
-Existing Governance integration coverage provides an important live-update assertion: the Usage Group is assigned after gateway startup, then subsequent inference must use that newly published group snapshot. Restart coverage proves the credential cache rebuilds from PostgreSQL.
-
 Full quality gate passed on:
 
 ```text
@@ -163,12 +159,58 @@ commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
 CI     34860662747
 ```
 
-All backend/unit/benchmark/frontend/Playwright and Docker/PostgreSQL backend/hardware/capacity/governance jobs passed.
+## 2026-09-14 - Runtime route/model/deployment catalog - VALIDATED
+
+Removed the final synchronous route-catalog PostgreSQL lookup from ordinary `/v1` inference.
+
+Introduced provider-neutral `IRouteCatalog` / `IDeploymentCatalog` runtime contracts and a versioned copy-on-write `InMemoryRouteCatalog` containing routing snapshots for nodes, logical/provider models and deployments.
+
+Startup now rebuilds the catalog from PostgreSQL. A dedicated EF SaveChanges interceptor captures `InferenceNode`, `ModelDefinition` and `ModelDeployment` additions/modifications/deletions and publishes them only after the durable save succeeds. This automatically covers admin edits plus node health/drain/disable changes that mutate tracked node entities.
+
+Added:
+
+- unit tests for candidate eligibility, effective weights/capacity, live upserts, disabled entities and public-model listing;
+- `GET /api/admin/routing/catalog` with provider/version/node/model/deployment diagnostics;
+- dedicated PostgreSQL-outage smoke test;
+- removal of the obsolete `EfDeploymentCatalog` implementation.
+
+The dedicated smoke verifies a live node configuration mutation increments the runtime catalog version, then deliberately stops PostgreSQL after startup and proves:
+
+```text
+GET /api/admin/routing/catalog -> still available
+GET /v1/models                 -> 200 from runtime catalog
+POST /v1/chat/completions      -> 200 and reaches configured vLLM mock
+```
+
+Therefore normal inference credential authentication + logical-model route resolution + routing/admission no longer requires a synchronous PostgreSQL query after startup/runtime publication.
+
+Full quality gate passed on:
+
+```text
+commit 42c44753cd00d679a81bf065f410b7a497cdc000
+CI     34871542047
+```
+
+Backend/unit/benchmark, React/Vitest/Playwright, production Docker, backend inference, DCGM, capacity, Governance and route-catalog PostgreSQL-outage smoke jobs all passed.
+
+## 2026-09-14 - Redis-ready runtime-cache architecture
+
+Added `docs/runtime-cache.md` and intentionally kept inference code dependent on cache/runtime abstractions rather than cache technology.
+
+Recommended future multi-instance topology:
+
+```text
+PostgreSQL = durable source of truth
+Redis      = distributed L2 snapshot/version/event synchronization
+local RAM  = per-replica request-path L1
+```
+
+A direct Redis-backed catalog can be implemented behind the existing contracts, but the preferred architecture keeps request-path lookups local and uses Redis to synchronize replicas. For stronger DB -> Redis delivery guarantees, plan a PostgreSQL transactional outbox rather than a distributed transaction.
+
+A real multi-replica deployment must also distribute/coordinate rate-limit counters and node/deployment capacity leases before global limits can be claimed; route-catalog synchronization alone is insufficient.
 
 ## Next increment
 
-The authentication/rate-limit/runtime-performance portions of the hot path are now in-memory, but `EfDeploymentCatalog` still resolves logical models/deployments/nodes from PostgreSQL for each inference request.
+Proceed with request-metric retention/background cleanup and define audit retention independently. Then define token/budget quota reservation/settlement semantics, add Prometheus/OpenTelemetry export and perform real DGX/Copilot/Entra/Cloudflare acceptance when the external environment is available.
 
-Next implement an in-memory route/model/deployment catalog while preserving durable PostgreSQL source-of-truth semantics, live admin updates, node health/drain/disable behavior and restart rebuild. Add explicit integration evidence that ordinary inference no longer issues request-time route-catalog SQL reads.
-
-After that: request-metric/audit retention, explicit token/budget quota semantics, Prometheus/OpenTelemetry export and real DGX/Copilot/Entra/Cloudflare acceptance.
+Redis/distributed coordination is ready as an architectural evolution and should be implemented when multi-replica HA becomes a concrete requirement or the product owner explicitly reprioritizes it.
