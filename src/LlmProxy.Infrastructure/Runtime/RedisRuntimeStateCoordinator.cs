@@ -52,7 +52,7 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
         _keyPrefix = NormalizePrefix(configuration["Redis:KeyPrefix"] ?? "llmproxy");
         _instanceId = configuration["Redis:InstanceId"]
             ?? Environment.GetEnvironmentVariable("HOSTNAME")
-            ?? $"{Environment.MachineName}-{Guid.NewGuid():N}"[..Math.Min(Environment.MachineName.Length + 9, 40)];
+            ?? $"{Environment.MachineName}-{Guid.NewGuid():N}";
         _reconcileSeconds = Math.Clamp(configuration.GetValue("Redis:ReconcileSeconds", 5), 1, 300);
     }
 
@@ -70,17 +70,17 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
         => Enqueue(RouteCatalogKind, "replace", null, new RouteCatalogPayload(nodes.ToArray(), models.ToArray(), deployments.ToArray()));
 
     public void PublishNodeUpsert(RouteNodeSnapshot node) => Enqueue(NodeKind, "upsert", node.Id, node);
-    public void PublishNodeRemove(Guid nodeId) => Enqueue(NodeKind, "remove", nodeId, null);
+    public void PublishNodeRemove(Guid nodeId) => Enqueue<object?>(NodeKind, "remove", nodeId, null);
     public void PublishModelUpsert(RouteModelSnapshot model) => Enqueue(ModelKind, "upsert", model.Id, model);
-    public void PublishModelRemove(Guid modelId) => Enqueue(ModelKind, "remove", modelId, null);
+    public void PublishModelRemove(Guid modelId) => Enqueue<object?>(ModelKind, "remove", modelId, null);
     public void PublishDeploymentUpsert(RouteDeploymentSnapshot deployment) => Enqueue(DeploymentKind, "upsert", deployment.Id, deployment);
-    public void PublishDeploymentRemove(Guid deploymentId) => Enqueue(DeploymentKind, "remove", deploymentId, null);
+    public void PublishDeploymentRemove(Guid deploymentId) => Enqueue<object?>(DeploymentKind, "remove", deploymentId, null);
     public void PublishCredentialSnapshot(IEnumerable<ApiCredentialSnapshot> credentials) => Enqueue(CredentialKind, "replace", null, credentials.ToArray());
     public void PublishCredentialUpsert(ApiCredentialSnapshot credential) => Enqueue(CredentialKind, "upsert", credential.Id, credential);
-    public void PublishCredentialRemove(Guid credentialId) => Enqueue(CredentialKind, "remove", credentialId, null);
+    public void PublishCredentialRemove(Guid credentialId) => Enqueue<object?>(CredentialKind, "remove", credentialId, null);
     public void PublishRatePolicySnapshot(IEnumerable<RateLimitPolicySnapshot> policies) => Enqueue(RatePolicyKind, "replace", null, policies.ToArray());
     public void PublishRatePolicyUpsert(RateLimitPolicySnapshot policy) => Enqueue(RatePolicyKind, "upsert", policy.Id, policy);
-    public void PublishRatePolicyRemove(Guid policyId) => Enqueue(RatePolicyKind, "remove", policyId, null);
+    public void PublishRatePolicyRemove(Guid policyId) => Enqueue<object?>(RatePolicyKind, "remove", policyId, null);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
