@@ -1,0 +1,51 @@
+name: Full stack smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docker/docker-compose.full.yml
+      - docker/.env.full.example
+      - docker/observability/**
+      - docker/scripts/full-stack-init.*
+      - tests/backend/integration/full_stack_smoke.sh
+      - src/LlmProxy.Api/Observability/**
+      - src/LlmProxy.Infrastructure/Runtime/**
+      - src/LlmProxy.Infrastructure/Governance/RateLimitPolicyRuntimeStateInterceptor.cs
+      - src/LlmProxy.Application/Abstractions/IRuntimeStateEventSink.cs
+      - Directory.Packages.props
+      - src/LlmProxy.Api/LlmProxy.Api.csproj
+      - src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj
+
+concurrency:
+  group: full-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Redis + OpenTelemetry + Grafana stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run full-stack smoke
+        run: bash tests/backend/integration/full_stack_smoke.sh
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-stack-diagnostics
+          path: |
+            /tmp/full-stack-headers.txt
+            /tmp/full-stack-chat.json
+            /tmp/full-stack-trace.json
+            /tmp/llmproxy-full-stack-mock.log
+          if-no-files-found: ignore
+          retention-days: 7
