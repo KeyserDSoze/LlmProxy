@@ -13,7 +13,7 @@ OpenAI-compatible inference request
     -> bearer/API credential authentication
     -> request-time credential + primary UsageGroup resolution
     -> credential/model request-rate admission
-    -> logical-model routing + physical capacity admission
+    -> runtime logical-model routing + physical capacity admission
     -> DGX / vLLM
     -> metadata-only usage metric
     -> consolidated reporting
@@ -36,7 +36,7 @@ Current runtime path:
 ```text
 Bearer secret
   -> HMAC-SHA256 with server-side pepper
-  -> in-memory credential cache lookup
+  -> runtime credential cache lookup
   -> enabled + expiry check
   -> credential id + UsageGroupId snapshot placed in HttpContext
 ```
@@ -55,9 +55,11 @@ ExpiresAtUtc
 UsageGroupId
 ```
 
-An EF SaveChanges interceptor observes `ApiCredential` additions/modifications/deletions and publishes the corresponding runtime snapshot only after the database save succeeds. This means credential creation, revocation and Usage Group assignment/clear become visible to inference without restart while avoiding cache state that is ahead of durable state.
+An EF SaveChanges interceptor observes `ApiCredential` additions/modifications/deletions and publishes the corresponding runtime snapshot only after the database save succeeds. Credential creation, revocation and Usage Group assignment/clear therefore become visible to inference without restart while avoiding cache state that is ahead of durable state.
 
 `LastUsedAtUtc` is deliberately eventually consistent. Authentication enqueues usage metadata to a background sink, which throttles/batches PostgreSQL updates instead of performing a write on the request path.
+
+Route/model/deployment resolution follows the same durable-first/runtime-publication principle through `IRouteCatalog`; see `docs/runtime-cache.md`.
 
 ## Usage Groups
 
@@ -113,7 +115,7 @@ credential-wide policy (LogicalModel = null)
 
 If no enabled policy matches, the request is not caller-rate-limited.
 
-The active policy set is held by the thread-safe in-memory `RequestRateLimiter`. Admin changes are persisted then republished, and gateway startup rebuilds runtime policy from PostgreSQL.
+The active policy set is held by the thread-safe runtime `RequestRateLimiter`. Admin changes are persisted then republished, and gateway startup rebuilds runtime policy from PostgreSQL.
 
 Current algorithm is fixed-window request admission. Rate state is runtime-only and intentionally starts with a fresh window after process restart; policy configuration itself survives the restart.
 
@@ -200,13 +202,7 @@ The focused UI is:
 /admin/governance
 ```
 
-It provides:
-
-- usage KPIs;
-- Usage Group list/create/update-oriented administration;
-- credential -> group assignment/clear;
-- rate-policy create/enable/disable/delete workflows;
-- usage breakdown by group, credential and logical model.
+It provides usage KPIs, Usage Group administration, credential -> group assignment/clear, rate-policy workflows and usage breakdown by group, credential and logical model.
 
 Administrative changes are audited. Secrets and prompt/output content are excluded from audit detail.
 
@@ -226,17 +222,16 @@ commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
 CI     34860662747
 ```
 
-The Docker/PostgreSQL Governance smoke proves:
+The complete DB-free normal inference route baseline is now:
 
-- Usage Group creation and credential assignment;
-- first two requests accepted under a 2/60s policy;
-- third request receives `429 rate_limit_exceeded` + `Retry-After`;
-- rate-limit error remains distinct from `capacity_exhausted`;
-- group snapshot is visible in usage history;
-- group/model/credential usage aggregation;
-- policy and group membership survive restart;
-- runtime rate policy is republished after restart;
-- live Usage Group assignment after startup is seen by the in-memory credential cache.
+```text
+commit 42c44753cd00d679a81bf065f410b7a497cdc000
+CI     34871542047
+```
+
+The Governance smoke proves Usage Group creation/assignment, request-rate admission, `429 rate_limit_exceeded` + `Retry-After`, historical group snapshot, aggregate reporting, restart persistence and live credential-cache publication.
+
+The route-catalog PostgreSQL-outage smoke separately proves that after startup an authenticated request can resolve its logical model and reach vLLM even while PostgreSQL is stopped.
 
 ## Identity limitation: GitHub Copilot
 
@@ -258,10 +253,12 @@ Request-rate limiting is admission-time and is complete. Token quotas are differ
 
 `request_metrics` currently grows without a product retention policy. Add configurable retention (initial target 30–90 days), background cleanup and optional long-term rollups. Audit retention may need a separate, longer policy.
 
+### Multi-instance semantics
+
+The current rate-limit counters are process-local. If multiple gateway replicas are introduced, policy synchronization alone is insufficient for a global quota. Distributed/global counters need a coordinator such as Redis or another atomic store, with semantics chosen deliberately.
+
+See `docs/runtime-cache.md` for the wider Redis/runtime-state strategy.
+
 ### External analytics
 
 GitHub Copilot usage-metrics ingestion remains optional/external for per-user or adoption analytics and must not be confused with gateway credential/group accounting.
-
-## Related next hot-path work
-
-Credential authentication and request-rate admission are now in-memory, but `EfDeploymentCatalog` still queries PostgreSQL per inference request for logical model/node/deployment resolution. That work belongs to routing/hot-path hardening rather than this governance contract and is the current engineering resume point in `AGENTS.md` / `docs/project-status.md`.
