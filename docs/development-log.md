@@ -101,28 +101,48 @@ QUICKSTART.md
   -> docs/quickstart.md
 ```
 
-Added:
-
-```text
-docker/docker-compose.quickstart.yml
-docker/.env.quickstart.example
-```
-
-The guide covers Ubuntu Docker Engine/Compose installation, Windows Docker Desktop + WSL 2, GitHub Container Registry private package authentication using a PAT classic with `read:packages`, pulling `ghcr.io/keyserdsoze/llmproxy:*`, PostgreSQL/env configuration, real vLLM or mock runtime, health/readiness/Admin/OpenAI smoke tests, update/reset and optional Entra setup.
+Added `docker/docker-compose.quickstart.yml` and `docker/.env.quickstart.example`. The guide covers Ubuntu Docker/Compose, Windows Docker Desktop + WSL 2, private GHCR authentication/pull, PostgreSQL/env setup, real vLLM or mock runtime, smoke tests and optional Entra setup.
 
 CI was extended to validate that the quickstart Compose file can be rendered with required secrets supplied through environment variables.
 
-The operator quickstart commits must be considered validated only after the latest CI run on the final documentation/configuration head is green.
+## 2026-09-14 - Usage governance product scope
+
+Clarified that LlmProxy is not only an inference router. The product owner confirmed four core responsibilities:
+
+```text
+1. inference authentication
+2. rate limiting / quotas
+3. consolidated usage accounting
+4. configurable usage groups queryable through API and React UI
+```
+
+Added `docs/usage-governance.md` as the focused contract for this area.
+
+V1 group accounting is intentionally unambiguous:
+
+```text
+UsageGroup 1 --- N ApiCredential
+ApiCredential -> zero or one primary UsageGroup
+```
+
+The planned implementation snapshots `UsageGroupId` into request metrics so historical usage remains assigned to the group that owned the credential at request time even if the credential is moved later.
+
+The target report dimensions include time window, group, credential, logical model, node/deployment and surface; metrics include request/success/error counts, rate-limit/capacity rejects, token totals, duration and TTFT percentiles.
+
+Important identity rule: a shared GitHub Copilot provider credential can be attributed to its gateway group, but it does not expose individual GitHub users. Per-user/adoption analytics require GitHub Copilot usage metrics or another supported identity signal; source IP must not be used as identity.
 
 ## Next increment
 
-Implement rate limits/quotas by inference credential and logical model, deliberately distinct from physical-capacity backpressure:
+Implement credential/model request rate limiting first:
 
 ```text
 credential/model policy exceeded -> 429 rate_limit_exceeded
 physical DGX admission exhausted -> 429 capacity_exhausted
+no operational backend -> 503 no_healthy_deployment
 ```
 
-Start with requests-per-minute/window limits backed by persisted policy and in-memory enforcement, then add Admin API/UI, audit, metrics and concurrent integration coverage. Token quotas can follow separately because actual output token usage is known only after inference.
+Use persisted policy with in-memory enforcement, computed `Retry-After`, Admin API/UI, audit, metrics and concurrent integration coverage. Once validated, implement `UsageGroup` persistence, credential assignment, request-metric group snapshot and grouped usage APIs/UI.
+
+Token/budget quotas can follow separately because final output token usage is generally known only after inference completes.
 
 Real DGX benchmark sweeps, Entra production registration, Cloudflare/public endpoint and the real GitHub Copilot BYOK spike remain external validation activities.
