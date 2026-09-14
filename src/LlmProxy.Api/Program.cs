@@ -120,6 +120,7 @@ app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
+app.MapRouteCatalogAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
