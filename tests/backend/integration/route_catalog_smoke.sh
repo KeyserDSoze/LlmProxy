@@ -71,10 +71,16 @@ for attempt in {1..30}; do
 done
 [[ "$healthy" == "true" ]] || fail_with_diagnostics "Bootstrap node did not become Healthy before PostgreSQL outage test."
 
+catalog_before="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
+echo "$catalog_before" | jq -e '.provider == "in-memory" and .version >= 1 and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
+
 # Stop the durable store after startup. /readyz is expected to become unavailable,
 # but already-published inference authentication + route resolution must keep working.
 "${COMPOSE[@]}" stop postgres >/dev/null
 sleep 1
+
+catalog_during_outage="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
+echo "$catalog_during_outage" | jq -e '.provider == "in-memory" and .version >= 1 and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
 
 models_status="$(curl --silent --output /tmp/route-models.json --write-out '%{http_code}' \
   -H 'Authorization: Bearer route-catalog-test-key' \
@@ -90,4 +96,4 @@ chat_status="$(curl --silent --output /tmp/route-chat.json --write-out '%{http_c
 [[ "$chat_status" == "200" ]] || fail_with_diagnostics "Expected chat completion to work with PostgreSQL stopped; got HTTP ${chat_status}."
 jq -e '.served_by == "route-catalog" and .model == "bootstrap-model"' /tmp/route-chat.json >/dev/null
 
-echo "Route-catalog smoke suite passed: /v1/models and chat completion remained available with PostgreSQL stopped after startup."
+echo "Route-catalog smoke suite passed: catalog diagnostics, /v1/models and chat completion remained available with PostgreSQL stopped after startup."
