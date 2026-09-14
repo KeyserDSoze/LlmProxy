@@ -8,6 +8,6 @@ const governanceRoute = window.location.pathname.replace(/\/+$/, '').endsWith('/
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {governanceRoute ? <GovernancePage /> : <App />}
+    {governanceRoute ? <GovernancePage /> : <><App /><a className="governanceLauncher" href="/admin/governance">Usage & Governance</a></>}
   </StrictMode>
 )
