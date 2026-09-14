@@ -1,0 +1,161 @@
+name: llmproxy-full
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-llmproxy}
+      POSTGRES_USER: ${POSTGRES_USER:-llmproxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run the full-stack init script or set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llmproxy} -d ${POSTGRES_DB:-llmproxy}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run the full-stack init script or set REDIS_PASSWORD}
+    command: ["/bin/sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping 2>/dev/null | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  tempo:
+    image: grafana/tempo:3.0.2
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./observability/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+
+  loki:
+    image: grafana/loki:3.7.7
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yml"]
+    volumes:
+      - ./observability/loki.yml:/etc/loki/local-config.yml:ro
+      - loki-data:/loki
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otelcol-contrib/config.yml:ro
+    depends_on:
+      - tempo
+      - loki
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run the full-stack init script or set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+  llmproxy:
+    image: ghcr.io/${GHCR_OWNER:-keyserdsoze}/llmproxy:${LLMPROXY_IMAGE_TAG:-main}
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "${LLMPROXY_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD}
+      Authentication__ApiKey: ${LLM_PROXY_API_KEY:?Run the full-stack init script or set LLM_PROXY_API_KEY}
+      Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:?Run the full-stack init script or set LLM_PROXY_API_KEY_PEPPER}
+
+      Redis__Enabled: "true"
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+      Redis__KeyPrefix: ${REDIS_KEY_PREFIX:-llmproxy}
+      Redis__InstanceId: ${LLMPROXY_INSTANCE_ID:-llmproxy-1}
+      Redis__ReconcileSeconds: ${REDIS_RECONCILE_SECONDS:-5}
+
+      OpenTelemetry__Enabled: "true"
+      OpenTelemetry__OtlpEndpoint: http://otel-collector:4317
+      OpenTelemetry__ServiceName: llmproxy
+      OpenTelemetry__ServiceNamespace: agic.ai
+      OpenTelemetry__ServiceInstanceId: ${LLMPROXY_INSTANCE_ID:-llmproxy-1}
+      OpenTelemetry__Environment: ${DEPLOYMENT_ENVIRONMENT:-demo}
+
+      Routing__Strategy: ${ROUTING_STRATEGY:-WeightedLeastLoaded}
+      Health__IntervalSeconds: ${HEALTH_INTERVAL_SECONDS:-10}
+      Health__HealthyAfterSuccesses: ${HEALTH_HEALTHY_AFTER_SUCCESSES:-2}
+      Health__UnhealthyAfterFailures: ${HEALTH_UNHEALTHY_AFTER_FAILURES:-3}
+      RuntimeMetrics__Enabled: ${RUNTIME_METRICS_ENABLED:-true}
+      RuntimeMetrics__IntervalSeconds: ${RUNTIME_METRICS_INTERVAL_SECONDS:-5}
+      HardwareMetrics__Enabled: ${HARDWARE_METRICS_ENABLED:-false}
+      HardwareMetrics__IntervalSeconds: ${HARDWARE_METRICS_INTERVAL_SECONDS:-10}
+
+      Retention__Enabled: ${RETENTION_ENABLED:-true}
+      Retention__RequestMetricsDays: ${RETENTION_REQUEST_METRICS_DAYS:-90}
+      Retention__AuditEventsDays: ${RETENTION_AUDIT_EVENTS_DAYS:-365}
+      Retention__IntervalHours: ${RETENTION_INTERVAL_HOURS:-24}
+      Retention__BatchSize: ${RETENTION_BATCH_SIZE:-5000}
+
+      EntraId__Enabled: ${ENTRA_ENABLED:-false}
+      EntraId__Instance: https://login.microsoftonline.com/
+      EntraId__TenantId: ${ENTRA_TENANT_ID:-}
+      EntraId__ClientId: ${ENTRA_CLIENT_ID:-}
+      EntraId__ClientSecret: ${ENTRA_CLIENT_SECRET:-}
+      EntraId__CallbackPath: /signin-oidc
+
+      Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
+      Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}
+      Bootstrap__NodeBaseAddress: ${DGX_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}
+      Bootstrap__HardwareMetricsBaseAddress: ${DGX_HARDWARE_METRICS_BASE_ADDRESS:-}
+      Bootstrap__NodeWeight: ${DGX_NODE_WEIGHT:-1}
+      Bootstrap__NodeMaxConcurrency: ${DGX_NODE_MAX_CONCURRENCY:-4}
+      Bootstrap__PublicModelName: ${PUBLIC_MODEL_NAME:-agic-code-fast}
+      Bootstrap__ProviderModelName: ${PROVIDER_MODEL_NAME:-bootstrap-model}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:

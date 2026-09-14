@@ -97,6 +97,15 @@ jobs:
           LLM_PROXY_API_KEY_PEPPER: ci-quickstart-pepper
         run: docker compose -f docker/docker-compose.quickstart.yml config >/dev/null
 
+      - name: Validate full-stack Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-full-postgres
+          REDIS_PASSWORD: ci-full-redis
+          LLM_PROXY_API_KEY: ci-full-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-full-pepper
+          GRAFANA_ADMIN_PASSWORD: ci-full-grafana
+        run: docker compose -f docker/docker-compose.full.yml config >/dev/null
+
       - name: Validate production image build
         run: docker build -f docker/Dockerfile -t llmproxy:ci .
 

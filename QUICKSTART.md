@@ -1,21 +1,22 @@
 # LlmProxy Quickstart
 
-La guida operativa completa per installare e provare LlmProxy su una VM Linux o su un PC Windows/Microsoft è qui:
+Sono disponibili due percorsi operativi:
 
-**[`docs/quickstart.md`](docs/quickstart.md)**
+- **Minimal** — `docs/quickstart.md`: LlmProxy + PostgreSQL, ideale per la prima prova.
+- **Full stack** — `docs/full-stack.md`: LlmProxy + PostgreSQL + Redis + OpenTelemetry Collector + Tempo + Loki + Prometheus + Grafana, tutto auto-wired tramite Docker Compose.
 
-Copre:
+La guida minimal copre installazione Docker su Linux/Windows, GHCR privato, configurazione `.env`, DGX/vLLM reale o mock, Admin UI, `/v1/*`, Entra opzionale e troubleshooting.
 
-- installazione Docker Engine + Docker Compose su Ubuntu;
-- Docker Desktop + WSL 2 su Windows;
-- autenticazione a GitHub Container Registry privato;
-- pull di `ghcr.io/keyserdsoze/llmproxy:main`;
-- configurazione `.env`;
-- PostgreSQL;
-- avvio tramite `docker/docker-compose.quickstart.yml`;
-- test con DGX/vLLM reale oppure con il mock repository;
-- `/healthz`, `/readyz`, Admin UI e `/v1/*`;
-- aggiornamento e reset dell'ambiente;
-- prerequisiti .NET 10/Node solo per lo sviluppo da sorgente;
-- setup opzionale Microsoft Entra ID;
-- troubleshooting e checklist finale.
+Per preparare il full stack su Linux:
+
+```bash
+bash docker/scripts/full-stack-init.sh
+```
+
+Su Windows/PowerShell:
+
+```powershell
+.\docker\scripts\full-stack-init.ps1
+```
+
+Gli script generano i secret locali; il Compose imposta automaticamente gli indirizzi interni di PostgreSQL, Redis e OpenTelemetry. Restano da indicare solo gli input esterni/operator-specifici, in particolare endpoint DGX e model id vLLM.
