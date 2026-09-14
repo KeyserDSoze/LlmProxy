@@ -173,10 +173,88 @@ export type ApiCredential = {
   createdAtUtc: string
   expiresAtUtc?: string | null
   lastUsedAtUtc?: string | null
+  usageGroupId?: string | null
+}
+
+export type GovernanceCredential = ApiCredential & {
+  usageGroupId?: string | null
 }
 
 export type CreatedApiCredential = ApiCredential & {
   secret: string
+}
+
+export type UsageGroup = {
+  id: string
+  name: string
+  description?: string | null
+  createdAtUtc: string
+  updatedAtUtc: string
+  credentialCount: number
+}
+
+export type RateLimitPolicy = {
+  id: string
+  apiCredentialId: string
+  credentialName?: string | null
+  keyPrefix?: string | null
+  logicalModel?: string | null
+  requestsPerWindow: number
+  windowSeconds: number
+  enabled: boolean
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+export type UsageGroupSummary = {
+  usageGroupId?: string | null
+  name: string
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
+  averageTtftMilliseconds?: number | null
+  averageDurationMilliseconds?: number | null
+}
+
+export type UsageCredentialSummary = {
+  apiCredentialId: string
+  name: string
+  keyPrefix?: string | null
+  usageGroupId?: string | null
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
+}
+
+export type UsageModelSummary = {
+  logicalModel: string
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
+}
+
+export type UsageReport = {
+  windowDays: number
+  sinceUtc: string
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
+  capacityExhaustedRequests: number
+  groups: UsageGroupSummary[]
+  credentials: UsageCredentialSummary[]
+  models: UsageModelSummary[]
 }
 
 export type RequestMetric = {
@@ -188,6 +266,7 @@ export type RequestMetric = {
   deploymentId?: string | null
   nodeId?: string | null
   apiCredentialId?: string | null
+  usageGroupId?: string | null
   statusCode: number
   durationMilliseconds: number
   attemptCount: number
