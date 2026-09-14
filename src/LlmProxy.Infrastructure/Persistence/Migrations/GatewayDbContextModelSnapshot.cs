@@ -55,6 +55,34 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("deployments");
         });
 
+        modelBuilder.Entity("LlmProxy.Domain.Governance.RateLimitPolicy", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<Guid>("ApiCredentialId").HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<bool>("Enabled").HasColumnType("boolean");
+            b.Property<string>("LogicalModel").HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<int>("RequestsPerWindow").HasColumnType("integer");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<int>("WindowSeconds").HasColumnType("integer");
+            b.HasKey("Id");
+            b.HasIndex("ApiCredentialId");
+            b.HasIndex("ApiCredentialId", "LogicalModel").IsUnique();
+            b.ToTable("rate_limit_policies");
+        });
+
+        modelBuilder.Entity("LlmProxy.Domain.Governance.UsageGroup", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("Description").HasMaxLength(1000).HasColumnType("character varying(1000)");
+            b.Property<string>("Name").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.HasIndex("Name").IsUnique();
+            b.ToTable("usage_groups");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Models.ModelDefinition", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
@@ -126,9 +154,11 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("KeyPrefix").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
             b.Property<DateTimeOffset?>("LastUsedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("Name").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<Guid?>("UsageGroupId").HasColumnType("uuid");
             b.HasKey("Id");
             b.HasIndex("KeyHash").IsUnique();
             b.HasIndex("KeyPrefix");
+            b.HasIndex("UsageGroupId");
             b.ToTable("api_credentials");
         });
 
@@ -152,12 +182,14 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<long?>("TimeToFirstByteMilliseconds").HasColumnType("bigint");
             b.Property<int?>("TotalTokens").HasColumnType("integer");
             b.Property<long?>("UpstreamHeaderMilliseconds").HasColumnType("bigint");
+            b.Property<Guid?>("UsageGroupId").HasColumnType("uuid");
             b.HasKey("Id");
             b.HasIndex("ApiCredentialId");
             b.HasIndex("RequestId").IsUnique();
             b.HasIndex("StartedAtUtc");
             b.HasIndex("LogicalModel", "StartedAtUtc");
             b.HasIndex("NodeId", "StartedAtUtc");
+            b.HasIndex("UsageGroupId", "StartedAtUtc");
             b.ToTable("request_metrics");
         });
 
@@ -174,6 +206,23 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
                 .HasForeignKey("NodeId")
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
+        });
+
+        modelBuilder.Entity("LlmProxy.Domain.Governance.RateLimitPolicy", b =>
+        {
+            b.HasOne("LlmProxy.Domain.Security.ApiCredential", null)
+                .WithMany()
+                .HasForeignKey("ApiCredentialId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("LlmProxy.Domain.Security.ApiCredential", b =>
+        {
+            b.HasOne("LlmProxy.Domain.Governance.UsageGroup", null)
+                .WithMany()
+                .HasForeignKey("UsageGroupId")
+                .OnDelete(DeleteBehavior.SetNull);
         });
 #pragma warning restore 612, 618
     }
