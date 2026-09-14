@@ -34,10 +34,10 @@ LlmProxy is Agic's productizable on-premises AI gateway for roughly 200 develope
 GitHub Copilot / OpenAI-compatible client
     -> public HTTPS endpoint
     -> LlmProxy (.NET 10)
-       -> authentication
+       -> in-memory credential authentication
        -> caller governance / rate limiting
        -> logical model resolution
-       -> smart routing + capacity admission
+       -> smart routing + physical capacity admission
        -> metadata-only usage accounting
     -> vLLM on DGX Spark 1..N
 ```
@@ -48,23 +48,14 @@ Clients see logical model aliases; physical DGX topology and provider model iden
 
 LlmProxy is not only a router. The following are core product responsibilities:
 
-1. **Inference authentication** — LlmProxy validates bearer/API credentials; raw secrets are never persisted.
-2. **Rate limiting / quotas** — LlmProxy enforces caller governance before physical routing/admission.
-3. **Usage consolidation** — request/token/latency/error metadata is consolidated centrally without persisting prompts or generated code.
-4. **Configurable usage groups** — administrators can create groups, assign inference credentials to them, query usage by group and drill down through API and React UI.
+1. **Inference authentication** — bearer/API credentials, raw secrets never persisted.
+2. **Rate limiting / quotas** — caller governance before physical routing/admission.
+3. **Usage consolidation** — request/token/latency/error metadata without prompts or generated code.
+4. **Configurable usage groups** — one primary accounting group per inference credential in V1, with API/UI reporting.
 
 Read `docs/usage-governance.md` before implementing auth/rate-limit/usage/reporting changes.
 
-V1 accounting semantics:
-
-```text
-UsageGroup 1 --- N ApiCredential
-ApiCredential -> at most one primary UsageGroup
-```
-
-A single primary group keeps accounting unambiguous. If overlapping classifications are needed later, add reporting tags separately.
-
-Important identity limitation: central GitHub Copilot BYOK may present one shared provider credential. The gateway must not infer individual people from IP. Per-team gateway accounting requires distinct credentials where the client setup allows it; per-user/adoption analytics can later ingest GitHub Copilot usage metrics.
+Important identity limitation: central GitHub Copilot BYOK may present one shared provider credential. The gateway must not infer individual people from IP. Per-team gateway accounting requires distinct credentials where client configuration permits it; per-user/adoption analytics may later ingest GitHub Copilot usage metrics.
 
 ## Non-negotiable engineering conventions
 
@@ -75,7 +66,7 @@ Important identity limitation: central GitHub Copilot BYOK may present one share
 - Product code only under `src/`; tests/tooling only under `tests/`; Docker assets under `docker/`; docs under `docs/`.
 - Work currently happens directly on `main` unless the project owner says otherwise.
 - Do not log/persist prompts, source code, generated outputs, bearer tokens or raw API secrets.
-- PostgreSQL must stay out of the inference hot path. Persist policy/history, publish active policy to in-memory runtime state.
+- Durable configuration/history belongs in PostgreSQL; latency-sensitive inference decisions should be published into in-memory runtime state.
 - Preserve SSE streaming and cancellation end-to-end.
 - Never fail over after downstream bytes/tokens have started.
 - Public model names are logical aliases.
@@ -88,19 +79,48 @@ Important identity limitation: central GitHub Copilot BYOK may present one share
 
 Last reviewed: **2026-09-14**.
 
-Latest fully validated capacity-control runtime baseline:
+Latest fully validated product baseline:
 
 ```text
-600ad42cc53ad1e97a259819654ca5cf5480e1db
+1f607c8433fe2ca08a1c243b68d87587204f35ee
 ```
 
-Validated capabilities include OpenAI-compatible Chat Completions/Responses, SSE, API-key auth, Entra admin plumbing, multi-DGX routing/failover, health hysteresis, audit, request/token telemetry, vLLM runtime metrics, DCGM hardware telemetry, benchmark tooling, Capacity Profiles, atomic deployment/node-wide admission and explicit `429 capacity_exhausted` backpressure.
+Quality gate:
 
-Operational quickstart/documentation changes live on later commits and must themselves remain CI-valid.
+```text
+GitHub Actions CI 34860662747
+- backend unit + benchmark tests: success
+- React/Vitest/Playwright: success
+- production Docker + PostgreSQL integration: success
+- backend inference smoke: success
+- DGX hardware smoke: success
+- capacity/backpressure smoke: success
+- usage governance/rate-limit smoke: success
+```
+
+Caller Governance itself was first fully validated on `798f0a460dcc4f89b17e2ce89df66f511d324241` / CI `34859931084`.
+
+Validated capabilities include Chat Completions/Responses/SSE, Entra administration, HMAC-hashed API credentials, **in-memory inference credential authentication**, asynchronous/batched last-used persistence, Usage Groups, credential/model request rate limiting, `429 rate_limit_exceeded`, historically stable group snapshots in request metrics, grouped usage APIs/React UI, multi-DGX routing/failover, health, audit, inference/vLLM/DCGM telemetry, benchmark tooling, Capacity Profiles and `429 capacity_exhausted` physical backpressure.
+
+## Inference hot-path boundary
+
+The following runtime decisions are DB-free after startup/publication:
+
+```text
+API-key credential lookup
+credential expiry/revocation decision
+UsageGroup snapshot resolution
+request-rate policy/admission
+request load/capacity counters
+routing performance feedback
+vLLM runtime pressure signals
+```
+
+`ApiCredential` changes are persisted first, then published to the in-memory credential cache by an EF SaveChanges interceptor. Startup rebuilds the cache from PostgreSQL. `LastUsedAtUtc` is eventually consistent and written by a background/batched sink rather than synchronously in middleware.
+
+**Known remaining hot-path DB access:** `EfDeploymentCatalog` still queries PostgreSQL per inference request to resolve logical model -> eligible deployment/node/model configuration. Do not claim the entire inference path is database-free until this catalog is cached.
 
 ## Error/admission taxonomy
-
-Keep these states operationally distinct:
 
 ```text
 caller policy exceeded
@@ -113,32 +133,33 @@ no operational backend exists
   -> 503 no_healthy_deployment
 ```
 
+Keep these states distinct in code, metrics and UI.
+
 ## Current development focus / resume point
 
-Capacity Profile + node-wide capacity/backpressure is validated.
+Caller Governance and credential-auth caching are validated.
 
-Next product sequence:
+Next engineering sequence:
 
-1. **Credential/model request rate limiting**
-   - persisted policy per inference credential with optional logical-model override;
-   - in-memory limiter, no DB read per request;
-   - computed `Retry-After`;
-   - distinct `429 rate_limit_exceeded`;
-   - audit + Admin API/UI + concurrent integration tests.
-2. **Usage groups and group reporting**
-   - persisted `UsageGroup` CRUD;
-   - assign one primary group to each API credential;
-   - snapshot `UsageGroupId` into request metrics for historically stable accounting;
-   - aggregate requests/tokens/errors/TTFT/duration by group, credential and logical model;
-   - React **Usage & Governance** view and APIs.
-3. **Token/budget quotas** after request-rate limiting, because final token usage is generally known only after inference completes.
-4. Gateway Prometheus/OpenTelemetry export and remaining production hardening.
+1. **In-memory route/model/deployment catalog**
+   - eliminate the remaining per-inference PostgreSQL query in `EfDeploymentCatalog`;
+   - keep persisted node/model/deployment configuration as source of truth;
+   - publish configuration changes atomically after successful DB commits;
+   - model node health as runtime state rather than requiring request-time DB reads;
+   - prove live admin mutations and restart rebuild behavior with integration tests.
+2. **Retention / operational hygiene**
+   - configurable request-metric retention (initial target 30–90 days);
+   - separate audit retention policy if required;
+   - background cleanup/optional long-term rollups.
+3. **Token/budget quotas** with explicit post-inference accounting semantics.
+4. Prometheus/OpenTelemetry gateway export and remaining production hardening.
+5. Physical acceptance on real DGX/Copilot/Entra/Cloudflare environment.
 
-Read `docs/usage-governance.md` for the detailed target API/reporting model.
+Do not over-polish control-plane UI before the real Copilot -> gateway -> DGX acceptance path is proven.
 
 ## External validation still required
 
-- real DGX Spark + intended vLLM/model profile and benchmark sweeps;
+- real DGX Spark + intended vLLM/model benchmark sweeps;
 - representative multi-DGX coding load;
 - real Entra app/roles;
 - Cloudflare Tunnel/public domain;

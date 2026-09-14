@@ -21,6 +21,7 @@ For current state use `docs/project-status.md`. For auth/rate limits/groups/usag
 - DONE: `/v1/responses` compatibility.
 - DONE: arbitrary compatible payload preservation + logical model rewrite.
 - DONE: bearer/API-key inference authentication.
+- DONE: runtime API-credential cache; no per-request credential SQL lookup.
 - EXTERNAL: real GitHub Copilot BYOK through target public endpoint.
 
 ## M2 - Multi-DGX — DONE FOR CURRENT MVP
@@ -41,7 +42,9 @@ For current state use `docs/project-status.md`. For auth/rate limits/groups/usag
 - DONE: Entra ID plumbing.
 - DONE: `LlmProxy.Admin` / `LlmProxy.Reader`.
 - DONE: React control plane.
-- DONE: hashed DB-backed API credentials.
+- DONE: HMAC-hashed DB-backed API credentials.
+- DONE: in-memory credential lookup with startup rebuild and post-commit live publication.
+- DONE: asynchronous/batched credential last-used persistence.
 - DONE: audit trail.
 - EXTERNAL: real Entra app registration/roles.
 
@@ -76,28 +79,35 @@ Validated capacity-control commit:
 600ad42cc53ad1e97a259819654ca5cf5480e1db
 ```
 
-## M6 - Operator onboarding / deployability — ACTIVE VALIDATION
+## M6 - Operator onboarding / deployability — DONE FOR REPOSITORY PATH / EXTERNAL DEPLOYMENT REMAINS
 
 - DONE: GHCR publication workflow.
 - DONE: private-image deployment path.
 - DONE: Linux/Windows quickstart docs.
 - DONE: private GHCR login/pull instructions.
 - DONE: `docker/docker-compose.quickstart.yml` + env template.
-- ACTIVE: CI validation of latest quickstart/docs head.
+- DONE: CI validation of quickstart Compose configuration.
 - EXTERNAL: production Cloudflare Tunnel.
 - EXTERNAL: self-hosted deployment runner.
 
-## M7 - Caller governance — ACTIVE
+## M7 - Caller governance — DONE FOR CURRENT MVP
 
-Core product scope: LlmProxy owns inference auth, rate limiting, consolidated usage and configurable usage groups.
+Core product scope: LlmProxy owns inference auth, request-rate limiting, consolidated usage and configurable usage groups.
 
 - DONE: bearer/API-key inference authentication.
-- DONE: credential id and token/model/node metadata in request metrics.
-- ACTIVE: request-rate policy per inference credential with optional logical-model override.
-- PLANNED: in-memory limiter + computed `Retry-After`.
-- PLANNED: distinct `429 rate_limit_exceeded` metrics/error taxonomy.
-- PLANNED: Admin API/UI + audit for rate policies.
-- PLANNED: token/budget quotas after request-rate limiting.
+- DONE: persisted request-rate policy per credential with optional logical-model override.
+- DONE: fixed-window in-memory limiter and calculated `Retry-After`.
+- DONE: distinct `429 rate_limit_exceeded` metrics/error taxonomy.
+- DONE: Admin API/UI + audit for rate policies.
+- DONE: runtime credential cache and DB-free credential auth decision.
+- PLANNED: token/budget quotas with explicit reservation/settlement semantics.
+
+Validated governance/auth baselines:
+
+```text
+Caller Governance     798f0a460dcc4f89b17e2ce89df66f511d324241 / CI 34859931084
+Credential auth cache 1f607c8433fe2ca08a1c243b68d87587204f35ee / CI 34860662747
+```
 
 Required distinction:
 
@@ -107,37 +117,50 @@ physical DGX saturated -> 429 capacity_exhausted
 no operational backend -> 503 no_healthy_deployment
 ```
 
-## M8 - Usage groups and enterprise reporting — PLANNED
+## M8 - Usage groups and enterprise reporting — DONE FOR CURRENT MVP
 
-- PLANNED: persisted `UsageGroup` CRUD.
-- PLANNED: one optional primary `UsageGroupId` per API credential in V1.
-- PLANNED: snapshot group id into request metrics for historically stable accounting.
-- PLANNED: usage aggregation by time/group/credential/logical model/node.
-- PLANNED: request/success/error/rate-limit/capacity-reject/token/TTFT/duration metrics.
-- PLANNED: React **Usage & Governance** page.
-- PLANNED: group -> credential -> model drill-down.
+- DONE: persisted `UsageGroup` list/create/update administration.
+- DONE: one optional primary `UsageGroupId` per API credential in V1.
+- DONE: request-time Usage Group snapshot for historically stable accounting.
+- DONE: usage aggregation by group, credential and logical model over a configurable day window.
+- DONE: requests/errors/rate-limit/token/average TTFT/duration reporting.
+- DONE: React **Usage & Governance** page.
+- DONE: group membership management and credential/model breakdown.
+- PLANNED: explicit Usage Group deletion/archive semantics if product requirements need them.
 - EXTERNAL/PLANNED: GitHub Copilot usage-metrics ingestion for per-user/adoption analytics where desired.
 
 Important limitation: if Copilot uses one shared provider key, gateway usage can be attributed to that credential/group but not to individual GitHub users. Do not infer users from IP.
 
-## M9 - Product hardening — PLANNED
+## M9 - Inference hot-path hardening — ACTIVE
 
+- DONE: routing policy/tuning kept in runtime state.
+- DONE: caller rate policy/admission kept in runtime state.
+- DONE: API credential authentication kept in runtime state.
+- DONE: asynchronous/batched `LastUsedAtUtc` persistence.
+- ACTIVE: replace request-time `EfDeploymentCatalog` SQL lookup with in-memory logical-model/node/deployment catalog.
+- PLANNED: publish admin configuration mutations into catalog after successful DB save.
+- PLANNED: clean separation between durable node config and volatile health/runtime state.
+- PLANNED: integration assertion proving ordinary inference does not query route-catalog tables.
+
+Do not claim the entire inference path is DB-free before M9 route-catalog work is validated.
+
+## M10 - Product hardening — PLANNED
+
+- PLANNED: configurable request-metric retention/background cleanup.
+- PLANNED: audit retention policy.
 - PLANNED: credential rotation workflow.
+- PLANNED: reproducible frontend lockfiles + `npm ci`.
 - PLANNED: backup/restore + restore verification.
 - PLANNED: model/runtime upgrade and draining strategy.
 - PLANNED: control-plane HA if required.
 
 ## Current development order
 
-1. Finish CI validation for the latest onboarding/docs head.
-2. Implement credential/model request-rate policy.
-3. Enforce it in memory before routing/admission.
-4. Add `429 rate_limit_exceeded`, `Retry-After`, audit, metrics and Admin UI.
-5. Validate full quality gate.
-6. Add UsageGroup persistence and credential assignment.
-7. Snapshot group id in request metrics and build grouped usage APIs/UI.
-8. Validate full quality gate.
-9. Add Prometheus/OpenTelemetry export and remaining hardening.
-10. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
+1. Replace `EfDeploymentCatalog` request-time DB lookup with a validated in-memory route catalog.
+2. Add integration evidence for DB-free auth + route resolution on normal inference.
+3. Add metrics/audit retention and cleanup.
+4. Define/implement token-budget quota semantics.
+5. Add Prometheus/OpenTelemetry exports and remaining hardening.
+6. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue with LlmProxy + vLLM unless explicitly reopened.

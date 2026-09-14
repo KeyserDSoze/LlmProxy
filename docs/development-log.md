@@ -22,7 +22,7 @@ Added health-monitor hysteresis, last-health diagnostics and connection tests. A
 
 Added per-deployment EWMA TTFT/duration/infrastructure-failure feedback. Added a vLLM Prometheus collector for running/waiting requests, KV-cache utilization, token counters and model labels.
 
-`WeightedLeastLoaded` combines configured capacity/weights, gateway active work, health, EWMA feedback and vLLM runtime pressure. PostgreSQL is not queried per inference request.
+`WeightedLeastLoaded` combines configured capacity/weights, gateway active work, health, EWMA feedback and vLLM runtime pressure. Performance/load feedback is in-memory; durable route-catalog resolution still uses PostgreSQL per inference request and is the next hot-path optimization.
 
 ## 2026-09-09 - Persisted smart-routing tuning
 
@@ -105,44 +105,70 @@ Added `docker/docker-compose.quickstart.yml` and `docker/.env.quickstart.example
 
 CI was extended to validate that the quickstart Compose file can be rendered with required secrets supplied through environment variables.
 
-## 2026-09-14 - Usage governance product scope
+## 2026-09-14 - Caller Governance scope
 
-Clarified that LlmProxy is not only an inference router. The product owner confirmed four core responsibilities:
+Confirmed that LlmProxy owns inference authentication, rate limiting/quotas, consolidated usage accounting and configurable Usage Groups/query UI.
 
-```text
-1. inference authentication
-2. rate limiting / quotas
-3. consolidated usage accounting
-4. configurable usage groups queryable through API and React UI
-```
+V1 accounting deliberately uses one primary group per API credential. Shared GitHub Copilot provider credentials are attributable to their gateway credential/group, not to individual GitHub users; source IP must never be used as identity.
 
-Added `docs/usage-governance.md` as the focused contract for this area.
+## 2026-09-14 - Caller Governance + Usage Groups - VALIDATED
 
-V1 group accounting is intentionally unambiguous:
+Implemented persisted `UsageGroup`, nullable primary group membership on `ApiCredential`, request-time `UsageGroupId` snapshots in request metrics, persisted credential rate policies with optional logical-model override and a thread-safe fixed-window in-memory limiter.
+
+Caller policy is enforced before routing/physical capacity admission and is intentionally distinct from DGX saturation:
 
 ```text
-UsageGroup 1 --- N ApiCredential
-ApiCredential -> zero or one primary UsageGroup
+caller policy exceeded -> 429 rate_limit_exceeded
+physical capacity full -> 429 capacity_exhausted
+no backend -> 503 no_healthy_deployment
 ```
 
-The planned implementation snapshots `UsageGroupId` into request metrics so historical usage remains assigned to the group that owned the credential at request time even if the credential is moved later.
+Added calculated `Retry-After`, governance audit events, usage aggregation by group/credential/logical model and React `/admin/governance` administration/reporting.
 
-The target report dimensions include time window, group, credential, logical model, node/deployment and surface; metrics include request/success/error counts, rate-limit/capacity rejects, token totals, duration and TTFT percentiles.
+The Docker governance smoke exposed and helped correct two real integration defects rather than papering over them:
 
-Important identity rule: a shared GitHub Copilot provider credential can be attributed to its gateway group, but it does not expose individual GitHub users. Per-user/adoption analytics require GitHub Copilot usage metrics or another supported identity signal; source IP must not be used as identity.
+1. EF migration snapshot initially lagged the model; the snapshot was corrected while keeping `PendingModelChangesWarning` protection enabled.
+2. Npgsql could not translate `GroupBy -> custom record constructor -> OrderBy`. The report now performs aggregation in PostgreSQL using SQL-translatable anonymous projections and materializes only aggregate rows before final record mapping/order in memory.
+
+The smoke verifies two admitted calls followed by `429 rate_limit_exceeded`, `Retry-After`, stable Usage Group attribution, aggregate report dimensions, persistence/restart republish and audit.
+
+Full quality gate passed on:
+
+```text
+commit 798f0a460dcc4f89b17e2ce89df66f511d324241
+CI     34859931084
+```
+
+All backend/unit/benchmark/frontend/Playwright and Docker/PostgreSQL backend/hardware/capacity/governance jobs passed.
+
+## 2026-09-14 - In-memory inference credential authentication - VALIDATED
+
+Removed the API-credential PostgreSQL lookup from the `/v1` authentication path.
+
+Added:
+
+- thread-safe copy-on-write `IApiCredentialCache`, keyed by HMAC hash and containing only safe credential metadata;
+- startup cache rebuild from PostgreSQL;
+- expiry/revocation/group decisions from the runtime snapshot;
+- EF SaveChanges interceptor that publishes credential create/revoke/group changes only after the database save succeeds;
+- buffered background `LastUsedAtUtc` persistence so authentication middleware does not perform synchronous database writes;
+- concurrent unit coverage for atomic cache publication.
+
+Existing Governance integration coverage provides an important live-update assertion: the Usage Group is assigned after gateway startup, then subsequent inference must use that newly published group snapshot. Restart coverage proves the credential cache rebuilds from PostgreSQL.
+
+Full quality gate passed on:
+
+```text
+commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
+CI     34860662747
+```
+
+All backend/unit/benchmark/frontend/Playwright and Docker/PostgreSQL backend/hardware/capacity/governance jobs passed.
 
 ## Next increment
 
-Implement credential/model request rate limiting first:
+The authentication/rate-limit/runtime-performance portions of the hot path are now in-memory, but `EfDeploymentCatalog` still resolves logical models/deployments/nodes from PostgreSQL for each inference request.
 
-```text
-credential/model policy exceeded -> 429 rate_limit_exceeded
-physical DGX admission exhausted -> 429 capacity_exhausted
-no operational backend -> 503 no_healthy_deployment
-```
+Next implement an in-memory route/model/deployment catalog while preserving durable PostgreSQL source-of-truth semantics, live admin updates, node health/drain/disable behavior and restart rebuild. Add explicit integration evidence that ordinary inference no longer issues request-time route-catalog SQL reads.
 
-Use persisted policy with in-memory enforcement, computed `Retry-After`, Admin API/UI, audit, metrics and concurrent integration coverage. Once validated, implement `UsageGroup` persistence, credential assignment, request-metric group snapshot and grouped usage APIs/UI.
-
-Token/budget quotas can follow separately because final output token usage is generally known only after inference completes.
-
-Real DGX benchmark sweeps, Entra production registration, Cloudflare/public endpoint and the real GitHub Copilot BYOK spike remain external validation activities.
+After that: request-metric/audit retention, explicit token/budget quota semantics, Prometheus/OpenTelemetry export and real DGX/Copilot/Entra/Cloudflare acceptance.

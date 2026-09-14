@@ -1,250 +1,267 @@
 # Usage governance
 
-## Product contract
+This document is the focused product/engineering contract for inference authentication, caller rate limiting, configurable Usage Groups and consolidated usage reporting.
 
-LlmProxy is not only a southbound router. The gateway is also the enterprise governance boundary for callers.
+Current implementation status: **validated** on the repository baseline documented in `docs/project-status.md`.
 
-The intended control flow is:
+## Product boundary
+
+LlmProxy owns this request chain:
 
 ```text
-OpenAI-compatible client / GitHub Copilot
-    -> inference authentication
-    -> caller / credential resolution
-    -> configurable usage group
-    -> credential + logical-model rate policy
-    -> routing and physical-capacity admission
+OpenAI-compatible inference request
+    -> bearer/API credential authentication
+    -> request-time credential + primary UsageGroup resolution
+    -> credential/model request-rate admission
+    -> logical-model routing + physical capacity admission
     -> DGX / vLLM
-    -> metadata-only request metric
-    -> usage aggregation and reporting
+    -> metadata-only usage metric
+    -> consolidated reporting
 ```
 
-These capabilities are core product scope:
+This is intentionally different from physical DGX capacity control:
 
-1. LlmProxy owns inference authentication.
-2. LlmProxy owns caller rate limiting / future quotas.
-3. LlmProxy consolidates inference usage.
-4. Usage can be queried by configurable groups through Admin API and React UI.
-
-Administration remains protected separately by Microsoft Entra ID.
-
-## Current state
-
-Already validated:
-
-- inference bearer/API-key authentication;
-- HMAC-hashed persisted API credentials;
-- per-request metrics;
-- logical model, credential id, deployment/node, status, duration, TTFT, attempts/failover and token counts when upstream reports usage;
-- Admin metrics views and summary API;
-- physical capacity backpressure (`429 capacity_exhausted`).
-
-Still to implement:
-
-- request-rate policy per credential and optional logical-model override;
-- usage-group domain/persistence/API/UI;
-- assignment of credentials to groups;
-- group-level usage aggregation/query UI;
-- token/budget quotas after request-rate limiting.
-
-## Authentication boundary
-
-Inference requests use gateway bearer credentials:
-
-```http
-Authorization: Bearer <llmproxy-api-key>
+```text
+caller policy exceeded -> 429 rate_limit_exceeded
+physical capacity full -> 429 capacity_exhausted
+no operational backend -> 503 no_healthy_deployment
 ```
 
-The raw key is shown only once. LlmProxy persists only a secure hash plus metadata.
+## Inference credentials
 
-The authenticated API credential is the reliable caller identity available in the inference hot path. Do not infer identity from source IP.
+Raw API secrets are generated/shown once and are not persisted. PostgreSQL stores the HMAC-SHA256 hash plus safe metadata.
 
-Microsoft Entra ID is used for the administrative control plane, not as a requirement for every OpenAI-compatible inference call.
+Current runtime path:
 
-## Usage groups
+```text
+Bearer secret
+  -> HMAC-SHA256 with server-side pepper
+  -> in-memory credential cache lookup
+  -> enabled + expiry check
+  -> credential id + UsageGroupId snapshot placed in HttpContext
+```
 
-### V1 model
+The authentication middleware does not query PostgreSQL per `/v1` request.
 
-Introduce a persisted `UsageGroup` entity with at least:
+### Runtime cache consistency
+
+PostgreSQL remains durable source of truth. `IApiCredentialCache` is rebuilt at gateway startup and contains only:
+
+```text
+Id
+KeyHash
+Enabled
+ExpiresAtUtc
+UsageGroupId
+```
+
+An EF SaveChanges interceptor observes `ApiCredential` additions/modifications/deletions and publishes the corresponding runtime snapshot only after the database save succeeds. This means credential creation, revocation and Usage Group assignment/clear become visible to inference without restart while avoiding cache state that is ahead of durable state.
+
+`LastUsedAtUtc` is deliberately eventually consistent. Authentication enqueues usage metadata to a background sink, which throttles/batches PostgreSQL updates instead of performing a write on the request path.
+
+## Usage Groups
+
+V1 accounting semantics are deliberately unambiguous:
+
+```text
+UsageGroup 1 --- N ApiCredential
+ApiCredential -> zero or one primary UsageGroup
+```
+
+Current persisted Usage Group fields:
 
 ```text
 Id
 Name
-Description (optional)
-ExternalReference (optional, e.g. cost center/team code)
-Enabled
+Description
 CreatedAtUtc
 UpdatedAtUtc
 ```
 
-Each `ApiCredential` may have one optional primary `UsageGroupId`.
+Current credential field:
 
 ```text
-UsageGroup 1 --- N ApiCredential
+UsageGroupId : Guid?
 ```
 
-A single primary group is deliberate for V1: it keeps accounting/report aggregation unambiguous and prevents one request from being double-counted across overlapping groups.
+When inference is authenticated, the current `UsageGroupId` is copied into the request metric. This request-time snapshot is critical: moving a credential to another group later does not rewrite historical accounting.
 
-Examples:
+No source IP or network heuristic is used to infer identity or group membership.
 
-```text
-Development - CRM
-Development - Data & AI
-Platform Engineering
-Presales
-Internal R&D
-Customer Project FAAC
-```
+## Request-rate policy
 
-If overlapping labels are needed later, add separate reporting tags rather than changing the primary accounting group semantics.
-
-### GitHub Copilot identity limitation
-
-A centrally configured GitHub Copilot BYOK/custom provider may send one shared provider credential. In that case LlmProxy can reliably attribute requests to that credential/group, but cannot infer the individual GitHub user from the gateway request.
-
-Therefore:
-
-- to split usage by team entirely inside LlmProxy, configure distinct provider credentials for those teams/groups where the client configuration supports it; or
-- ingest GitHub Copilot usage metrics for user/adoption reporting and correlate them analytically with LlmProxy infrastructure usage.
-
-Never infer individual users from source IP.
-
-## Rate limiting
-
-Rate limiting is logically different from physical DGX saturation.
-
-Request flow:
-
-```text
-authenticated request
-    -> credential/model rate policy
-        -> exceeded: 429 rate_limit_exceeded
-    -> routing / physical admission
-        -> saturated: 429 capacity_exhausted
-    -> upstream
-```
-
-The first implementation should support request-count admission by credential with optional logical-model override.
-
-Suggested policy fields:
+Current policy fields:
 
 ```text
 Id
 ApiCredentialId
-LogicalModel (nullable = credential default)
-RequestsPerMinute
-Enabled
+LogicalModel : string?     # null = credential-wide default
+RequestsPerWindow : int
+WindowSeconds : int
+Enabled : bool
 CreatedAtUtc
 UpdatedAtUtc
 ```
 
-Policy is persisted in PostgreSQL but published into an in-memory limiter. PostgreSQL must not be queried on every inference request.
-
-When exceeded, return an OpenAI-style error plus a calculated `Retry-After` header:
-
-```json
-{
-  "error": {
-    "message": "Rate limit exceeded for this credential and model.",
-    "type": "rate_limit_error",
-    "code": "rate_limit_exceeded"
-  }
-}
-```
-
-Do not conflate this with `capacity_exhausted`.
-
-Token/budget quotas are a later increment because final output token usage is generally known only after the inference completes.
-
-## Usage consolidation
-
-Every completed or rejected inference request should remain metadata-only. Do not persist prompt/source/output bodies.
-
-Usage reporting should support at minimum:
+Policy precedence:
 
 ```text
-requests
-successful requests
-failed requests
-rate-limited requests
-capacity-rejected requests
-input tokens
-output tokens
-total tokens
-streaming requests
-failover requests
-p50/p95 duration
-p50/p95 TTFT
+credential + exact logical model
+    overrides
+credential-wide policy (LogicalModel = null)
 ```
 
-Dimensions:
+If no enabled policy matches, the request is not caller-rate-limited.
+
+The active policy set is held by the thread-safe in-memory `RequestRateLimiter`. Admin changes are persisted then republished, and gateway startup rebuilds runtime policy from PostgreSQL.
+
+Current algorithm is fixed-window request admission. Rate state is runtime-only and intentionally starts with a fresh window after process restart; policy configuration itself survives the restart.
+
+A rejected request returns `429 Too Many Requests`, an OpenAI-style error with `error.code = rate_limit_exceeded`, and a computed `Retry-After`. It is recorded as metadata telemetry and is not forwarded to DGX.
+
+## Usage metric snapshot
+
+A request metric contains the accounting/routing metadata needed for reporting, including:
 
 ```text
-time window
-usage group
-API credential
-logical model
-DGX node
-deployment
-surface (chat_completions / responses)
-status/error code
+RequestId
+StartedAtUtc
+LogicalModel
+Surface
+DeploymentId?
+NodeId?
+ApiCredentialId?
+UsageGroupId?
+StatusCode
+DurationMilliseconds
+AttemptCount
+IsStreaming
+UpstreamHeaderMilliseconds?
+TimeToFirstByteMilliseconds?
+InputTokens?
+OutputTokens?
+TotalTokens?
+ErrorCode?
 ```
 
-Because the existing request metrics already record credential/model/node/token metadata, group aggregation should be derived through the credential -> group relationship rather than duplicating group labels into every hot-path database lookup.
+Prompts, source code, generated output and bearer secrets are not persisted by default.
 
-For historical correctness, when implementing group assignment decide explicitly whether metrics should snapshot the group id at request time. Recommended approach: persist `UsageGroupId` into `RequestMetric` at admission/completion so moving a credential to another group does not rewrite historical accounting.
+## Reporting APIs
 
-## Admin API target
-
-Recommended V1 endpoints:
+Current admin endpoints include:
 
 ```http
-GET    /api/admin/usage-groups
-POST   /api/admin/usage-groups
-PUT    /api/admin/usage-groups/{id}
-POST   /api/admin/usage-groups/{id}/enable
-POST   /api/admin/usage-groups/{id}/disable
+GET  /api/admin/usage-groups
+POST /api/admin/usage-groups
+PUT  /api/admin/usage-groups/{id}
 
-PUT    /api/admin/credentials/{id}/usage-group
-DELETE /api/admin/credentials/{id}/usage-group
+PUT    /api/admin/api-credentials/{id}/usage-group
+DELETE /api/admin/api-credentials/{id}/usage-group
 
 GET    /api/admin/rate-limits
 POST   /api/admin/rate-limits
 PUT    /api/admin/rate-limits/{id}
 DELETE /api/admin/rate-limits/{id}
 
-GET    /api/admin/usage/summary?hours=24
-GET    /api/admin/usage/groups?hours=24
-GET    /api/admin/usage/credentials?hours=24&groupId=<id>
-GET    /api/admin/usage/models?hours=24&groupId=<id>
+GET /api/admin/governance/credentials
+
+GET /api/admin/usage/summary?days=30
+GET /api/admin/usage/groups?days=30
+GET /api/admin/usage/credentials?days=30
+GET /api/admin/usage/models?days=30
 ```
 
-Exact REST shapes may evolve during implementation, but the product capability and accounting semantics above are mandatory.
+`days` is clamped to the supported 1..365 day range.
 
-All create/update/assignment/rate-policy changes must be audited.
+Usage aggregation remains PostgreSQL-side. The query materializes aggregate rows rather than loading individual request metrics into application memory. Final mapping/order may happen after aggregate materialization where required by EF/Npgsql translation constraints.
 
-## React Admin target
+Current summary dimensions:
 
-Add a **Usage & Governance** area containing:
+- Usage Group;
+- API credential;
+- logical model.
 
-- overall usage KPIs;
-- group breakdown;
-- drill-down group -> credentials -> logical models;
-- request/token totals over a selectable time window;
-- error/rate-limit/capacity-rejection visibility;
-- usage-group CRUD;
-- credential-to-group assignment;
-- credential/model rate-policy administration.
+Current measures include:
 
-No prompt or generated content should appear in usage reporting.
+- request count;
+- error count;
+- rate-limited request count;
+- capacity-exhausted total in overall summary;
+- input/output/total tokens;
+- average TTFT and average duration for group reporting.
 
-## Implementation order
+The broader inference observability endpoints continue to provide p50/p95 latency and node/model breakdowns.
 
-1. Credential/model request rate limiting and distinct `rate_limit_exceeded` behavior.
-2. `UsageGroup` persistence and credential assignment.
-3. Snapshot `UsageGroupId` into request metrics for historically stable reporting.
-4. Group usage summary queries.
-5. React Usage & Governance UI.
-6. Token/budget quotas if required.
-7. Optional GitHub Copilot usage-metrics ingestion for per-user/adoption analytics.
+## React control plane
 
-Every increment must update `docs/project-status.md`, `docs/development-log.md`, `docs/roadmap.md` and `AGENTS.md` as appropriate and must not be marked validated until the complete CI/integration gate passes.
+The focused UI is:
+
+```text
+/admin/governance
+```
+
+It provides:
+
+- usage KPIs;
+- Usage Group list/create/update-oriented administration;
+- credential -> group assignment/clear;
+- rate-policy create/enable/disable/delete workflows;
+- usage breakdown by group, credential and logical model.
+
+Administrative changes are audited. Secrets and prompt/output content are excluded from audit detail.
+
+## Validated behavior
+
+Caller Governance was validated by the complete CI/integration gate on:
+
+```text
+commit 798f0a460dcc4f89b17e2ce89df66f511d324241
+CI     34859931084
+```
+
+The later credential-auth runtime cache was validated on:
+
+```text
+commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
+CI     34860662747
+```
+
+The Docker/PostgreSQL Governance smoke proves:
+
+- Usage Group creation and credential assignment;
+- first two requests accepted under a 2/60s policy;
+- third request receives `429 rate_limit_exceeded` + `Retry-After`;
+- rate-limit error remains distinct from `capacity_exhausted`;
+- group snapshot is visible in usage history;
+- group/model/credential usage aggregation;
+- policy and group membership survive restart;
+- runtime rate policy is republished after restart;
+- live Usage Group assignment after startup is seen by the in-memory credential cache.
+
+## Identity limitation: GitHub Copilot
+
+A centrally configured Copilot custom/BYOK provider may use one shared provider credential. In that topology LlmProxy can attribute traffic to that credential and its Usage Group, but it cannot reliably identify the individual GitHub user behind a request.
+
+Therefore:
+
+- use separate provider credentials for team/group attribution where the client/tenant configuration permits it;
+- optionally ingest GitHub Copilot usage metrics later for per-user/adoption analytics;
+- never treat source IP as user identity.
+
+## Remaining governance backlog
+
+### Token / budget quotas
+
+Request-rate limiting is admission-time and is complete. Token quotas are different because final output token usage is usually known only when inference finishes. Before implementing quotas, define explicit reservation/settlement semantics, including streaming, cancellation, upstream failures and overage behavior.
+
+### Retention
+
+`request_metrics` currently grows without a product retention policy. Add configurable retention (initial target 30–90 days), background cleanup and optional long-term rollups. Audit retention may need a separate, longer policy.
+
+### External analytics
+
+GitHub Copilot usage-metrics ingestion remains optional/external for per-user or adoption analytics and must not be confused with gateway credential/group accounting.
+
+## Related next hot-path work
+
+Credential authentication and request-rate admission are now in-memory, but `EfDeploymentCatalog` still queries PostgreSQL per inference request for logical model/node/deployment resolution. That work belongs to routing/hot-path hardening rather than this governance contract and is the current engineering resume point in `AGENTS.md` / `docs/project-status.md`.
