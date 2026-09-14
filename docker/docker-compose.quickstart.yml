@@ -1,0 +1,59 @@
+name: llmproxy-quickstart
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-llmproxy}
+      POSTGRES_USER: ${POSTGRES_USER:-llmproxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llmproxy} -d ${POSTGRES_DB:-llmproxy}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  llmproxy:
+    image: ghcr.io/${GHCR_OWNER:-keyserdsoze}/llmproxy:${LLMPROXY_IMAGE_TAG:-main}
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "${LLMPROXY_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD}
+      Authentication__ApiKey: ${LLM_PROXY_API_KEY:?Set LLM_PROXY_API_KEY in .env}
+      Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:?Set LLM_PROXY_API_KEY_PEPPER in .env}
+      Routing__Strategy: ${ROUTING_STRATEGY:-WeightedLeastLoaded}
+      Health__IntervalSeconds: ${HEALTH_INTERVAL_SECONDS:-10}
+      Health__HealthyAfterSuccesses: ${HEALTH_HEALTHY_AFTER_SUCCESSES:-2}
+      Health__UnhealthyAfterFailures: ${HEALTH_UNHEALTHY_AFTER_FAILURES:-3}
+      RuntimeMetrics__Enabled: ${RUNTIME_METRICS_ENABLED:-true}
+      RuntimeMetrics__IntervalSeconds: ${RUNTIME_METRICS_INTERVAL_SECONDS:-5}
+      HardwareMetrics__Enabled: ${HARDWARE_METRICS_ENABLED:-false}
+      HardwareMetrics__IntervalSeconds: ${HARDWARE_METRICS_INTERVAL_SECONDS:-10}
+      EntraId__Enabled: ${ENTRA_ENABLED:-false}
+      EntraId__Instance: https://login.microsoftonline.com/
+      EntraId__TenantId: ${ENTRA_TENANT_ID:-}
+      EntraId__ClientId: ${ENTRA_CLIENT_ID:-}
+      EntraId__ClientSecret: ${ENTRA_CLIENT_SECRET:-}
+      EntraId__CallbackPath: /signin-oidc
+      Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
+      Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}
+      Bootstrap__NodeBaseAddress: ${DGX_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}
+      Bootstrap__HardwareMetricsBaseAddress: ${DGX_HARDWARE_METRICS_BASE_ADDRESS:-}
+      Bootstrap__NodeWeight: ${DGX_NODE_WEIGHT:-1}
+      Bootstrap__NodeMaxConcurrency: ${DGX_NODE_MAX_CONCURRENCY:-4}
+      Bootstrap__PublicModelName: ${PUBLIC_MODEL_NAME:-agic-code-fast}
+      Bootstrap__ProviderModelName: ${PROVIDER_MODEL_NAME:-bootstrap-model}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
