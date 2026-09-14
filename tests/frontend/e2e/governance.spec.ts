@@ -38,8 +38,12 @@ test('admin can review grouped usage and create a caller rate limit', async ({ p
   await expect(page.getByRole('heading', { name: 'Usage & Governance', exact: true }).first()).toBeVisible()
   await expect(page.getByText('Development CRM').first()).toBeVisible()
   await expect(page.getByText('Copilot CRM').first()).toBeVisible()
-  await expect(page.getByText('agic-code-fast').first()).toBeVisible()
-  await expect(page.getByText('1,500')).toBeVisible()
+
+  const modelSection = page.getByRole('heading', { name: 'Usage by logical model' }).locator('..').locator('..')
+  await expect(modelSection.getByRole('row', { name: /agic-code-fast/ })).toBeVisible()
+
+  const credentialSection = page.getByRole('heading', { name: 'Usage by credential' }).locator('..').locator('..')
+  await expect(credentialSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('1,500')
 
   await page.getByLabel('Requests per window').fill('2')
   await page.getByLabel('Window seconds').fill('60')
