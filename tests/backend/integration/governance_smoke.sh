@@ -24,6 +24,14 @@ fail_with_diagnostics() {
   exit 1
 }
 
+on_error() {
+  local exit_code="$1"
+  local line="$2"
+  local command="$3"
+  fail_with_diagnostics "Governance smoke failed at line ${line}: ${command} (exit ${exit_code})."
+}
+trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
+
 wait_ready() {
   for attempt in {1..30}; do
     if curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null; then
