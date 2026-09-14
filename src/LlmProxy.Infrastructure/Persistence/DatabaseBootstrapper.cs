@@ -18,6 +18,7 @@ public sealed class DatabaseBootstrapper(
     ApiKeyHasher apiKeyHasher,
     IApiCredentialCache credentialCache,
     IRouteCatalog routeCatalog,
+    IRuntimeStateEventSink runtimeStateSink,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -27,27 +28,20 @@ public sealed class DatabaseBootstrapper(
         await dbContext.Database.MigrateAsync(cancellationToken);
 
         var configuredStrategy = ParseConfiguredStrategy(configuration["Routing:Strategy"]);
-        var routingPolicy = await dbContext.RoutingPolicies.SingleOrDefaultAsync(
-            item => item.Id == RoutingPolicy.SingletonId,
-            cancellationToken);
-
+        var routingPolicy = await dbContext.RoutingPolicies.SingleOrDefaultAsync(item => item.Id == RoutingPolicy.SingletonId, cancellationToken);
         if (routingPolicy is null)
         {
             routingPolicy = new RoutingPolicy(configuredStrategy);
             dbContext.RoutingPolicies.Add(routingPolicy);
         }
-
         routingStrategyState.Set(routingPolicy.Strategy);
 
-        var tuningPolicy = await dbContext.RoutingTuningPolicies.SingleOrDefaultAsync(
-            item => item.Id == RoutingTuningPolicy.SingletonId,
-            cancellationToken);
+        var tuningPolicy = await dbContext.RoutingTuningPolicies.SingleOrDefaultAsync(item => item.Id == RoutingTuningPolicy.SingletonId, cancellationToken);
         if (tuningPolicy is null)
         {
             tuningPolicy = new RoutingTuningPolicy(RoutingTuningSettings.Default);
             dbContext.RoutingTuningPolicies.Add(tuningPolicy);
         }
-
         routingTuningState.Set(tuningPolicy.ToSettings());
 
         if (configuration.GetValue("Bootstrap:Enabled", true) && !await dbContext.Nodes.AnyAsync(cancellationToken))
@@ -65,10 +59,9 @@ public sealed class DatabaseBootstrapper(
                 supportsStreaming: true,
                 supportsTools: true);
 
-            var deployment = new ModelDeployment(node.Id, model.Id);
             dbContext.Nodes.Add(node);
             dbContext.Models.Add(model);
-            dbContext.Deployments.Add(deployment);
+            dbContext.Deployments.Add(new ModelDeployment(node.Id, model.Id));
         }
 
         var bootstrapApiKey = configuration["Authentication:ApiKey"];
@@ -82,25 +75,29 @@ public sealed class DatabaseBootstrapper(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var credentials = await dbContext.ApiCredentials.AsNoTracking().ToListAsync(cancellationToken);
-        credentialCache.Replace(credentials.Select(ApiCredentialSnapshot.From));
+        var credentialSnapshots = (await dbContext.ApiCredentials.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(ApiCredentialSnapshot.From)
+            .ToArray();
+        credentialCache.Replace(credentialSnapshots);
+        runtimeStateSink.PublishCredentialSnapshot(credentialSnapshots);
 
-        var nodes = await dbContext.Nodes.AsNoTracking().ToListAsync(cancellationToken);
-        var models = await dbContext.Models.AsNoTracking().ToListAsync(cancellationToken);
-        var deployments = await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken);
-        routeCatalog.Replace(
-            nodes.Select(RouteNodeSnapshot.From),
-            models.Select(RouteModelSnapshot.From),
-            deployments.Select(RouteDeploymentSnapshot.From));
+        var nodeSnapshots = (await dbContext.Nodes.AsNoTracking().ToListAsync(cancellationToken)).Select(RouteNodeSnapshot.From).ToArray();
+        var modelSnapshots = (await dbContext.Models.AsNoTracking().ToListAsync(cancellationToken)).Select(RouteModelSnapshot.From).ToArray();
+        var deploymentSnapshots = (await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken)).Select(RouteDeploymentSnapshot.From).ToArray();
+        routeCatalog.Replace(nodeSnapshots, modelSnapshots, deploymentSnapshots);
+        runtimeStateSink.PublishRouteCatalogSnapshot(nodeSnapshots, modelSnapshots, deploymentSnapshots);
 
-        var ratePolicies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
-        requestRateLimiter.ReplacePolicies(ratePolicies.Select(policy => new RateLimitPolicySnapshot(
-            policy.Id,
-            policy.ApiCredentialId,
-            policy.LogicalModel,
-            policy.RequestsPerWindow,
-            policy.WindowSeconds,
-            policy.Enabled)));
+        var ratePolicySnapshots = (await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(policy => new RateLimitPolicySnapshot(
+                policy.Id,
+                policy.ApiCredentialId,
+                policy.LogicalModel,
+                policy.RequestsPerWindow,
+                policy.WindowSeconds,
+                policy.Enabled))
+            .ToArray();
+        requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
+        runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);
     }
 
     private static RoutingStrategy ParseConfiguredStrategy(string? value)
@@ -108,7 +105,6 @@ public sealed class DatabaseBootstrapper(
         var raw = string.IsNullOrWhiteSpace(value) ? nameof(RoutingStrategy.WeightedLeastLoaded) : value.Trim();
         return Enum.TryParse<RoutingStrategy>(raw, ignoreCase: true, out var strategy) && Enum.IsDefined(strategy)
             ? strategy
-            : throw new InvalidOperationException(
-                $"Unsupported Routing:Strategy '{raw}'. Supported values: {string.Join(", ", Enum.GetNames<RoutingStrategy>())}.");
+            : throw new InvalidOperationException($"Unsupported Routing:Strategy '{raw}'. Supported values: {string.Join(", ", Enum.GetNames<RoutingStrategy>())}.");
     }
 }

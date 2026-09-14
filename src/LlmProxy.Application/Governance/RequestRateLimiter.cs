@@ -38,15 +38,43 @@ public sealed class RequestRateLimiter
                 policy => policy);
 
         Volatile.Write(ref _policies, next);
+        RemoveInactiveCounters(next.Values.Select(policy => policy.Id));
+    }
 
-        var activeIds = next.Values.Select(policy => policy.Id).ToHashSet();
-        foreach (var policyId in _counters.Keys)
+    public void UpsertPolicy(RateLimitPolicySnapshot policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var current = Volatile.Read(ref _policies);
+        var next = current
+            .Where(item => item.Value.Id != policy.Id)
+            .ToDictionary(item => item.Key, item => item.Value);
+
+        if (policy.Enabled)
         {
-            if (!activeIds.Contains(policyId))
-            {
-                _counters.TryRemove(policyId, out _);
-            }
+            next[new RateLimitKey(policy.ApiCredentialId, NormalizeModel(policy.LogicalModel))] = policy;
         }
+        else
+        {
+            _counters.TryRemove(policy.Id, out _);
+        }
+
+        Volatile.Write(ref _policies, next);
+    }
+
+    public void RemovePolicy(Guid policyId)
+    {
+        if (policyId == Guid.Empty)
+        {
+            return;
+        }
+
+        var current = Volatile.Read(ref _policies);
+        var next = current
+            .Where(item => item.Value.Id != policyId)
+            .ToDictionary(item => item.Key, item => item.Value);
+        Volatile.Write(ref _policies, next);
+        _counters.TryRemove(policyId, out _);
     }
 
     public RateLimitDecision TryAcquire(Guid apiCredentialId, string logicalModel, DateTimeOffset nowUtc)
@@ -86,6 +114,18 @@ public sealed class RequestRateLimiter
 
             counter.Count++;
             return RateLimitDecision.Permit(policy);
+        }
+    }
+
+    private void RemoveInactiveCounters(IEnumerable<Guid> activePolicyIds)
+    {
+        var activeIds = activePolicyIds.ToHashSet();
+        foreach (var policyId in _counters.Keys)
+        {
+            if (!activeIds.Contains(policyId))
+            {
+                _counters.TryRemove(policyId, out _);
+            }
         }
     }
 
