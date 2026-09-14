@@ -90,6 +90,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate quickstart Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-quickstart-postgres
+          LLM_PROXY_API_KEY: ci-quickstart-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-quickstart-pepper
+        run: docker compose -f docker/docker-compose.quickstart.yml config >/dev/null
+
       - name: Validate production image build
         run: docker build -f docker/Dockerfile -t llmproxy:ci .
 
