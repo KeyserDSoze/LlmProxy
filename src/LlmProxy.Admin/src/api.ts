@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
+import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RoutingSettings, RoutingTuningSettings, UsageGroup, UsageReport } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -39,6 +39,23 @@ export const api = {
   models: () => request<Model[]>('/api/admin/models'),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
   apiCredentials: () => request<ApiCredential[]>('/api/admin/api-credentials'),
+  governanceCredentials: () => request<GovernanceCredential[]>('/api/admin/governance/credentials'),
+  usageGroups: () => request<UsageGroup[]>('/api/admin/usage-groups'),
+  createUsageGroup: (body: { name: string; description?: string | null }) =>
+    request<UsageGroup>('/api/admin/usage-groups', { method: 'POST', body: JSON.stringify(body) }),
+  updateUsageGroup: (id: string, body: { name: string; description?: string | null }) =>
+    request<UsageGroup>(`/api/admin/usage-groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  assignCredentialUsageGroup: (credentialId: string, usageGroupId: string) =>
+    request<void>(`/api/admin/api-credentials/${credentialId}/usage-group`, { method: 'PUT', body: JSON.stringify({ usageGroupId }) }),
+  clearCredentialUsageGroup: (credentialId: string) =>
+    request<void>(`/api/admin/api-credentials/${credentialId}/usage-group`, { method: 'DELETE' }),
+  rateLimits: () => request<RateLimitPolicy[]>('/api/admin/rate-limits'),
+  createRateLimit: (body: { apiCredentialId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean }) =>
+    request<RateLimitPolicy>('/api/admin/rate-limits', { method: 'POST', body: JSON.stringify(body) }),
+  updateRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }) =>
+    request<RateLimitPolicy>(`/api/admin/rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteRateLimit: (id: string) => request<void>(`/api/admin/rate-limits/${id}`, { method: 'DELETE' }),
+  usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>(`/api/admin/audit?take=${take}`),
