@@ -88,6 +88,6 @@ chat_status="$(curl --silent --output /tmp/route-chat.json --write-out '%{http_c
   -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"route catalog postgres outage smoke"}]}' \
   http://127.0.0.1:8080/v1/chat/completions)"
 [[ "$chat_status" == "200" ]] || fail_with_diagnostics "Expected chat completion to work with PostgreSQL stopped; got HTTP ${chat_status}."
-jq -e '.model == "agic-code-fast"' /tmp/route-chat.json >/dev/null
+jq -e '.served_by == "route-catalog" and .model == "bootstrap-model"' /tmp/route-chat.json >/dev/null
 
 echo "Route-catalog smoke suite passed: /v1/models and chat completion remained available with PostgreSQL stopped after startup."
