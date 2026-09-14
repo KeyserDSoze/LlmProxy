@@ -114,3 +114,6 @@ jobs:
 
       - name: Route catalog PostgreSQL outage smoke suite
         run: bash tests/backend/integration/route_catalog_smoke.sh
+
+      - name: Data retention smoke suite
+        run: bash tests/backend/integration/retention_smoke.sh
