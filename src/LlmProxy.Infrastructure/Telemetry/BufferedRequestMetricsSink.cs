@@ -56,6 +56,7 @@ public sealed class BufferedRequestMetricsSink(
                     DeploymentId = metric.DeploymentId,
                     NodeId = metric.NodeId,
                     ApiCredentialId = metric.ApiCredentialId,
+                    UsageGroupId = metric.UsageGroupId,
                     StatusCode = metric.StatusCode,
                     DurationMilliseconds = metric.DurationMilliseconds,
                     AttemptCount = metric.AttemptCount,

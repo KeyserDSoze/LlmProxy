@@ -8,6 +8,7 @@ public sealed record GatewayRequestMetric(
     Guid? DeploymentId,
     Guid? NodeId,
     Guid? ApiCredentialId,
+    Guid? UsageGroupId,
     int StatusCode,
     long DurationMilliseconds,
     int AttemptCount,

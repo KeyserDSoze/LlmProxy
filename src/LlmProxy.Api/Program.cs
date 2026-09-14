@@ -3,6 +3,7 @@ using LlmProxy.Api.Admin;
 using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Routing;
 using LlmProxy.Infrastructure.Health;
@@ -33,11 +34,13 @@ builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>()
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
 builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();
+builder.Services.AddSingleton<RequestRateLimiter>();
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
 builder.Services.AddSingleton(new RoutingTuningState(RoutingTuningSettings.Default));
 builder.Services.AddSingleton<IRouteSelector, DynamicRouteSelector>();
 builder.Services.AddScoped<RoutingService>();
 builder.Services.AddScoped<MetricsSummaryReader>();
+builder.Services.AddScoped<UsageReportingReader>();
 
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
 builder.Services.AddSingleton<IRequestMetricsSink>(services => services.GetRequiredService<BufferedRequestMetricsSink>());
@@ -107,6 +110,7 @@ app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
+app.MapUsageGovernanceEndpoints(entraEnabled);
 
 if (entraEnabled)
 {

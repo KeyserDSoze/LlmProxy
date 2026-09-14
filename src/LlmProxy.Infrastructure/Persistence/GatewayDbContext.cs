@@ -1,5 +1,6 @@
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Deployments;
+using LlmProxy.Domain.Governance;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Domain.Routing;
@@ -14,6 +15,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ModelDefinition> Models => Set<ModelDefinition>();
     public DbSet<ModelDeployment> Deployments => Set<ModelDeployment>();
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
+    public DbSet<UsageGroup> UsageGroups => Set<UsageGroup>();
+    public DbSet<RateLimitPolicy> RateLimitPolicies => Set<RateLimitPolicy>();
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
@@ -51,6 +54,15 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasOne<ModelDefinition>().WithMany().HasForeignKey(x => x.ModelId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<UsageGroup>(entity =>
+        {
+            entity.ToTable("usage_groups");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.HasIndex(x => x.Name).IsUnique();
+        });
+
         modelBuilder.Entity<ApiCredential>(entity =>
         {
             entity.ToTable("api_credentials");
@@ -60,6 +72,18 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.KeyHash).HasMaxLength(128).IsRequired();
             entity.HasIndex(x => x.KeyPrefix);
             entity.HasIndex(x => x.KeyHash).IsUnique();
+            entity.HasIndex(x => x.UsageGroupId);
+            entity.HasOne<UsageGroup>().WithMany().HasForeignKey(x => x.UsageGroupId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<RateLimitPolicy>(entity =>
+        {
+            entity.ToTable("rate_limit_policies");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.LogicalModel).HasMaxLength(160);
+            entity.HasIndex(x => x.ApiCredentialId);
+            entity.HasIndex(x => new { x.ApiCredentialId, x.LogicalModel }).IsUnique();
+            entity.HasOne<ApiCredential>().WithMany().HasForeignKey(x => x.ApiCredentialId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<RoutingPolicy>(entity =>
@@ -87,6 +111,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => x.StartedAtUtc);
             entity.HasIndex(x => x.RequestId).IsUnique();
             entity.HasIndex(x => x.ApiCredentialId);
+            entity.HasIndex(x => new { x.UsageGroupId, x.StartedAtUtc });
             entity.HasIndex(x => new { x.LogicalModel, x.StartedAtUtc });
             entity.HasIndex(x => new { x.NodeId, x.StartedAtUtc });
         });

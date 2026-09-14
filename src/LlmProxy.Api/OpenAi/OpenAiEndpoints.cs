@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Nodes;
 using Microsoft.AspNetCore.Http.Features;
@@ -42,6 +43,7 @@ public static class OpenAiEndpoints
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
         IDeploymentPerformanceTracker performanceTracker,
+        RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory) =>
         ForwardInferenceAsync(
@@ -49,6 +51,7 @@ public static class OpenAiEndpoints
             routingService,
             loadTracker,
             performanceTracker,
+            rateLimiter,
             metricsSink,
             httpClientFactory,
             "/v1/chat/completions");
@@ -58,6 +61,7 @@ public static class OpenAiEndpoints
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
         IDeploymentPerformanceTracker performanceTracker,
+        RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory) =>
         ForwardInferenceAsync(
@@ -65,6 +69,7 @@ public static class OpenAiEndpoints
             routingService,
             loadTracker,
             performanceTracker,
+            rateLimiter,
             metricsSink,
             httpClientFactory,
             "/v1/responses");
@@ -74,6 +79,7 @@ public static class OpenAiEndpoints
         RoutingService routingService,
         IRequestLoadTracker loadTracker,
         IDeploymentPerformanceTracker performanceTracker,
+        RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory,
         string upstreamPath)
@@ -84,6 +90,12 @@ public static class OpenAiEndpoints
         var surface = upstreamPath.EndsWith("/responses", StringComparison.Ordinal)
             ? "responses"
             : "chat_completions";
+        var apiCredentialId = context.Items.TryGetValue(InferenceApiKeyMiddleware.ApiCredentialIdItem, out var credentialValue) && credentialValue is Guid credentialId
+            ? credentialId
+            : (Guid?)null;
+        var usageGroupId = context.Items.TryGetValue(InferenceApiKeyMiddleware.UsageGroupIdItem, out var groupValue) && groupValue is Guid groupId
+            ? groupId
+            : (Guid?)null;
         Guid? finalDeploymentId = null;
         Guid? finalNodeId = null;
         var finalStatusCode = StatusCodes.Status500InternalServerError;
@@ -123,6 +135,24 @@ public static class OpenAiEndpoints
                     parseErrorCode,
                     parseErrorMessage);
                 return;
+            }
+
+            if (apiCredentialId is Guid callerCredentialId)
+            {
+                var rateLimitDecision = rateLimiter.TryAcquire(callerCredentialId, publicModelName, DateTimeOffset.UtcNow);
+                if (!rateLimitDecision.Allowed)
+                {
+                    finalStatusCode = StatusCodes.Status429TooManyRequests;
+                    finalErrorCode = "rate_limit_exceeded";
+                    context.Response.Headers.RetryAfter = rateLimitDecision.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    await WriteGatewayErrorAsync(
+                        context,
+                        finalStatusCode,
+                        "rate_limit_error",
+                        finalErrorCode,
+                        $"Request rate limit exceeded for model '{publicModelName}'. Retry after {rateLimitDecision.RetryAfterSeconds} seconds.");
+                    return;
+                }
             }
 
             var excluded = new HashSet<Guid>();
@@ -252,8 +282,6 @@ public static class OpenAiEndpoints
                             attemptStartedMilliseconds,
                             observer.TimeToFirstByteMilliseconds);
 
-                        // Once a response has started, retrying another DGX would concatenate two
-                        // different model streams into a single invalid OpenAI response.
                         if (context.Response.HasStarted)
                         {
                             context.Abort();
@@ -306,10 +334,6 @@ public static class OpenAiEndpoints
         {
             if (!string.IsNullOrWhiteSpace(publicModelName))
             {
-                var apiCredentialId = context.Items.TryGetValue(InferenceApiKeyMiddleware.ApiCredentialIdItem, out var value) && value is Guid id
-                    ? id
-                    : (Guid?)null;
-
                 metricsSink.Write(new GatewayRequestMetric(
                     requestId,
                     startedAtUtc,
@@ -318,6 +342,7 @@ public static class OpenAiEndpoints
                     finalDeploymentId,
                     finalNodeId,
                     apiCredentialId,
+                    usageGroupId,
                     finalStatusCode,
                     stopwatch.ElapsedMilliseconds,
                     attemptCount,
@@ -380,8 +405,6 @@ public static class OpenAiEndpoints
     {
         if (observer.IsStreaming)
         {
-            // SSE must remain genuinely streaming all the way to Copilot. Disable any server-side
-            // buffering and flush every chunk received from the inference runtime.
             context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers["X-Accel-Buffering"] = "no";

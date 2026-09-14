@@ -37,11 +37,24 @@ public sealed class ApiCredential
     public DateTimeOffset CreatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ExpiresAtUtc { get; private set; }
     public DateTimeOffset? LastUsedAtUtc { get; private set; }
+    public Guid? UsageGroupId { get; private set; }
 
     public bool IsUsable(DateTimeOffset nowUtc)
         => Enabled && (ExpiresAtUtc is null || ExpiresAtUtc > nowUtc);
 
     public void Revoke() => Enabled = false;
+
+    public void AssignUsageGroup(Guid usageGroupId)
+    {
+        if (usageGroupId == Guid.Empty)
+        {
+            throw new ArgumentException("Usage group id is required.", nameof(usageGroupId));
+        }
+
+        UsageGroupId = usageGroupId;
+    }
+
+    public void ClearUsageGroup() => UsageGroupId = null;
 
     public void Touch(DateTimeOffset nowUtc)
     {

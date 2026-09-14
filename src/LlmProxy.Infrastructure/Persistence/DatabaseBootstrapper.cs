@@ -1,3 +1,4 @@
+using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
@@ -15,7 +16,8 @@ public sealed class DatabaseBootstrapper(
     IConfiguration configuration,
     ApiKeyHasher apiKeyHasher,
     RoutingStrategyState routingStrategyState,
-    RoutingTuningState routingTuningState)
+    RoutingTuningState routingTuningState,
+    RequestRateLimiter requestRateLimiter)
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -76,6 +78,15 @@ public sealed class DatabaseBootstrapper(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        var ratePolicies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
+        requestRateLimiter.ReplacePolicies(ratePolicies.Select(policy => new RateLimitPolicySnapshot(
+            policy.Id,
+            policy.ApiCredentialId,
+            policy.LogicalModel,
+            policy.RequestsPerWindow,
+            policy.WindowSeconds,
+            policy.Enabled)));
     }
 
     private static RoutingStrategy ParseConfiguredStrategy(string? value)

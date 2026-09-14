@@ -7,6 +7,7 @@ namespace LlmProxy.Api.Security;
 public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
 {
     public const string ApiCredentialIdItem = "LlmProxy.ApiCredentialId";
+    public const string UsageGroupIdItem = "LlmProxy.UsageGroupId";
 
     public async Task InvokeAsync(HttpContext context, GatewayDbContext dbContext, ApiKeyHasher apiKeyHasher)
     {
@@ -41,6 +42,11 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
         }
 
         context.Items[ApiCredentialIdItem] = credential.Id;
+        if (credential.UsageGroupId is Guid usageGroupId)
+        {
+            context.Items[UsageGroupIdItem] = usageGroupId;
+        }
+
         var previousLastUsed = credential.LastUsedAtUtc;
         credential.Touch(now);
         if (credential.LastUsedAtUtc != previousLastUsed)

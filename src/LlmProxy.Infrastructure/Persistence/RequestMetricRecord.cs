@@ -10,6 +10,7 @@ public sealed class RequestMetricRecord
     public Guid? DeploymentId { get; set; }
     public Guid? NodeId { get; set; }
     public Guid? ApiCredentialId { get; set; }
+    public Guid? UsageGroupId { get; set; }
     public int StatusCode { get; set; }
     public long DurationMilliseconds { get; set; }
     public int AttemptCount { get; set; } = 1;
