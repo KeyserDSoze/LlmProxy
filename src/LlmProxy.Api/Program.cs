@@ -25,15 +25,19 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
+builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
+builder.Services.AddSingleton<IDeploymentCatalog>(services => services.GetRequiredService<IRouteCatalog>());
 builder.Services.AddSingleton<ApiCredentialCacheSaveChangesInterceptor>();
+builder.Services.AddSingleton<RouteCatalogSaveChangesInterceptor>();
 builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
-        .AddInterceptors(services.GetRequiredService<ApiCredentialCacheSaveChangesInterceptor>()));
+        .AddInterceptors(
+            services.GetRequiredService<ApiCredentialCacheSaveChangesInterceptor>(),
+            services.GetRequiredService<RouteCatalogSaveChangesInterceptor>()));
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
-builder.Services.AddScoped<IDeploymentCatalog, EfDeploymentCatalog>();
 builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
