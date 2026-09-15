@@ -1,0 +1,52 @@
+name: llmproxy-backup-restore
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-llmproxy}
+      POSTGRES_USER: ${POSTGRES_USER:-llmproxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backup-restore-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llmproxy} -d ${POSTGRES_DB:-llmproxy}"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  llmproxy:
+    image: llmproxy:ci
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${LLMPROXY_PORT:-8084}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD:-backup-restore-postgres}
+      Authentication__ApiKey: ${LLM_PROXY_API_KEY:-backup-bootstrap-key}
+      Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:-backup-restore-pepper}
+      Redis__Enabled: "false"
+      OpenTelemetry__Enabled: "false"
+      EntraId__Enabled: "false"
+      Routing__Strategy: WeightedLeastLoaded
+      Health__IntervalSeconds: "1"
+      Health__HealthyAfterSuccesses: "1"
+      Health__UnhealthyAfterFailures: "2"
+      RuntimeMetrics__Enabled: "false"
+      HardwareMetrics__Enabled: "false"
+      Retention__Enabled: "false"
+      Bootstrap__Enabled: "true"
+      Bootstrap__NodeName: dgx-backup-restore
+      Bootstrap__NodeBaseAddress: http://host.docker.internal:3494/backup-restore
+      Bootstrap__NodeWeight: "1"
+      Bootstrap__NodeMaxConcurrency: "4"
+      Bootstrap__PublicModelName: agic-code-fast
+      Bootstrap__ProviderModelName: bootstrap-model
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
