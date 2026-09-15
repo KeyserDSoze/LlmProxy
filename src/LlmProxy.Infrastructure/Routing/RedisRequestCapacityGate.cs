@@ -291,8 +291,10 @@ public sealed class RedisRequestCapacityGate(
 
         private async Task SafetyLoopAsync(CancellationToken cancellationToken)
         {
-            var pollSeconds = Math.Max(1, Math.Min(_renewSeconds, Math.Max(1, (_leaseSeconds - _renewSeconds) / 2)));
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(pollSeconds));
+            // Poll substantially faster than the renewal cadence so timer-boundary jitter cannot consume
+            // the entire renewal safety margin and postpone cancellation until the Redis TTL itself.
+            var pollInterval = TimeSpan.FromSeconds(Math.Min(1d, _renewSeconds / 2d));
+            using var timer = new PeriodicTimer(pollInterval);
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
