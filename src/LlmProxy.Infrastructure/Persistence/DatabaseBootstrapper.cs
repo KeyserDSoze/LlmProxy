@@ -6,6 +6,7 @@ using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Domain.Routing;
 using LlmProxy.Domain.Security;
+using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -88,13 +89,7 @@ public sealed class DatabaseBootstrapper(
         runtimeStateSink.PublishRouteCatalogSnapshot(nodeSnapshots, modelSnapshots, deploymentSnapshots);
 
         var ratePolicySnapshots = (await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
-            .Select(policy => new RateLimitPolicySnapshot(
-                policy.Id,
-                policy.ApiCredentialId,
-                policy.LogicalModel,
-                policy.RequestsPerWindow,
-                policy.WindowSeconds,
-                policy.Enabled))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot)
             .ToArray();
         requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
         runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);

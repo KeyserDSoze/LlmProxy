@@ -63,14 +63,7 @@ public sealed class RateLimitPolicyRuntimeStateInterceptor(
         {
             if (entry.State is EntityState.Added or EntityState.Modified)
             {
-                var policy = entry.Entity;
-                upserts.Add(new RateLimitPolicySnapshot(
-                    policy.Id,
-                    policy.ApiCredentialId,
-                    policy.LogicalModel,
-                    policy.RequestsPerWindow,
-                    policy.WindowSeconds,
-                    policy.Enabled));
+                upserts.Add(ToSnapshot(entry.Entity));
             }
             else if (entry.State == EntityState.Deleted)
             {
@@ -105,4 +98,15 @@ public sealed class RateLimitPolicyRuntimeStateInterceptor(
     {
         if (dbContext is not null) _pending.Remove(dbContext);
     }
+
+    public static RateLimitPolicySnapshot ToSnapshot(RateLimitPolicy policy) =>
+        new(
+            policy.Id,
+            policy.ApiCredentialId,
+            policy.LogicalModel,
+            policy.RequestsPerWindow,
+            policy.WindowSeconds,
+            policy.Enabled,
+            policy.OutputTokensPerWindow,
+            policy.MaxOutputTokensPerRequest);
 }

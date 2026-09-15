@@ -9,7 +9,12 @@ public sealed record RateLimitPolicySnapshot(
     string? LogicalModel,
     int RequestsPerWindow,
     int WindowSeconds,
-    bool Enabled);
+    bool Enabled,
+    int? OutputTokensPerWindow = null,
+    int? MaxOutputTokensPerRequest = null)
+{
+    public bool HasOutputTokenBudget => OutputTokensPerWindow.HasValue && MaxOutputTokensPerRequest.HasValue;
+}
 
 public sealed record RateLimitDecision(
     bool Allowed,
@@ -147,6 +152,22 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
         Volatile.Write(ref _policies, next);
     }
 
+    public RateLimitPolicySnapshot? ResolvePolicy(Guid apiCredentialId, string logicalModel)
+    {
+        if (apiCredentialId == Guid.Empty || string.IsNullOrWhiteSpace(logicalModel))
+        {
+            return null;
+        }
+
+        var policies = Volatile.Read(ref _policies);
+        var normalizedModel = NormalizeModel(logicalModel);
+        return policies.TryGetValue(new RateLimitKey(apiCredentialId, normalizedModel), out var exact)
+            ? exact
+            : policies.TryGetValue(new RateLimitKey(apiCredentialId, string.Empty), out var fallback)
+                ? fallback
+                : null;
+    }
+
     public RateLimitDecision TryAcquire(Guid apiCredentialId, string logicalModel, DateTimeOffset nowUtc)
         => TryAcquireAsync(apiCredentialId, logicalModel, nowUtc).AsTask().GetAwaiter().GetResult();
 
@@ -167,12 +188,8 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(logicalModel);
-
-        var policies = Volatile.Read(ref _policies);
-        var normalizedModel = NormalizeModel(logicalModel);
-
-        if (!policies.TryGetValue(new RateLimitKey(apiCredentialId, normalizedModel), out var policy) &&
-            !policies.TryGetValue(new RateLimitKey(apiCredentialId, string.Empty), out policy))
+        var policy = ResolvePolicy(apiCredentialId, logicalModel);
+        if (policy is null)
         {
             activity?.SetTag("llmproxy.rate_limit.result", "no_policy");
             return RateLimitDecision.Permit();

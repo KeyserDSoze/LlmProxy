@@ -62,6 +62,8 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<string>("LogicalModel").HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<int?>("MaxOutputTokensPerRequest").HasColumnType("integer");
+            b.Property<int?>("OutputTokensPerWindow").HasColumnType("integer");
             b.Property<int>("RequestsPerWindow").HasColumnType("integer");
             b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<int>("WindowSeconds").HasColumnType("integer");

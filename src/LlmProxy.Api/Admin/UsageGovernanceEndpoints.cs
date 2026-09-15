@@ -3,6 +3,7 @@ using System.Text.Json;
 using LlmProxy.Application.Governance;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Governance;
+using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -163,6 +164,8 @@ public static class UsageGovernanceEndpoints
                     policy.LogicalModel,
                     policy.RequestsPerWindow,
                     policy.WindowSeconds,
+                    policy.OutputTokensPerWindow,
+                    policy.MaxOutputTokensPerRequest,
                     policy.Enabled,
                     policy.CreatedAtUtc,
                     policy.UpdatedAtUtc
@@ -200,7 +203,9 @@ public static class UsageGovernanceEndpoints
                 logicalModel,
                 request.RequestsPerWindow,
                 request.WindowSeconds,
-                request.Enabled);
+                request.Enabled,
+                request.OutputTokensPerWindow,
+                request.MaxOutputTokensPerRequest);
             dbContext.RateLimitPolicies.Add(policy);
             AddAudit(dbContext, httpContext, "rate_limit.create", "rate_limit_policy", policy.Id.ToString(), new
             {
@@ -208,6 +213,8 @@ public static class UsageGovernanceEndpoints
                 policy.LogicalModel,
                 policy.RequestsPerWindow,
                 policy.WindowSeconds,
+                policy.OutputTokensPerWindow,
+                policy.MaxOutputTokensPerRequest,
                 policy.Enabled
             });
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -247,13 +254,32 @@ public static class UsageGovernanceEndpoints
                 policy.LogicalModel,
                 policy.RequestsPerWindow,
                 policy.WindowSeconds,
+                policy.OutputTokensPerWindow,
+                policy.MaxOutputTokensPerRequest,
                 policy.Enabled
             };
             policy.Update(logicalModel, request.RequestsPerWindow, request.WindowSeconds, request.Enabled);
+            if (request.OutputTokensPerWindow.HasValue || request.MaxOutputTokensPerRequest.HasValue)
+            {
+                if (!request.OutputTokensPerWindow.HasValue || !request.MaxOutputTokensPerRequest.HasValue)
+                {
+                    return Results.BadRequest(new { error = "OutputTokensPerWindow and MaxOutputTokensPerRequest must both be supplied when changing the token budget." });
+                }
+
+                policy.SetOutputTokenBudget(request.OutputTokensPerWindow.Value, request.MaxOutputTokensPerRequest.Value);
+            }
             AddAudit(dbContext, httpContext, "rate_limit.update", "rate_limit_policy", policy.Id.ToString(), new
             {
                 before,
-                after = new { policy.LogicalModel, policy.RequestsPerWindow, policy.WindowSeconds, policy.Enabled }
+                after = new
+                {
+                    policy.LogicalModel,
+                    policy.RequestsPerWindow,
+                    policy.WindowSeconds,
+                    policy.OutputTokensPerWindow,
+                    policy.MaxOutputTokensPerRequest,
+                    policy.Enabled
+                }
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             await PublishRateLimitsAsync(dbContext, rateLimiter, cancellationToken);
@@ -278,7 +304,9 @@ public static class UsageGovernanceEndpoints
                 policy.ApiCredentialId,
                 policy.LogicalModel,
                 policy.RequestsPerWindow,
-                policy.WindowSeconds
+                policy.WindowSeconds,
+                policy.OutputTokensPerWindow,
+                policy.MaxOutputTokensPerRequest
             });
             dbContext.RateLimitPolicies.Remove(policy);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -348,13 +376,7 @@ public static class UsageGovernanceEndpoints
         CancellationToken cancellationToken)
     {
         var policies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
-        rateLimiter.ReplacePolicies(policies.Select(policy => new RateLimitPolicySnapshot(
-            policy.Id,
-            policy.ApiCredentialId,
-            policy.LogicalModel,
-            policy.RequestsPerWindow,
-            policy.WindowSeconds,
-            policy.Enabled)));
+        rateLimiter.ReplacePolicies(policies.Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot));
     }
 
     private static void AddAudit(
@@ -392,10 +414,14 @@ public static class UsageGovernanceEndpoints
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
     public sealed record UpdateRateLimitRequest(
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
 }

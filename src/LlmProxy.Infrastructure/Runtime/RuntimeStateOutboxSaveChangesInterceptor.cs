@@ -1,11 +1,11 @@
 using System.Text.Json;
 using LlmProxy.Application.Abstractions;
-using LlmProxy.Application.Governance;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Governance;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Domain.Security;
+using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -93,17 +93,10 @@ public sealed class RuntimeStateOutboxSaveChangesInterceptor : SaveChangesInterc
         {
             if (entry.State is EntityState.Added or EntityState.Modified)
             {
-                var policy = entry.Entity;
                 records.Add(CreateUpsert(
                     RuntimeStateChangeKinds.RatePolicy,
-                    policy.Id,
-                    new RateLimitPolicySnapshot(
-                        policy.Id,
-                        policy.ApiCredentialId,
-                        policy.LogicalModel,
-                        policy.RequestsPerWindow,
-                        policy.WindowSeconds,
-                        policy.Enabled),
+                    entry.Entity.Id,
+                    RateLimitPolicyRuntimeStateInterceptor.ToSnapshot(entry.Entity),
                     occurredAtUtc));
             }
             else if (entry.State == EntityState.Deleted)

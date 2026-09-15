@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>()
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
 builder.Services.AddSingleton<IDeploymentCatalog>(services => services.GetRequiredService<IRouteCatalog>());
 builder.Services.AddSingleton<InMemoryRateLimitCounterStore>();
+builder.Services.AddSingleton<InMemoryOutputTokenBudgetStore>();
 builder.Services.AddSingleton<InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IRequestLoadTracker>(services => services.GetRequiredService<InMemoryRequestLoadTracker>());
 
@@ -42,6 +43,7 @@ if (redisEnabled)
 {
     builder.Services.AddSingleton<RedisCoordinationConnection>();
     builder.Services.AddSingleton<IRateLimitCounterStore, RedisRateLimitCounterStore>();
+    builder.Services.AddSingleton<IOutputTokenBudgetStore, RedisOutputTokenBudgetStore>();
     builder.Services.AddSingleton<IRequestCapacityGate, RedisRequestCapacityGate>();
     builder.Services.AddSingleton<RedisRuntimeStateCoordinator>();
     builder.Services.AddSingleton<IRuntimeStateEventSink>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
@@ -54,11 +56,13 @@ if (redisEnabled)
 else
 {
     builder.Services.AddSingleton<IRateLimitCounterStore>(services => services.GetRequiredService<InMemoryRateLimitCounterStore>());
+    builder.Services.AddSingleton<IOutputTokenBudgetStore>(services => services.GetRequiredService<InMemoryOutputTokenBudgetStore>());
     builder.Services.AddSingleton<IRequestCapacityGate, LocalRequestCapacityGate>();
     builder.Services.AddSingleton<IRuntimeStateEventSink, NullRuntimeStateEventSink>();
 }
 
 builder.Services.AddSingleton<RequestRateLimiter>();
+builder.Services.AddSingleton<OutputTokenBudgetLimiter>();
 builder.Services.AddSingleton<ApiCredentialCacheSaveChangesInterceptor>();
 builder.Services.AddSingleton<RouteCatalogSaveChangesInterceptor>();
 builder.Services.AddSingleton<RateLimitPolicyRuntimeStateInterceptor>();
@@ -91,8 +95,9 @@ builder.Services.AddScoped<RoutingService>();
 builder.Services.AddScoped<MetricsSummaryReader>();
 builder.Services.AddScoped<UsageReportingReader>();
 
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
-builder.Services.AddSingleton<IRequestMetricsSink>(services => services.GetRequiredService<BufferedRequestMetricsSink>());
+builder.Services.AddSingleton<IRequestMetricsSink, HttpContextRequestMetricsSink>();
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedRequestMetricsSink>());
 
 builder.Services.AddSingleton<BufferedCredentialUsageSink>();
@@ -144,6 +149,7 @@ if (entraEnabled)
 
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
+app.UseMiddleware<OutputTokenBudgetMiddleware>();
 
 app.MapGet("/healthz", (RoutingStrategyState strategyState) => Results.Ok(new
 {
@@ -167,6 +173,7 @@ app.MapRuntimeStateAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
+app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
 app.MapDataRetentionAdminEndpoints(entraEnabled);
 
