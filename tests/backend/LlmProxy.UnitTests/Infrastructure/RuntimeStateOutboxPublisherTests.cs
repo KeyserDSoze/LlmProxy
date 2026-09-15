@@ -11,6 +11,7 @@ public sealed class RuntimeStateOutboxPublisherTests
     [Fact]
     public async Task PublishAsync_AppliesAcknowledgedRatePolicyToLocalL1()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var transport = new RecordingTransportPublisher();
         var rateLimiter = new RequestRateLimiter();
         var publisher = new RuntimeStateOutboxPublisher(
@@ -33,18 +34,20 @@ public sealed class RuntimeStateOutboxPublisherTests
             "upsert",
             policy.Id,
             JsonSerializer.Serialize(policy),
-            DateTimeOffset.UtcNow));
+            DateTimeOffset.UtcNow), cancellationToken);
 
         Assert.Single(transport.Published);
 
         var first = await rateLimiter.TryAcquireAsync(
             credentialId,
             "agic-code-fast",
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            cancellationToken);
         var second = await rateLimiter.TryAcquireAsync(
             credentialId,
             "agic-code-fast",
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            cancellationToken);
 
         Assert.True(first.Allowed);
         Assert.False(second.Allowed);
@@ -54,6 +57,7 @@ public sealed class RuntimeStateOutboxPublisherTests
     [Fact]
     public async Task PublishAsync_DoesNotMutateLocalL1WhenTransportFails()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         var transport = new RecordingTransportPublisher
         {
             Exception = new InvalidOperationException("redis unavailable")
@@ -79,16 +83,18 @@ public sealed class RuntimeStateOutboxPublisherTests
             "upsert",
             policy.Id,
             JsonSerializer.Serialize(policy),
-            DateTimeOffset.UtcNow)));
+            DateTimeOffset.UtcNow), cancellationToken));
 
         var first = await rateLimiter.TryAcquireAsync(
             credentialId,
             "agic-code-fast",
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            cancellationToken);
         var second = await rateLimiter.TryAcquireAsync(
             credentialId,
             "agic-code-fast",
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            cancellationToken);
 
         Assert.True(first.Allowed);
         Assert.True(second.Allowed);
