@@ -195,6 +195,11 @@ public static class OpenAiEndpoints
                 }
 
                 await using var lease = admission.Lease;
+                using var inferenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    context.RequestAborted,
+                    lease.CoordinationLost);
+                var inferenceCancellationToken = inferenceCancellation.Token;
+
                 attemptCount++;
                 finalDeploymentId = route.DeploymentId;
                 finalNodeId = route.NodeId;
@@ -207,8 +212,23 @@ public static class OpenAiEndpoints
 
                 try
                 {
-                    upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+                    upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, inferenceCancellationToken);
                     upstreamHeaderMilliseconds = upstreamStopwatch.ElapsedMilliseconds;
+                }
+                catch (OperationCanceledException) when (
+                    lease.CoordinationLost.IsCancellationRequested &&
+                    !context.RequestAborted.IsCancellationRequested)
+                {
+                    finalStatusCode = StatusCodes.Status503ServiceUnavailable;
+                    finalErrorCode = "capacity_coordination_lost";
+                    performanceTracker.Observe(
+                        route.DeploymentId,
+                        infrastructureHealthy: false,
+                        upstreamStopwatch.ElapsedMilliseconds,
+                        timeToFirstByteMilliseconds: null,
+                        DateTimeOffset.UtcNow);
+                    await HandleCapacityCoordinationLostAsync(context, requestId);
+                    return;
                 }
                 catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
                 {
@@ -267,7 +287,7 @@ public static class OpenAiEndpoints
 
                     try
                     {
-                        await CopyUpstreamBodyAsync(upstream, context, observer);
+                        await CopyUpstreamBodyAsync(upstream, context, observer, inferenceCancellationToken);
                         finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
                         ObserveCompletedAttempt(
                             performanceTracker,
@@ -276,6 +296,22 @@ public static class OpenAiEndpoints
                             stopwatch,
                             attemptStartedMilliseconds,
                             observer.TimeToFirstByteMilliseconds);
+                        return;
+                    }
+                    catch (OperationCanceledException) when (
+                        lease.CoordinationLost.IsCancellationRequested &&
+                        !context.RequestAborted.IsCancellationRequested)
+                    {
+                        finalStatusCode = StatusCodes.Status503ServiceUnavailable;
+                        finalErrorCode = "capacity_coordination_lost";
+                        ObserveCompletedAttempt(
+                            performanceTracker,
+                            route.DeploymentId,
+                            infrastructureHealthy: false,
+                            stopwatch,
+                            attemptStartedMilliseconds,
+                            observer.TimeToFirstByteMilliseconds);
+                        await HandleCapacityCoordinationLostAsync(context, requestId);
                         return;
                     }
                     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -404,6 +440,30 @@ public static class OpenAiEndpoints
             DateTimeOffset.UtcNow);
     }
 
+    private static async Task HandleCapacityCoordinationLostAsync(HttpContext context, Guid requestId)
+    {
+        if (context.Response.HasStarted)
+        {
+            context.Abort();
+            return;
+        }
+
+        context.Response.Clear();
+        context.Response.Headers["X-LlmProxy-Request-Id"] = requestId.ToString();
+        if (Activity.Current is { TraceId: var traceId } && traceId != default)
+        {
+            context.Response.Headers["X-LlmProxy-Trace-Id"] = traceId.ToString();
+        }
+
+        context.Response.Headers.RetryAfter = "1";
+        await WriteGatewayErrorAsync(
+            context,
+            StatusCodes.Status503ServiceUnavailable,
+            "gateway_unavailable",
+            "capacity_coordination_lost",
+            "Distributed inference capacity coordination was lost while the request was running. Retry shortly.");
+    }
+
     private static HttpRequestMessage CreateOutboundRequest(
         HttpRequest source,
         JsonObject requestObject,
@@ -427,33 +487,34 @@ public static class OpenAiEndpoints
     private static async Task CopyUpstreamBodyAsync(
         HttpResponseMessage upstream,
         HttpContext context,
-        OpenAiResponseObserver observer)
+        OpenAiResponseObserver observer,
+        CancellationToken cancellationToken)
     {
         if (observer.IsStreaming)
         {
             context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers["X-Accel-Buffering"] = "no";
-            await context.Response.StartAsync(context.RequestAborted);
+            await context.Response.StartAsync(cancellationToken);
         }
 
-        await using var source = await upstream.Content.ReadAsStreamAsync(context.RequestAborted);
+        await using var source = await upstream.Content.ReadAsStreamAsync(cancellationToken);
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
         try
         {
             while (true)
             {
-                var read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), context.RequestAborted);
+                var read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
                 if (read == 0)
                 {
                     break;
                 }
 
                 observer.Observe(buffer.AsSpan(0, read));
-                await context.Response.Body.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
+                await context.Response.Body.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 if (observer.IsStreaming)
                 {
-                    await context.Response.Body.FlushAsync(context.RequestAborted);
+                    await context.Response.Body.FlushAsync(cancellationToken);
                 }
             }
         }
