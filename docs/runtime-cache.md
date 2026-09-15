@@ -1,199 +1,194 @@
 # Runtime cache architecture
 
-LlmProxy keeps durable configuration/history in PostgreSQL and publishes latency-sensitive runtime decisions into cache state used by the inference path.
+LlmProxy keeps durable configuration/history in PostgreSQL, distributed coordination/runtime L2 state in Redis when enabled, and latency-sensitive request-path decisions in local RAM.
 
-## Current design
+## Current validated topology
 
-After startup, the hot path is intended to resolve the following without synchronous PostgreSQL reads:
+```text
+PostgreSQL = durable source of truth
+Redis      = distributed L2 snapshots/version/events + shared counters/leases
+local RAM  = per-gateway request-path L1
+```
+
+After startup, ordinary inference resolves the following without synchronous PostgreSQL reads:
 
 ```text
 Bearer/API credential
   -> credential snapshot / UsageGroup
   -> request-rate policy
+  -> shared rate counter when Redis is enabled
   -> logical model
   -> deployment/node route catalog
   -> routing/performance state
-  -> capacity admission
+  -> shared capacity lease when Redis is enabled
   -> vLLM
 ```
 
-PostgreSQL remains the durable source of truth. Runtime cache state is disposable and can be rebuilt from PostgreSQL at gateway startup.
+PostgreSQL remains required for durable configuration, migrations/startup rebuild, control-plane changes, history/reporting, retention and background persistence.
 
-Current runtime-state implementations are intentionally accessed through abstractions such as:
+## Runtime abstractions
+
+Inference code depends on provider-neutral contracts rather than directly on cache technology. Important runtime abstractions include:
 
 ```text
 IApiCredentialCache
 IRouteCatalog / IDeploymentCatalog
-RequestRateLimiter
-RoutingStrategyState
-RoutingTuningState
+IRateLimitCounterStore
+IRequestCapacityGate / IRequestCapacityLease
+IRuntimeStateEventSink
+IRuntimeStateSyncStatus
 IDeploymentPerformanceTracker
 INodeRuntimeMetricsTracker
 IRequestLoadTracker
 ```
 
-The inference code should depend on these contracts rather than directly depending on a cache technology.
+Redis-disabled deployments use local providers. Redis-enabled deployments replace only the shared coordination pieces while preserving local L1 request-path state.
 
-## Route catalog consistency
-
-`IRouteCatalog` stores immutable/copy-on-write snapshots of:
-
-```text
-InferenceNode
-ModelDefinition
-ModelDeployment
-```
-
-The catalog contains only fields needed to resolve public logical models into provider model + DGX route candidates.
+## Runtime configuration synchronization
 
 At startup:
 
 ```text
 PostgreSQL
-  -> nodes/models/deployments
-  -> IRouteCatalog.Replace(...)
+  -> rebuild local route / credential / rate-policy snapshots
+  -> publish canonical runtime snapshots to Redis
 ```
 
-For live changes:
+For live mutations today:
 
 ```text
 Admin / health mutation
   -> EF tracked entity
   -> PostgreSQL SaveChanges succeeds
-  -> RouteCatalogSaveChangesInterceptor
-  -> in-memory catalog publish
+  -> SavedChanges interceptor
+       -> update local L1
+       -> enqueue runtime change to Redis coordinator
+  -> coordinator persists shared Redis state
+  -> publish change/version event
+  -> peer replicas update local L1
 ```
 
-The runtime state is never intentionally published before durable persistence succeeds.
+Redis pub/sub is not the only recovery mechanism. The coordinator also maintains version/snapshot state and periodic reconciliation so a replica can heal missed notifications after reconnect.
 
-Node health changes are part of the route snapshot, so health/drain/disable decisions remain visible to subsequent inference without request-time SQL.
+`GET /api/admin/runtime-sync` exposes synchronization/provider diagnostics including connectivity and event/version state.
 
-## Why not read Redis on every inference request?
+## Shared caller governance
 
-Redis can be added, but using it as a mandatory remote lookup for every token-generating request would add a network hop and make inference admission dependent on Redis availability.
+When Redis is enabled, request-rate counters are global across gateway replicas rather than process-local. A policy admitted through gateway A is therefore visible to gateway B against the same credential/model/window.
 
-For a production multi-instance gateway the preferred topology is therefore **L1 local runtime cache + Redis synchronization + PostgreSQL durable truth**:
+The runtime policy definition still lives in local L1 for fast lookup; only the counter coordination needs the Redis round trip.
+
+When Redis is disabled, the in-memory counter provider preserves single-instance behavior.
+
+## Shared physical capacity
+
+When Redis is enabled, node/deployment capacity admission uses Redis-backed leases rather than process-local counters alone.
+
+The lease operation is atomic across the shared deployment and physical-node keys. Each active request owns a lease with a Redis expiry and a renewal loop. Local request-load tracking is still maintained for same-process routing telemetry and is released together with the distributed lease.
+
+Important fail-closed behavior:
 
 ```text
-                    PostgreSQL
-                 durable source
-                       |
-                 commit / outbox
-                       |
-                       v
-                     Redis
-            shared cache + events
-                 /           \
-                v             v
-        Gateway A          Gateway B
-        local L1           local L1
-        snapshot           snapshot
-            |                  |
-            +------ inference -+
+Redis unavailable during admission
+  -> do not guess capacity
+  -> 503 capacity_coordination_unavailable
+
+Redis lease renewal becomes unsafe during active inference
+  -> signal CoordinationLost
+  -> cancel upstream/read/write before the Redis lease can expire
+  -> if response not started: 503 + Retry-After: 1 + capacity_lease_lost
+  -> if SSE already started: abort connection
+  -> persist/trace capacity_lease_lost
 ```
 
-Inference remains local-memory fast. Redis coordinates multiple gateway replicas.
+The safety watchdog uses monotonic elapsed-time tracking and polls substantially faster than the renewal interval so scheduler/timer boundary jitter cannot defer cancellation until the Redis TTL itself.
 
-## Recommended Redis evolution
+## Why local L1 remains mandatory
 
-### Phase 1 — current single-instance design
+Redis is deliberately not used as a mandatory remote lookup for every configuration decision. Route, credential and policy snapshots remain local because:
 
 ```text
-PostgreSQL -> local runtime cache
+local L1 lookup = no network hop, low latency, survives short Redis outages
+Redis L2        = shared synchronization and coordination
+PostgreSQL      = durable recovery authority
 ```
 
-This is sufficient for the current single gateway deployment and keeps the operational footprint small.
+The request path should not be redesigned into Redis-on-every-request for route/credential lookup without an explicit architecture decision.
 
-### Phase 2 — Redis as distributed L2 + invalidation bus
+## Current durability boundary
 
-Introduce a provider-neutral synchronization abstraction, for example:
+The remaining important correctness gap is the PostgreSQL commit -> Redis publication crash window.
+
+Today, configuration publication occurs after `SaveChanges` has committed. The EF SavedChanges interceptor updates local L1 and calls `IRuntimeStateEventSink.Publish...`; `RedisRuntimeStateCoordinator` puts the outbound message on an in-memory channel and later persists/publishes it to Redis.
+
+This means:
 
 ```text
-IRuntimeStateSynchronizer
-IRouteCatalogChangePublisher
+DB commit succeeds
+process crashes before Redis durable publication
+=> peer replicas may temporarily miss the committed mutation
 ```
 
-On a successful durable configuration change:
+Periodic reconciliation/startup rebuild can repair state, but this is not the same guarantee as a durable transactional publication pipeline.
 
-1. persist PostgreSQL transaction;
-2. publish a versioned snapshot/change to Redis;
-3. publish an invalidation/version event;
-4. every gateway instance refreshes its local L1 snapshot.
+## Next phase — PostgreSQL transactional outbox
 
-Suggested Redis key space:
-
-```text
-llmproxy:route-catalog:version
-llmproxy:route-catalog:snapshot
-llmproxy:credentials:version
-llmproxy:credentials:<hash-or-id>
-llmproxy:rate-limits:version
-```
-
-Do not put raw API keys, prompts, generated code or bearer tokens in Redis.
-
-### Phase 3 — transactional outbox for stronger delivery guarantees
-
-Direct `PostgreSQL SaveChanges -> Redis publish` has a small failure window: the DB commit may succeed while Redis publication fails.
-
-For multi-instance/HA operation, use a PostgreSQL transactional outbox:
+The next implementation should close that window without introducing a distributed transaction:
 
 ```text
 PostgreSQL transaction
-  - update Node/Model/Deployment/Credential/Policy
-  - insert RuntimeStateOutbox event
+  - update Node/Model/Deployment/Credential/RatePolicy
+  - insert RuntimeStateOutbox row
 commit
 
 Outbox worker
-  -> Redis snapshot/version/event
-  -> mark delivered
+  -> perform one durable Redis publication attempt
+     - persist required shared state/snapshot/version
+     - publish change notification
+  -> mark outbox row delivered only after Redis acknowledges success
 ```
 
-This keeps PostgreSQL authoritative and provides retryable Redis synchronization without distributed transactions.
+Design requirements:
 
-### Phase 4 — optional Redis-first cold start
+- outbox row and configuration mutation must commit in the same PostgreSQL transaction;
+- retries must be idempotent;
+- failed Redis attempts remain pending with retry/backoff metadata;
+- delivery/lag/failure must be observable;
+- workers must safely handle restart/replay;
+- integration tests must cover Redis outage followed by recovery;
+- the existing fire-and-forget `IRuntimeStateEventSink` call is **not** a durable acknowledgement boundary;
+- do not mark an outbox row processed merely because a message was enqueued to the coordinator's in-memory channel.
 
-A gateway replica may load a complete versioned snapshot from Redis for faster scale-out, while still falling back to PostgreSQL if Redis is unavailable or the snapshot version is invalid.
+The clean architecture is to introduce/refactor a durable Redis dispatcher method that completes only after the Redis state write and pub/sub publication have succeeded, and let the outbox worker use that method.
 
-PostgreSQL remains the recovery authority.
+## Optional cold-start evolution
 
-## If we really want no local in-memory cache
+A future replica may load a complete versioned snapshot from Redis for faster scale-out, while falling back to PostgreSQL if Redis is unavailable or the snapshot/version is invalid. PostgreSQL remains the recovery authority.
 
-A `RedisRouteCatalog` could implement `IDeploymentCatalog` directly and read Redis for every route lookup. The abstraction introduced now makes that technically straightforward.
+## Security-sensitive consistency
 
-It is not the recommended default because it changes the failure/performance profile:
+Credential revocation is synchronized through the same runtime pipeline. If product requirements later demand an even stricter immediate-global-revocation SLA than the outbox/reconciliation pipeline provides, add a credential-specific mechanism rather than weakening all request-path caching.
 
-```text
-local L1 lookup: nanoseconds / microseconds, no network dependency
-Redis lookup: network round trip, Redis dependency per inference request
-```
-
-A better production architecture is:
-
-```text
-PostgreSQL = durable truth
-Redis      = distributed synchronization / L2
-local RAM  = request-path L1
-```
-
-## Consistency model
-
-Configuration is **durably consistent first, runtime eventually consistent immediately after commit**.
-
-For a single gateway process, the current SaveChanges interceptor normally makes publication visible before the admin request returns.
-
-For multiple replicas with Redis, target propagation should be sub-second but must be observable through catalog version/instance diagnostics.
-
-Security-sensitive operations such as credential revocation may eventually require stronger semantics than ordinary route changes. If strict immediate global revocation is required across many replicas, use Redis revocation/version checks or a short-lived L1 policy specifically for credentials rather than weakening all routing performance.
+Never store raw API keys, prompts, generated code or bearer tokens in Redis.
 
 ## Current validation
 
-The route-catalog increment is considered validated only when CI proves all of the following:
+The runtime/Redis architecture is validated by both the standard repository CI and the dedicated full-stack smoke.
 
-- unit tests for snapshot routing semantics pass;
-- existing routing/capacity/governance tests remain green;
-- live EF mutations are published after successful saves;
-- startup rebuild works;
-- `/v1/models` and inference continue to work after PostgreSQL is deliberately stopped **after startup**.
+Canonical evidence:
 
-The last test is explicit evidence that normal inference auth + route resolution no longer requires request-time PostgreSQL reads.
+```text
+commit     6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
+CI         34961566507 SUCCESS
+Full Stack 34961566463 SUCCESS
+```
+
+The Full Stack Smoke proves:
+
+- Redis runtime-state synchronization across replicas;
+- global rate-limit counters;
+- distributed node/deployment capacity leases;
+- lease release/recovery;
+- fail-closed cancellation before lease expiry when Redis disappears;
+- `capacity_lease_lost` request metric and trace visibility;
+- normal LlmProxy application spans exported through OTLP/Tempo.

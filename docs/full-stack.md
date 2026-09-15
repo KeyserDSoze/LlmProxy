@@ -12,7 +12,7 @@ full stack
   + Tempo + Loki + Prometheus + Grafana
 ```
 
-Use the full stack when you want the complete runtime-cache and observability experience on one Linux VM or Docker host.
+Use the full stack when you want distributed runtime coordination plus the complete observability experience on one Linux VM or Docker host.
 
 ## What is installed
 
@@ -20,14 +20,14 @@ Use the full stack when you want the complete runtime-cache and observability ex
 | --- | --- | --- |
 | LlmProxy | auth, governance, routing, inference gateway | configuration/history delegated below |
 | PostgreSQL | durable source of truth, usage, audit | `postgres-data` |
-| Redis | distributed L2 runtime state and synchronization | AOF in `redis-data` |
+| Redis | distributed L2 runtime state, global counters and capacity leases | AOF in `redis-data` |
 | OpenTelemetry Collector | OTLP receive/process/export | none |
 | Tempo | distributed traces | `tempo-data` local backend in bundled stack |
 | Loki | structured application logs | `loki-data` |
 | Prometheus | OpenTelemetry-exported metrics | `prometheus-data` |
 | Grafana | common UI for metrics/logs/traces | `grafana-data` |
 
-The bundled stack intentionally uses Tempo local filesystem storage to keep a single-host installation simple. For production/HA tracing, configure Tempo with supported object storage such as S3 or Azure Blob rather than treating the local volume as a production trace lake.
+The bundled stack intentionally uses Tempo local filesystem storage to keep a single-host installation simple. For production/HA tracing, configure supported object storage instead of treating the local volume as a production trace lake.
 
 ## One-time prerequisites
 
@@ -47,13 +47,7 @@ From the repository root:
 bash docker/scripts/full-stack-init.sh
 ```
 
-The script creates `docker/.env.full` and generates strong random values for:
-
-- PostgreSQL password;
-- Redis password;
-- bootstrap inference API key;
-- API-key HMAC pepper;
-- Grafana administrator password.
+The script creates `docker/.env.full` and generates strong random values for PostgreSQL, Redis, the bootstrap inference API key, the API-key HMAC pepper and Grafana administrator password.
 
 It does **not** invent the DGX address/model. Review these operator inputs in `docker/.env.full`:
 
@@ -106,7 +100,7 @@ PostgreSQL -> postgres:5432
 Redis      -> redis:6379
 OTLP       -> http://otel-collector:4317
 Tempo      <- otel-collector -> tempo:4317
-Loki       <- otel-collector -> http://loki:3100/otlp
+Loki       <- otel-collector -> HTTP OTLP
 Prometheus -> scrape otel-collector:9464
 Grafana    -> Prometheus / Tempo / Loki provisioned automatically
 ```
@@ -128,7 +122,7 @@ The storage services are not published to the LAN by default. Grafana reaches th
 
 ## Trace a request end-to-end
 
-When OpenTelemetry is enabled LlmProxy returns a correlation header:
+When OpenTelemetry is enabled LlmProxy returns correlation headers:
 
 ```http
 X-LlmProxy-Trace-Id: <32-hex trace id>
@@ -137,7 +131,18 @@ X-LlmProxy-Request-Id: <gateway request id>
 
 Open Grafana -> **Explore** -> **Tempo**, choose Trace ID search and paste `X-LlmProxy-Trace-Id`.
 
-The initial instrumentation covers ASP.NET inbound requests, outbound `HttpClient` calls including vLLM, .NET runtime metrics and application logs. More fine-grained LlmProxy child spans for authentication/governance/routing/capacity can be added without changing the storage stack.
+Current explicit LlmProxy application spans include the main inference decision boundaries such as:
+
+```text
+llmproxy.auth
+llmproxy.governance.rate_limit
+llmproxy.routing.select
+llmproxy.capacity.acquire
+```
+
+A distributed capacity lease loss is also marked explicitly with `capacity_lease_lost`, so operators can correlate the caller-visible failure/stream abort with request metrics and the Tempo trace.
+
+Instrumentation also covers ASP.NET inbound requests, outbound `HttpClient` calls including vLLM, .NET runtime metrics and application logs.
 
 Telemetry must remain metadata-only. Never add prompt bodies, source code, generated output, bearer tokens or raw API secrets to span attributes or logs.
 
@@ -147,38 +152,82 @@ Redis does not replace PostgreSQL and does not replace the local runtime cache:
 
 ```text
 PostgreSQL = durable source of truth
-Redis      = distributed L2 snapshot + change propagation
+Redis      = distributed L2 snapshot + change propagation + coordination
 RAM        = per-gateway L1 used by the inference request path
 ```
 
-At startup LlmProxy rebuilds its local runtime state from PostgreSQL and publishes canonical snapshots to Redis. Persisted node/model/deployment, credential and rate-policy changes are applied to local RAM only after a successful database save and are then queued to Redis. Other gateway instances receive the event and update their L1 state. A Redis version plus periodic reconciliation heals missed pub/sub notifications.
+At startup LlmProxy rebuilds local runtime state from PostgreSQL and publishes canonical snapshots to Redis. Persisted node/model/deployment, credential and rate-policy changes are applied to local RAM only after a successful database save and are then queued for Redis publication. Other gateway instances receive the event and update their L1 state. Redis version state plus periodic reconciliation heals missed pub/sub notifications.
 
 `GET /api/admin/runtime-sync` reports provider, instance id, Redis connectivity, last applied version and event counters.
 
-### Current multi-instance boundary
+## Current multi-instance behavior
 
-Redis currently synchronizes **configuration/runtime snapshots**. Two request-admission mechanisms are intentionally still process-local:
+Redis-enabled deployments now coordinate the two admission mechanisms that were previously process-local:
 
 ```text
 request-rate counters
 node/deployment capacity leases
 ```
 
-Therefore do not yet run multiple active LlmProxy replicas and assume globally strict rate/capacity admission. The next HA increment should implement atomic distributed counters/semaphores in Redis. Configuration synchronization itself is already isolated behind runtime abstractions so that work does not require changing OpenAI endpoints.
+Therefore multiple active gateways share the same request-rate windows and physical DGX capacity boundary.
 
-### Durability boundary
+A request admitted on gateway A consumes Redis capacity visible to gateway B. When that lease ends, Redis releases the shared slot. Acquisition fails closed if Redis cannot safely coordinate capacity; LlmProxy does not silently fall back to a process-local guess.
 
-PostgreSQL remains authoritative. Redis publication is asynchronous so a Redis outage never blocks a successful control-plane database commit or inference using already-published local state. Periodic reconciliation helps after Redis reconnects.
+### Active lease loss
 
-A future transactional-outbox increment can close the narrow crash window between PostgreSQL commit and enqueueing an outbound Redis event. Do not describe the current implementation as transactional outbox.
+If Redis disappears while a long-running inference already owns a distributed capacity lease, the gateway tracks the time since the last successful renewal and cancels inference before the Redis lease can expire and be reused by another replica.
+
+Behavior is deliberately different depending on whether downstream bytes have started:
+
+```text
+response not started
+  -> HTTP 503
+  -> Retry-After: 1
+  -> error.code = capacity_lease_lost
+
+streaming response already started
+  -> abort connection
+  -> never emit [DONE] after safe coordination has been lost
+```
+
+The request metric records `capacity_lease_lost`, and the same condition is visible in the Tempo trace.
+
+## Durability boundary and next increment
+
+PostgreSQL remains authoritative. Runtime publication to Redis is asynchronous and retryable so a transient Redis outage does not roll back a successful control-plane database commit.
+
+However, the current path still has a narrow process-crash window:
+
+```text
+PostgreSQL commit succeeds
+  -> SavedChanges interceptor updates local L1
+  -> event is enqueued in-memory
+  -> Redis coordinator later persists/publishes it
+```
+
+A process crash after the database commit but before durable Redis publication can delay that committed change until reconciliation or restart repairs state.
+
+The next correctness increment is a PostgreSQL transactional outbox. The configuration mutation and outbox row must commit in the same DB transaction; an outbox worker must mark the row delivered only after the required Redis state write and pub/sub publication have succeeded. Merely enqueueing onto the existing in-memory channel is **not** a durable acknowledgement.
+
+## Validation evidence
+
+The full-stack topology and distributed coordination are validated by:
+
+```text
+commit     6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
+CI         34961566507 SUCCESS
+Full Stack 34961566463 SUCCESS
+```
+
+The dedicated Full Stack Smoke verifies PostgreSQL/Redis runtime synchronization, explicit OTLP application spans in Tempo, Grafana datasource wiring, shared rate limiting, shared DGX capacity, normal lease release/recovery and fail-closed cancellation during a Redis outage.
 
 ## Storage and production evolution
 
 For a single VM the Docker named volumes are sufficient for evaluation and internal testing. For production consider separately:
 
 - PostgreSQL backup/restore and HA policy;
-- managed or redundant Redis if multiple gateways are required;
-- Tempo object storage (for example S3/Azure Blob);
+- redundant/managed Redis for multi-gateway production;
+- Tempo object storage;
 - Loki production object-storage topology if long retention/HA is needed;
 - external Prometheus-compatible long-term storage if required;
 - TLS/SSO around Grafana and the gateway public endpoint.
