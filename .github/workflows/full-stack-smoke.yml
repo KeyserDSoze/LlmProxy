@@ -12,10 +12,13 @@ on:
       - tests/backend/integration/full_stack_smoke.sh
       - tests/backend/integration/runtime_outbox_smoke.sh
       - tests/backend/integration/token_budget_redis_smoke.sh
+      - tests/backend/integration/credential_rotation_smoke.sh
       - src/LlmProxy.Api/Observability/**
       - src/LlmProxy.Api/Security/InferenceApiKeyMiddleware.cs
       - src/LlmProxy.Api/OpenAi/**
+      - src/LlmProxy.Api/Admin/**
       - src/LlmProxy.Api/Program.cs
+      - src/LlmProxy.Domain/Security/**
       - src/LlmProxy.Application/Abstractions/**
       - src/LlmProxy.Application/Observability/**
       - src/LlmProxy.Application/Governance/**
@@ -24,6 +27,7 @@ on:
       - src/LlmProxy.Infrastructure/Routing/**
       - src/LlmProxy.Infrastructure/Runtime/**
       - src/LlmProxy.Infrastructure/Governance/**
+      - src/LlmProxy.Infrastructure/Security/**
       - Directory.Packages.props
       - src/LlmProxy.Api/LlmProxy.Api.csproj
       - src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj
@@ -39,7 +43,7 @@ jobs:
   smoke:
     name: Redis + OpenTelemetry + Grafana stack
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +56,9 @@ jobs:
 
       - name: Run distributed output-token budget smoke
         run: bash tests/backend/integration/token_budget_redis_smoke.sh
+
+      - name: Run cross-replica credential rotation smoke
+        run: bash tests/backend/integration/credential_rotation_smoke.sh
 
       - name: Upload diagnostics
         if: failure()
@@ -66,8 +73,10 @@ jobs:
             /tmp/full-stack-capacity-*
             /tmp/runtime-outbox-*.*
             /tmp/token-budget-*.*
+            /tmp/credential-rotation-*.*
             /tmp/llmproxy-full-stack-mock.log
             /tmp/llmproxy-outbox-mock.log
             /tmp/llmproxy-token-budget-mock.log
+            /tmp/llmproxy-rotation-mock.log
           if-no-files-found: ignore
           retention-days: 7
