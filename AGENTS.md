@@ -28,7 +28,7 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, with inference served by one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities are authentication, request/token governance, consolidated usage accounting, Usage Groups, logical-model routing, distributed physical-capacity admission and metadata-only enterprise observability.
+Core responsibilities are authentication, credential lifecycle, request/token governance, consolidated usage accounting, Usage Groups, logical-model routing, distributed physical-capacity admission and metadata-only enterprise observability.
 
 Raw prompts, source code, generated outputs, bearer tokens and API secrets must never be persisted or added to logs/spans by default.
 
@@ -54,26 +54,16 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 
 Last reviewed: **2026-09-15**.
 
-Current complete product/UI checkpoint:
+Current product/runtime checkpoint:
 
 ```text
-426c545e841865406615998ca50b28a45c40e6f4
-feat: manage output token budgets in admin
-CI 34988084106 — SUCCESS
+628fbc15dc2c963db802f9f2d9aca4b324225c99
+fix: prevent caching rotated credential secrets
+CI         34996328467 — SUCCESS
+Full Stack 34996328588 — SUCCESS
 ```
 
-Runtime/distributed quota checkpoint immediately below it:
-
-```text
-887ebfac98389c0115eaf9c102a60133ede745ff
-test: validate output token budgets end to end
-CI         34987407172 — SUCCESS
-Full Stack 34987407169 — SUCCESS
-```
-
-`426c545e...` changes only React/Admin client code and Playwright coverage relative to `887ebfac...`, so Full Stack `34987407169` is the canonical runtime evidence for the current product checkpoint.
-
-The Full Stack run proves Redis runtime sync, OTLP/Tempo, shared request-rate counters, distributed DGX capacity leases, transactional-outbox outage replay and the new distributed output-token budget behavior.
+The gate proves backend/unit/benchmark, React/Vitest/Playwright, production image build, all PostgreSQL/Docker smoke suites, Redis runtime/outbox fault recovery, distributed output-token budgets and cross-replica credential rotation.
 
 ## Current runtime topology
 
@@ -93,6 +83,38 @@ Pending outbox rows are never retention-deleted. `GET /api/admin/runtime-sync` e
 
 Read `docs/runtime-cache.md` before changing this path.
 
+## Credential lifecycle: current contract
+
+Credential creation and rotation never persist raw secrets. PostgreSQL/Redis/runtime state contain HMAC hashes and safe metadata only.
+
+Rotation is an **in-place hard cutover**:
+
+```text
+same credential Id
+same Name / CreatedAtUtc / ExpiresAtUtc / UsageGroupId
+same request-rate and output-token policy linkage
+same historical accounting identity
+
+replace KeyPrefix + KeyHash
+return replacement raw secret once
+old secret becomes invalid
+```
+
+Rules:
+
+- `POST /api/admin/api-credentials/{id}/rotate` is AdminWrite when Entra is enabled;
+- revoked credentials cannot be rotated;
+- the response that exposes the one-time secret is `Cache-Control: no-store`;
+- audit records only safe old/new prefixes and non-secret metadata;
+- the raw replacement secret and HMAC are never written to audit;
+- originating gateway L1 changes after successful DB save;
+- Redis-enabled peers converge through the transactional outbox/runtime-state channel;
+- restart/startup hydration preserves only the rotated credential.
+
+Full Stack `34996328588` proves old key 200 before rotation, new key 200 + old key 401 after convergence on both gateways, Redis new-HMAC-only state, preserved Usage Group/policy identity and peer restart behavior.
+
+Read `docs/usage-governance.md` before changing credential lifecycle or caller governance.
+
 ## Caller governance: current contract
 
 Request-rate and output-token governance share the same persisted credential/model `RateLimitPolicy` scope in V1.
@@ -106,13 +128,11 @@ MaxOutputTokensPerRequest : int?
 
 The output-token budget uses the same `WindowSeconds` as request-rate policy in V1.
 
-### Output-token reservation/settlement
-
 When a budget is configured:
 
 ```text
 before inference
-  -> cap/inject maximum output tokens in the OpenAI-compatible payload
+  -> cap/inject maximum output tokens
   -> atomically reserve that amount
 
 successful response with observed output usage
@@ -125,18 +145,7 @@ upstream work with uncertain/missing usage, cancellation or interrupted stream
   -> keep full reservation charged
 ```
 
-Supported request caps:
-
-```text
-Chat Completions: max_completion_tokens / max_tokens
-Responses:        max_output_tokens
-```
-
-Redis-enabled budget reservation is shared across replicas and **fails closed** if Redis cannot coordinate. Do not add a distributed local fallback for token budgets.
-
-The dedicated Full Stack smoke proves a peer started before policy creation receives the policy in local L1, shared usage settles `7 -> 14`, the next request is rejected, Redis outage returns the dedicated 503 and recovery preserves the shared window.
-
-Read `docs/usage-governance.md` before changing caller governance.
+Redis-enabled token-budget admission is shared across replicas and fails closed if Redis cannot coordinate.
 
 ## Error/admission taxonomy
 
@@ -156,17 +165,17 @@ Keep caller request rate, caller token budget and physical capacity distinct.
 
 ## Current development focus / resume point
 
-Output-token budget V1 is DONE and validated. Default next order:
+Credential rotation is DONE and validated. Default next order:
 
-1. **Credential rotation workflow** — next product-hardening increment.
-2. Backup/restore + actual restore verification.
-3. Optional quota evolution only if required: input/total-token budgets, monetary budgets or independent token-budget periods.
-4. Long-term usage rollups / production HA-storage guidance as required.
+1. **Backup/restore + actual restore verification** — ACTIVE NEXT.
+2. Optional quota evolution only if required: input/total-token budgets, monetary budgets or independent token-budget periods.
+3. Long-term usage rollups / production HA-storage guidance as required.
+4. Model/runtime upgrade + draining strategy.
 5. Physical acceptance on real DGX/Copilot/Entra/Cloudflare environment.
 
-Do not implement input/total-token admission without explicit tokenizer/estimation semantics. Do not implement monetary budgets without stable cost/pricing semantics.
+Backup/restore work must verify an actual restore into a clean target, not only document `pg_dump`. At minimum preserve configuration, credentials as hashes/safe metadata, Usage Groups, policies, audit/history required by product scope, and prove restored runtime startup/republication works.
 
-A small known quota follow-up is rejection precedence/efficiency: token reservation currently happens before the endpoint request-rate check, but a request rejected before any upstream attempt receives a full token reservation refund. This is safe; change it only deliberately with regression coverage.
+Do not implement input/total-token admission without explicit tokenizer/estimation semantics. Do not implement monetary budgets without stable cost/pricing semantics.
 
 ## Identity limitation
 
@@ -193,7 +202,7 @@ QUICKSTART.md / docs/quickstart.md       installation and first smoke test
 docs/full-stack.md                       Redis + OTEL/Grafana + outbox operations
 docs/project-status.md                   canonical state and exact resume point
 docs/runtime-cache.md                    L1/L2 + transactional outbox + distributed coordination
-docs/usage-governance.md                 auth, groups, request rate, output-token budgets, usage
+docs/usage-governance.md                 auth, credential lifecycle, groups, rate/token governance, usage
 docs/data-retention.md                   request/audit/processed-outbox retention
 docs/development-log.md                  chronological engineering + validation trace
 docs/roadmap.md                          milestone state/backlog

@@ -6,29 +6,20 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 
 ## Current validated product baseline
 
-Backend/runtime output-token budget behavior:
-
 ```text
-commit     887ebfac98389c0115eaf9c102a60133ede745ff
-CI         34987407172 SUCCESS
-Full Stack 34987407169 SUCCESS
+commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
+CI         34996328467 SUCCESS
+Full Stack 34996328588 SUCCESS
 ```
 
-React Admin output-token budget management:
-
-```text
-commit     426c545e841865406615998ca50b28a45c40e6f4
-CI         34988084106 SUCCESS
-```
-
-`426c545e...` changes only React/Admin client code and Playwright coverage relative to the runtime-validated `887ebfac...`; the runtime code validated by Full Stack `34987407169` is unchanged.
+This baseline includes output-token budgets, React governance controls and the credential-rotation workflow. The standard CI proves backend/unit/benchmark, frontend/Vitest/Playwright, production image build and all Docker/PostgreSQL smoke suites. The dedicated Full Stack run proves Redis runtime sync, transactional outbox recovery, distributed token-budget coordination and cross-replica credential rotation.
 
 ## Core product scope
 
 LlmProxy is Agic's enterprise inference-governance boundary, not only a DGX router:
 
 ```text
-1. inference authentication
+1. inference authentication + credential lifecycle
 2. request-rate + output-token governance
 3. consolidated usage accounting
 4. configurable Usage Groups
@@ -57,20 +48,37 @@ OpenAI-compatible client / GitHub Copilot
 
 Ordinary inference configuration lookup remains DB-free after startup/runtime publication.
 
-## Implemented and validated
+## Credential lifecycle — DONE / VALIDATED
 
-### Gateway / security
+Secrets are generated and shown once. PostgreSQL stores HMAC-SHA256 hashes and safe metadata; Redis/runtime payloads also contain only hashes and safe credential state.
 
-- .NET 10 ASP.NET Core gateway.
-- `/v1/models`, Chat Completions and Responses compatibility.
-- streaming/non-streaming and incremental SSE.
-- arbitrary compatible payload preservation with logical-model rewrite.
-- HMAC-hashed API credentials; raw secret shown once and never persisted.
-- local runtime credential cache with startup rebuild/live publication.
-- Entra admin plumbing with `LlmProxy.Admin` / `LlmProxy.Reader`.
-- React control plane + administrative audit trail.
+Rotation endpoint:
 
-### Usage Groups / request-rate governance
+```http
+POST /api/admin/api-credentials/{id}/rotate
+```
+
+Rotation is an in-place hard cutover. The credential keeps the same `Id`, name, creation time, expiry, Usage Group assignment and all policy/history linkage. Only `KeyPrefix` and `KeyHash` are replaced.
+
+Validated properties:
+
+- revoked credentials return conflict and cannot be rotated;
+- replacement secret is returned one time only;
+- secret response is `Cache-Control: no-store`;
+- old secret is removed from local cache when the same credential ID changes hash;
+- origin gateway applies the committed credential immediately through the existing post-save cache interceptor;
+- Redis-enabled replicas converge through the transactional outbox/runtime event path;
+- Redis stores the new HMAC and no raw secret;
+- the old HMAC is replaced, not retained as an accepted alias;
+- Usage Group and request-rate/output-token policies remain attached to the same credential ID;
+- audit `credential.rotate` records safe previous/new prefixes and never the raw secret/HMAC;
+- peer restart/startup hydration accepts only the rotated key.
+
+Full Stack `34996328588` explicitly proves old key works on both replicas before rotation, then new key returns 200 and old key 401 on both replicas after convergence, and the same behavior remains after peer restart.
+
+React **Usage & Governance** provides a `Rotate` action and one-time copy box for the replacement secret. Playwright covers the workflow and preservation of group membership.
+
+## Usage Groups / request-rate governance
 
 - persisted Usage Groups and primary group per credential;
 - request-time UsageGroup snapshot in metrics;
@@ -80,35 +88,30 @@ Ordinary inference configuration lookup remains DB-free after startup/runtime pu
 - distinct `429 rate_limit_exceeded`;
 - usage aggregation/UI by group, credential and logical model.
 
-### Output-token budgets — V1 DONE
+## Output-token budgets — V1 DONE / VALIDATED
 
-Output-token budget configuration is stored on the existing credential/model `RateLimitPolicy`:
+Budget configuration lives on the existing credential/model `RateLimitPolicy`:
 
 ```text
 OutputTokensPerWindow : int?
 MaxOutputTokensPerRequest : int?
 ```
 
-V1 intentionally shares policy scope and `WindowSeconds` with request-rate admission.
+V1 shares policy scope and `WindowSeconds` with request-rate admission.
 
 Semantics:
 
 - reserve output capacity before inference, preventing concurrent oversubscription;
 - cap/inject Chat `max_completion_tokens` / `max_tokens` and Responses `max_output_tokens`;
-- successful usage settles the reservation to actual output tokens and refunds unused capacity;
-- if no upstream attempt occurred, refund the reservation fully;
-- if upstream work occurred but usage is uncertain because of cancellation/failure/interrupted stream/missing usage, keep the full reservation charged;
+- successful usage settles to actual output tokens and refunds unused reservation;
+- no upstream attempt refunds fully;
+- uncertain usage after upstream work keeps the full reservation charged;
 - `429 token_budget_exceeded` when the fixed-window budget cannot admit the reservation;
-- Redis-enabled budget coordination fails closed as `503 token_budget_coordination_unavailable`; it never falls back to an unsafe local distributed guess;
-- token policy definitions propagate through the existing transactional runtime-state outbox and peer L1 synchronization;
-- Admin API and React **Usage & Governance** support visibility, Apply and Clear workflows;
-- changes are audited.
+- Redis-enabled budget coordination fails closed as `503 token_budget_coordination_unavailable`;
+- policy definitions propagate through the transactional runtime-state outbox and peer L1 synchronization;
+- Admin API/UI supports visibility, Apply and Clear.
 
-Standard governance smoke proves `10` reserved -> `7` actual settlement, two requests fitting budget `17`, third request rejected, invalid token cap handling and restart policy rebuild.
-
-Dedicated Full Stack smoke proves live policy propagation to a pre-existing peer, shared Redis usage `7 -> 14`, cross-gateway rejection, Redis outage fail-closed behavior and recovery.
-
-### Routing / physical capacity
+## Routing / physical capacity
 
 - logical models hide provider/DGX topology;
 - weighted least loaded / round robin / weighted round robin;
@@ -121,7 +124,7 @@ Dedicated Full Stack smoke proves live policy propagation to a pre-existing peer
 - fail-closed capacity acquisition;
 - active-inference cancellation before an unsafe distributed lease can expire.
 
-### Distributed runtime state / transactional outbox
+## Distributed runtime state / transactional outbox
 
 ```text
 PostgreSQL = durable source of truth + transactional runtime-state outbox
@@ -133,7 +136,7 @@ Runtime Node/Model/Deployment/Credential/RatePolicy mutations and outbox records
 
 `GET /api/admin/runtime-sync` exposes Redis status and outbox backlog/retry diagnostics. Processed outbox rows default to 30-day retention; pending rows are never retention-deleted.
 
-### Retention / observability
+## Retention / observability
 
 Defaults:
 
@@ -152,6 +155,7 @@ Full stack includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Pro
 ```text
 401 invalid_api_key
 400 invalid_output_token_limit
+409 revoked credential rotation
 429 rate_limit_exceeded
 429 token_budget_exceeded
 429 capacity_exhausted
@@ -161,20 +165,18 @@ Full stack includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Pro
 503 no_healthy_deployment
 ```
 
-Keep caller request rate, caller token budget and physical infrastructure admission distinct in code, metrics, traces and UI.
-
 ## Current development focus
 
-The V1 **output-token** budget is complete and validated. The next production-hardening order is:
+Credential rotation is complete and validated. The next production-hardening order is:
 
-1. credential rotation workflow without exposing/re-persisting raw keys;
-2. backup/restore + actual restore verification;
-3. decide whether product requirements need input/total-token budgets, monetary budgets or a token-budget period independent from request-rate `WindowSeconds`;
-4. optional long-term usage rollups;
-5. production Redis/observability HA/storage guidance where required;
+1. **backup/restore + actual restore verification**;
+2. decide whether product requirements need input/total-token budgets, monetary budgets or a token-budget period independent from request-rate `WindowSeconds`;
+3. optional long-term usage rollups;
+4. production Redis/observability HA/storage guidance where required;
+5. model/runtime upgrade and draining strategy;
 6. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
 
-Quota follow-up should not be implemented casually: input/total-token admission requires tokenizer/estimation semantics and cost budgets require stable pricing/accounting rules.
+Backup/restore must be tested against a clean restore target. Merely documenting backup commands is not sufficient. The verification should demonstrate recovery of durable configuration and safe credential hashes, then show a restored gateway can rebuild/publish runtime state and serve authenticated traffic.
 
 ## Identity limitation
 
@@ -195,8 +197,8 @@ A centrally configured GitHub Copilot BYOK provider may use one shared credentia
 A new development session should:
 
 1. read `AGENTS.md`, this file, `docs/usage-governance.md`, `docs/runtime-cache.md` and latest development-log entries;
-2. inspect latest `main` and GitHub Actions before changing code;
-3. treat `426c545e841865406615998ca50b28a45c40e6f4` / CI `34988084106` as the current complete product/UI checkpoint, with runtime Full Stack evidence `887ebfac98389c0115eaf9c102a60133ede745ff` / `34987407169`;
-4. start with credential rotation unless the project owner explicitly chooses a quota-expansion item instead;
+2. inspect latest `main` and Actions before changing code;
+3. treat `628fbc15dc2c963db802f9f2d9aca4b324225c99` / CI `34996328467` / Full Stack `34996328588` as the current validated runtime/product baseline;
+4. begin backup/restore with an explicit backup artifact format, clean-target restore procedure and automated restore verification;
 5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics and DB-free configuration lookup on the inference path;
 6. update docs and validation evidence after every meaningful increment.

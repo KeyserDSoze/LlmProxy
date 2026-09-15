@@ -219,8 +219,49 @@ feat: manage output token budgets in admin
 CI 34988084106 SUCCESS
 ```
 
-## Next increment — credential rotation
+## 2026-09-15 — Credential rotation — IMPLEMENTED AND VALIDATED
 
-Output-token budget V1 is complete. The next default product-hardening increment is API credential rotation: generate a replacement secret without ever persisting/re-exposing raw keys, define overlap/cutover/revocation semantics, preserve UsageGroup attribution and audit the operation.
+Implemented API-key rotation as an in-place hard cutover on the existing credential identity.
 
-Further quota expansion (input/total tokens, cost budgets or independent token periods) remains requirements-driven because it needs explicit tokenizer/pricing semantics.
+Key implementation commits in the increment:
+
+```text
+2491996638185c4b38f477deabcefbf9534733c6  endpoint foundation
+def147c2f20f3b7c77a1635bda2ee5c2ee07ca55  domain Rotate semantics
+afc1ab6c9ae0eac16410e2bef51f15f01d365864  API wiring
+a0699da9d836c3b5201683d512eef4ec7a080397  domain tests
+352f8d2060e5f243e6c612216eda3a6f520ef0ee  cross-replica rotation smoke
+049e59260db13e7c1a85c8bfc8555e2f78d95a2a  Full Stack gate wiring
+82ef575bc2cc52f2cbe8fc3bdd10275fcf7e6105  admin client
+a682ca195733bef9ebaa66998a8ad4e237af09bc  governance UI
+2f96c27904d6238c5781f50e2c0e0bf0f3425423  Playwright workflow
+628fbc15dc2c963db802f9f2d9aca4b324225c99  no-store one-time-secret hardening
+```
+
+Contract:
+
+- same credential `Id`, name, timestamps, expiry, Usage Group and caller-policy linkage;
+- new random secret, new prefix and HMAC;
+- old HMAC is removed from local credential cache on same-ID upsert;
+- revoked credentials cannot be rotated;
+- raw replacement secret is returned once and never persisted;
+- rotation response carries `Cache-Control: no-store`;
+- `credential.rotate` audit stores only safe prefix transition/group/expiry metadata;
+- Redis/outbox runtime state contains the new HMAC only;
+- peers converge through the existing transactional runtime-state publication path.
+
+The dedicated Full Stack smoke starts two gateways before rotation, verifies the old key on both, rotates through the primary, requires new-key 200 / old-key 401 on both, checks Redis for new-HMAC-only state, verifies Usage Group and rate-policy preservation, checks audit secrecy and restarts the peer to prove durable/startup hydration.
+
+Validation:
+
+```text
+commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
+CI         34996328467 SUCCESS
+Full Stack 34996328588 SUCCESS
+```
+
+## Next increment — backup/restore verification
+
+Credential rotation is complete. The next production-hardening increment is backup/restore with an **actual clean-target restore test**, not documentation-only commands. Define the backup artifact, restore procedure and verification that durable configuration/credential hashes/governance state recover and a restored gateway can rebuild/publish runtime state and serve authenticated traffic.
+
+Further quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics.

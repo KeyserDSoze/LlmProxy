@@ -30,6 +30,7 @@ For canonical current state use `docs/project-status.md`.
 - DONE: React control plane.
 - DONE: HMAC-hashed DB-backed credentials + runtime cache.
 - DONE: asynchronous last-used persistence + audit.
+- DONE: in-place credential rotation with one-time secret, safe audit and cross-replica hard cutover.
 - EXTERNAL: real Entra app registration/roles.
 
 ## M4 - Observability — DONE FOR CURRENT MVP / STORAGE EVOLUTION REMAINS
@@ -73,33 +74,14 @@ For canonical current state use `docs/project-status.md`.
 - DONE: Admin API + React UI + audit for Apply/Clear output-token budget.
 - DONE: local restart and distributed Redis outage/recovery smoke coverage.
 
-Validated runtime quota checkpoint:
-
-```text
-commit     887ebfac98389c0115eaf9c102a60133ede745ff
-CI         34987407172
-Full Stack 34987407169
-```
-
-React Admin quota management checkpoint:
-
-```text
-commit     426c545e841865406615998ca50b28a45c40e6f4
-CI         34988084106
-```
-
-Future quota extensions are PLANNED only when requirements justify them:
-
-- input/total-token budgets after tokenizer/estimation semantics are defined;
-- monetary/cost budgets after pricing/accounting semantics are defined;
-- independent token-budget period separate from request-rate `WindowSeconds`;
-- provider-contract anomaly handling if actual output exceeds the enforced cap.
+Future quota extensions are PLANNED only when requirements justify them: input/total-token budgets after tokenizer/estimation semantics; monetary/cost budgets after pricing/accounting semantics; independent token-budget periods; provider-contract anomaly handling.
 
 ## M8 - Usage Groups and reporting — DONE FOR CURRENT MVP
 
 - DONE: UsageGroup administration and primary group per credential.
 - DONE: request-time group snapshot for stable historical accounting.
 - DONE: usage aggregation/UI by group, credential and logical model.
+- DONE: credential rotation preserves group and historical credential identity.
 - PLANNED: archive/deletion semantics if required.
 - PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics.
 
@@ -111,6 +93,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 - DONE: DB-free ordinary configuration lookup after startup.
 - DONE: PostgreSQL-outage inference smoke.
 - DONE: Redis L2 synchronization while preserving L1.
+- DONE: credential hash replacement removes old secret acceptance from local L1.
 
 ## M10 - Retention and operational hygiene — DONE FOR CURRENT MVP
 
@@ -138,22 +121,31 @@ local RAM  = per-replica request-path L1
 - DONE: non-originating publisher self-L1 application.
 - DONE: outbox backlog/retry/error diagnostics + processed-only retention.
 - DONE: Redis shared output-token budget admission/settlement.
+- DONE: credential rotation propagation and old-hash removal across replicas.
 - PLANNED: customer-specific Redis HA/redundancy production guidance.
 
 ## M12 - Product hardening — ACTIVE
 
 - DONE: V1 output-token quota reservation/settlement.
-- ACTIVE NEXT: credential rotation workflow.
-- PLANNED: backup/restore + restore verification.
+- DONE: credential rotation workflow.
+- ACTIVE NEXT: backup/restore + actual restore verification.
 - PLANNED: long-term reporting rollups where required.
 - PLANNED: model/runtime upgrade and draining strategy.
 
+Credential-rotation validation checkpoint:
+
+```text
+commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
+CI         34996328467
+Full Stack 34996328588
+```
+
 ## Current development order
 
-1. Implement credential rotation without ever persisting/re-exposing raw credential secrets.
-2. Add backup/restore procedures and automated/explicit restore verification.
-3. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
-4. Add reporting rollups / production HA-storage guidance as required.
+1. Add backup/restore procedures and automated/explicit restore verification against a clean target.
+2. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
+3. Add reporting rollups / production HA-storage guidance as required.
+4. Add model/runtime upgrade + draining strategy.
 5. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue with LlmProxy + vLLM unless explicitly reopened.

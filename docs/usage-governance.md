@@ -1,6 +1,6 @@
 # Usage governance
 
-This document is the focused product/engineering contract for inference authentication, caller request-rate limiting, output-token budgets, Usage Groups and consolidated usage reporting.
+This document is the focused product/engineering contract for inference authentication, credential lifecycle, caller request-rate limiting, output-token budgets, Usage Groups and consolidated usage reporting.
 
 ## Product boundary
 
@@ -30,11 +30,60 @@ active capacity lease unsafe       -> 503/abort capacity_lease_lost
 no operational backend             -> 503 no_healthy_deployment
 ```
 
-## Inference identity and Usage Groups
+## Inference identity and credential lifecycle
 
 Raw API secrets are shown once and never persisted. PostgreSQL stores an HMAC-SHA256 hash and safe metadata. The `/v1` authentication path hashes the supplied bearer secret and resolves it from the local runtime credential cache; there is no synchronous credential SQL lookup per request.
 
-A credential can have zero or one primary `UsageGroupId`. The request-time group id is copied into request metrics so historical accounting does not change when a credential is moved later.
+Credential creation returns a generated secret once. Credential rotation follows the same secret-handling rule.
+
+### In-place credential rotation
+
+```http
+POST /api/admin/api-credentials/{id}/rotate
+```
+
+Rotation is an **in-place hard cutover**. It intentionally does not create a second durable credential identity or an overlap window.
+
+Preserved:
+
+```text
+Id
+Name
+CreatedAtUtc
+ExpiresAtUtc
+LastUsedAtUtc
+UsageGroupId
+all RateLimitPolicy / output-token policy linkage
+historical request/accounting identity
+```
+
+Replaced:
+
+```text
+KeyPrefix
+KeyHash
+```
+
+Rules:
+
+- revoked credentials cannot be rotated;
+- a fresh `lp_...` secret is generated server-side;
+- only the HMAC and safe prefix are stored;
+- the raw replacement secret is returned exactly once;
+- the response is marked `Cache-Control: no-store`;
+- audit action is `credential.rotate`;
+- audit details contain safe previous/new prefixes, expiry/group metadata and no raw secret/HMAC;
+- the origin replica updates its local credential L1 only after the PostgreSQL save succeeds;
+- Redis-enabled replicas receive the new credential snapshot through the transactional runtime-state outbox;
+- cache upsert by the same credential ID removes the previous hash, so the old secret is no longer accepted after local convergence;
+- Redis credential state is an upsert for the same ID and therefore replaces the previous HMAC rather than retaining an alias;
+- restart/startup hydration restores only the new hash.
+
+This is a hard cutover rather than a grace-period rotation. Clients must update to the newly returned secret immediately. A future overlapping-key model would require an explicit product/security decision and a different persisted model; do not silently add multiple accepted hashes to one credential.
+
+## Usage Groups
+
+A credential can have zero or one primary `UsageGroupId`. The request-time group id is copied into request metrics so historical accounting does not change when a credential is moved later. Rotation preserves the same credential ID and Usage Group, so it also preserves attribution/history naturally.
 
 Never infer a user or Usage Group from source IP. A centrally configured GitHub Copilot BYOK credential may be shared, so gateway attribution is reliably credential/group-level unless the client uses separate credentials.
 
@@ -65,9 +114,7 @@ credential-wide policy (LogicalModel = null)
 
 An output-token budget is active only when the policy is enabled and both token fields are configured. In V1 the request-rate counter and output-token budget deliberately share the same `WindowSeconds` value and policy scope.
 
-Request-rate updates preserve an existing token budget unless token-budget fields are explicitly supplied. Token budget can also be configured or cleared independently through dedicated endpoints.
-
-Policy configuration is kept in local L1 and is republished through the same PostgreSQL transactional-outbox -> Redis runtime-state pipeline used for rate policies. Startup rebuild also restores token-budget configuration.
+Policy configuration is kept in local L1 and republished through PostgreSQL transactional-outbox -> Redis runtime-state publication. Credential rotation keeps the same `ApiCredentialId`, so policy records are not recreated or rewritten.
 
 ## Request-rate admission
 
@@ -86,7 +133,7 @@ error.code = rate_limit_exceeded
 
 The token-budget implementation protects **generated/output tokens**, not input tokens or monetary cost.
 
-A naive post-response counter is intentionally not used because concurrent requests could all pass before any of them reports final usage. Instead LlmProxy reserves the maximum output tokens that the accepted request is allowed to generate before forwarding it.
+A naive post-response counter is not used because concurrent requests could all pass before final usage exists. Instead LlmProxy reserves the maximum output tokens the accepted request is allowed to generate before forwarding it.
 
 ### Request cap and reservation
 
@@ -94,7 +141,7 @@ For Chat Completions:
 
 ```text
 max_completion_tokens
-max_tokens              # legacy-compatible field
+max_tokens
 ```
 
 For Responses:
@@ -103,46 +150,24 @@ For Responses:
 max_output_tokens
 ```
 
-If the client supplies a positive limit above `MaxOutputTokensPerRequest`, LlmProxy caps it before forwarding. If no output limit is supplied, LlmProxy injects the policy maximum. If Chat supplies both supported fields, both are capped and the reservation uses the larger effective value.
+If a positive client limit exceeds `MaxOutputTokensPerRequest`, LlmProxy caps it. If no output limit is supplied, LlmProxy injects the policy maximum. Invalid/non-positive output limits under an active budget return `400 invalid_output_token_limit`.
 
-An invalid/non-positive output limit under an active budget returns:
-
-```text
-HTTP 400
-error.code = invalid_output_token_limit
-```
-
-The reserved amount therefore represents an upper bound that a compatible upstream is instructed not to exceed.
-
-### Atomic admission
-
-Before inference, `OutputTokenBudgetLimiter` asks `IOutputTokenBudgetStore` to atomically reserve the request cap.
-
-For a window with budget `B`, already charged/reserved usage `U`, and requested reservation `R`:
+Before inference, `OutputTokenBudgetLimiter` atomically reserves the request cap. For budget `B`, used/reserved `U` and new reservation `R`:
 
 ```text
 admit iff U + R <= B
 ```
 
-If the budget would be exceeded:
-
-```text
-HTTP 429
-Retry-After: <seconds until fixed-window reset>
-error.type = rate_limit_error
-error.code = token_budget_exceeded
-```
+A budget rejection is `429 token_budget_exceeded` with `Retry-After` to the fixed-window reset.
 
 ### Settlement
 
-After the inference endpoint completes:
-
 ```text
-successful 2xx + observed output token usage
+successful 2xx + observed output usage
   -> charge actual output tokens
   -> refund Reserved - Actual
 
-no upstream attempt occurred
+no upstream attempt
   -> settle actual = 0
   -> refund full reservation
 
@@ -151,37 +176,33 @@ missing or otherwise uncertain usage after upstream work
   -> keep the full reservation charged
 ```
 
-Settlement is idempotent. Unknown usage is deliberately conservative: the system never assumes zero after upstream generation may have occurred.
-
-A compatible upstream should not exceed the forwarded maximum. If reported usage is invalid or above the reservation, V1 does not refund any part of the reservation; such provider-contract anomalies are future hardening work.
+Settlement is idempotent. Unknown usage is deliberately conservative.
 
 ### Redis-enabled multi-replica semantics
 
-Redis-enabled deployments use `RedisOutputTokenBudgetStore`. Reservation is atomic through Lua and Redis server time; the fixed-window state is stored in a TTL-backed hash. Settlement refunds unused reservation only if the same budget window is still active.
-
-Unlike the existing request-rate counter's degraded local fallback, token-budget admission is a hard distributed governance boundary:
+Redis-enabled deployments use atomic reservation/settlement against one shared fixed window. Redis server time is used. If reservation coordination is unavailable there is no local distributed fallback:
 
 ```text
-Redis reservation coordination unavailable
-  -> no local guess / no local fallback
-  -> HTTP 503
-  -> Retry-After: 1
-  -> token_budget_coordination_unavailable
+HTTP 503
+Retry-After: 1
+error.code = token_budget_coordination_unavailable
 ```
 
-If Redis settlement itself fails after a successful reservation, the already-reserved amount remains charged. This is conservative and prevents accidental budget expansion.
-
-Redis AOF preserves current window state across the bundled Redis service restart. In Redis-disabled single-instance mode the local in-memory window state resets on process restart; persisted policy configuration is rebuilt from PostgreSQL.
+If settlement itself fails after reservation, the reserved amount remains charged rather than accidentally expanding the budget.
 
 ## Admin API
 
 Current governance endpoints include:
 
 ```http
+GET  /api/admin/api-credentials
+POST /api/admin/api-credentials
+POST /api/admin/api-credentials/{id}/rotate
+POST /api/admin/api-credentials/{id}/revoke
+
 GET  /api/admin/usage-groups
 POST /api/admin/usage-groups
 PUT  /api/admin/usage-groups/{id}
-
 PUT    /api/admin/api-credentials/{id}/usage-group
 DELETE /api/admin/api-credentials/{id}/usage-group
 
@@ -201,62 +222,58 @@ GET /api/admin/usage/credentials?days=30
 GET /api/admin/usage/models?days=30
 ```
 
-Token-budget update/clear operations are audited as `output_token_budget.update` and `output_token_budget.clear`.
+Administrative mutations are audited. Secrets and prompt/output content are excluded from audit detail.
 
 ## React control plane
 
-`/admin/governance` exposes:
+`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, request-rate policies and output-token budgets.
 
-- Usage KPIs and breakdowns;
-- Usage Group administration;
-- credential -> Usage Group assignment;
-- request-rate policies;
-- output-token budget visibility;
-- Apply/Clear output-token budget workflow per rate-policy scope.
+Credential rotation UI behavior:
 
-The UI keeps request-rate and output-token budget controls conceptually separate even though they share the persisted credential/model/window scope.
+- enabled credentials expose `Rotate`;
+- successful rotation displays the new secret in a one-time copy box;
+- the UI explicitly warns that the previous key is invalid;
+- the refreshed row shows the new prefix while preserving Usage Group selection;
+- Playwright verifies this workflow.
 
 ## Usage metrics and reporting
 
-Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where the upstream reports them. Prompts, source code, generated output and bearer secrets are not persisted by default.
+Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where upstream reports them. Prompts, source code, generated output and bearer secrets are not persisted by default.
 
 Usage aggregation is PostgreSQL-side and reports by Usage Group, credential and logical model. Current raw request retention is 90 days by default; optional long-term rollups remain future work.
 
 ## Validation
 
-Output-token budget backend/runtime behavior is validated on:
+Canonical credential-rotation/product baseline:
 
 ```text
-commit     887ebfac98389c0115eaf9c102a60133ede745ff
-CI         34987407172 SUCCESS
-Full Stack 34987407169 SUCCESS
+commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
+CI         34996328467 SUCCESS
+Full Stack 34996328588 SUCCESS
 ```
 
-The standard governance smoke proves:
+The standard CI proves domain rotation semantics, frontend build/Vitest/Playwright and all existing Docker/PostgreSQL governance/regression suites.
 
-- local reservation and actual-usage refund (`10 reserved -> 7 charged`);
-- two requests fit a 17-token window only because settlement refunds unused reservation;
-- the third request returns `429 token_budget_exceeded`;
-- invalid output-token limit returns 400;
-- persisted policy is rebuilt after gateway restart.
+The dedicated Full Stack credential-rotation smoke proves:
 
-The dedicated distributed smoke proves:
+- old key is valid on both gateways before rotation;
+- same credential ID/group are returned after rotation;
+- origin gateway immediately accepts new key and rejects old key after committed save;
+- a peer that existed before rotation converges to new key 200 / old key 401;
+- Redis credential snapshot contains the new HMAC, not the previous HMAC and never the raw secret;
+- transactional credential outbox publication completes;
+- Usage Group and caller-policy linkage remain unchanged;
+- `credential.rotate` audit contains safe prefix transition metadata but no secret/HMAC;
+- peer restart hydrates only the rotated key.
 
-- a peer started before policy creation receives the policy into local L1 through runtime-state publication;
-- gateway A settles shared Redis usage to 7;
-- gateway B settles the same shared window to 14;
-- the next cross-gateway request is rejected without changing Redis usage;
-- Redis outage fails admission closed with `503 token_budget_coordination_unavailable`;
-- Redis recovery preserves/exposes the still-exhausted shared window.
-
-The React control-plane increment is validated by the CI baseline documented in `docs/project-status.md`.
+Output-token budget runtime behavior remains validated in the same Full Stack run together with outbox and baseline Redis/OTEL behavior.
 
 ## Remaining governance backlog
 
 - input-token or total-token budgets require explicit tokenizer/estimation semantics before admission;
 - monetary/cost budgets require stable pricing/model accounting semantics;
-- a dedicated token-budget period separate from `WindowSeconds` may be added if product requirements require it;
-- define explicit provider-contract anomaly handling if upstream reports output usage above the enforced request cap;
-- consider request-rate-vs-token-budget rejection precedence optimization; current token reservation is safely refunded when no upstream attempt occurs;
-- long-term aggregate usage rollups if reporting must outlive raw request retention;
-- optional Copilot usage-metrics ingestion for per-user/adoption analytics.
+- independent token-budget periods may be added if required;
+- provider-contract anomaly handling if upstream reports usage above enforced cap;
+- optional long-term aggregate usage rollups;
+- optional Copilot usage-metrics ingestion for per-user/adoption analytics;
+- an overlapping/grace credential-rotation model only if a future requirement explicitly prefers overlap over the current hard-cutover security contract.
