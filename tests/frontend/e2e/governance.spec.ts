@@ -4,7 +4,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
 
-test('admin can review grouped usage and configure caller rate and output-token budgets', async ({ page }) => {
+test('admin can review grouped usage, rotate credentials and configure caller governance', async ({ page }) => {
   const groups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM team', credentialCount: 1, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }]
   const credentials = [{ id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', enabled: true, usageGroupId: 'group-1', createdAtUtc: '2026-09-14T10:00:00Z' }]
   const policies: Array<Record<string, unknown>> = []
@@ -25,9 +25,18 @@ test('admin can review grouped usage and configure caller rate and output-token 
       credentials: [{ apiCredentialId: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', usageGroupId: 'group-1', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }],
       models: [{ logicalModel: 'agic-code-fast', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }]
     })
+    if (request.method() === 'POST' && path === '/api/admin/api-credentials/credential-1/rotate') {
+      credentials[0].keyPrefix = 'lp_rotated'
+      return json(route, {
+        ...credentials[0],
+        secret: 'lp_rotated_secret_once',
+        expiresAtUtc: null,
+        lastUsedAtUtc: null
+      })
+    }
     if (request.method() === 'POST' && path === '/api/admin/rate-limits') {
       const input = request.postDataJSON() as { apiCredentialId: string; logicalModel: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }
-      const created = { id: 'rate-1', credentialName: 'Copilot CRM', keyPrefix: 'lp_abcd', outputTokensPerWindow: null, maxOutputTokensPerRequest: null, ...input, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }
+      const created = { id: 'rate-1', credentialName: 'Copilot CRM', keyPrefix: 'lp_rotated', outputTokensPerWindow: null, maxOutputTokensPerRequest: null, ...input, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }
       policies.push(created)
       return json(route, created, 201)
     }
@@ -53,6 +62,15 @@ test('admin can review grouped usage and configure caller rate and output-token 
 
   const credentialSection = page.getByRole('heading', { name: 'Usage by credential' }).locator('..').locator('..')
   await expect(credentialSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('1,500')
+
+  await page.getByRole('button', { name: 'Rotate Copilot CRM' }).click()
+  await expect(page.getByText('Credential Copilot CRM rotated. The previous secret is now invalid.')).toBeVisible()
+  const rotatedSecret = page.getByTestId('rotated-credential-secret')
+  await expect(rotatedSecret).toContainText('lp_rotated_secret_once')
+  await expect(rotatedSecret).toContainText('will not be shown again')
+  const membershipSection = page.getByRole('heading', { name: 'Credential → group membership & rotation' }).locator('..').locator('..')
+  await expect(membershipSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_rotated')
+  await expect(page.getByLabel('Usage group for Copilot CRM')).toHaveValue('group-1')
 
   await page.getByLabel('Requests per window').fill('2')
   await page.getByLabel('Window seconds').fill('60')
