@@ -450,6 +450,13 @@ public static class OpenAiEndpoints
             activity.SetStatus(ActivityStatusCode.Error, "capacity_lease_lost");
         }
 
+        using (var leaseLossActivity = LlmProxy.Application.Observability.LlmProxyActivity.Start("llmproxy.capacity.lease_lost"))
+        {
+            leaseLossActivity?.SetTag("llmproxy.capacity.result", "lease_lost");
+            leaseLossActivity?.SetTag("llmproxy.request.id", requestId.ToString());
+            LlmProxy.Application.Observability.LlmProxyActivity.MarkError(leaseLossActivity, "capacity_lease_lost");
+        }
+
         if (context.Response.HasStarted)
         {
             context.Abort();
