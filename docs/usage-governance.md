@@ -1,111 +1,61 @@
 # Usage governance
 
-This document is the focused product/engineering contract for inference authentication, caller rate limiting, configurable Usage Groups and consolidated usage reporting.
-
-Current implementation status: **validated** on the repository baseline documented in `docs/project-status.md`.
+This document is the focused product/engineering contract for inference authentication, caller request-rate limiting, output-token budgets, Usage Groups and consolidated usage reporting.
 
 ## Product boundary
 
-LlmProxy owns this request chain:
+Current request governance is:
 
 ```text
 OpenAI-compatible inference request
-    -> bearer/API credential authentication
-    -> request-time credential + primary UsageGroup resolution
-    -> credential/model request-rate admission
-    -> runtime logical-model routing + physical capacity admission
-    -> DGX / vLLM
-    -> metadata-only usage metric
-    -> consolidated reporting
+  -> bearer/API credential authentication from local L1
+  -> credential + UsageGroup resolution
+  -> output-token budget reservation when configured
+  -> request-rate admission
+  -> logical-model routing + physical-capacity admission
+  -> DGX / vLLM
+  -> output-token budget settlement
+  -> metadata-only usage metric / reporting
 ```
 
-This is intentionally different from physical DGX capacity control:
+Caller governance remains distinct from infrastructure admission:
 
 ```text
-caller policy exceeded -> 429 rate_limit_exceeded
-physical capacity full -> 429 capacity_exhausted
-no operational backend -> 503 no_healthy_deployment
+request-rate policy exceeded       -> 429 rate_limit_exceeded
+output-token budget exceeded       -> 429 token_budget_exceeded
+output-budget coordinator unsafe   -> 503 token_budget_coordination_unavailable
+physical DGX saturated             -> 429 capacity_exhausted
+capacity coordinator unavailable   -> 503 capacity_coordination_unavailable
+active capacity lease unsafe       -> 503/abort capacity_lease_lost
+no operational backend             -> 503 no_healthy_deployment
 ```
 
-## Inference credentials
+## Inference identity and Usage Groups
 
-Raw API secrets are generated/shown once and are not persisted. PostgreSQL stores the HMAC-SHA256 hash plus safe metadata.
+Raw API secrets are shown once and never persisted. PostgreSQL stores an HMAC-SHA256 hash and safe metadata. The `/v1` authentication path hashes the supplied bearer secret and resolves it from the local runtime credential cache; there is no synchronous credential SQL lookup per request.
 
-Current runtime path:
+A credential can have zero or one primary `UsageGroupId`. The request-time group id is copied into request metrics so historical accounting does not change when a credential is moved later.
 
-```text
-Bearer secret
-  -> HMAC-SHA256 with server-side pepper
-  -> runtime credential cache lookup
-  -> enabled + expiry check
-  -> credential id + UsageGroupId snapshot placed in HttpContext
-```
+Never infer a user or Usage Group from source IP. A centrally configured GitHub Copilot BYOK credential may be shared, so gateway attribution is reliably credential/group-level unless the client uses separate credentials.
 
-The authentication middleware does not query PostgreSQL per `/v1` request.
+## Unified caller policy scope
 
-### Runtime cache consistency
-
-PostgreSQL remains durable source of truth. `IApiCredentialCache` is rebuilt at gateway startup and contains only:
-
-```text
-Id
-KeyHash
-Enabled
-ExpiresAtUtc
-UsageGroupId
-```
-
-An EF SaveChanges interceptor observes `ApiCredential` additions/modifications/deletions and publishes the corresponding runtime snapshot only after the database save succeeds. Credential creation, revocation and Usage Group assignment/clear therefore become visible to inference without restart while avoiding cache state that is ahead of durable state.
-
-`LastUsedAtUtc` is deliberately eventually consistent. Authentication enqueues usage metadata to a background sink, which throttles/batches PostgreSQL updates instead of performing a write on the request path.
-
-Route/model/deployment resolution follows the same durable-first/runtime-publication principle through `IRouteCatalog`; see `docs/runtime-cache.md`.
-
-## Usage Groups
-
-V1 accounting semantics are deliberately unambiguous:
-
-```text
-UsageGroup 1 --- N ApiCredential
-ApiCredential -> zero or one primary UsageGroup
-```
-
-Current persisted Usage Group fields:
-
-```text
-Id
-Name
-Description
-CreatedAtUtc
-UpdatedAtUtc
-```
-
-Current credential field:
-
-```text
-UsageGroupId : Guid?
-```
-
-When inference is authenticated, the current `UsageGroupId` is copied into the request metric. This request-time snapshot is critical: moving a credential to another group later does not rewrite historical accounting.
-
-No source IP or network heuristic is used to infer identity or group membership.
-
-## Request-rate policy
-
-Current policy fields:
+`RateLimitPolicy` is the persisted caller-governance policy for one credential and optional logical model:
 
 ```text
 Id
 ApiCredentialId
-LogicalModel : string?     # null = credential-wide default
+LogicalModel : string?          # null = credential-wide default
 RequestsPerWindow : int
 WindowSeconds : int
+OutputTokensPerWindow : int?    # null = no token budget
+MaxOutputTokensPerRequest : int?# required together with OutputTokensPerWindow
 Enabled : bool
 CreatedAtUtc
 UpdatedAtUtc
 ```
 
-Policy precedence:
+Policy precedence is:
 
 ```text
 credential + exact logical model
@@ -113,44 +63,119 @@ credential + exact logical model
 credential-wide policy (LogicalModel = null)
 ```
 
-If no enabled policy matches, the request is not caller-rate-limited.
+An output-token budget is active only when the policy is enabled and both token fields are configured. In V1 the request-rate counter and output-token budget deliberately share the same `WindowSeconds` value and policy scope.
 
-The active policy set is held by the thread-safe runtime `RequestRateLimiter`. Admin changes are persisted then republished, and gateway startup rebuilds runtime policy from PostgreSQL.
+Request-rate updates preserve an existing token budget unless token-budget fields are explicitly supplied. Token budget can also be configured or cleared independently through dedicated endpoints.
 
-Current algorithm is fixed-window request admission. Rate state is runtime-only and intentionally starts with a fresh window after process restart; policy configuration itself survives the restart.
+Policy configuration is kept in local L1 and is republished through the same PostgreSQL transactional-outbox -> Redis runtime-state pipeline used for rate policies. Startup rebuild also restores token-budget configuration.
 
-A rejected request returns `429 Too Many Requests`, an OpenAI-style error with `error.code = rate_limit_exceeded`, and a computed `Retry-After`. It is recorded as metadata telemetry and is not forwarded to DGX.
+## Request-rate admission
 
-## Usage metric snapshot
+Request-rate admission is fixed-window. Redis-enabled deployments use one shared Redis counter across gateway replicas; Redis-disabled deployments use the local in-memory store.
 
-A request metric contains the accounting/routing metadata needed for reporting, including:
+A rejection returns:
 
 ```text
-RequestId
-StartedAtUtc
-LogicalModel
-Surface
-DeploymentId?
-NodeId?
-ApiCredentialId?
-UsageGroupId?
-StatusCode
-DurationMilliseconds
-AttemptCount
-IsStreaming
-UpstreamHeaderMilliseconds?
-TimeToFirstByteMilliseconds?
-InputTokens?
-OutputTokens?
-TotalTokens?
-ErrorCode?
+HTTP 429
+Retry-After: <seconds>
+error.type = rate_limit_error
+error.code = rate_limit_exceeded
 ```
 
-Prompts, source code, generated output and bearer secrets are not persisted by default.
+## Output-token budget — V1 semantics
 
-## Reporting APIs
+The token-budget implementation protects **generated/output tokens**, not input tokens or monetary cost.
 
-Current admin endpoints include:
+A naive post-response counter is intentionally not used because concurrent requests could all pass before any of them reports final usage. Instead LlmProxy reserves the maximum output tokens that the accepted request is allowed to generate before forwarding it.
+
+### Request cap and reservation
+
+For Chat Completions:
+
+```text
+max_completion_tokens
+max_tokens              # legacy-compatible field
+```
+
+For Responses:
+
+```text
+max_output_tokens
+```
+
+If the client supplies a positive limit above `MaxOutputTokensPerRequest`, LlmProxy caps it before forwarding. If no output limit is supplied, LlmProxy injects the policy maximum. If Chat supplies both supported fields, both are capped and the reservation uses the larger effective value.
+
+An invalid/non-positive output limit under an active budget returns:
+
+```text
+HTTP 400
+error.code = invalid_output_token_limit
+```
+
+The reserved amount therefore represents an upper bound that a compatible upstream is instructed not to exceed.
+
+### Atomic admission
+
+Before inference, `OutputTokenBudgetLimiter` asks `IOutputTokenBudgetStore` to atomically reserve the request cap.
+
+For a window with budget `B`, already charged/reserved usage `U`, and requested reservation `R`:
+
+```text
+admit iff U + R <= B
+```
+
+If the budget would be exceeded:
+
+```text
+HTTP 429
+Retry-After: <seconds until fixed-window reset>
+error.type = rate_limit_error
+error.code = token_budget_exceeded
+```
+
+### Settlement
+
+After the inference endpoint completes:
+
+```text
+successful 2xx + observed output token usage
+  -> charge actual output tokens
+  -> refund Reserved - Actual
+
+no upstream attempt occurred
+  -> settle actual = 0
+  -> refund full reservation
+
+client cancellation / upstream failure / interrupted stream /
+missing or otherwise uncertain usage after upstream work
+  -> keep the full reservation charged
+```
+
+Settlement is idempotent. Unknown usage is deliberately conservative: the system never assumes zero after upstream generation may have occurred.
+
+A compatible upstream should not exceed the forwarded maximum. If reported usage is invalid or above the reservation, V1 does not refund any part of the reservation; such provider-contract anomalies are future hardening work.
+
+### Redis-enabled multi-replica semantics
+
+Redis-enabled deployments use `RedisOutputTokenBudgetStore`. Reservation is atomic through Lua and Redis server time; the fixed-window state is stored in a TTL-backed hash. Settlement refunds unused reservation only if the same budget window is still active.
+
+Unlike the existing request-rate counter's degraded local fallback, token-budget admission is a hard distributed governance boundary:
+
+```text
+Redis reservation coordination unavailable
+  -> no local guess / no local fallback
+  -> HTTP 503
+  -> Retry-After: 1
+  -> token_budget_coordination_unavailable
+```
+
+If Redis settlement itself fails after a successful reservation, the already-reserved amount remains charged. This is conservative and prevents accidental budget expansion.
+
+Redis AOF preserves current window state across the bundled Redis service restart. In Redis-disabled single-instance mode the local in-memory window state resets on process restart; persisted policy configuration is rebuilt from PostgreSQL.
+
+## Admin API
+
+Current governance endpoints include:
 
 ```http
 GET  /api/admin/usage-groups
@@ -165,100 +190,73 @@ POST   /api/admin/rate-limits
 PUT    /api/admin/rate-limits/{id}
 DELETE /api/admin/rate-limits/{id}
 
-GET /api/admin/governance/credentials
+GET    /api/admin/output-token-budgets
+PUT    /api/admin/rate-limits/{id}/output-token-budget
+DELETE /api/admin/rate-limits/{id}/output-token-budget
 
+GET /api/admin/governance/credentials
 GET /api/admin/usage/summary?days=30
 GET /api/admin/usage/groups?days=30
 GET /api/admin/usage/credentials?days=30
 GET /api/admin/usage/models?days=30
 ```
 
-`days` is clamped to the supported 1..365 day range.
-
-Usage aggregation remains PostgreSQL-side. The query materializes aggregate rows rather than loading individual request metrics into application memory. Final mapping/order may happen after aggregate materialization where required by EF/Npgsql translation constraints.
-
-Current summary dimensions:
-
-- Usage Group;
-- API credential;
-- logical model.
-
-Current measures include:
-
-- request count;
-- error count;
-- rate-limited request count;
-- capacity-exhausted total in overall summary;
-- input/output/total tokens;
-- average TTFT and average duration for group reporting.
-
-The broader inference observability endpoints continue to provide p50/p95 latency and node/model breakdowns.
+Token-budget update/clear operations are audited as `output_token_budget.update` and `output_token_budget.clear`.
 
 ## React control plane
 
-The focused UI is:
+`/admin/governance` exposes:
+
+- Usage KPIs and breakdowns;
+- Usage Group administration;
+- credential -> Usage Group assignment;
+- request-rate policies;
+- output-token budget visibility;
+- Apply/Clear output-token budget workflow per rate-policy scope.
+
+The UI keeps request-rate and output-token budget controls conceptually separate even though they share the persisted credential/model/window scope.
+
+## Usage metrics and reporting
+
+Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where the upstream reports them. Prompts, source code, generated output and bearer secrets are not persisted by default.
+
+Usage aggregation is PostgreSQL-side and reports by Usage Group, credential and logical model. Current raw request retention is 90 days by default; optional long-term rollups remain future work.
+
+## Validation
+
+Output-token budget backend/runtime behavior is validated on:
 
 ```text
-/admin/governance
+commit     887ebfac98389c0115eaf9c102a60133ede745ff
+CI         34987407172 SUCCESS
+Full Stack 34987407169 SUCCESS
 ```
 
-It provides usage KPIs, Usage Group administration, credential -> group assignment/clear, rate-policy workflows and usage breakdown by group, credential and logical model.
+The standard governance smoke proves:
 
-Administrative changes are audited. Secrets and prompt/output content are excluded from audit detail.
+- local reservation and actual-usage refund (`10 reserved -> 7 charged`);
+- two requests fit a 17-token window only because settlement refunds unused reservation;
+- the third request returns `429 token_budget_exceeded`;
+- invalid output-token limit returns 400;
+- persisted policy is rebuilt after gateway restart.
 
-## Validated behavior
+The dedicated distributed smoke proves:
 
-Caller Governance was validated by the complete CI/integration gate on:
+- a peer started before policy creation receives the policy into local L1 through runtime-state publication;
+- gateway A settles shared Redis usage to 7;
+- gateway B settles the same shared window to 14;
+- the next cross-gateway request is rejected without changing Redis usage;
+- Redis outage fails admission closed with `503 token_budget_coordination_unavailable`;
+- Redis recovery preserves/exposes the still-exhausted shared window.
 
-```text
-commit 798f0a460dcc4f89b17e2ce89df66f511d324241
-CI     34859931084
-```
-
-The later credential-auth runtime cache was validated on:
-
-```text
-commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
-CI     34860662747
-```
-
-The complete DB-free normal inference route baseline is now:
-
-```text
-commit 42c44753cd00d679a81bf065f410b7a497cdc000
-CI     34871542047
-```
-
-The Governance smoke proves Usage Group creation/assignment, request-rate admission, `429 rate_limit_exceeded` + `Retry-After`, historical group snapshot, aggregate reporting, restart persistence and live credential-cache publication.
-
-The route-catalog PostgreSQL-outage smoke separately proves that after startup an authenticated request can resolve its logical model and reach vLLM even while PostgreSQL is stopped.
-
-## Identity limitation: GitHub Copilot
-
-A centrally configured Copilot custom/BYOK provider may use one shared provider credential. In that topology LlmProxy can attribute traffic to that credential and its Usage Group, but it cannot reliably identify the individual GitHub user behind a request.
-
-Therefore:
-
-- use separate provider credentials for team/group attribution where the client/tenant configuration permits it;
-- optionally ingest GitHub Copilot usage metrics later for per-user/adoption analytics;
-- never treat source IP as user identity.
+The React control-plane increment is validated by the CI baseline documented in `docs/project-status.md`.
 
 ## Remaining governance backlog
 
-### Token / budget quotas
-
-Request-rate limiting is admission-time and is complete. Token quotas are different because final output token usage is usually known only when inference finishes. Before implementing quotas, define explicit reservation/settlement semantics, including streaming, cancellation, upstream failures and overage behavior.
-
-### Retention
-
-`request_metrics` currently grows without a product retention policy. Add configurable retention (initial target 30–90 days), background cleanup and optional long-term rollups. Audit retention may need a separate, longer policy.
-
-### Multi-instance semantics
-
-The current rate-limit counters are process-local. If multiple gateway replicas are introduced, policy synchronization alone is insufficient for a global quota. Distributed/global counters need a coordinator such as Redis or another atomic store, with semantics chosen deliberately.
-
-See `docs/runtime-cache.md` for the wider Redis/runtime-state strategy.
-
-### External analytics
-
-GitHub Copilot usage-metrics ingestion remains optional/external for per-user or adoption analytics and must not be confused with gateway credential/group accounting.
+- input-token or total-token budgets require explicit tokenizer/estimation semantics before admission;
+- monetary/cost budgets require stable pricing/model accounting semantics;
+- a dedicated token-budget period separate from `WindowSeconds` may be added if product requirements require it;
+- define explicit provider-contract anomaly handling if upstream reports output usage above the enforced request cap;
+- consider request-rate-vs-token-budget rejection precedence optimization; current token reservation is safely refunded when no upstream attempt occurs;
+- long-term aggregate usage rollups if reporting must outlive raw request retention;
+- optional Copilot usage-metrics ingestion for per-user/adoption analytics.

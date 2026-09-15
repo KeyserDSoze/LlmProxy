@@ -1,149 +1,159 @@
 # Roadmap
 
-Status legend: `DONE` implemented and validated; `ACTIVE` current development focus; `PLANNED` not yet complete; `EXTERNAL` requires tenant/hardware/environment validation.
+Status legend: `DONE` implemented and validated; `ACTIVE` current development focus; `PLANNED` not complete; `EXTERNAL` requires target environment/hardware.
 
 For canonical current state use `docs/project-status.md`.
 
 ## M0 - Repository bootstrap — DONE
 
-- .NET 10 layered solution, React/TypeScript admin, PostgreSQL/EF migrations, Docker/GitHub Actions/GHCR foundations.
-- repository-first handover discipline through `AGENTS.md` and `docs/`.
+- .NET 10 layered solution, React/TypeScript admin, PostgreSQL/EF, Docker/GitHub Actions/GHCR.
+- repository-first handover discipline.
 
 ## M1 - Copilot -> gateway -> one DGX — ACTIVE / EXTERNAL VALIDATION REMAINS
 
-- DONE: logical models, `/v1/models`, Chat Completions + SSE, Responses, arbitrary compatible payload preservation.
+- DONE: logical models, `/v1/models`, Chat Completions + SSE, Responses compatibility.
 - DONE: bearer/API-key auth from runtime L1.
-- DONE: route/model/deployment catalog from runtime L1.
+- DONE: runtime route/model/deployment catalog.
 - EXTERNAL: real GitHub Copilot BYOK through target public endpoint.
 
 ## M2 - Multi-DGX — DONE FOR CURRENT MVP
 
 - DONE: node/model/deployment administration, health hysteresis, drain/disable.
 - DONE: weighted least loaded / round robin / weighted round robin.
-- DONE: pre-response failover only.
-- DONE: deployment + aggregate physical-node admission.
-- DONE: `429 capacity_exhausted`.
-- DONE: Redis-coordinated capacity leases across replicas.
-- DONE: fail-closed active-inference cancellation before unsafe lease expiry.
+- DONE: pre-response-only failover.
+- DONE: deployment + physical-node capacity admission.
+- DONE: Redis distributed capacity leases and fail-closed active lease-loss handling.
 
 ## M3 - Enterprise administration — DONE FOR MVP / EXTERNAL SETUP REMAINS
 
 - DONE: Entra plumbing and Admin/Reader roles.
 - DONE: React control plane.
-- DONE: HMAC-hashed DB-backed API credentials + runtime cache.
-- DONE: asynchronous credential last-used persistence + audit trail.
+- DONE: HMAC-hashed DB-backed credentials + runtime cache.
+- DONE: asynchronous last-used persistence + audit.
 - EXTERNAL: real Entra app registration/roles.
 
 ## M4 - Observability — DONE FOR CURRENT MVP / STORAGE EVOLUTION REMAINS
 
-- DONE: request/status/duration, TTFT, token, attempt/failover metrics.
-- DONE: vLLM runtime signals + optional DCGM telemetry.
-- DONE: OTEL instrumentation and explicit auth/governance/routing/capacity spans.
-- DONE: Collector + Tempo + Loki + Prometheus + Grafana bundle.
-- DONE: `X-LlmProxy-Trace-Id` correlation.
-- DONE: `capacity_lease_lost` metric/trace evidence.
-- PLANNED: production HA/object-storage choices where required.
+- DONE: request/status/duration/TTFT/token/attempt metrics.
+- DONE: vLLM pressure + optional DCGM telemetry.
+- DONE: OTEL spans and Collector + Tempo + Loki + Prometheus + Grafana bundle.
+- DONE: trace correlation and `capacity_lease_lost` evidence.
+- PLANNED: customer-specific production HA/object-storage choices.
 
 ## M5 - Capacity and smart routing — DONE FOR CURRENT MVP / EXTERNAL CALIBRATION REMAINS
 
 - DONE: vLLM queue/running/KV-cache signals and EWMA feedback.
 - DONE: persisted routing tuning and benchmark-derived Capacity Profiles.
-- DONE: benchmark harness and audited capacity apply workflow.
-- DONE: Redis lease renewal/expiry recovery and proactive safety watchdog.
+- DONE: benchmark harness + audited capacity apply workflow.
+- DONE: Redis lease renewal/recovery and proactive safety watchdog.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
-- PLANNED: tune routing thresholds from measured hardware evidence.
 
 ## M6 - Operator onboarding / deployability — DONE FOR REPOSITORY PATH / EXTERNAL DEPLOYMENT REMAINS
 
-- DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose, initialization scripts.
-- DONE: CI validation of Compose and production image.
-- DONE: full-stack operator knobs for outbox batch/poll and processed-outbox retention.
-- EXTERNAL: production Cloudflare Tunnel and self-hosted deployment runner.
+- DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
+- DONE: production image/Compose CI validation.
+- DONE: outbox batch/poll and processed-outbox retention knobs.
+- EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
 
-## M7 - Caller governance — ACTIVE FOR TOKEN BUDGETS
+## M7 - Caller governance — DONE FOR CURRENT V1
 
-- DONE: request authentication.
-- DONE: persisted credential/model request-rate policies.
-- DONE: fixed-window limiter + calculated `Retry-After` + `429 rate_limit_exceeded`.
-- DONE: Admin API/UI + audit.
+- DONE: bearer/API-key inference authentication.
+- DONE: credential/model request-rate policies.
+- DONE: fixed-window rate admission + `Retry-After` + `429 rate_limit_exceeded`.
 - DONE: Redis shared request counters across replicas.
-- ACTIVE: token/budget quotas with explicit reservation/settlement semantics.
+- DONE: output-token budget policy on credential/model scope.
+- DONE: pre-inference reservation preventing concurrent oversubscription.
+- DONE: Chat/Responses output-cap injection/capping.
+- DONE: actual-output settlement and unused-reservation refund.
+- DONE: conservative full charge when post-upstream usage is uncertain.
+- DONE: `429 token_budget_exceeded`.
+- DONE: Redis shared output-token window across replicas.
+- DONE: fail-closed `503 token_budget_coordination_unavailable` when Redis cannot coordinate.
+- DONE: runtime/outbox propagation of quota policy to peer L1.
+- DONE: Admin API + React UI + audit for Apply/Clear output-token budget.
+- DONE: local restart and distributed Redis outage/recovery smoke coverage.
 
-The quota increment must remain distinct from request-rate and physical-capacity admission.
+Validated runtime quota checkpoint:
 
-## M8 - Usage groups and reporting — DONE FOR CURRENT MVP
+```text
+commit     887ebfac98389c0115eaf9c102a60133ede745ff
+CI         34987407172
+Full Stack 34987407169
+```
+
+React Admin quota management checkpoint:
+
+```text
+commit     426c545e841865406615998ca50b28a45c40e6f4
+CI         34988084106
+```
+
+Future quota extensions are PLANNED only when requirements justify them:
+
+- input/total-token budgets after tokenizer/estimation semantics are defined;
+- monetary/cost budgets after pricing/accounting semantics are defined;
+- independent token-budget period separate from request-rate `WindowSeconds`;
+- provider-contract anomaly handling if actual output exceeds the enforced cap.
+
+## M8 - Usage Groups and reporting — DONE FOR CURRENT MVP
 
 - DONE: UsageGroup administration and primary group per credential.
-- DONE: request-time UsageGroup snapshot for stable historical accounting.
+- DONE: request-time group snapshot for stable historical accounting.
 - DONE: usage aggregation/UI by group, credential and logical model.
-- PLANNED: archive/deletion semantics if later required.
-- EXTERNAL/PLANNED: Copilot usage-metrics ingestion for per-user/adoption analytics.
+- PLANNED: archive/deletion semantics if required.
+- PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics.
 
-Important limitation: a shared Copilot provider key is not individual identity. Never infer users from IP.
+Shared Copilot credentials are not individual user identity. Never infer users from IP.
 
 ## M9 - Inference hot-path hardening — DONE FOR CURRENT RUNTIME
 
-- DONE: credential, route and rate-policy lookup from local L1.
-- DONE: DB-free ordinary route/auth decisions after startup.
-- DONE: PostgreSQL-outage smoke for already-published inference state.
+- DONE: credential, route and caller-policy definitions from local L1.
+- DONE: DB-free ordinary configuration lookup after startup.
+- DONE: PostgreSQL-outage inference smoke.
 - DONE: Redis L2 synchronization while preserving L1.
 
 ## M10 - Retention and operational hygiene — DONE FOR CURRENT MVP
 
-- DONE: request metrics default 90 days.
-- DONE: audit default 365 days.
-- DONE: processed runtime-state outbox default 30 days.
-- DONE: pending outbox rows are never retention-deleted.
-- DONE: background batched cleanup + manual audited cleanup.
-- DONE: Docker smoke validates independent cutoffs and pending-outbox preservation.
-- PLANNED: long-term usage rollups if reporting must exceed raw request retention.
+- DONE: request metrics 90-day default.
+- DONE: audit 365-day default.
+- DONE: processed runtime outbox 30-day default.
+- DONE: pending outbox never retention-deleted.
+- DONE: batched worker + manual audited cleanup + Docker smoke.
+- PLANNED: long-term usage rollups if reporting must exceed raw retention.
 
 ## M11 - Distributed runtime state / HA — DONE FOR CURRENT MVP
 
-Validated topology:
-
 ```text
 PostgreSQL = durable source of truth + runtime-state outbox
-Redis      = distributed L2 snapshots/events + shared coordination
+Redis      = distributed L2 + shared request/capacity/token-budget coordination
 local RAM  = per-replica request-path L1
 ```
 
-- DONE: Redis snapshot/version/event synchronization and periodic reconciliation.
-- DONE: peer L1 updates + runtime-sync diagnostics.
-- DONE: Redis global request-rate counters.
-- DONE: Redis distributed node/deployment capacity leases.
-- DONE: fail-closed acquisition and active lease-loss cancellation.
+- DONE: Redis snapshot/version/event synchronization + reconciliation.
+- DONE: peer L1 updates and runtime-sync diagnostics.
+- DONE: global request-rate counters.
+- DONE: distributed capacity leases + active lease-loss safety.
 - DONE: PostgreSQL transactional outbox for DB -> Redis publication.
-- DONE: same-transaction outbox capture for runtime mutations.
-- DONE: acknowledged Redis publisher; in-memory enqueue is not delivery acknowledgement.
-- DONE: globally ordered advisory-lock worker with retry/backoff/idempotent replay.
-- DONE: non-originating publisher applies acknowledged event to its own L1.
-- DONE: Redis outage/recovery fault smoke with originating gateway stopped.
-- DONE: outbox backlog/retry/error diagnostics at `/api/admin/runtime-sync`.
-- DONE: processed-outbox retention with pending-row preservation.
+- DONE: globally ordered advisory-lock worker with retry/idempotent replay.
+- DONE: non-originating publisher self-L1 application.
+- DONE: outbox backlog/retry/error diagnostics + processed-only retention.
+- DONE: Redis shared output-token budget admission/settlement.
 - PLANNED: customer-specific Redis HA/redundancy production guidance.
-
-Canonical distributed-runtime baseline:
-
-```text
-commit     79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
-CI         34976465066
-Full Stack 34976465149
-```
 
 ## M12 - Product hardening — ACTIVE
 
-- ACTIVE: token/budget quota semantics and implementation.
-- PLANNED: credential rotation workflow.
+- DONE: V1 output-token quota reservation/settlement.
+- ACTIVE NEXT: credential rotation workflow.
 - PLANNED: backup/restore + restore verification.
 - PLANNED: long-term reporting rollups where required.
 - PLANNED: model/runtime upgrade and draining strategy.
 
 ## Current development order
 
-1. Define and implement token/budget quota reservation/settlement across streaming, cancellation, failures and multi-replica Redis mode.
-2. Implement credential rotation workflow.
-3. Add backup/restore verification and remaining production hardening.
-4. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
+1. Implement credential rotation without ever persisting/re-exposing raw credential secrets.
+2. Add backup/restore procedures and automated/explicit restore verification.
+3. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
+4. Add reporting rollups / production HA-storage guidance as required.
+5. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue with LlmProxy + vLLM unless explicitly reopened.
