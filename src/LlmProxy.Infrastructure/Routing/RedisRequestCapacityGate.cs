@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Observability;
 using LlmProxy.Infrastructure.Runtime;
@@ -84,6 +85,7 @@ public sealed class RedisRequestCapacityGate(
         activity?.SetTag("llmproxy.capacity.deployment_limit", deploymentMaxConcurrency);
         activity?.SetTag("llmproxy.capacity.node_limit", nodeMaxConcurrency);
         activity?.SetTag("llmproxy.capacity.lease_seconds", _leaseSeconds);
+        activity?.SetTag("llmproxy.capacity.renew_seconds", _renewSeconds);
 
         var leaseId = Guid.NewGuid().ToString("N");
         var deploymentKey = (RedisKey)connection.Key($"capacity:deployment:{deploymentId:N}");
@@ -172,9 +174,9 @@ public sealed class RedisRequestCapacityGate(
     }
 
     private static int NormalizeRenewSeconds(int configured, int leaseSeconds)
-        => Math.Clamp(configured, 1, Math.Max(1, leaseSeconds - 1));
+        => Math.Clamp(configured, 1, Math.Max(1, leaseSeconds / 2));
 
-    private sealed class RedisCapacityLease : IAsyncDisposable
+    private sealed class RedisCapacityLease : IRequestCapacityLease
     {
         private readonly RedisCoordinationConnection _connection;
         private readonly IDisposable _localLease;
@@ -183,9 +185,14 @@ public sealed class RedisRequestCapacityGate(
         private readonly string _leaseId;
         private readonly int _leaseSeconds;
         private readonly int _renewSeconds;
+        private readonly TimeSpan _maxUnrenewedDuration;
         private readonly ILogger _logger;
-        private readonly CancellationTokenSource _renewCancellation = new();
+        private readonly CancellationTokenSource _lifetimeCancellation = new();
+        private readonly CancellationTokenSource _coordinationLost = new();
         private readonly Task _renewTask;
+        private readonly Task _safetyTask;
+        private long _lastSuccessfulRenewalTimestamp;
+        private int _lossSignaled;
         private int _disposed;
 
         public RedisCapacityLease(
@@ -205,9 +212,14 @@ public sealed class RedisRequestCapacityGate(
             _leaseId = leaseId;
             _leaseSeconds = leaseSeconds;
             _renewSeconds = renewSeconds;
+            _maxUnrenewedDuration = TimeSpan.FromSeconds(Math.Max(1, leaseSeconds - renewSeconds));
             _logger = logger;
-            _renewTask = RenewLoopAsync(_renewCancellation.Token);
+            _lastSuccessfulRenewalTimestamp = Stopwatch.GetTimestamp();
+            _renewTask = RenewLoopAsync(_lifetimeCancellation.Token);
+            _safetyTask = SafetyLoopAsync(_lifetimeCancellation.Token);
         }
+
+        public CancellationToken CoordinationLost => _coordinationLost.Token;
 
         public async ValueTask DisposeAsync()
         {
@@ -216,10 +228,10 @@ public sealed class RedisRequestCapacityGate(
                 return;
             }
 
-            _renewCancellation.Cancel();
+            _lifetimeCancellation.Cancel();
             try
             {
-                await _renewTask;
+                await Task.WhenAll(_renewTask, _safetyTask);
             }
             catch (OperationCanceledException)
             {
@@ -237,7 +249,8 @@ public sealed class RedisRequestCapacityGate(
             finally
             {
                 _localLease.Dispose();
-                _renewCancellation.Dispose();
+                _lifetimeCancellation.Dispose();
+                _coordinationLost.Dispose();
             }
         }
 
@@ -260,8 +273,11 @@ public sealed class RedisRequestCapacityGate(
 
                     if ((long)result != 1)
                     {
-                        _logger.LogWarning("Redis capacity lease {LeaseId} was no longer present during renewal.", _leaseId);
+                        SignalCoordinationLost("the Redis lease was no longer present during renewal");
+                        return;
                     }
+
+                    Volatile.Write(ref _lastSuccessfulRenewalTimestamp, Stopwatch.GetTimestamp());
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -269,9 +285,43 @@ public sealed class RedisRequestCapacityGate(
                 }
                 catch (Exception exception) when (exception is RedisException or TimeoutException)
                 {
-                    _logger.LogWarning(exception, "Redis capacity lease {LeaseId} renewal failed; retrying before lease expiry.", _leaseId);
+                    _logger.LogWarning(exception, "Redis capacity lease {LeaseId} renewal failed; safety watchdog remains armed.", _leaseId);
                 }
             }
+        }
+
+        private async Task SafetyLoopAsync(CancellationToken cancellationToken)
+        {
+            var pollSeconds = Math.Max(1, Math.Min(_renewSeconds, Math.Max(1, (_leaseSeconds - _renewSeconds) / 2)));
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(pollSeconds));
+
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var lastSuccessfulRenewal = Volatile.Read(ref _lastSuccessfulRenewalTimestamp);
+                var elapsed = Stopwatch.GetElapsedTime(lastSuccessfulRenewal);
+                if (elapsed < _maxUnrenewedDuration)
+                {
+                    continue;
+                }
+
+                SignalCoordinationLost(
+                    $"the lease has not been renewed for {elapsed.TotalSeconds:F1}s and is approaching its {_leaseSeconds}s Redis expiry");
+                return;
+            }
+        }
+
+        private void SignalCoordinationLost(string reason)
+        {
+            if (Interlocked.Exchange(ref _lossSignaled, 1) != 0)
+            {
+                return;
+            }
+
+            _logger.LogError(
+                "Redis capacity lease {LeaseId} lost safe coordination because {Reason}; active inference must be cancelled before lease expiry.",
+                _leaseId,
+                reason);
+            _coordinationLost.Cancel();
         }
     }
 }

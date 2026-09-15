@@ -7,14 +7,19 @@ public enum CapacityAdmissionFailure
     CoordinationUnavailable = 2
 }
 
+public interface IRequestCapacityLease : IAsyncDisposable
+{
+    CancellationToken CoordinationLost { get; }
+}
+
 public sealed record CapacityAdmissionResult(
     bool Acquired,
     CapacityAdmissionFailure Failure,
-    IAsyncDisposable? Lease,
+    IRequestCapacityLease? Lease,
     string Provider,
     string? RejectionScope = null)
 {
-    public static CapacityAdmissionResult Success(IAsyncDisposable lease, string provider) =>
+    public static CapacityAdmissionResult Success(IRequestCapacityLease lease, string provider) =>
         new(true, CapacityAdmissionFailure.None, lease, provider);
 
     public static CapacityAdmissionResult Rejected(string provider, string? rejectionScope = null) =>

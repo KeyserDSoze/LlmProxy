@@ -36,9 +36,11 @@ public sealed class LocalRequestCapacityGate(IRequestLoadTracker loadTracker) : 
         return ValueTask.FromResult(CapacityAdmissionResult.Success(new AsyncLease(lease), "local"));
     }
 
-    private sealed class AsyncLease(IDisposable inner) : IAsyncDisposable
+    private sealed class AsyncLease(IDisposable inner) : IRequestCapacityLease
     {
         private int _disposed;
+
+        public CancellationToken CoordinationLost => CancellationToken.None;
 
         public ValueTask DisposeAsync()
         {
