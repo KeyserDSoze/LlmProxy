@@ -5,190 +5,163 @@ LlmProxy keeps durable configuration/history in PostgreSQL, distributed coordina
 ## Current validated topology
 
 ```text
-PostgreSQL = durable source of truth
+PostgreSQL = durable source of truth + transactional runtime-state outbox
 Redis      = distributed L2 snapshots/version/events + shared counters/leases
 local RAM  = per-gateway request-path L1
 ```
 
-After startup, ordinary inference resolves the following without synchronous PostgreSQL reads:
+After startup, ordinary inference resolves credentials, Usage Groups, request-rate policy, logical models and deployment/node routes without synchronous PostgreSQL reads. Redis is used for shared rate/capacity coordination when enabled, not as a mandatory remote configuration lookup for every request.
 
-```text
-Bearer/API credential
-  -> credential snapshot / UsageGroup
-  -> request-rate policy
-  -> shared rate counter when Redis is enabled
-  -> logical model
-  -> deployment/node route catalog
-  -> routing/performance state
-  -> shared capacity lease when Redis is enabled
-  -> vLLM
-```
+## Runtime configuration publication
 
-PostgreSQL remains required for durable configuration, migrations/startup rebuild, control-plane changes, history/reporting, retention and background persistence.
+At startup, PostgreSQL rebuilds local runtime snapshots and canonical state is published to Redis.
 
-## Runtime abstractions
-
-Inference code depends on provider-neutral contracts rather than directly on cache technology. Important runtime abstractions include:
-
-```text
-IApiCredentialCache
-IRouteCatalog / IDeploymentCatalog
-IRateLimitCounterStore
-IRequestCapacityGate / IRequestCapacityLease
-IRuntimeStateEventSink
-IRuntimeStateSyncStatus
-IDeploymentPerformanceTracker
-INodeRuntimeMetricsTracker
-IRequestLoadTracker
-```
-
-Redis-disabled deployments use local providers. Redis-enabled deployments replace only the shared coordination pieces while preserving local L1 request-path state.
-
-## Runtime configuration synchronization
-
-At startup:
-
-```text
-PostgreSQL
-  -> rebuild local route / credential / rate-policy snapshots
-  -> publish canonical runtime snapshots to Redis
-```
-
-For live mutations today:
+For Redis-enabled live mutations the validated path is:
 
 ```text
 Admin / health mutation
-  -> EF tracked entity
-  -> PostgreSQL SaveChanges succeeds
-  -> SavedChanges interceptor
-       -> update local L1
-       -> enqueue runtime change to Redis coordinator
-  -> coordinator persists shared Redis state
-  -> publish change/version event
-  -> peer replicas update local L1
+  -> EF tracks Node / Model / Deployment / Credential / RatePolicy
+  -> RuntimeStateOutboxSaveChangesInterceptor adds runtime_state_outbox row
+     in the SAME GatewayDbContext / PostgreSQL transaction
+  -> PostgreSQL commit
+  -> local post-save interceptors update originating replica L1
+
+RuntimeStateOutboxWorker
+  -> acquire PostgreSQL session advisory publisher lock
+  -> read oldest pending rows ordered by Id
+  -> if oldest row is backing off, stop: never overtake it
+  -> IRuntimeStateDurablePublisher.PublishAsync
+       -> Redis state/hash persistence
+       -> Redis global runtime version increment
+       -> Redis pub/sub change event
+       -> apply acknowledged event to publishing replica's own L1
+  -> mark ProcessedAtUtc only after all durable Redis work succeeds
 ```
 
-Redis pub/sub is not the only recovery mechanism. The coordinator also maintains version/snapshot state and periodic reconciliation so a replica can heal missed notifications after reconnect.
+This closes the former process-crash window between a committed database mutation and an in-memory outbound event.
 
-`GET /api/admin/runtime-sync` exposes synchronization/provider diagnostics including connectivity and event/version state.
+When Redis is disabled, the outbox save interceptor and worker are not registered. Single-instance deployments therefore do not accumulate undeliverable Redis-publication rows.
+
+## Why the publishing replica applies its own acknowledged event
+
+Any gateway replica can win the PostgreSQL advisory lock, including a replica that did not originate the control-plane mutation. Redis pub/sub messages carry an origin instance id and the publisher ignores its own notification to avoid duplicate subscription work.
+
+Therefore the durable publisher explicitly applies the acknowledged change to its own local L1 after Redis persistence/pub/sub succeeds. Without this step, a non-originating outbox worker could publish the correct distributed event yet remain locally stale.
+
+Full Stack `34976465149` proves this case by stopping the originating gateway and requiring the surviving peer to replay and then enforce the new rate policy from its own L1.
+
+## Ordering, retries and idempotency
+
+Only one outbox publisher holds the PostgreSQL advisory lock at a time. Rows are processed by monotonically increasing `Id`. A failed or backoff-delayed oldest event blocks later events.
+
+Failure metadata:
+
+```text
+AttemptCount
+NextAttemptAtUtc
+LastError
+```
+
+Retry delay is bounded exponential backoff. A success clears retry/error state and writes `ProcessedAtUtc`.
+
+Delivery is at-least-once: Redis may have accepted a publication immediately before a worker process crashes and before PostgreSQL records `ProcessedAtUtc`. Replaying the row is safe because runtime persistence uses idempotent upsert/delete semantics and strict global ordering prevents an old replay overtaking a newer event.
+
+## Runtime outbox diagnostics
+
+`GET /api/admin/runtime-sync` returns normal Redis synchronization status plus:
+
+```text
+outbox.pendingCount
+outbox.failedPendingCount
+outbox.oldestPendingAtUtc
+outbox.oldestPendingAgeSeconds
+outbox.maxPendingAttemptCount
+outbox.lastProcessedAtUtc
+outbox.lastError
+```
+
+These are PostgreSQL control-plane queries executed only when the operator requests runtime diagnostics; they are not part of inference hot-path decisions.
+
+Recommended operational signals:
+
+- `pendingCount > 0` briefly can be normal during publication;
+- sustained `oldestPendingAgeSeconds` growth indicates delivery lag;
+- `failedPendingCount > 0` / non-null `lastError` indicates Redis publication failure;
+- a growing backlog while Redis reports connected requires investigation.
+
+The Full Stack smoke asserts diagnostics are clean before fault injection, show failed pending work during Redis outage and drain after recovery.
+
+## Outbox retention
+
+Processed outbox history is operational metadata and is retained separately from request/audit history. Default:
+
+```text
+Retention:RuntimeStateOutboxDays = 30
+```
+
+Only records with `ProcessedAtUtc != null` and a processed timestamp older than the cutoff are eligible for deletion. Pending records are never retention-deleted, regardless of age or retry state. The standard Docker retention smoke validates this explicitly.
 
 ## Shared caller governance
 
-When Redis is enabled, request-rate counters are global across gateway replicas rather than process-local. A policy admitted through gateway A is therefore visible to gateway B against the same credential/model/window.
+When Redis is enabled, request-rate counters are global across gateway replicas. Policy definitions remain local L1 for fast lookup; only shared admission counters require Redis coordination.
 
-The runtime policy definition still lives in local L1 for fast lookup; only the counter coordination needs the Redis round trip.
-
-When Redis is disabled, the in-memory counter provider preserves single-instance behavior.
+When Redis is disabled, the in-memory provider preserves single-instance behavior.
 
 ## Shared physical capacity
 
-When Redis is enabled, node/deployment capacity admission uses Redis-backed leases rather than process-local counters alone.
+Redis-enabled node/deployment admission uses shared leases. Acquisition is atomic across deployment and physical-node capacity keys. Each request owns a TTL-backed lease with renewal; local load tracking remains available for same-process routing telemetry.
 
-The lease operation is atomic across the shared deployment and physical-node keys. Each active request owns a lease with a Redis expiry and a renewal loop. Local request-load tracking is still maintained for same-process routing telemetry and is released together with the distributed lease.
-
-Important fail-closed behavior:
+Fail-closed behavior:
 
 ```text
 Redis unavailable during admission
-  -> do not guess capacity
   -> 503 capacity_coordination_unavailable
 
-Redis lease renewal becomes unsafe during active inference
-  -> signal CoordinationLost
-  -> cancel upstream/read/write before the Redis lease can expire
+active Redis lease becomes unsafe
+  -> cancel upstream/read/write before TTL expiry
   -> if response not started: 503 + Retry-After: 1 + capacity_lease_lost
   -> if SSE already started: abort connection
-  -> persist/trace capacity_lease_lost
+  -> persist + trace capacity_lease_lost
 ```
 
-The safety watchdog uses monotonic elapsed-time tracking and polls substantially faster than the renewal interval so scheduler/timer boundary jitter cannot defer cancellation until the Redis TTL itself.
+The safety watchdog uses monotonic time and polls substantially faster than the renewal interval so timer-boundary jitter cannot postpone cancellation to the Redis expiry itself.
 
 ## Why local L1 remains mandatory
 
-Redis is deliberately not used as a mandatory remote lookup for every configuration decision. Route, credential and policy snapshots remain local because:
-
 ```text
-local L1 lookup = no network hop, low latency, survives short Redis outages
-Redis L2        = shared synchronization and coordination
-PostgreSQL      = durable recovery authority
+local L1   = no network hop, low latency, survives short Redis config-sync outages
+Redis L2   = shared synchronization and coordination
+PostgreSQL = durable recovery + outbox authority
 ```
 
-The request path should not be redesigned into Redis-on-every-request for route/credential lookup without an explicit architecture decision.
-
-## Current durability boundary
-
-The remaining important correctness gap is the PostgreSQL commit -> Redis publication crash window.
-
-Today, configuration publication occurs after `SaveChanges` has committed. The EF SavedChanges interceptor updates local L1 and calls `IRuntimeStateEventSink.Publish...`; `RedisRuntimeStateCoordinator` puts the outbound message on an in-memory channel and later persists/publishes it to Redis.
-
-This means:
-
-```text
-DB commit succeeds
-process crashes before Redis durable publication
-=> peer replicas may temporarily miss the committed mutation
-```
-
-Periodic reconciliation/startup rebuild can repair state, but this is not the same guarantee as a durable transactional publication pipeline.
-
-## Next phase — PostgreSQL transactional outbox
-
-The next implementation should close that window without introducing a distributed transaction:
-
-```text
-PostgreSQL transaction
-  - update Node/Model/Deployment/Credential/RatePolicy
-  - insert RuntimeStateOutbox row
-commit
-
-Outbox worker
-  -> perform one durable Redis publication attempt
-     - persist required shared state/snapshot/version
-     - publish change notification
-  -> mark outbox row delivered only after Redis acknowledges success
-```
-
-Design requirements:
-
-- outbox row and configuration mutation must commit in the same PostgreSQL transaction;
-- retries must be idempotent;
-- failed Redis attempts remain pending with retry/backoff metadata;
-- delivery/lag/failure must be observable;
-- workers must safely handle restart/replay;
-- integration tests must cover Redis outage followed by recovery;
-- the existing fire-and-forget `IRuntimeStateEventSink` call is **not** a durable acknowledgement boundary;
-- do not mark an outbox row processed merely because a message was enqueued to the coordinator's in-memory channel.
-
-The clean architecture is to introduce/refactor a durable Redis dispatcher method that completes only after the Redis state write and pub/sub publication have succeeded, and let the outbox worker use that method.
-
-## Optional cold-start evolution
-
-A future replica may load a complete versioned snapshot from Redis for faster scale-out, while falling back to PostgreSQL if Redis is unavailable or the snapshot/version is invalid. PostgreSQL remains the recovery authority.
+Do not redesign route/credential/policy lookup into Redis-on-every-inference without an explicit architecture decision.
 
 ## Security-sensitive consistency
 
-Credential revocation is synchronized through the same runtime pipeline. If product requirements later demand an even stricter immediate-global-revocation SLA than the outbox/reconciliation pipeline provides, add a credential-specific mechanism rather than weakening all request-path caching.
+Credential revocation uses the same transactional runtime publication path. If a future requirement demands a stricter immediate-global-revocation SLA than the outbox worker latency provides, add a credential-specific mechanism rather than weakening all request-path caching.
 
-Never store raw API keys, prompts, generated code or bearer tokens in Redis.
+Never store raw API keys, prompts, generated code or bearer tokens in Redis/outbox payloads.
 
-## Current validation
+## Operator configuration
 
-The runtime/Redis architecture is validated by both the standard repository CI and the dedicated full-stack smoke.
+Full-stack deployment exposes:
+
+```text
+REDIS_OUTBOX_BATCH_SIZE=50
+REDIS_OUTBOX_POLL_MILLISECONDS=500
+RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
+```
+
+Code safety clamps remain authoritative for out-of-range values.
+
+## Validation
 
 Canonical evidence:
 
 ```text
-commit     6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
-CI         34961566507 SUCCESS
-Full Stack 34961566463 SUCCESS
+commit     79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
+CI         34976465066 SUCCESS
+Full Stack 34976465149 SUCCESS
 ```
 
-The Full Stack Smoke proves:
-
-- Redis runtime-state synchronization across replicas;
-- global rate-limit counters;
-- distributed node/deployment capacity leases;
-- lease release/recovery;
-- fail-closed cancellation before lease expiry when Redis disappears;
-- `capacity_lease_lost` request metric and trace visibility;
-- normal LlmProxy application spans exported through OTLP/Tempo.
+The validation set proves cross-replica runtime sync, shared request-rate admission, distributed physical capacity, lease-loss safety, transactional outbox failure/replay, non-originating peer L1 application, outbox diagnostics and processed-only outbox retention.

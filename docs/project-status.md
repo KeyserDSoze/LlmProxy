@@ -4,48 +4,15 @@ Last reviewed: **2026-09-15**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
-## Current validated runtime baseline
-
-Latest fully validated product baseline:
+## Current validated product baseline
 
 ```text
-6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
+commit     79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
+CI         34976465066 SUCCESS
+Full Stack 34976465149 SUCCESS
 ```
 
-Validation evidence:
-
-```text
-GitHub Actions CI 34961566507 — SUCCESS
-- Backend unit tests: success
-- Benchmark harness tests: success
-- React build / Vitest / Playwright: success
-- Production Docker build: success
-- PostgreSQL backend smoke: success
-- DGX hardware smoke: success
-- Capacity/backpressure smoke: success
-- Usage governance/rate-limit smoke: success
-- Route-catalog PostgreSQL-outage smoke: success
-- Data-retention smoke: success
-
-Full Stack Smoke 34961566463 — SUCCESS
-- PostgreSQL + Redis full stack: success
-- Redis runtime-state synchronization: success
-- OTLP -> Tempo traces with explicit LlmProxy application spans: success
-- Grafana/Tempo/Loki/Prometheus wiring: success
-- cross-gateway rate-limit counters: success
-- distributed DGX capacity leases: success
-- active inference cancelled before Redis lease expiry when coordination is lost: success
-- `capacity_lease_lost` request metric and Tempo trace evidence: success
-```
-
-Earlier useful checkpoints:
-
-```text
-Route catalog DB-free baseline 42c44753cd00d679a81bf065f410b7a497cdc000 / CI 34871542047
-Caller Governance             798f0a460dcc4f89b17e2ce89df66f511d324241 / CI 34859931084
-Credential auth cache         1f607c8433fe2ca08a1c243b68d87587204f35ee / CI 34860662747
-Redis lease pre-hardening      3740692ffa3afa140e1a8f0ade5440e430838599 / CI 34942635344 / Full Stack 34942635291
-```
+The standard CI proves backend/unit/benchmark, frontend/Vitest/Playwright, production image build and all Docker/PostgreSQL smoke suites. The dedicated Full Stack run additionally proves Redis runtime sync, OTLP/Tempo, shared rate limits, distributed DGX capacity leases, proactive lease-loss cancellation and transactional outbox outage/recovery behavior.
 
 ## Core product scope
 
@@ -55,214 +22,214 @@ LlmProxy is the enterprise inference-governance boundary, not only a DGX router:
 1. inference authentication
 2. rate limiting / quotas
 3. consolidated usage accounting
-4. configurable usage groups + usage query/UI by group
+4. configurable Usage Groups + usage query/UI
 5. logical-model routing across DGX/vLLM
 6. distributed multi-instance coordination when Redis is enabled
 7. metadata-only observability and operational controls
 ```
 
-## Current request flow
+## Current request path
 
 ```text
-GitHub Copilot / OpenAI-compatible client
-    -> bearer credential HMAC hash
-    -> local L1 credential / UsageGroup resolution
-    -> credential + logical-model rate policy
-       -> Redis shared counter when Redis is enabled
-       -> 429 rate_limit_exceeded when caller policy is exceeded
-    -> local L1 logical-model -> deployment/node/provider-model catalog
-    -> smart routing
-    -> capacity admission
-       -> Redis distributed node/deployment lease when Redis is enabled
-       -> 429 capacity_exhausted when healthy infrastructure is full
-       -> 503 capacity_coordination_unavailable if distributed admission cannot be trusted
-    -> DGX / vLLM
-    -> metadata-only request metric
-    -> OpenTelemetry traces/metrics/logs
+OpenAI-compatible client / GitHub Copilot
+  -> HMAC-hashed bearer credential resolved from local L1
+  -> UsageGroup + request-rate policy from local L1
+  -> Redis shared rate counter when distributed mode is enabled
+  -> logical model -> deployment/node catalog from local L1
+  -> smart routing
+  -> capacity admission
+       Redis distributed node/deployment lease when enabled
+  -> vLLM
+  -> metadata-only request metric + OTEL telemetry
 ```
 
-If an already-admitted Redis capacity lease becomes unsafe during inference, the request is cancelled before lease expiry. Before response start the caller receives `503` + `Retry-After: 1` + `capacity_lease_lost`; after streaming bytes have started the connection is aborted. Metrics/traces record `capacity_lease_lost`.
-
-`503 no_healthy_deployment` remains distinct from the governance/capacity/coordination conditions above.
+Normal inference route/credential/policy decisions do not synchronously query PostgreSQL after startup.
 
 ## Implemented and validated
 
 ### Gateway / security
 
 - .NET 10 ASP.NET Core gateway.
-- `GET /v1/models`, Chat Completions and Responses compatibility.
+- `/v1/models`, Chat Completions and Responses compatibility.
 - streaming/non-streaming and incremental SSE.
 - arbitrary compatible payload preservation with logical-model rewrite.
 - HMAC-hashed API credentials; raw key shown once and never persisted.
-- local runtime credential cache with startup rebuild and live updates.
-- credential expiry/revocation/group decisions from runtime state.
-- buffered background `LastUsedAtUtc` persistence.
-- Entra ID admin plumbing with `LlmProxy.Admin` / `LlmProxy.Reader`.
-- React Admin and administrative audit trail.
+- local runtime credential cache with startup rebuild/live updates.
+- Entra admin plumbing with `LlmProxy.Admin` / `LlmProxy.Reader`.
+- React Admin + administrative audit trail.
 
 ### Caller governance / usage
 
-- persisted `UsageGroup` and optional primary group per API credential.
-- stable `UsageGroupId` snapshot in request metrics.
-- persisted rate-limit policies by credential with optional logical-model override.
-- Redis-backed shared fixed-window counters when Redis is enabled; in-memory provider otherwise.
-- calculated `Retry-After` and distinct `429 rate_limit_exceeded`.
-- usage APIs and React governance/usage administration.
-
-### Runtime route catalog / distributed state
-
-Normal inference route resolution does not query PostgreSQL after startup/runtime publication.
-
-Runtime state contains routing-relevant nodes/models/deployments plus credential and rate-policy snapshots. The preferred/current Redis-enabled topology is:
-
-```text
-PostgreSQL = durable source of truth
-Redis      = distributed L2 snapshots/version/events
-local RAM  = request-path L1 per gateway replica
-```
-
-Behavior includes:
-
-- startup rebuild from PostgreSQL;
-- local L1 copy-on-write/versioned snapshots;
-- Redis publication/subscription and periodic reconciliation;
-- cross-replica change propagation;
-- runtime synchronization diagnostics at `GET /api/admin/runtime-sync`;
-- PostgreSQL-outage smoke proving already-published auth/route state keeps inference operational after startup.
+- persisted Usage Groups and credential attribution.
+- request-time UsageGroup snapshot in metrics.
+- persisted credential/model request-rate policies.
+- calculated `Retry-After` + distinct `429 rate_limit_exceeded`.
+- Redis-backed global request counters in distributed mode.
+- usage aggregation/UI by group, credential and logical model.
 
 ### Routing / physical capacity
 
-- path-prefixed DGX service roots.
-- health hysteresis and node diagnostics.
-- weighted least loaded / round robin / weighted round robin.
-- pre-response failover only.
-- persisted routing strategy and smart-routing tuning.
-- vLLM queue/running/KV-cache signals and EWMA performance feedback.
+- logical models hide provider/DGX topology.
+- weighted least loaded, round robin and weighted round robin.
+- health hysteresis, drain/disable and path-prefixed service roots.
+- pre-response failover only; never retry after downstream bytes start.
+- vLLM pressure + EWMA feedback.
 - persisted benchmark-derived Capacity Profiles.
-- atomic deployment + node-wide physical capacity admission.
-- Redis shared capacity leases across gateway replicas when enabled.
-- lease renewal, expiry recovery and fail-closed coordination handling.
-- proactive cancellation of active inference if safe renewal can no longer be guaranteed.
+- atomic deployment + physical-node admission.
+- Redis capacity leases across gateway replicas.
+- fail-closed acquisition if Redis coordination cannot be trusted.
+- active inference cancellation before a lost Redis lease can expire.
+
+Error taxonomy remains distinct:
+
+```text
+429 rate_limit_exceeded
+429 capacity_exhausted
+503 capacity_coordination_unavailable
+503/abort capacity_lease_lost
+503 no_healthy_deployment
+```
+
+### Distributed runtime state + transactional outbox
+
+Current topology:
+
+```text
+PostgreSQL = durable source of truth + transactional outbox
+Redis      = distributed L2 snapshots/version/events + shared coordination
+local RAM  = per-gateway request-path L1
+```
+
+For Redis-enabled live runtime mutations, the database mutation and `runtime_state_outbox` row are inserted in the same EF/PostgreSQL transaction. Local L1 is updated only after DB success.
+
+The outbox worker:
+
+- elects one publisher at a time through a PostgreSQL advisory lock;
+- processes pending rows strictly by monotonically increasing outbox Id;
+- blocks later events behind the oldest failed/backing-off event;
+- retries with bounded exponential backoff;
+- treats Redis state persistence + global version increment + pub/sub publication as the acknowledgement boundary;
+- updates the publishing gateway's own L1 after acknowledgement, which is required when a non-originating replica wins the outbox lock;
+- marks `ProcessedAtUtc` only after Redis acknowledgement.
+
+The delivery model is at-least-once. Redis upsert/delete operations are idempotent and global ordering prevents stale mutations overtaking newer ones.
+
+Full Stack `34976465149` deliberately commits a rate-policy mutation while Redis is stopped, verifies a pending/retried outbox row, stops the originating gateway, restarts Redis and proves the surviving peer replays the mutation, writes Redis and enforces the policy from its own L1.
+
+`GET /api/admin/runtime-sync` now exposes Redis status plus outbox backlog/retry diagnostics:
+
+```text
+pendingCount
+failedPendingCount
+oldestPendingAtUtc
+oldestPendingAgeSeconds
+maxPendingAttemptCount
+lastProcessedAtUtc
+lastError
+```
+
+The same smoke proves these diagnostics are clean before the fault, expose backlog/retry/error while Redis is unavailable, and return to a drained healthy state after replay.
 
 ### Retention / operational hygiene
 
-Retention is implemented and validated, not pending:
+Defaults:
 
 ```text
-request_metrics default retention = 90 days
-audit_events default retention    = 365 days
-background cleanup                = 24 hours
-batched deletion                  = 5000 rows by default
+request_metrics              90 days
+audit_events                 365 days
+processed runtime outbox      30 days
+cleanup interval              24 hours
+batch size                    5000
 ```
 
-Admin endpoints expose current retention and manual cleanup. See `docs/data-retention.md`.
+Outbox retention only deletes rows with `ProcessedAtUtc != null`. Pending rows are never removed by retention, even if older than the configured cutoff. The Docker retention smoke explicitly validates this safety property.
 
 ### Observability / full stack
 
-The full-stack deployment includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana.
-
-Validated traces include explicit LlmProxy application spans for authentication, governance, routing and capacity. Requests expose `X-LlmProxy-Trace-Id` for direct Tempo correlation. Lease-loss handling records `capacity_lease_lost` in both request metrics and trace data.
-
-Telemetry remains metadata-only; prompts/source/output/secrets are excluded.
+The bundled full stack runs PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Prometheus and Grafana. Explicit application spans cover auth/governance/routing/capacity, and requests expose `X-LlmProxy-Trace-Id` for Tempo correlation. Telemetry remains metadata-only.
 
 ### Hardware / benchmarking
 
 - optional DCGM telemetry isolated from inference health;
 - GPU utilization/framebuffer/temperature/power diagnostics;
-- .NET benchmark harness for direct-vLLM vs gateway measurements;
-- concurrency sweeps, p50/p95/p99 TTFT/duration, req/s and token throughput.
+- .NET benchmark harness for direct-vLLM vs gateway tests;
+- concurrency sweeps, TTFT/duration percentiles, requests/sec and token throughput.
 
-## Current distributed consistency boundary
+## Operational knobs now exposed
 
-The important remaining correctness gap is **DB -> Redis publication durability**.
-
-Current configuration mutation path is effectively:
+Full-stack operators can configure:
 
 ```text
-PostgreSQL SaveChanges succeeds
-    -> EF SavedChanges interceptor
-    -> update local L1
-    -> enqueue runtime event for Redis coordinator
-    -> coordinator persists/publishes to Redis asynchronously
+REDIS_OUTBOX_BATCH_SIZE=50
+REDIS_OUTBOX_POLL_MILLISECONDS=500
+RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
 ```
 
-This is operationally resilient and periodically reconciled, but it still has a crash window between the durable PostgreSQL commit and durable Redis publication. A process crash in that window can delay a committed mutation until reconciliation/restart.
-
-The next increment is a PostgreSQL transactional outbox:
-
-```text
-same DB transaction
-  durable config mutation
-  + RuntimeStateOutbox row
-commit
-
-outbox worker
-  -> acknowledged Redis state/snapshot write + pub/sub event
-  -> mark row delivered only after Redis success
-```
-
-The existing fire-and-forget `IRuntimeStateEventSink`/in-memory outbound channel must **not** be treated as the outbox acknowledgement boundary.
+The first two map to `Redis:OutboxBatchSize` and `Redis:OutboxPollMilliseconds`; retention maps to `Retention:RuntimeStateOutboxDays`.
 
 ## Current development focus
 
-### Increment 1 — transactional outbox — ACTIVE NEXT
+### Increment 1 — token / budget quotas — ACTIVE NEXT
 
-- outbox entity/table/EF migration;
-- outbox row inserted in the same transaction as runtime configuration mutations;
-- durable Redis dispatcher returning only after the Redis write + publication succeeds;
-- worker with retry/backoff/idempotency;
-- delivery/lag/failure observability;
-- integration coverage for Redis outage/recovery and process-safe replay semantics.
+Request-rate limiting is complete. Token/budget quotas require explicit reservation and settlement semantics because actual token usage may only become known after inference and because concurrent requests across replicas must not oversubscribe the same budget.
 
-### Increment 2 — token / budget quotas
+The increment must define and test:
 
-Request-rate limiting is already validated. Token/budget quotas still need explicit reservation/settlement/overage semantics for streaming, cancellation and failures because final token usage is known only after inference.
+- persisted policy shape and scoping (credential/group/model and time period);
+- distributed pre-admission reservation;
+- settlement against actual prompt/completion/total usage;
+- cancellation/failure/missing-usage behavior;
+- reservation TTL/recovery;
+- actual usage greater than reserved amount;
+- streaming semantics;
+- distinct error/metric taxonomy;
+- Admin API/UI + audit and usage visibility where appropriate.
 
-### Increment 3 — remaining production hardening
+Do not implement only a post-response token counter; it is insufficient under concurrency.
+
+### Increment 2 — remaining product hardening
 
 - credential rotation workflow;
-- backup/restore verification;
+- backup/restore + restore verification;
 - long-term usage rollups if reporting must outlive raw metric retention;
-- production storage/HA choices for Redis/Tempo/Loki as required.
+- production HA/storage choices for Redis/Tempo/Loki/Prometheus as required.
 
-### Increment 4 — physical acceptance
+### Increment 3 — physical acceptance
 
-Run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance when the external environment is available.
+Run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance when external environment access is available.
 
 ## Identity limitation to preserve
 
-A centrally configured GitHub Copilot BYOK provider may use one shared API credential. LlmProxy can reliably attribute that traffic to the credential/group but cannot infer the individual GitHub user from the request. Never infer users from source IP.
+A centrally configured GitHub Copilot BYOK provider may use one shared API credential. LlmProxy can attribute that traffic to the credential/group but cannot infer the individual GitHub user from the request. Never infer users from source IP.
 
 ## External validation still required
 
-- real DGX Spark/vLLM/model benchmark runs;
+- real DGX Spark/vLLM/model benchmarks;
 - representative multi-DGX coding workload;
-- real Microsoft Entra application/roles;
+- real Entra application/roles;
 - Cloudflare Tunnel/public hostname;
 - real GitHub Copilot BYOK end-to-end;
 - self-hosted deployment runner;
-- GitHub Copilot usage-metrics/custom-model reporting if per-user analytics are required.
+- Copilot usage-metrics/custom-model reporting if per-user analytics are needed.
 
 ## Important architecture decisions
 
 - Continue custom LlmProxy + vLLM; NVIDIA PAIR was evaluated and rejected for the current direction.
 - PostgreSQL remains durable authority.
-- Redis-enabled replicas keep request-path L1 state; do not replace it with Redis reads on every inference request.
-- Shared rate-limit counters and capacity leases are Redis coordinated when enabled.
+- Redis-enabled replicas keep local request-path L1; do not replace this with Redis reads for every route/credential decision.
+- Shared request counters and capacity leases are Redis coordinated when enabled.
 - Distributed capacity coordination fails closed.
-- Runtime configuration publication is not yet transactional across PostgreSQL -> Redis; the outbox is the next correctness increment.
-- API credential runtime state stores HMAC hash and safe metadata, never raw secrets.
-- Hardware telemetry stays observational until benchmarks justify routing use.
+- DB -> Redis runtime publication is now transactionally protected by the PostgreSQL outbox.
+- Pending outbox records are operationally sacred: retry them; never age-delete them.
+- API credential runtime state stores HMAC hashes/safe metadata, never raw secrets.
 
 ## Exact resume point
 
-A new development session should:
+A new session should:
 
-1. read `AGENTS.md`, this file and `docs/runtime-cache.md`;
-2. inspect latest `main` and GitHub Actions state;
-3. treat `6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f` / CI `34961566507` / Full Stack `34961566463` as the validated baseline;
-4. start the transactional-outbox increment without weakening the existing Redis fail-closed semantics;
-5. ensure outbox delivery is acknowledged only after durable Redis work, not after in-memory enqueue;
+1. read `AGENTS.md`, this file, `docs/usage-governance.md` and `docs/runtime-cache.md`;
+2. inspect latest `main` and Actions;
+3. treat `79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72` / CI `34976465066` / Full Stack `34976465149` as the canonical validated code baseline;
+4. begin the token/budget quota increment from explicit reservation/settlement semantics;
+5. preserve outbox ordering, Redis fail-closed capacity behavior and DB-free request-path configuration lookups;
 6. update development log/roadmap/status after validation.
-
-Every meaningful increment must keep this snapshot current and must not be marked validated without actual CI/integration evidence.

@@ -1,263 +1,227 @@
 # Development log
 
-This file is the chronological engineering trace for LlmProxy. For the current canonical snapshot and exact resume point, use `docs/project-status.md`.
+This is the chronological engineering trace for LlmProxy. For the canonical current state and exact resume point use `docs/project-status.md`.
 
-## 2026-09-09 - Repository and gateway foundation
+## 2026-09-09 — Repository, gateway and multi-DGX foundation
 
-Implemented the .NET 10 solution, React/TypeScript admin application, PostgreSQL persistence, Docker packaging and GitHub Actions workflows. The gateway was structured around logical client-facing models, internal DGX nodes and model deployments so physical model identifiers remain hidden from clients.
+Created the .NET 10 layered solution, React/TypeScript admin, PostgreSQL persistence, Docker packaging and GitHub Actions foundations. Added logical client-facing models, internal DGX nodes/deployments, `/v1/models`, `/v1/chat/completions`, SSE streaming and `/v1/responses`.
 
-Implemented the initial OpenAI-compatible surface with `/v1/models`, `/v1/chat/completions`, SSE streaming and later `/v1/responses`. Added inference bearer credentials, hashed secrets, Entra ID administration, node/model/deployment management, health probes, drain/disable states and administrative audit events.
+Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, drain/disable, administrative audit, weighted least loaded / round robin / weighted round robin and pre-response-only failover. Added metadata-only request metrics, vLLM pressure signals and smart-routing tuning. Prompts/source/generated content remain excluded from telemetry.
 
-## 2026-09-09 - Multi-DGX routing, health and observability
+## 2026-09-09 — Repository-first handover discipline
 
-Added `WeightedLeastLoaded`, `RoundRobin` and `WeightedRoundRobin`, node/deployment weights, concurrency ceilings and pre-response failover. Streaming responses are never retried after bytes have been exposed to the caller.
+Introduced root `AGENTS.md` and the rule that meaningful increments update focused docs, canonical project status, development log and roadmap with actual validation evidence.
 
-Added path-safe service-root handling, health-monitor hysteresis, request metrics for status/duration/attempts/upstream-header latency/TTFT/token counts and streaming/failover visibility. Prompt and generated content are deliberately excluded from telemetry.
+## 2026-09-10 — DGX/DCGM hardware telemetry — VALIDATED
 
-Added vLLM runtime pressure signals, per-deployment EWMA TTFT/duration/infrastructure-failure feedback and persisted smart-routing tuning.
+Added optional per-node NVIDIA/DCGM telemetry on a service root independent from vLLM health. GPU utilization, framebuffer memory, temperature and power are observational and transient telemetry failure does not alter inference health.
 
-## 2026-09-09 - Repository-first handover discipline
+Checkpoint: `6c238a095273843e713a72fb2e26b2c7c434fc62`.
 
-Introduced root `AGENTS.md`. Meaningful increments must update focused docs, project status, development log, roadmap where relevant and the agent resume point. CI cancels superseded runs for the same branch/PR.
+## 2026-09-10 — Architecture decision: custom LlmProxy, not NVIDIA PAIR
 
-## 2026-09-10 - DGX/DCGM hardware telemetry - VALIDATED
+NVIDIA Personal AI Router was evaluated. The project owner chose to continue with custom LlmProxy + vLLM.
 
-Added optional per-node NVIDIA/DCGM telemetry on a service root separate from vLLM. Collector parses GPU utilization, framebuffer memory, temperature and power into an in-memory multi-GPU snapshot. Transient DCGM failures do not change inference health.
+## 2026-09-10 — Benchmark harness — VALIDATED
 
-Validated baseline:
+Added the .NET benchmark harness under `tests/performance/` for direct-vLLM vs gateway measurements, streaming/non-streaming, Chat/Responses and concurrency sweeps. Measures success/error rate, TTFT/duration percentiles, requests/sec and token throughput where available.
 
-```text
-6c238a095273843e713a72fb2e26b2c7c434fc62
-```
+Checkpoint: `49e7932f14118be403eec042a1393946143776ae`.
 
-## 2026-09-10 - Architecture decision: no NVIDIA PAIR
+## 2026-09-13 — Capacity Profiles + physical-node admission — VALIDATED
 
-NVIDIA Personal AI Router was evaluated. Project owner chose to continue with the custom LlmProxy + vLLM architecture.
+Added persisted benchmark-derived Capacity Profiles with explicit audited apply workflow. Extended admission to atomically enforce deployment and aggregate physical-node concurrency.
 
-## 2026-09-10 - Benchmark harness - VALIDATED
+Defined saturation as `429 capacity_exhausted` with `Retry-After: 1`.
 
-Added `tests/performance/`, a .NET 10 benchmark harness targeting LlmProxy or direct vLLM, with path-prefixed service roots, Chat Completions/Responses, streaming/non-streaming and concurrency sweeps. Measurements include success/error rate, p50/p95/p99 TTFT/duration, requests/sec and token throughput where available.
+Checkpoint: `600ad42cc53ad1e97a259819654ca5cf5480e1db`.
 
-Validated baseline:
+## 2026-09-14 — Operator onboarding / GHCR deployment
 
-```text
-49e7932f14118be403eec042a1393946143776ae
-```
+Added `QUICKSTART.md`, Linux/Windows instructions, private GHCR path and minimal/full Compose installation shapes.
 
-## 2026-09-13 - Canonical handover snapshot
+## 2026-09-14 — Caller governance + Usage Groups — VALIDATED
 
-Added `docs/project-status.md` as the canonical current-state/resume document and linked it from `AGENTS.md` with explicit source-of-truth precedence.
-
-## 2026-09-13 - Capacity Profile + node-wide admission/backpressure - VALIDATED
-
-Implemented persisted benchmark-derived Capacity Profiles while keeping recommendations independent from live production limits. Added explicit audited Save / Apply / Clear workflows and React capacity administration.
-
-Extended request-load tracking to atomically acquire both deployment-level and physical-node slots. Multiple deployments on one DGX can no longer overcommit physical capacity.
-
-Defined saturation behavior:
-
-```text
-429 Too Many Requests
-Retry-After: 1
-error.code = capacity_exhausted
-```
-
-Validated baseline:
-
-```text
-600ad42cc53ad1e97a259819654ca5cf5480e1db
-```
-
-## 2026-09-14 - Operator quickstart and private GHCR deployment path
-
-Added `QUICKSTART.md`, `docs/quickstart.md`, `docker/docker-compose.quickstart.yml` and `docker/.env.quickstart.example`, covering Linux/Windows installation, private GHCR pull, PostgreSQL/env setup, real vLLM or mock runtime, smoke tests and optional Entra setup.
-
-## 2026-09-14 - Caller Governance + Usage Groups - VALIDATED
-
-Confirmed LlmProxy owns inference authentication, rate limiting/quotas, consolidated usage accounting and configurable Usage Groups/query UI. V1 accounting deliberately uses one primary group per API credential; shared GitHub Copilot provider credentials are not individual user identity.
-
-Implemented persisted `UsageGroup`, request-time group snapshots, persisted credential/model rate policies, runtime fixed-window admission, calculated `Retry-After`, governance audit and usage reporting/UI.
-
-Validated baseline:
+Implemented persisted Usage Groups, request-time group snapshots, credential/model request-rate policies, calculated Retry-After, governance audit and usage reporting/UI.
 
 ```text
 commit 798f0a460dcc4f89b17e2ce89df66f511d324241
 CI     34859931084
 ```
 
-## 2026-09-14 - In-memory inference credential authentication - VALIDATED
+## 2026-09-14 — Runtime credential authentication — VALIDATED
 
-Removed API-credential PostgreSQL lookup from the `/v1` authentication path. Added copy-on-write credential cache, startup rebuild, post-save publication and buffered `LastUsedAtUtc` persistence.
-
-Validated baseline:
+Removed API-credential SQL lookup from `/v1` inference. Added local copy-on-write credential cache, startup rebuild, live publication and buffered last-used persistence.
 
 ```text
 commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
 CI     34860662747
 ```
 
-## 2026-09-14 - Runtime route/model/deployment catalog - VALIDATED
+## 2026-09-14 — Runtime route/model/deployment catalog — VALIDATED
 
-Removed the final synchronous route-catalog PostgreSQL lookup from ordinary `/v1` inference. Added `IRouteCatalog` / `IDeploymentCatalog`, copy-on-write node/model/deployment snapshots, startup rebuild, post-save publication and catalog diagnostics.
-
-The PostgreSQL-outage smoke deliberately stops PostgreSQL after startup and proves `/v1/models` and authenticated Chat Completions still use already-published runtime state.
-
-Validated baseline:
+Removed synchronous route-catalog SQL lookup from ordinary inference. Added versioned local runtime snapshots and PostgreSQL-outage smoke proving already-published auth/route state continues to serve `/v1/models` and authenticated inference after startup.
 
 ```text
 commit 42c44753cd00d679a81bf065f410b7a497cdc000
 CI     34871542047
 ```
 
-## 2026-09-14 - Retention and operational hygiene - IMPLEMENTED
+## 2026-09-14 — Retention foundation
 
-Added separate request-metric and audit retention policies, defaulting to 90 and 365 days respectively, with batched background cleanup and an explicit admin cleanup endpoint. The dedicated Docker smoke verifies independent cutoffs, retained recent rows and the cleanup audit event.
+Added independent request-metric and audit retention, background batched cleanup and manual audited cleanup. Initial defaults: request metrics 90 days, audit 365 days.
 
-The retention smoke is green in the current canonical CI baseline `34961566507`.
+## 2026-09-15 — Redis L2 synchronization + observability stack
 
-## 2026-09-15 - Redis L2 runtime synchronization and full observability stack
+Promoted Redis to an implemented shared runtime/coordination layer while preserving local request-path L1 and PostgreSQL durable authority. Added Redis snapshot/version/event synchronization and periodic reconciliation.
 
-Promoted Redis from a future architecture note to an implemented shared runtime layer while retaining local L1 request-path snapshots and PostgreSQL durable truth.
+Bundled PostgreSQL + Redis + OpenTelemetry Collector + Tempo + Loki + Prometheus + Grafana. Added explicit application spans and `X-LlmProxy-Trace-Id` correlation.
 
-The full-stack deployment now runs:
+## 2026-09-15 — Shared Redis request-rate counters
 
-```text
-LlmProxy + PostgreSQL + Redis
-OpenTelemetry Collector
-Tempo + Loki + Prometheus + Grafana
-```
+Request-rate policy remains local runtime state while fixed-window counters are Redis shared in distributed mode. Full-stack smoke proves requests through separate gateway replicas consume the same rate window.
 
-Runtime state for routes, credentials and rate policies propagates between gateway replicas through Redis snapshot/version/event synchronization with periodic reconciliation. `GET /api/admin/runtime-sync` exposes synchronization diagnostics.
+## 2026-09-15 — Distributed DGX capacity leases
 
-OpenTelemetry exports explicit application spans for authentication, governance, routing and capacity. `X-LlmProxy-Trace-Id` directly correlates a request with Tempo.
+Added provider-neutral capacity-gate/lease abstractions and Redis atomic deployment + physical-node leases.
 
-## 2026-09-15 - Shared Redis request-rate counters
-
-Request-rate policies remain in local runtime state, while admission counters use Redis when distributed runtime mode is enabled. The full-stack smoke proves requests sent through different gateway replicas consume the same credential/model rate window.
-
-This closes the former process-local rate-limit boundary for Redis-enabled deployments.
-
-## 2026-09-15 - Distributed DGX capacity leases
-
-Introduced provider-neutral `IRequestCapacityGate` / `IRequestCapacityLease` and Redis-backed capacity admission.
-
-Key implementation milestone:
+Key milestone:
 
 ```text
 cc454c325810b39a419107f49ad42a3ab7b70769
 feat: coordinate physical capacity through redis leases
 ```
 
-Redis atomically coordinates deployment + physical-node slots, while local load tracking remains available for routing telemetry. Distributed admission fails closed if Redis cannot safely coordinate capacity.
+Acquisition fails closed when Redis cannot be trusted.
 
-The full-stack smoke proves one gateway can hold the physical DGX slot and another gateway observes the same Redis lease and receives `429 capacity_exhausted`.
+## 2026-09-15 — Active lease-loss cancellation and hardening
 
-## 2026-09-15 - Active capacity lease-loss cancellation
-
-Added a cancellation signal to `IRequestCapacityLease` and armed a safety watchdog around Redis lease renewal:
+Introduced active lease coordination-loss signaling and inference cancellation:
 
 ```text
 a12afa877e6b44538f45bc60061a56c34a5895b2
-feat: signal unsafe Redis capacity lease renewal
-
 5d49f464829525c69621504321c95209002c9884
-feat: cancel inference when Redis capacity coordination is lost
-
 12535e439b6b17413a01942ebeb8504ad655a5ca
-test: cancel long inference before Redis capacity lease expiry
 ```
 
-The active inference token links client cancellation and lease coordination loss. If coordination becomes unsafe before response start, LlmProxy returns a retriable 503; if streaming has already started, it aborts the connection rather than letting generation continue beyond the lease safety boundary.
-
-## 2026-09-15 - Full-stack fault-injection stabilization
-
-The capacity fault test was made deterministic by waiting for the previous recovered request to finish actual Redis lease disposal before beginning the Redis outage scenario:
+Fault-injection stabilization checkpoint:
 
 ```text
 3740692ffa3afa140e1a8f0ade5440e430838599
-test: wait for capacity release before Redis fault
-```
-
-This checkpoint had both standard CI and Full Stack Smoke green:
-
-```text
 CI         34942635344 SUCCESS
 Full Stack 34942635291 SUCCESS
 ```
 
-## 2026-09-15 - Redis lease-loss hardening and observability
-
-Hardened lease validity tracking with a dedicated monotonic `CapacityLeaseValidityTracker`, explicit `capacity_lease_lost` taxonomy, request-metric evidence and trace annotations:
+Subsequent hardening added monotonic validity tracking and explicit `capacity_lease_lost` metric/trace evidence:
 
 ```text
 edb7008ca1e3548f80dde2f7242ed30f779b13a7
-feat: harden Redis capacity lease loss handling
-```
-
-Added an explicit application child span that ends before a streaming connection abort so lease loss is exported deterministically through OpenTelemetry:
-
-```text
 9d00c74c6ce50bf25004ea443f10e46fe0c43d2f
-fix: export capacity lease loss span before abort
 ```
 
-The first Full Stack run after that span change exposed a different issue, not a Tempo issue: with a 20-second lease and 4-second renewal interval, the safety deadline was 16 seconds but the watchdog also polled on a coarse 4-second cadence. Timer-boundary jitter could evaluate just before 16 seconds and not run again until the 20-second Redis TTL.
-
-The final fix preserved the logical safety deadline but increased watchdog sampling to at most 1 second (0.5 seconds for a 1-second renewal interval):
+A Full Stack failure exposed watchdog sampling jitter: the logical safety deadline was earlier than TTL, but a coarse timer could skip from immediately before that deadline to the lease expiry itself. The fix retained the deadline but samples at most every one second:
 
 ```text
 6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
 fix: preserve Redis lease safety margin
-```
-
-No smoke assertion was weakened. TTL and renewal semantics were not relaxed.
-
-Final validation:
-
-```text
 CI         34961566507 SUCCESS
 Full Stack 34961566463 SUCCESS
 ```
 
-The Full Stack Smoke now proves together:
+## 2026-09-15 — Transactional runtime-state outbox — IMPLEMENTED
 
-- Redis runtime-state synchronization;
-- explicit application spans in Tempo;
-- cross-gateway request-rate admission;
-- distributed node/deployment capacity leases;
-- normal lease release/recovery;
-- Redis outage during a long SSE inference cancels before lease expiry;
-- the stream never reaches `[DONE]` after coordination loss;
-- PostgreSQL records `capacity_lease_lost`;
-- Tempo exposes `capacity_lease_lost` for the same trace.
+Closed the DB-commit -> Redis-publication process-crash window.
 
-## 2026-09-15 - Next correctness increment: transactional outbox
-
-The remaining distributed-runtime durability gap is between a committed PostgreSQL configuration mutation and durable Redis publication.
-
-Current path:
+Core implementation:
 
 ```text
-PostgreSQL commit
-  -> EF SavedChanges interceptor
-  -> local L1 update
-  -> in-memory outbound runtime event
-  -> Redis coordinator persist + pub/sub
+9c6289ef172bed0502068df112b6e6aec4ee8521
+feat: add transactional runtime-state outbox
 ```
 
-A process crash after commit but before Redis publication can lose that outbound event until reconciliation/restart repairs state.
+Added `runtime_state_outbox` and same-transaction capture for runtime Node/Model/Deployment/Credential/RatePolicy mutations. Existing post-save interceptors now update only local L1; durable Redis publication belongs to the outbox worker.
 
-Next implementation requirement:
+Worker behavior:
+
+- one global publisher via PostgreSQL session advisory lock;
+- strict outbox-Id ordering;
+- oldest failed/backoff row blocks later publication;
+- exponential retry metadata;
+- acknowledged Redis state write + version increment + pub/sub before `ProcessedAtUtc`;
+- at-least-once/idempotent replay.
+
+A critical HA case was explicitly handled: a non-originating gateway can win the advisory lock. The durable publisher therefore applies its acknowledged Redis event to its own L1 because same-origin pub/sub is intentionally ignored.
+
+## 2026-09-15 — Transactional outbox fault validation — VALIDATED
+
+Added deterministic full-stack outage/recovery smoke:
 
 ```text
-same PostgreSQL transaction
-  configuration mutation
-  + RuntimeStateOutbox row
-commit
-
-outbox worker
-  -> acknowledged Redis state write + pub/sub
-  -> mark delivered only after Redis success
+4d9e241f8f8feee5afdaae6f7926cb6bdca70439
+test: validate transactional outbox recovery across replicas
 ```
 
-Do not treat enqueueing to the existing in-memory channel as delivery acknowledgement. Add retry/backoff, idempotency, observability and integration fault coverage.
+The smoke stops Redis, commits a rate policy, proves a pending/retried outbox row exists, stops the originating gateway, restarts Redis and requires the surviving peer to replay the event and enforce the new policy from its own L1.
+
+Initial xUnit analyzer cleanup:
+
+```text
+e5b3bad2d46d7c61997f29f1b840b2f9ac601283
+```
+
+Validation:
+
+```text
+CI         34968324786 SUCCESS
+Full Stack 34968114492 SUCCESS
+```
+
+## 2026-09-15 — Outbox diagnostics + retention hardening — VALIDATED
+
+Added `/api/admin/runtime-sync` outbox diagnostics: pending count, failed pending count, oldest pending timestamp/age, max attempts, last processed timestamp and last error.
+
+Added independent processed-outbox retention, default 30 days. The deletion predicate always requires `ProcessedAtUtc != null`; pending events are never deleted by age. The Docker retention smoke inserts an intentionally old pending row and proves it survives cleanup.
+
+Implementation/fix:
+
+```text
+97e3b8f6b909156cbd58363d12f2fcbaf0627f5a
+feat: expose outbox diagnostics and retention
+
+cfc742db84223a7bed2f8a80cab3e5680615efad
+fix: type outbox pending age as nullable
+```
+
+Validation:
+
+```text
+CI         34969410867 SUCCESS
+Full Stack 34969410860 SUCCESS
+```
+
+## 2026-09-15 — Outbox deployment wiring + operational diagnostics — VALIDATED
+
+Exposed operator configuration:
+
+```text
+REDIS_OUTBOX_BATCH_SIZE=50
+REDIS_OUTBOX_POLL_MILLISECONDS=500
+RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
+```
+
+Mapped processed-outbox retention into all PostgreSQL deployment shapes and outbox worker tuning into the Redis full stack. Strengthened the fault smoke so `/api/admin/runtime-sync` must report clean state before fault, failed pending backlog during Redis outage and drained healthy state after replay.
+
+Canonical validated baseline:
+
+```text
+79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
+chore: wire outbox operations into deployment
+CI         34976465066 SUCCESS
+Full Stack 34976465149 SUCCESS
+```
+
+## Next increment — token / budget quotas
+
+Request-rate admission is complete. Token/budget quotas require a distributed reservation/settlement model so concurrent requests cannot oversubscribe a shared budget while final token usage is still unknown.
+
+The next implementation must define reservation amount, policy scope/period, Redis atomic reservation, reservation TTL/recovery, settlement to actual usage, overage behavior and cancellation/failure/streaming semantics before code is considered correct.
