@@ -3,7 +3,9 @@ using LlmProxy.Application.Observability;
 
 namespace LlmProxy.Infrastructure.Routing;
 
-public sealed class LocalRequestCapacityGate(IRequestLoadTracker loadTracker) : IRequestCapacityGate
+public sealed class LocalRequestCapacityGate(
+    IRequestLoadTracker loadTracker,
+    LocalNodeMaintenanceCoordinator maintenanceCoordinator) : IRequestCapacityGate
 {
     public ValueTask<CapacityAdmissionResult> TryAcquireAsync(
         Guid deploymentId,
@@ -19,6 +21,13 @@ public sealed class LocalRequestCapacityGate(IRequestLoadTracker loadTracker) : 
         LlmProxyActivity.SetGuid(activity, "llmproxy.node.id", nodeId);
         activity?.SetTag("llmproxy.capacity.deployment_limit", deploymentMaxConcurrency);
         activity?.SetTag("llmproxy.capacity.node_limit", nodeMaxConcurrency);
+
+        if (maintenanceCoordinator.IsAdmissionBlocked(nodeId))
+        {
+            activity?.SetTag("llmproxy.capacity.result", "node_maintenance");
+            LlmProxyActivity.MarkError(activity, "node_maintenance");
+            return ValueTask.FromResult(CapacityAdmissionResult.Rejected("local", "node_maintenance"));
+        }
 
         if (!loadTracker.TryEnter(
                 deploymentId,

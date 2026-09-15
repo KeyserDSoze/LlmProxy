@@ -42,6 +42,8 @@ builder.Services.AddSingleton<IRequestLoadTracker>(services => services.GetRequi
 if (redisEnabled)
 {
     builder.Services.AddSingleton<RedisCoordinationConnection>();
+    builder.Services.AddSingleton<RedisNodeMaintenanceCoordinator>();
+    builder.Services.AddSingleton<INodeMaintenanceCoordinator>(services => services.GetRequiredService<RedisNodeMaintenanceCoordinator>());
     builder.Services.AddSingleton<IRateLimitCounterStore, RedisRateLimitCounterStore>();
     builder.Services.AddSingleton<IOutputTokenBudgetStore, RedisOutputTokenBudgetStore>();
     builder.Services.AddSingleton<IRequestCapacityGate, RedisRequestCapacityGate>();
@@ -55,6 +57,8 @@ if (redisEnabled)
 }
 else
 {
+    builder.Services.AddSingleton<LocalNodeMaintenanceCoordinator>();
+    builder.Services.AddSingleton<INodeMaintenanceCoordinator>(services => services.GetRequiredService<LocalNodeMaintenanceCoordinator>());
     builder.Services.AddSingleton<IRateLimitCounterStore>(services => services.GetRequiredService<InMemoryRateLimitCounterStore>());
     builder.Services.AddSingleton<IOutputTokenBudgetStore>(services => services.GetRequiredService<InMemoryOutputTokenBudgetStore>());
     builder.Services.AddSingleton<IRequestCapacityGate, LocalRequestCapacityGate>();
@@ -107,6 +111,7 @@ builder.Services.AddHostedService(services => services.GetRequiredService<Buffer
 builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHostedService<NodeHealthMonitor>();
@@ -166,6 +171,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
 
 app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
+app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);

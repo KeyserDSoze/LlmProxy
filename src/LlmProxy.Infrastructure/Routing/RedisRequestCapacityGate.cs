@@ -27,6 +27,9 @@ public sealed class RedisRequestCapacityGate(
         local deployment_active = tonumber(redis.call('ZCARD', KEYS[1]))
         local node_active = tonumber(redis.call('ZCARD', KEYS[2]))
 
+        if redis.call('HEXISTS', KEYS[3], ARGV[6]) == 1 or redis.call('EXISTS', KEYS[4]) == 1 then
+            return {0, deployment_active, node_active, 3}
+        end
         if deployment_active >= deployment_limit then
             return {0, deployment_active, node_active, 1}
         end
@@ -89,6 +92,8 @@ public sealed class RedisRequestCapacityGate(
         var leaseId = Guid.NewGuid().ToString("N");
         var deploymentKey = (RedisKey)connection.Key($"capacity:deployment:{deploymentId:N}");
         var nodeKey = (RedisKey)connection.Key($"capacity:node:{nodeId:N}");
+        var maintenanceKey = (RedisKey)connection.Key("maintenance:nodes");
+        var pendingMaintenanceKey = (RedisKey)connection.Key($"maintenance:predrain:{nodeId:N}");
         var keyTtlSeconds = _leaseSeconds * 2;
 
         try
@@ -96,13 +101,14 @@ public sealed class RedisRequestCapacityGate(
             var database = await connection.GetDatabaseAsync(cancellationToken);
             var result = await database.ScriptEvaluateAsync(
                 AcquireScript,
-                [deploymentKey, nodeKey],
+                [deploymentKey, nodeKey, maintenanceKey, pendingMaintenanceKey],
                 [
                     (RedisValue)leaseId,
                     (RedisValue)deploymentMaxConcurrency,
                     (RedisValue)nodeMaxConcurrency,
                     (RedisValue)(_leaseSeconds * 1000L),
-                    (RedisValue)keyTtlSeconds
+                    (RedisValue)keyTtlSeconds,
+                    (RedisValue)nodeId.ToString("N")
                 ]);
 
             var values = (RedisResult[])result!;
@@ -116,10 +122,16 @@ public sealed class RedisRequestCapacityGate(
 
             if (!acquired)
             {
-                var scope = rejectionCode == 1 ? "deployment" : "node";
-                activity?.SetTag("llmproxy.capacity.result", "rejected");
+                var scope = rejectionCode switch
+                {
+                    1 => "deployment",
+                    2 => "node",
+                    3 => "node_maintenance",
+                    _ => "unknown"
+                };
+                activity?.SetTag("llmproxy.capacity.result", rejectionCode == 3 ? "node_maintenance" : "rejected");
                 activity?.SetTag("llmproxy.capacity.rejection_scope", scope);
-                LlmProxyActivity.MarkError(activity, "capacity_exhausted");
+                LlmProxyActivity.MarkError(activity, rejectionCode == 3 ? "node_maintenance" : "capacity_exhausted");
                 return CapacityAdmissionResult.Rejected("redis", scope);
             }
 
@@ -291,8 +303,6 @@ public sealed class RedisRequestCapacityGate(
 
         private async Task SafetyLoopAsync(CancellationToken cancellationToken)
         {
-            // Poll substantially faster than the renewal cadence so timer-boundary jitter cannot consume
-            // the entire renewal safety margin and postpone cancellation until the Redis TTL itself.
             var pollInterval = TimeSpan.FromSeconds(Math.Min(1d, _renewSeconds / 2d));
             using var timer = new PeriodicTimer(pollInterval);
 
