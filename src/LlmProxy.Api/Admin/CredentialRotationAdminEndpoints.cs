@@ -52,6 +52,9 @@ public static class CredentialRotationAdminEndpoints
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
+            // The new raw secret is intentionally returned exactly once and is never persisted.
+            // Prevent intermediaries and browsers from treating this control-plane response as cacheable.
+            httpContext.Response.Headers["Cache-Control"] = "no-store";
             return Results.Ok(new
             {
                 credential.Id,
