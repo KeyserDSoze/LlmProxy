@@ -30,4 +30,38 @@ public sealed class ApiCredentialTests
 
         Assert.False(credential.IsUsable(DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public void Rotation_replaces_prefix_and_hash_without_changing_identity_or_assignment()
+    {
+        var credential = new ApiCredential("Copilot", "lp_old", "OLD_HASH", DateTimeOffset.UtcNow.AddDays(30));
+        var usageGroupId = Guid.NewGuid();
+        credential.AssignUsageGroup(usageGroupId);
+        var id = credential.Id;
+        var createdAtUtc = credential.CreatedAtUtc;
+        var expiresAtUtc = credential.ExpiresAtUtc;
+
+        credential.Rotate("lp_new", "NEW_HASH");
+
+        Assert.Equal(id, credential.Id);
+        Assert.Equal(createdAtUtc, credential.CreatedAtUtc);
+        Assert.Equal(expiresAtUtc, credential.ExpiresAtUtc);
+        Assert.Equal(usageGroupId, credential.UsageGroupId);
+        Assert.Equal("lp_new", credential.KeyPrefix);
+        Assert.Equal("NEW_HASH", credential.KeyHash);
+        Assert.True(credential.Enabled);
+    }
+
+    [Fact]
+    public void Revoked_credential_cannot_be_rotated()
+    {
+        var credential = new ApiCredential("Copilot", "lp_old", "OLD_HASH");
+        credential.Revoke();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => credential.Rotate("lp_new", "NEW_HASH"));
+
+        Assert.Equal("Revoked credentials cannot be rotated.", exception.Message);
+        Assert.Equal("lp_old", credential.KeyPrefix);
+        Assert.Equal("OLD_HASH", credential.KeyHash);
+    }
 }
