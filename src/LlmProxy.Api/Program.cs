@@ -34,19 +34,23 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
 builder.Services.AddSingleton<IDeploymentCatalog>(services => services.GetRequiredService<IRouteCatalog>());
-builder.Services.AddSingleton<RequestRateLimiter>();
+builder.Services.AddSingleton<InMemoryRateLimitCounterStore>();
 
 if (redisEnabled)
 {
+    builder.Services.AddSingleton<RedisCoordinationConnection>();
+    builder.Services.AddSingleton<IRateLimitCounterStore, RedisRateLimitCounterStore>();
     builder.Services.AddSingleton<RedisRuntimeStateCoordinator>();
     builder.Services.AddSingleton<IRuntimeStateEventSink>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
     builder.Services.AddHostedService(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
 }
 else
 {
+    builder.Services.AddSingleton<IRateLimitCounterStore>(services => services.GetRequiredService<InMemoryRateLimitCounterStore>());
     builder.Services.AddSingleton<IRuntimeStateEventSink, NullRuntimeStateEventSink>();
 }
 
+builder.Services.AddSingleton<RequestRateLimiter>();
 builder.Services.AddSingleton<ApiCredentialCacheSaveChangesInterceptor>();
 builder.Services.AddSingleton<RouteCatalogSaveChangesInterceptor>();
 builder.Services.AddSingleton<RateLimitPolicyRuntimeStateInterceptor>();

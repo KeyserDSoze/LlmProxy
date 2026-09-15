@@ -21,12 +21,87 @@ public sealed record RateLimitDecision(
         new(false, Math.Max(1, retryAfterSeconds), policy);
 }
 
-public sealed class RequestRateLimiter
+public sealed record RateLimitCounterDecision(
+    bool Allowed,
+    int RetryAfterSeconds,
+    int WindowCount,
+    string Provider,
+    bool Degraded = false);
+
+public interface IRateLimitCounterStore
 {
+    ValueTask<RateLimitCounterDecision> TryAcquireAsync(
+        Guid policyId,
+        int requestsPerWindow,
+        int windowSeconds,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class InMemoryRateLimitCounterStore : IRateLimitCounterStore
+{
+    private readonly ConcurrentDictionary<CounterKey, WindowCounter> _counters = new();
+
+    public ValueTask<RateLimitCounterDecision> TryAcquireAsync(
+        Guid policyId,
+        int requestsPerWindow,
+        int windowSeconds,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentOutOfRangeException.ThrowIfLessThan(requestsPerWindow, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(windowSeconds, 1);
+
+        var key = new CounterKey(policyId, requestsPerWindow, windowSeconds);
+        var counter = _counters.GetOrAdd(key, _ => new WindowCounter(nowUtc));
+        lock (counter.SyncRoot)
+        {
+            var window = TimeSpan.FromSeconds(windowSeconds);
+            if (nowUtc < counter.WindowStartUtc || nowUtc - counter.WindowStartUtc >= window)
+            {
+                counter.WindowStartUtc = nowUtc;
+                counter.Count = 0;
+            }
+
+            if (counter.Count >= requestsPerWindow)
+            {
+                var remaining = counter.WindowStartUtc.Add(window) - nowUtc;
+                var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                return ValueTask.FromResult(new RateLimitCounterDecision(
+                    false,
+                    retryAfterSeconds,
+                    counter.Count,
+                    "local"));
+            }
+
+            counter.Count++;
+            return ValueTask.FromResult(new RateLimitCounterDecision(
+                true,
+                0,
+                counter.Count,
+                "local"));
+        }
+    }
+
+    private readonly record struct CounterKey(Guid PolicyId, int RequestsPerWindow, int WindowSeconds);
+
+    private sealed class WindowCounter(DateTimeOffset windowStartUtc)
+    {
+        public object SyncRoot { get; } = new();
+        public DateTimeOffset WindowStartUtc { get; set; } = windowStartUtc;
+        public int Count { get; set; }
+    }
+}
+
+public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
+{
+    public RequestRateLimiter() : this(new InMemoryRateLimitCounterStore())
+    {
+    }
+
     private IReadOnlyDictionary<RateLimitKey, RateLimitPolicySnapshot> _policies =
         new Dictionary<RateLimitKey, RateLimitPolicySnapshot>();
-
-    private readonly ConcurrentDictionary<Guid, WindowCounter> _counters = new();
 
     public void ReplacePolicies(IEnumerable<RateLimitPolicySnapshot> policies)
     {
@@ -39,7 +114,6 @@ public sealed class RequestRateLimiter
                 policy => policy);
 
         Volatile.Write(ref _policies, next);
-        RemoveInactiveCounters(next.Values.Select(policy => policy.Id));
     }
 
     public void UpsertPolicy(RateLimitPolicySnapshot policy)
@@ -54,10 +128,6 @@ public sealed class RequestRateLimiter
         if (policy.Enabled)
         {
             next[new RateLimitKey(policy.ApiCredentialId, NormalizeModel(policy.LogicalModel))] = policy;
-        }
-        else
-        {
-            _counters.TryRemove(policy.Id, out _);
         }
 
         Volatile.Write(ref _policies, next);
@@ -75,10 +145,16 @@ public sealed class RequestRateLimiter
             .Where(item => item.Value.Id != policyId)
             .ToDictionary(item => item.Key, item => item.Value);
         Volatile.Write(ref _policies, next);
-        _counters.TryRemove(policyId, out _);
     }
 
     public RateLimitDecision TryAcquire(Guid apiCredentialId, string logicalModel, DateTimeOffset nowUtc)
+        => TryAcquireAsync(apiCredentialId, logicalModel, nowUtc).AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask<RateLimitDecision> TryAcquireAsync(
+        Guid apiCredentialId,
+        string logicalModel,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
     {
         using var activity = LlmProxyActivity.Start("llmproxy.governance.rate_limit");
         LlmProxyActivity.SetGuid(activity, "llmproxy.api_credential.id", apiCredentialId);
@@ -106,43 +182,27 @@ public sealed class RequestRateLimiter
         activity?.SetTag("llmproxy.rate_limit.requests_per_window", policy.RequestsPerWindow);
         activity?.SetTag("llmproxy.rate_limit.window_seconds", policy.WindowSeconds);
 
-        var counter = _counters.GetOrAdd(policy.Id, _ => new WindowCounter(nowUtc));
-        lock (counter.SyncRoot)
+        var counterDecision = await counterStore.TryAcquireAsync(
+            policy.Id,
+            policy.RequestsPerWindow,
+            policy.WindowSeconds,
+            nowUtc,
+            cancellationToken);
+
+        activity?.SetTag("llmproxy.rate_limit.provider", counterDecision.Provider);
+        activity?.SetTag("llmproxy.rate_limit.degraded", counterDecision.Degraded);
+        activity?.SetTag("llmproxy.rate_limit.window_count", counterDecision.WindowCount);
+
+        if (!counterDecision.Allowed)
         {
-            var window = TimeSpan.FromSeconds(policy.WindowSeconds);
-            if (nowUtc < counter.WindowStartUtc || nowUtc - counter.WindowStartUtc >= window)
-            {
-                counter.WindowStartUtc = nowUtc;
-                counter.Count = 0;
-            }
-
-            if (counter.Count >= policy.RequestsPerWindow)
-            {
-                var remaining = counter.WindowStartUtc.Add(window) - nowUtc;
-                var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
-                activity?.SetTag("llmproxy.rate_limit.result", "rejected");
-                activity?.SetTag("llmproxy.rate_limit.retry_after_seconds", retryAfterSeconds);
-                LlmProxyActivity.MarkError(activity, "rate_limit_exceeded");
-                return RateLimitDecision.Reject(policy, retryAfterSeconds);
-            }
-
-            counter.Count++;
-            activity?.SetTag("llmproxy.rate_limit.result", "allowed");
-            activity?.SetTag("llmproxy.rate_limit.window_count", counter.Count);
-            return RateLimitDecision.Permit(policy);
+            activity?.SetTag("llmproxy.rate_limit.result", "rejected");
+            activity?.SetTag("llmproxy.rate_limit.retry_after_seconds", counterDecision.RetryAfterSeconds);
+            LlmProxyActivity.MarkError(activity, "rate_limit_exceeded");
+            return RateLimitDecision.Reject(policy, counterDecision.RetryAfterSeconds);
         }
-    }
 
-    private void RemoveInactiveCounters(IEnumerable<Guid> activePolicyIds)
-    {
-        var activeIds = activePolicyIds.ToHashSet();
-        foreach (var policyId in _counters.Keys)
-        {
-            if (!activeIds.Contains(policyId))
-            {
-                _counters.TryRemove(policyId, out _);
-            }
-        }
+        activity?.SetTag("llmproxy.rate_limit.result", "allowed");
+        return RateLimitDecision.Permit(policy);
     }
 
     private static string NormalizeModel(string? logicalModel) =>
@@ -151,11 +211,4 @@ public sealed class RequestRateLimiter
             : logicalModel.Trim().ToUpperInvariant();
 
     private readonly record struct RateLimitKey(Guid ApiCredentialId, string LogicalModel);
-
-    private sealed class WindowCounter(DateTimeOffset windowStartUtc)
-    {
-        public object SyncRoot { get; } = new();
-        public DateTimeOffset WindowStartUtc { get; set; } = windowStartUtc;
-        public int Count { get; set; }
-    }
 }

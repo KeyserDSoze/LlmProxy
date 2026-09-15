@@ -12,12 +12,13 @@ on:
       - tests/backend/integration/full_stack_smoke.sh
       - src/LlmProxy.Api/Observability/**
       - src/LlmProxy.Api/Security/InferenceApiKeyMiddleware.cs
+      - src/LlmProxy.Api/Program.cs
       - src/LlmProxy.Application/Observability/**
-      - src/LlmProxy.Application/Governance/RequestRateLimiter.cs
+      - src/LlmProxy.Application/Governance/**
       - src/LlmProxy.Application/Routing/**
-      - src/LlmProxy.Infrastructure/Routing/InMemoryRequestLoadTracker.cs
+      - src/LlmProxy.Infrastructure/Routing/**
       - src/LlmProxy.Infrastructure/Runtime/**
-      - src/LlmProxy.Infrastructure/Governance/RateLimitPolicyRuntimeStateInterceptor.cs
+      - src/LlmProxy.Infrastructure/Governance/**
       - src/LlmProxy.Application/Abstractions/IRuntimeStateEventSink.cs
       - Directory.Packages.props
       - src/LlmProxy.Api/LlmProxy.Api.csproj
@@ -51,6 +52,9 @@ jobs:
             /tmp/full-stack-headers.txt
             /tmp/full-stack-chat.json
             /tmp/full-stack-trace.json
+            /tmp/full-stack-rate-a.*
+            /tmp/full-stack-rate-b.*
+            /tmp/full-stack-rate-c.*
             /tmp/llmproxy-full-stack-mock.log
           if-no-files-found: ignore
           retention-days: 7
