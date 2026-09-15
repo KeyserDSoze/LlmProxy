@@ -87,6 +87,7 @@ echo "$membership" | jq -e --arg group "$group_id" '.[0].usageGroupId == $group'
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
   -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
+policy_id="$(echo "$policy_json" | jq -r '.id')"
 echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .logicalModel == "agic-code-fast"' >/dev/null
 
 call_model() {
@@ -95,6 +96,15 @@ call_model() {
     -H 'Authorization: Bearer governance-test-key' \
     -H 'Content-Type: application/json' \
     -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"governance smoke"}]}' \
+    http://127.0.0.1:8080/v1/chat/completions
+}
+
+call_budget_model() {
+  local output="$1"
+  curl --silent --dump-header "${output}.headers" --output "${output}.json" --write-out '%{http_code}' \
+    -H 'Authorization: Bearer governance-test-key' \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"agic-code-fast","max_tokens":10,"messages":[{"role":"user","content":"output token budget smoke"}]}' \
     http://127.0.0.1:8080/v1/chat/completions
 }
 
@@ -138,9 +148,54 @@ restart2="$(call_model /tmp/governance-restart-2)"
 restart3="$(call_model /tmp/governance-restart-3)"
 [[ "$restart1" == "200" && "$restart2" == "200" && "$restart3" == "429" ]] || fail_with_diagnostics "Persisted policy was not republished after restart; got ${restart1}/${restart2}/${restart3}."
 
+# Move request-rate admission out of the way, then configure the output-token budget on the same policy.
+# The mock returns 7 completion tokens. Budget=17 and reservation=10 means the second request succeeds
+# only if the first settlement refunds 3 unused tokens. The third request must then be rejected at 14+10>17.
+curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"logicalModel":"agic-code-fast","requestsPerWindow":100,"windowSeconds":60,"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/rate-limits/${policy_id}" >/dev/null
+
+budget_json="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"outputTokensPerWindow":17,"maxOutputTokensPerRequest":10}' \
+  "http://127.0.0.1:8080/api/admin/rate-limits/${policy_id}/output-token-budget")"
+echo "$budget_json" | jq -e '.outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10 and .windowSeconds == 60' >/dev/null
+
+budget_list="$(curl --fail --silent http://127.0.0.1:8080/api/admin/output-token-budgets)"
+echo "$budget_list" | jq -e --arg policy "$policy_id" 'map(select(.id == $policy and .outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10)) | length == 1' >/dev/null
+
+budget1="$(call_budget_model /tmp/governance-budget-1)"
+budget2="$(call_budget_model /tmp/governance-budget-2)"
+budget3="$(call_budget_model /tmp/governance-budget-3)"
+[[ "$budget1" == "200" && "$budget2" == "200" ]] || fail_with_diagnostics "Expected reservation settlement to permit two budgeted requests; got ${budget1}/${budget2}."
+[[ "$budget3" == "429" ]] || fail_with_diagnostics "Expected third request to exceed output-token budget; got ${budget3}."
+jq -e '.error.type == "rate_limit_error" and .error.code == "token_budget_exceeded"' /tmp/governance-budget-3.json >/dev/null
+grep -i --quiet '^Retry-After:' /tmp/governance-budget-3.headers
+
+invalid_budget_status="$(curl --silent --output /tmp/governance-budget-invalid.json --write-out '%{http_code}' \
+  -H 'Authorization: Bearer governance-test-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"agic-code-fast","max_tokens":0,"messages":[]}' \
+  http://127.0.0.1:8080/v1/chat/completions)"
+[[ "$invalid_budget_status" == "400" ]] || fail_with_diagnostics "Expected invalid output-token limit to return 400; got ${invalid_budget_status}."
+jq -e '.error.code == "invalid_output_token_limit"' /tmp/governance-budget-invalid.json >/dev/null
+
+# The policy is durable even though local counters intentionally reset on restart.
+"${COMPOSE[@]}" restart llmproxy >/dev/null
+wait_ready
+persisted_budget="$(curl --fail --silent http://127.0.0.1:8080/api/admin/output-token-budgets)"
+echo "$persisted_budget" | jq -e --arg policy "$policy_id" 'map(select(.id == $policy and .outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10)) | length == 1' >/dev/null
+
+budget_restart1="$(call_budget_model /tmp/governance-budget-restart-1)"
+budget_restart2="$(call_budget_model /tmp/governance-budget-restart-2)"
+budget_restart3="$(call_budget_model /tmp/governance-budget-restart-3)"
+[[ "$budget_restart1" == "200" && "$budget_restart2" == "200" && "$budget_restart3" == "429" ]] \
+  || fail_with_diagnostics "Persisted output-token budget was not republished after restart; got ${budget_restart1}/${budget_restart2}/${budget_restart3}."
+jq -e '.error.code == "token_budget_exceeded"' /tmp/governance-budget-restart-3.json >/dev/null
+
 audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=100')"
 echo "$audit_json" | jq -e 'map(.action) | index("usage_group.create") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("credential.usage_group.assign") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("rate_limit.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("output_token_budget.update") != null' >/dev/null
 
-echo "Governance smoke suite passed: usage group attribution, persisted credential/model rate policy, live 429 rate_limit_exceeded and restart republish verified."
+echo "Governance smoke suite passed: usage group attribution, request-rate limiting, output-token reservation/refund/exhaustion, and restart republish verified."

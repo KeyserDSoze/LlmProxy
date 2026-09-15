@@ -11,6 +11,7 @@ on:
       - docker/scripts/full-stack-init.*
       - tests/backend/integration/full_stack_smoke.sh
       - tests/backend/integration/runtime_outbox_smoke.sh
+      - tests/backend/integration/token_budget_redis_smoke.sh
       - src/LlmProxy.Api/Observability/**
       - src/LlmProxy.Api/Security/InferenceApiKeyMiddleware.cs
       - src/LlmProxy.Api/OpenAi/**
@@ -38,7 +39,7 @@ jobs:
   smoke:
     name: Redis + OpenTelemetry + Grafana stack
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +49,9 @@ jobs:
 
       - name: Run transactional outbox recovery smoke
         run: bash tests/backend/integration/runtime_outbox_smoke.sh
+
+      - name: Run distributed output-token budget smoke
+        run: bash tests/backend/integration/token_budget_redis_smoke.sh
 
       - name: Upload diagnostics
         if: failure()
@@ -61,7 +65,9 @@ jobs:
             /tmp/full-stack-rate-*.*
             /tmp/full-stack-capacity-*
             /tmp/runtime-outbox-*.*
+            /tmp/token-budget-*.*
             /tmp/llmproxy-full-stack-mock.log
             /tmp/llmproxy-outbox-mock.log
+            /tmp/llmproxy-token-budget-mock.log
           if-no-files-found: ignore
           retention-days: 7
