@@ -255,11 +255,13 @@ if [[ "$capacity_status" != "429" ]]; then
   fail_with_diagnostics "Expected peer gateway to honor the shared DGX capacity lease; got ${capacity_status}."
 fi
 jq -e '.error.type == "rate_limit_error" and .error.code == "capacity_exhausted"' /tmp/full-stack-capacity-b.json >/dev/null
+
+# While the stream is active, Redis must contain the distributed capacity lease.
+capacity_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
+[[ "$capacity_keys" -ge 1 ]] || fail_with_diagnostics "Expected Redis-backed capacity lease keys while inference is active."
+
 wait "$stream_pid"
 grep --quiet 'data: \[DONE\]' /tmp/full-stack-capacity-stream.txt
-
-capacity_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
-[[ "$capacity_keys" -ge 1 ]] || fail_with_diagnostics "Expected Redis-backed capacity lease keys."
 
 recovered_status="$(call_model 8081 /tmp/full-stack-capacity-recovered)"
 [[ "$recovered_status" == "200" ]] || fail_with_diagnostics "Expected traffic to recover after shared capacity lease release; got ${recovered_status}."
