@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Observability;
 using LlmProxy.Infrastructure.Runtime;
@@ -185,13 +184,12 @@ public sealed class RedisRequestCapacityGate(
         private readonly string _leaseId;
         private readonly int _leaseSeconds;
         private readonly int _renewSeconds;
-        private readonly TimeSpan _maxUnrenewedDuration;
+        private readonly CapacityLeaseValidityTracker _validityTracker;
         private readonly ILogger _logger;
         private readonly CancellationTokenSource _lifetimeCancellation = new();
         private readonly CancellationTokenSource _coordinationLost = new();
         private readonly Task _renewTask;
         private readonly Task _safetyTask;
-        private long _lastSuccessfulRenewalTimestamp;
         private int _lossSignaled;
         private int _disposed;
 
@@ -212,9 +210,10 @@ public sealed class RedisRequestCapacityGate(
             _leaseId = leaseId;
             _leaseSeconds = leaseSeconds;
             _renewSeconds = renewSeconds;
-            _maxUnrenewedDuration = TimeSpan.FromSeconds(Math.Max(1, leaseSeconds - renewSeconds));
+            _validityTracker = new CapacityLeaseValidityTracker(
+                TimeProvider.System,
+                TimeSpan.FromSeconds(Math.Max(1, leaseSeconds - renewSeconds)));
             _logger = logger;
-            _lastSuccessfulRenewalTimestamp = Stopwatch.GetTimestamp();
             _renewTask = RenewLoopAsync(_lifetimeCancellation.Token);
             _safetyTask = SafetyLoopAsync(_lifetimeCancellation.Token);
         }
@@ -277,7 +276,7 @@ public sealed class RedisRequestCapacityGate(
                         return;
                     }
 
-                    Volatile.Write(ref _lastSuccessfulRenewalTimestamp, Stopwatch.GetTimestamp());
+                    _validityTracker.MarkRenewed();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -297,13 +296,12 @@ public sealed class RedisRequestCapacityGate(
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                var lastSuccessfulRenewal = Volatile.Read(ref _lastSuccessfulRenewalTimestamp);
-                var elapsed = Stopwatch.GetElapsedTime(lastSuccessfulRenewal);
-                if (elapsed < _maxUnrenewedDuration)
+                if (!_validityTracker.HasCrossedSafetyDeadline())
                 {
                     continue;
                 }
 
+                var elapsed = _validityTracker.GetElapsedSinceLastRenewal();
                 SignalCoordinationLost(
                     $"the lease has not been renewed for {elapsed.TotalSeconds:F1}s and is approaching its {_leaseSeconds}s Redis expiry");
                 return;

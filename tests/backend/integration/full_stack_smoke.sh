@@ -284,7 +284,9 @@ done
 # If Redis disappears during a long stream, the gateway must abort before its lease can expire and be reused elsewhere.
 loss_stream_file=/tmp/full-stack-capacity-coordination-loss.txt
 loss_stream_err=/tmp/full-stack-capacity-coordination-loss.err
+loss_stream_headers=/tmp/full-stack-capacity-coordination-loss.headers
 curl --silent --show-error --no-buffer \
+  --dump-header "$loss_stream_headers" \
   -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"agic-code-fast","stream":true,"mock_stream_delay_seconds":12,"messages":[{"role":"user","content":"lose Redis coordination before lease expiry"}]}' \
@@ -305,6 +307,9 @@ if [[ "$first_event_seen" != "true" ]]; then
   fail_with_diagnostics "Long-running stream did not begin before Redis outage simulation."
 fi
 
+loss_trace_id="$(awk 'BEGIN { IGNORECASE=1 } /^X-LlmProxy-Trace-Id:/ { gsub("\r", "", $2); print $2 }' "$loss_stream_headers" | tail -n1)"
+[[ "$loss_trace_id" =~ ^[0-9a-f]{32}$ ]] || fail_with_diagnostics "Expected a trace id for the lease-loss request; got '$loss_trace_id'."
+
 loss_started_epoch="$(date +%s)"
 "${COMPOSE[@]}" stop redis >/dev/null
 set +e
@@ -319,18 +324,30 @@ fi
 [[ "$loss_elapsed_seconds" -lt "$REDIS_CAPACITY_LEASE_SECONDS" ]] \
   || fail_with_diagnostics "Inference was not cancelled before Redis lease expiry (${loss_elapsed_seconds}s, curl exit ${loss_stream_exit})."
 
-coordination_loss_recorded=false
+lease_loss_recorded=false
 for attempt in {1..30}; do
-  coordination_loss_count="$("${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  lease_loss_count="$("${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
     psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
-    "SELECT COUNT(*) FROM request_metrics WHERE \"ErrorCode\" = 'capacity_coordination_lost';" 2>/dev/null | tr -d '[:space:]')"
-  if [[ "$coordination_loss_count" =~ ^[0-9]+$ && "$coordination_loss_count" -ge 1 ]]; then
-    coordination_loss_recorded=true
+    "SELECT COUNT(*) FROM request_metrics WHERE \"ErrorCode\" = 'capacity_lease_lost';" 2>/dev/null | tr -d '[:space:]')"
+  if [[ "$lease_loss_count" =~ ^[0-9]+$ && "$lease_loss_count" -ge 1 ]]; then
+    lease_loss_recorded=true
     break
   fi
   sleep 1
 done
-[[ "$coordination_loss_recorded" == "true" ]] \
-  || fail_with_diagnostics "Expected capacity_coordination_lost request metric after Redis outage."
+[[ "$lease_loss_recorded" == "true" ]] \
+  || fail_with_diagnostics "Expected capacity_lease_lost request metric after Redis outage."
+
+lease_loss_trace_recorded=false
+for attempt in {1..30}; do
+  if curl --fail --silent "http://127.0.0.1:3200/api/traces/$loss_trace_id" >/tmp/full-stack-lease-loss-trace.json 2>/dev/null && \
+     grep -Fq 'capacity_lease_lost' /tmp/full-stack-lease-loss-trace.json; then
+    lease_loss_trace_recorded=true
+    break
+  fi
+  sleep 1
+done
+[[ "$lease_loss_trace_recorded" == "true" ]] \
+  || fail_with_diagnostics "Expected capacity_lease_lost to be visible in Tempo trace $loss_trace_id."
 
 echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed DGX capacity leases and lease-loss cancellation are operational."

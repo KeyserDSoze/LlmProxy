@@ -220,14 +220,14 @@ public static class OpenAiEndpoints
                     !context.RequestAborted.IsCancellationRequested)
                 {
                     finalStatusCode = StatusCodes.Status503ServiceUnavailable;
-                    finalErrorCode = "capacity_coordination_lost";
+                    finalErrorCode = "capacity_lease_lost";
                     performanceTracker.Observe(
                         route.DeploymentId,
                         infrastructureHealthy: false,
                         upstreamStopwatch.ElapsedMilliseconds,
                         timeToFirstByteMilliseconds: null,
                         DateTimeOffset.UtcNow);
-                    await HandleCapacityCoordinationLostAsync(context, requestId);
+                    await HandleCapacityLeaseLostAsync(context, requestId);
                     return;
                 }
                 catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -303,7 +303,7 @@ public static class OpenAiEndpoints
                         !context.RequestAborted.IsCancellationRequested)
                     {
                         finalStatusCode = StatusCodes.Status503ServiceUnavailable;
-                        finalErrorCode = "capacity_coordination_lost";
+                        finalErrorCode = "capacity_lease_lost";
                         ObserveCompletedAttempt(
                             performanceTracker,
                             route.DeploymentId,
@@ -311,7 +311,7 @@ public static class OpenAiEndpoints
                             stopwatch,
                             attemptStartedMilliseconds,
                             observer.TimeToFirstByteMilliseconds);
-                        await HandleCapacityCoordinationLostAsync(context, requestId);
+                        await HandleCapacityLeaseLostAsync(context, requestId);
                         return;
                     }
                     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -440,8 +440,16 @@ public static class OpenAiEndpoints
             DateTimeOffset.UtcNow);
     }
 
-    private static async Task HandleCapacityCoordinationLostAsync(HttpContext context, Guid requestId)
+    private static async Task HandleCapacityLeaseLostAsync(HttpContext context, Guid requestId)
     {
+        if (Activity.Current is { } activity)
+        {
+            activity.AddEvent(new ActivityEvent("capacity_lease_lost"));
+            activity.SetTag("llmproxy.capacity.result", "lease_lost");
+            activity.SetTag("error.type", "capacity_lease_lost");
+            activity.SetStatus(ActivityStatusCode.Error, "capacity_lease_lost");
+        }
+
         if (context.Response.HasStarted)
         {
             context.Abort();
@@ -460,8 +468,8 @@ public static class OpenAiEndpoints
             context,
             StatusCodes.Status503ServiceUnavailable,
             "gateway_unavailable",
-            "capacity_coordination_lost",
-            "Distributed inference capacity coordination was lost while the request was running. Retry shortly.");
+            "capacity_lease_lost",
+            "Distributed inference capacity lease safety was lost while the request was running. Retry shortly.");
     }
 
     private static HttpRequestMessage CreateOutboundRequest(
