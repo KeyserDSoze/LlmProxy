@@ -86,5 +86,6 @@ export const api = {
     request<Deployment>(`/api/admin/deployments/${id}/capacity-profile/apply`, { method: 'POST' }),
   createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
+  rotateApiCredential: (id: string) => request<CreatedApiCredential>(`/api/admin/api-credentials/${id}/rotate`, { method: 'POST' }),
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })
 }
