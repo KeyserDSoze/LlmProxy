@@ -110,6 +110,8 @@ services:
       Redis__KeyPrefix: ${REDIS_KEY_PREFIX:-llmproxy}
       Redis__InstanceId: ${LLMPROXY_INSTANCE_ID:-llmproxy-1}
       Redis__ReconcileSeconds: ${REDIS_RECONCILE_SECONDS:-5}
+      Redis__OutboxBatchSize: ${REDIS_OUTBOX_BATCH_SIZE:-50}
+      Redis__OutboxPollMilliseconds: ${REDIS_OUTBOX_POLL_MILLISECONDS:-500}
       Redis__CapacityLeaseSeconds: ${REDIS_CAPACITY_LEASE_SECONDS:-120}
       Redis__CapacityRenewSeconds: ${REDIS_CAPACITY_RENEW_SECONDS:-30}
 
@@ -132,6 +134,7 @@ services:
       Retention__Enabled: ${RETENTION_ENABLED:-true}
       Retention__RequestMetricsDays: ${RETENTION_REQUEST_METRICS_DAYS:-90}
       Retention__AuditEventsDays: ${RETENTION_AUDIT_EVENTS_DAYS:-365}
+      Retention__RuntimeStateOutboxDays: ${RETENTION_RUNTIME_STATE_OUTBOX_DAYS:-30}
       Retention__IntervalHours: ${RETENTION_INTERVAL_HOURS:-24}
       Retention__BatchSize: ${RETENTION_BATCH_SIZE:-5000}
 

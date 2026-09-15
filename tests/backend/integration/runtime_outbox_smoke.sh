@@ -14,6 +14,8 @@ export POSTGRES_PASSWORD=outbox-postgres
 export REDIS_PASSWORD=outbox-redis
 export REDIS_KEY_PREFIX=llmproxy
 export REDIS_RECONCILE_SECONDS=1
+export REDIS_OUTBOX_BATCH_SIZE=17
+export REDIS_OUTBOX_POLL_MILLISECONDS=250
 export REDIS_CAPACITY_LEASE_SECONDS=30
 export REDIS_CAPACITY_RENEW_SECONDS=5
 export LLM_PROXY_API_KEY=outbox-api-key
@@ -34,6 +36,7 @@ export HEALTH_UNHEALTHY_AFTER_FAILURES=2
 export RUNTIME_METRICS_ENABLED=false
 export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
+export RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
 export BOOTSTRAP_ENABLED=true
 export DGX_NODE_NAME=dgx-outbox
 export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3491/outbox
@@ -134,6 +137,7 @@ if ! docker run -d --name "$PEER_NAME" \
   -e "Redis__KeyPrefix=${REDIS_KEY_PREFIX}" \
   -e Redis__InstanceId=ci-outbox-2 \
   -e Redis__ReconcileSeconds=1 \
+  -e Redis__OutboxBatchSize=17 \
   -e Redis__OutboxPollMilliseconds=250 \
   -e Redis__CapacityLeaseSeconds=30 \
   -e Redis__CapacityRenewSeconds=5 \
@@ -177,6 +181,8 @@ done
 [[ "$outbox_drained" == "true" ]] || fail_with_diagnostics "Startup runtime-state outbox did not drain before fault injection."
 
 peer_sync_before="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
+echo "$peer_sync_before" | jq -e '.connected == true and .outbox.pendingCount == 0 and .outbox.failedPendingCount == 0' >/dev/null \
+  || fail_with_diagnostics "Runtime-sync diagnostics did not report a clean outbox before fault injection."
 peer_published_before="$(echo "$peer_sync_before" | jq -r '.publishedEvents')"
 
 # The control-plane mutation must commit even while Redis is unavailable. The same PostgreSQL commit must
@@ -216,6 +222,10 @@ for attempt in {1..30}; do
   sleep 0.5
 done
 [[ "$retry_observed" == "true" ]] || fail_with_diagnostics "Outbox worker did not retain a failed Redis publication for retry."
+
+fault_sync="$(curl --fail --silent http://127.0.0.1:8080/api/admin/runtime-sync)"
+echo "$fault_sync" | jq -e '.connected == false and .outbox.pendingCount >= 1 and .outbox.failedPendingCount >= 1 and .outbox.oldestPendingAgeSeconds >= 0 and .outbox.maxPendingAttemptCount >= 1 and (.outbox.lastError | type == "string" and length > 0)' >/dev/null \
+  || fail_with_diagnostics "Runtime-sync diagnostics did not expose the failed pending outbox event."
 
 # Stop the replica that originated the DB mutation. The surviving peer is now the only process that can
 # acquire the PostgreSQL outbox advisory lock, so replay explicitly exercises non-originating publication.
@@ -259,6 +269,8 @@ redis_policy_present="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSW
 [[ "$redis_policy_present" == "1" ]] || fail_with_diagnostics "Replayed rate policy was not durably written to Redis."
 
 peer_sync_after="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
+echo "$peer_sync_after" | jq -e '.connected == true and .outbox.pendingCount == 0 and .outbox.failedPendingCount == 0 and .outbox.lastProcessedAtUtc != null and .outbox.lastError == null' >/dev/null \
+  || fail_with_diagnostics "Runtime-sync diagnostics did not report a healthy drained outbox after recovery."
 peer_published_after="$(echo "$peer_sync_after" | jq -r '.publishedEvents')"
 [[ "$peer_published_after" -gt "$peer_published_before" ]] || fail_with_diagnostics "Surviving peer did not publish the recovered outbox work."
 
@@ -271,4 +283,4 @@ outbox_second="$(call_model 8081 /tmp/runtime-outbox-rate-b)"
 jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded"' /tmp/runtime-outbox-rate-b.json >/dev/null \
   || fail_with_diagnostics "Replayed policy rejection did not expose rate_limit_exceeded."
 
-echo "Runtime-state transactional outbox smoke passed: DB commit survives Redis outage, pending delivery is retried, Redis is updated after recovery, and a non-originating peer applies the replay to its own L1."
+echo "Runtime-state transactional outbox smoke passed: DB commit survives Redis outage, diagnostics expose backlog/retry state, pending delivery is replayed after recovery, and a non-originating peer applies it to its own L1."
