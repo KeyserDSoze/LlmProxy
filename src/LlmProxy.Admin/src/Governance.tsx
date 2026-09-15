@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { GovernanceCredential, Model, RateLimitPolicy, UsageGroup, UsageReport } from './types'
+import type { CreatedApiCredential, GovernanceCredential, Model, RateLimitPolicy, UsageGroup, UsageReport } from './types'
 
 const emptyUsage: UsageReport = {
   windowDays: 30,
@@ -33,6 +33,7 @@ export default function Governance() {
   const [budgetPolicyId, setBudgetPolicyId] = useState('')
   const [outputTokensPerWindow, setOutputTokensPerWindow] = useState(100000)
   const [maxOutputTokensPerRequest, setMaxOutputTokensPerRequest] = useState(4096)
+  const [rotatedCredential, setRotatedCredential] = useState<CreatedApiCredential | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -88,6 +89,19 @@ export default function Governance() {
     else await api.clearCredentialUsageGroup(credentialId)
     setMessage('Credential group updated. New requests use the new group; historical usage is unchanged.')
     await refresh()
+  }
+
+  async function rotateCredential(credential: GovernanceCredential) {
+    setMessage(null)
+    setRotatedCredential(null)
+    try {
+      const rotated = await api.rotateApiCredential(credential.id)
+      setRotatedCredential(rotated)
+      setMessage(`Credential ${credential.name} rotated. The previous secret is now invalid.`)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function createRateLimit(event: FormEvent) {
@@ -181,11 +195,13 @@ export default function Governance() {
     </div>
 
     <section className="panel">
-      <div className="panelTitle"><h2>Credential → group membership</h2><span>One primary accounting group per credential in V1.</span></div>
-      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
+      <div className="panelTitle"><h2>Credential → group membership & rotation</h2><span>Rotation is an in-place hard cutover: identity, group, policies and history are preserved.</span></div>
+      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
         <td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td>
         <td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
+        <td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td>
       </tr>)}</tbody></table>
+      {rotatedCredential && <div className="secretBox" data-testid="rotated-credential-secret"><strong>Copy the rotated key now</strong><p>The previous key is invalid and this secret will not be shown again.</p><code>{rotatedCredential.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(rotatedCredential.secret)}>Copy</button></div>}
     </section>
 
     <div className="gridTwo">
