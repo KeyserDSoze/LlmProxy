@@ -123,18 +123,34 @@ jq -e '.served_by == "full-stack" and .model == "bootstrap-model"' /tmp/full-sta
 trace_id="$(awk 'BEGIN { IGNORECASE=1 } /^X-LlmProxy-Trace-Id:/ { gsub("\r", "", $2); print $2 }' /tmp/full-stack-headers.txt | tail -n1)"
 [[ "$trace_id" =~ ^[0-9a-f]{32}$ ]] || fail_with_diagnostics "Expected a 32-hex X-LlmProxy-Trace-Id header; got '$trace_id'."
 
-trace_visible=false
+expected_spans=(
+  "llmproxy.auth"
+  "llmproxy.governance.rate_limit"
+  "llmproxy.routing.select"
+  "llmproxy.capacity.acquire"
+)
+trace_complete=false
 for attempt in {1..30}; do
   if curl --fail --silent "http://127.0.0.1:3200/api/traces/$trace_id" >/tmp/full-stack-trace.json 2>/dev/null; then
-    trace_visible=true
-    break
+    all_spans_present=true
+    for span_name in "${expected_spans[@]}"; do
+      if ! grep -Fq "$span_name" /tmp/full-stack-trace.json; then
+        all_spans_present=false
+        break
+      fi
+    done
+
+    if [[ "$all_spans_present" == "true" ]]; then
+      trace_complete=true
+      break
+    fi
   fi
   sleep 2
 done
-[[ "$trace_visible" == "true" ]] || fail_with_diagnostics "Trace $trace_id did not arrive in Tempo."
+[[ "$trace_complete" == "true" ]] || fail_with_diagnostics "Trace $trace_id did not arrive in Tempo with all expected LlmProxy application spans."
 
 grafana_sources="$(curl --fail --silent -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_PASSWORD" http://127.0.0.1:3000/api/datasources)"
 echo "$grafana_sources" | jq -e 'map(.name) | (index("Prometheus") != null and index("Tempo") != null and index("Loki") != null)' >/dev/null \
   || fail_with_diagnostics "Grafana datasources were not provisioned."
 
-echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, OTLP trace delivery, Tempo, Loki, Prometheus and Grafana are operational."
+echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP trace delivery, Tempo, Loki, Prometheus and Grafana are operational."

@@ -1,3 +1,4 @@
+using LlmProxy.Application.Observability;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
@@ -53,6 +54,7 @@ public static class OpenTelemetryRegistration
                     ["deployment.environment.name"] = environmentName
                 }))
             .WithTracing(tracing => tracing
+                .AddSource(LlmProxyActivity.SourceName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddOtlpExporter(exporter => ConfigureExporter(exporter, endpoint)))

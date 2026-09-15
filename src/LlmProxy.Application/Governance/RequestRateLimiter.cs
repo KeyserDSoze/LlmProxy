@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using LlmProxy.Application.Observability;
 
 namespace LlmProxy.Application.Governance;
 
@@ -79,8 +80,13 @@ public sealed class RequestRateLimiter
 
     public RateLimitDecision TryAcquire(Guid apiCredentialId, string logicalModel, DateTimeOffset nowUtc)
     {
+        using var activity = LlmProxyActivity.Start("llmproxy.governance.rate_limit");
+        LlmProxyActivity.SetGuid(activity, "llmproxy.api_credential.id", apiCredentialId);
+        activity?.SetTag("llmproxy.logical_model", logicalModel);
+
         if (apiCredentialId == Guid.Empty)
         {
+            activity?.SetTag("llmproxy.rate_limit.result", "not_applicable");
             return RateLimitDecision.Permit();
         }
 
@@ -92,8 +98,13 @@ public sealed class RequestRateLimiter
         if (!policies.TryGetValue(new RateLimitKey(apiCredentialId, normalizedModel), out var policy) &&
             !policies.TryGetValue(new RateLimitKey(apiCredentialId, string.Empty), out policy))
         {
+            activity?.SetTag("llmproxy.rate_limit.result", "no_policy");
             return RateLimitDecision.Permit();
         }
+
+        LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.policy_id", policy.Id);
+        activity?.SetTag("llmproxy.rate_limit.requests_per_window", policy.RequestsPerWindow);
+        activity?.SetTag("llmproxy.rate_limit.window_seconds", policy.WindowSeconds);
 
         var counter = _counters.GetOrAdd(policy.Id, _ => new WindowCounter(nowUtc));
         lock (counter.SyncRoot)
@@ -109,10 +120,15 @@ public sealed class RequestRateLimiter
             {
                 var remaining = counter.WindowStartUtc.Add(window) - nowUtc;
                 var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                activity?.SetTag("llmproxy.rate_limit.result", "rejected");
+                activity?.SetTag("llmproxy.rate_limit.retry_after_seconds", retryAfterSeconds);
+                LlmProxyActivity.MarkError(activity, "rate_limit_exceeded");
                 return RateLimitDecision.Reject(policy, retryAfterSeconds);
             }
 
             counter.Count++;
+            activity?.SetTag("llmproxy.rate_limit.result", "allowed");
+            activity?.SetTag("llmproxy.rate_limit.window_count", counter.Count);
             return RateLimitDecision.Permit(policy);
         }
     }

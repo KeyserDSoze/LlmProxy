@@ -1,4 +1,5 @@
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Application.Observability;
 
 namespace LlmProxy.Infrastructure.Routing;
 
@@ -44,18 +45,35 @@ public sealed class InMemoryRequestLoadTracker : IRequestLoadTracker
         ArgumentOutOfRangeException.ThrowIfLessThan(deploymentMaxConcurrency, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(nodeMaxConcurrency, 1);
 
+        using var activity = LlmProxyActivity.Start("llmproxy.capacity.acquire");
+        LlmProxyActivity.SetGuid(activity, "llmproxy.deployment.id", deploymentId);
+        LlmProxyActivity.SetGuid(activity, "llmproxy.node.id", nodeId);
+        activity?.SetTag("llmproxy.capacity.deployment_limit", deploymentMaxConcurrency);
+        activity?.SetTag("llmproxy.capacity.node_limit", nodeMaxConcurrency);
+
         lock (_gate)
         {
             var deploymentActive = _deploymentActive.GetValueOrDefault(deploymentId);
             var nodeActive = _nodeActive.GetValueOrDefault(nodeId);
+            activity?.SetTag("llmproxy.capacity.deployment_active_before", deploymentActive);
+            activity?.SetTag("llmproxy.capacity.node_active_before", nodeActive);
+
             if (deploymentActive >= deploymentMaxConcurrency || nodeActive >= nodeMaxConcurrency)
             {
+                activity?.SetTag("llmproxy.capacity.result", "rejected");
+                activity?.SetTag(
+                    "llmproxy.capacity.rejection_scope",
+                    deploymentActive >= deploymentMaxConcurrency ? "deployment" : "node");
+                LlmProxyActivity.MarkError(activity, "capacity_exhausted");
                 lease = null;
                 return false;
             }
 
             _deploymentActive[deploymentId] = deploymentActive + 1;
             _nodeActive[nodeId] = nodeActive + 1;
+            activity?.SetTag("llmproxy.capacity.result", "acquired");
+            activity?.SetTag("llmproxy.capacity.deployment_active_after", deploymentActive + 1);
+            activity?.SetTag("llmproxy.capacity.node_active_after", nodeActive + 1);
             lease = new CapacityLease(this, deploymentId, nodeId);
             return true;
         }

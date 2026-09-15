@@ -11,6 +11,11 @@ on:
       - docker/scripts/full-stack-init.*
       - tests/backend/integration/full_stack_smoke.sh
       - src/LlmProxy.Api/Observability/**
+      - src/LlmProxy.Api/Security/InferenceApiKeyMiddleware.cs
+      - src/LlmProxy.Application/Observability/**
+      - src/LlmProxy.Application/Governance/RequestRateLimiter.cs
+      - src/LlmProxy.Application/Routing/**
+      - src/LlmProxy.Infrastructure/Routing/InMemoryRequestLoadTracker.cs
       - src/LlmProxy.Infrastructure/Runtime/**
       - src/LlmProxy.Infrastructure/Governance/RateLimitPolicyRuntimeStateInterceptor.cs
       - src/LlmProxy.Application/Abstractions/IRuntimeStateEventSink.cs

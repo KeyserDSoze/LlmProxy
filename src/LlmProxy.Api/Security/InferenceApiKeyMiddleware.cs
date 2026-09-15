@@ -1,4 +1,5 @@
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Application.Observability;
 using LlmProxy.Infrastructure.Security;
 
 namespace LlmProxy.Api.Security;
@@ -20,32 +21,49 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             return;
         }
 
-        if (!context.Request.Headers.TryGetValue("Authorization", out var authorization) ||
-            !authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "A bearer API key is required.");
-            return;
-        }
-
-        var supplied = authorization.ToString()["Bearer ".Length..].Trim();
-        if (string.IsNullOrWhiteSpace(supplied))
-        {
-            await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid.");
-            return;
-        }
-
-        var hash = apiKeyHasher.Hash(supplied);
+        ApiCredentialSnapshot credential;
         var now = DateTimeOffset.UtcNow;
-        if (!credentialCache.TryGetUsableByHash(hash, now, out var credential))
-        {
-            await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid, revoked or expired.");
-            return;
-        }
 
-        context.Items[ApiCredentialIdItem] = credential.Id;
-        if (credential.UsageGroupId is Guid usageGroupId)
+        using (var activity = LlmProxyActivity.Start("llmproxy.auth"))
         {
-            context.Items[UsageGroupIdItem] = usageGroupId;
+            activity?.SetTag("llmproxy.auth.scheme", "bearer");
+
+            if (!context.Request.Headers.TryGetValue("Authorization", out var authorization) ||
+                !authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                activity?.SetTag("llmproxy.auth.result", "missing");
+                LlmProxyActivity.MarkError(activity, "invalid_api_key");
+                await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "A bearer API key is required.");
+                return;
+            }
+
+            var supplied = authorization.ToString()["Bearer ".Length..].Trim();
+            if (string.IsNullOrWhiteSpace(supplied))
+            {
+                activity?.SetTag("llmproxy.auth.result", "invalid");
+                LlmProxyActivity.MarkError(activity, "invalid_api_key");
+                await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid.");
+                return;
+            }
+
+            var hash = apiKeyHasher.Hash(supplied);
+            if (!credentialCache.TryGetUsableByHash(hash, now, out credential))
+            {
+                activity?.SetTag("llmproxy.auth.result", "rejected");
+                LlmProxyActivity.MarkError(activity, "invalid_api_key");
+                await WriteErrorAsync(context, StatusCodes.Status401Unauthorized, "invalid_api_key", "The supplied API key is invalid, revoked or expired.");
+                return;
+            }
+
+            context.Items[ApiCredentialIdItem] = credential.Id;
+            if (credential.UsageGroupId is Guid usageGroupId)
+            {
+                context.Items[UsageGroupIdItem] = usageGroupId;
+            }
+
+            activity?.SetTag("llmproxy.auth.result", "allowed");
+            LlmProxyActivity.SetGuid(activity, "llmproxy.api_credential.id", credential.Id);
+            LlmProxyActivity.SetGuid(activity, "llmproxy.usage_group.id", credential.UsageGroupId);
         }
 
         credentialUsageSink.RecordUsage(credential.Id, now);
