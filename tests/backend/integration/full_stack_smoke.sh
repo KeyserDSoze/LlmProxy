@@ -268,6 +268,19 @@ grep --quiet 'data: \[DONE\]' /tmp/full-stack-capacity-stream.txt
 recovered_status="$(call_model 8081 /tmp/full-stack-capacity-recovered)"
 [[ "$recovered_status" == "200" ]] || fail_with_diagnostics "Expected traffic to recover after shared capacity lease release; got ${recovered_status}."
 
+# The HTTP client can receive the recovered response before the peer finishes lease disposal.
+# Wait for Redis to observe the actual release so the fault-injection request starts from a clean capacity state.
+capacity_released=false
+for attempt in {1..50}; do
+  remaining_capacity_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "$remaining_capacity_keys" == "0" ]]; then
+    capacity_released=true
+    break
+  fi
+  sleep 0.1
+done
+[[ "$capacity_released" == "true" ]] || fail_with_diagnostics "Distributed capacity lease was not released before Redis fault injection."
+
 # If Redis disappears during a long stream, the gateway must abort before its lease can expire and be reused elsewhere.
 loss_stream_file=/tmp/full-stack-capacity-coordination-loss.txt
 loss_stream_err=/tmp/full-stack-capacity-coordination-loss.err
