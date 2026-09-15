@@ -45,7 +45,8 @@ if (redisEnabled)
     builder.Services.AddSingleton<IRequestCapacityGate, RedisRequestCapacityGate>();
     builder.Services.AddSingleton<RedisRuntimeStateCoordinator>();
     builder.Services.AddSingleton<IRuntimeStateEventSink>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
-    builder.Services.AddSingleton<IRuntimeStateDurablePublisher>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
+    builder.Services.AddSingleton<IRuntimeStateTransportPublisher, RedisRuntimeStateTransportPublisher>();
+    builder.Services.AddSingleton<IRuntimeStateDurablePublisher, RuntimeStateOutboxPublisher>();
     builder.Services.AddSingleton<RuntimeStateOutboxSaveChangesInterceptor>();
     builder.Services.AddHostedService(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
     builder.Services.AddHostedService<RuntimeStateOutboxWorker>();
