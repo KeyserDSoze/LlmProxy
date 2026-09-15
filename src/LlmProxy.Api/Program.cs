@@ -166,6 +166,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
 
 app.MapOpenAiEndpoints();
 app.MapAdminEndpoints(entraEnabled);
+app.MapCredentialRotationAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapRouteCatalogAdminEndpoints(entraEnabled);
