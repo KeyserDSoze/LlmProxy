@@ -86,6 +86,27 @@ export type NodeConnectionTest = {
   openAi: EndpointProbe
 }
 
+export type NodeMaintenanceStatus = {
+  nodeId: string
+  nodeName: string
+  nodeStatus: string
+  enabled: boolean
+  provider: string
+  coordinationAvailable: boolean
+  admissionBlocked: boolean
+  activeRequests: number
+  drained: boolean
+}
+
+export type NodeMaintenanceResponse = {
+  status: NodeMaintenanceStatus
+  coordinationPending?: boolean
+  repairedCoordination?: boolean
+  health?: EndpointProbe
+  models?: EndpointProbe
+  warmups?: EndpointProbe[]
+}
+
 export type Node = {
   id: string
   name: string

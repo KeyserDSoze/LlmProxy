@@ -172,19 +172,13 @@ public static class AdminEndpoints
             });
         });
 
-        var drainNode = group.MapPost("/nodes/{id:guid}/drain", async (
-            Guid id,
-            GatewayDbContext dbContext,
-            HttpContext httpContext,
-            CancellationToken cancellationToken) =>
-        {
-            var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
-            if (node is null) return Results.NotFound();
-            node.StartDrain();
-            AddAudit(dbContext, httpContext, "node.drain", "node", node.Id.ToString(), new { node.Name });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return Results.NoContent();
-        });
+        var drainNode = group.MapPost("/nodes/{id:guid}/drain", (Guid id) =>
+            Results.Json(new
+            {
+                code = "legacy_drain_deprecated",
+                message = "Use the coordinated maintenance drain endpoint. It establishes an admission block before persisting Draining state.",
+                replacement = $"/api/admin/nodes/{id}/maintenance/drain"
+            }, statusCode: StatusCodes.Status410Gone));
 
         var enableNode = group.MapPost("/nodes/{id:guid}/enable", async (
             Guid id,

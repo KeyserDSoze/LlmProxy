@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RoutingSettings, RoutingTuningSettings, UsageGroup, UsageReport } from './types'
+import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RoutingSettings, RoutingTuningSettings, UsageGroup, UsageReport } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -69,8 +69,20 @@ export const api = {
   updateNodeHardwareMetrics: (id: string, baseAddress: string | null) =>
     request<{ id: string; hardwareMetricsBaseAddress: string | null }>(`/api/admin/nodes/${id}/hardware-metrics`, { method: 'PUT', body: JSON.stringify({ baseAddress }) }),
   testNodeConnection: (id: string) => request<NodeConnectionTest>(`/api/admin/nodes/${id}/test-connection`, { method: 'POST' }),
-  drainNode: (id: string) => request<void>(`/api/admin/nodes/${id}/drain`, { method: 'POST' }),
-  enableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' }),
+  nodeMaintenance: (id: string) => request<NodeMaintenanceStatus>(`/api/admin/nodes/${id}/maintenance`),
+  beginNodeMaintenance: (id: string) => request<NodeMaintenanceResponse>(`/api/admin/nodes/${id}/maintenance/drain`, { method: 'POST' }),
+  resumeNodeMaintenance: (id: string) => request<NodeMaintenanceResponse>(`/api/admin/nodes/${id}/maintenance/resume`, { method: 'POST' }),
+  drainNode: async (id: string) => {
+    await request<NodeMaintenanceResponse>(`/api/admin/nodes/${id}/maintenance/drain`, { method: 'POST' })
+  },
+  enableNode: async (id: string) => {
+    const maintenance = await request<NodeMaintenanceStatus>(`/api/admin/nodes/${id}/maintenance`)
+    if (maintenance.nodeStatus === 'Draining') {
+      await request<NodeMaintenanceResponse>(`/api/admin/nodes/${id}/maintenance/resume`, { method: 'POST' })
+      return
+    }
+    await request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' })
+  },
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
   createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
