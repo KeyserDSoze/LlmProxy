@@ -145,12 +145,20 @@ if docker volume inspect llmproxy-backup-restore_postgres-data >/dev/null 2>&1; 
   fail_with_diagnostics "Source PostgreSQL volume still existed after destructive reset."
 fi
 "${COMPOSE[@]}" up -d postgres
+
+# pg_isready can report an accepting postmaster before the init database is actually
+# queryable. Require a real SQL round-trip to the configured target DB before the
+# clean-target assertion or restore begins.
+db_ready=false
 for attempt in {1..40}; do
-  if "${COMPOSE[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+  if result="$("${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc 'SELECT 1' 2>/dev/null)" && \
+     [[ "$(echo "$result" | tr -d '[:space:]')" == "1" ]]; then
+    db_ready=true
     break
   fi
   sleep 1
 done
+[[ "$db_ready" == "true" ]] || fail_with_diagnostics "Clean PostgreSQL target never became queryable."
 
 # Prove the target really is clean before invoking restore.
 clean_schema="$(psql_scalar "SELECT COALESCE(to_regclass('public.api_credentials')::text, '');")"
