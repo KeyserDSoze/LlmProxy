@@ -41,7 +41,7 @@ public static class OpenAiEndpoints
     private static Task ForwardChatCompletionsAsync(
         HttpContext context,
         RoutingService routingService,
-        IRequestLoadTracker loadTracker,
+        IRequestCapacityGate capacityGate,
         IDeploymentPerformanceTracker performanceTracker,
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
@@ -49,7 +49,7 @@ public static class OpenAiEndpoints
         ForwardInferenceAsync(
             context,
             routingService,
-            loadTracker,
+            capacityGate,
             performanceTracker,
             rateLimiter,
             metricsSink,
@@ -59,7 +59,7 @@ public static class OpenAiEndpoints
     private static Task ForwardResponsesAsync(
         HttpContext context,
         RoutingService routingService,
-        IRequestLoadTracker loadTracker,
+        IRequestCapacityGate capacityGate,
         IDeploymentPerformanceTracker performanceTracker,
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
@@ -67,7 +67,7 @@ public static class OpenAiEndpoints
         ForwardInferenceAsync(
             context,
             routingService,
-            loadTracker,
+            capacityGate,
             performanceTracker,
             rateLimiter,
             metricsSink,
@@ -77,7 +77,7 @@ public static class OpenAiEndpoints
     private static async Task ForwardInferenceAsync(
         HttpContext context,
         RoutingService routingService,
-        IRequestLoadTracker loadTracker,
+        IRequestCapacityGate capacityGate,
         IDeploymentPerformanceTracker performanceTracker,
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
@@ -108,6 +108,7 @@ public static class OpenAiEndpoints
         string? publicModelName = null;
         var routingFailure = RoutingSelectionFailure.Unavailable;
         var capacityRaceObserved = false;
+        var capacityCoordinationUnavailable = false;
 
         context.Response.Headers["X-LlmProxy-Request-Id"] = requestId.ToString();
 
@@ -139,7 +140,11 @@ public static class OpenAiEndpoints
 
             if (apiCredentialId is Guid callerCredentialId)
             {
-                var rateLimitDecision = rateLimiter.TryAcquire(callerCredentialId, publicModelName, DateTimeOffset.UtcNow);
+                var rateLimitDecision = await rateLimiter.TryAcquireAsync(
+                    callerCredentialId,
+                    publicModelName,
+                    DateTimeOffset.UtcNow,
+                    context.RequestAborted);
                 if (!rateLimitDecision.Allowed)
                 {
                     finalStatusCode = StatusCodes.Status429TooManyRequests;
@@ -168,20 +173,28 @@ public static class OpenAiEndpoints
                     break;
                 }
 
-                if (!loadTracker.TryEnter(
-                        route.DeploymentId,
-                        route.NodeId,
-                        route.MaxConcurrency,
-                        route.NodeMaxConcurrency,
-                        out var acquiredLease) || acquiredLease is null)
+                var admission = await capacityGate.TryAcquireAsync(
+                    route.DeploymentId,
+                    route.NodeId,
+                    route.MaxConcurrency,
+                    route.NodeMaxConcurrency,
+                    context.RequestAborted);
+
+                if (!admission.Acquired || admission.Lease is null)
                 {
+                    if (admission.Failure == CapacityAdmissionFailure.CoordinationUnavailable)
+                    {
+                        capacityCoordinationUnavailable = true;
+                        break;
+                    }
+
                     capacityRaceObserved = true;
                     excluded.Add(route.DeploymentId);
                     attempt--;
                     continue;
                 }
 
-                using var lease = acquiredLease;
+                await using var lease = admission.Lease;
                 attemptCount++;
                 finalDeploymentId = route.DeploymentId;
                 finalNodeId = route.NodeId;
@@ -305,6 +318,19 @@ public static class OpenAiEndpoints
                         tokenUsage = observer.Usage;
                     }
                 }
+            }
+
+            if (capacityCoordinationUnavailable)
+            {
+                finalStatusCode = StatusCodes.Status503ServiceUnavailable;
+                finalErrorCode = "capacity_coordination_unavailable";
+                await WriteGatewayErrorAsync(
+                    context,
+                    finalStatusCode,
+                    "gateway_unavailable",
+                    finalErrorCode,
+                    "Distributed inference capacity coordination is temporarily unavailable. Retry shortly.");
+                return;
             }
 
             if (routingFailure == RoutingSelectionFailure.CapacityExhausted || capacityRaceObserved)

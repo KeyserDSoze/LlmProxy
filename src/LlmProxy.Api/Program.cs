@@ -35,11 +35,14 @@ builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>()
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
 builder.Services.AddSingleton<IDeploymentCatalog>(services => services.GetRequiredService<IRouteCatalog>());
 builder.Services.AddSingleton<InMemoryRateLimitCounterStore>();
+builder.Services.AddSingleton<InMemoryRequestLoadTracker>();
+builder.Services.AddSingleton<IRequestLoadTracker>(services => services.GetRequiredService<InMemoryRequestLoadTracker>());
 
 if (redisEnabled)
 {
     builder.Services.AddSingleton<RedisCoordinationConnection>();
     builder.Services.AddSingleton<IRateLimitCounterStore, RedisRateLimitCounterStore>();
+    builder.Services.AddSingleton<IRequestCapacityGate, RedisRequestCapacityGate>();
     builder.Services.AddSingleton<RedisRuntimeStateCoordinator>();
     builder.Services.AddSingleton<IRuntimeStateEventSink>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
     builder.Services.AddHostedService(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
@@ -47,6 +50,7 @@ if (redisEnabled)
 else
 {
     builder.Services.AddSingleton<IRateLimitCounterStore>(services => services.GetRequiredService<InMemoryRateLimitCounterStore>());
+    builder.Services.AddSingleton<IRequestCapacityGate, LocalRequestCapacityGate>();
     builder.Services.AddSingleton<IRuntimeStateEventSink, NullRuntimeStateEventSink>();
 }
 
@@ -66,7 +70,6 @@ builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<DataRetentionService>();
 builder.Services.AddHostedService<DataRetentionWorker>();
-builder.Services.AddSingleton<IRequestLoadTracker, InMemoryRequestLoadTracker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
 builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();

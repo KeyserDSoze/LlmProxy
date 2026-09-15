@@ -36,7 +36,7 @@ export BOOTSTRAP_ENABLED=true
 export DGX_NODE_NAME=dgx-full-stack
 export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3490/full-stack
 export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=4
+export DGX_NODE_MAX_CONCURRENCY=1
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -166,16 +166,11 @@ grafana_sources="$(curl --fail --silent -u "$GRAFANA_ADMIN_USER:$GRAFANA_ADMIN_P
 echo "$grafana_sources" | jq -e 'map(.name) | (index("Prometheus") != null and index("Tempo") != null and index("Loki") != null)' >/dev/null \
   || fail_with_diagnostics "Grafana datasources were not provisioned."
 
-# Prove that rate-limit counters are shared across gateway instances rather than process-local.
 credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governance/credentials)"
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
-[[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available for distributed rate-limit smoke."
+[[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available for distributed coordination smoke."
 
-policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
-  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
-  http://127.0.0.1:8080/api/admin/rate-limits)"
-echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
-
+# Start a second gateway against the same PostgreSQL, Redis and DGX runtime.
 if ! docker run -d --name "$PEER_NAME" \
   --network llmproxy-full_default \
   --add-host host.docker.internal:host-gateway \
@@ -189,6 +184,8 @@ if ! docker run -d --name "$PEER_NAME" \
   -e "Redis__KeyPrefix=${REDIS_KEY_PREFIX}" \
   -e Redis__InstanceId=ci-full-2 \
   -e Redis__ReconcileSeconds=1 \
+  -e Redis__CapacityLeaseSeconds=30 \
+  -e Redis__CapacityRenewSeconds=5 \
   -e OpenTelemetry__Enabled=true \
   -e OpenTelemetry__OtlpEndpoint=http://otel-collector:4317 \
   -e OpenTelemetry__ServiceName=llmproxy \
@@ -220,6 +217,14 @@ for attempt in {1..40}; do
 done
 [[ "$peer_healthy" == "true" ]] || fail_with_diagnostics "Second gateway did not observe the shared inference node as Healthy."
 
+# Rate-limit counter must be shared across both gateways.
+policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
+  http://127.0.0.1:8080/api/admin/rate-limits)"
+policy_id="$(echo "$policy_json" | jq -r '.id')"
+echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
+sleep 1
+
 shared1="$(call_model 8080 /tmp/full-stack-rate-a)"
 shared2="$(call_model 8081 /tmp/full-stack-rate-b)"
 shared3="$(call_model 8080 /tmp/full-stack-rate-c)"
@@ -230,4 +235,33 @@ jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded
 global_counter_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:rate-limit:*' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$global_counter_keys" -ge 1 ]] || fail_with_diagnostics "Expected a Redis-backed shared rate-limit counter key."
 
-echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, Grafana and cross-gateway Redis rate limiting are operational."
+# Remove the policy and restart the peer so the capacity test cannot be masked by caller quota state.
+curl --fail --silent -X DELETE "http://127.0.0.1:8080/api/admin/rate-limits/${policy_id}" >/dev/null
+docker restart "$PEER_NAME" >/dev/null
+wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Second gateway did not recover after rate-policy removal."
+
+# Hold the single physical DGX slot on gateway A. Gateway B must observe the same Redis lease and reject.
+curl --silent --no-buffer \
+  -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"agic-code-fast","stream":true,"messages":[{"role":"user","content":"hold distributed capacity"}]}' \
+  http://127.0.0.1:8080/v1/chat/completions > /tmp/full-stack-capacity-stream.txt &
+stream_pid="$!"
+sleep 0.15
+
+capacity_status="$(call_model 8081 /tmp/full-stack-capacity-b)"
+if [[ "$capacity_status" != "429" ]]; then
+  wait "$stream_pid" || true
+  fail_with_diagnostics "Expected peer gateway to honor the shared DGX capacity lease; got ${capacity_status}."
+fi
+jq -e '.error.type == "rate_limit_error" and .error.code == "capacity_exhausted"' /tmp/full-stack-capacity-b.json >/dev/null
+wait "$stream_pid"
+grep --quiet 'data: \[DONE\]' /tmp/full-stack-capacity-stream.txt
+
+capacity_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
+[[ "$capacity_keys" -ge 1 ]] || fail_with_diagnostics "Expected Redis-backed capacity lease keys."
+
+recovered_status="$(call_model 8081 /tmp/full-stack-capacity-recovered)"
+[[ "$recovered_status" == "200" ]] || fail_with_diagnostics "Expected traffic to recover after shared capacity lease release; got ${recovered_status}."
+
+echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits and distributed DGX capacity leases are operational."
