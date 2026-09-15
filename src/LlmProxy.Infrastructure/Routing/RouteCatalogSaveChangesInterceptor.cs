@@ -9,8 +9,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace LlmProxy.Infrastructure.Routing;
 
 public sealed class RouteCatalogSaveChangesInterceptor(
-    IRouteCatalog routeCatalog,
-    IRuntimeStateEventSink runtimeStateSink) : SaveChangesInterceptor
+    IRouteCatalog routeCatalog) : SaveChangesInterceptor
 {
     private sealed record PendingChanges(
         IReadOnlyList<RouteNodeSnapshot> NodeUpserts,
@@ -85,12 +84,12 @@ public sealed class RouteCatalogSaveChangesInterceptor(
         if (dbContext is null || !_pending.TryGetValue(dbContext, out var changes)) return;
         _pending.Remove(dbContext);
 
-        foreach (var node in changes.NodeUpserts) { routeCatalog.Upsert(node); runtimeStateSink.PublishNodeUpsert(node); }
-        foreach (var nodeId in changes.NodeRemoves) { routeCatalog.RemoveNode(nodeId); runtimeStateSink.PublishNodeRemove(nodeId); }
-        foreach (var model in changes.ModelUpserts) { routeCatalog.Upsert(model); runtimeStateSink.PublishModelUpsert(model); }
-        foreach (var modelId in changes.ModelRemoves) { routeCatalog.RemoveModel(modelId); runtimeStateSink.PublishModelRemove(modelId); }
-        foreach (var deployment in changes.DeploymentUpserts) { routeCatalog.Upsert(deployment); runtimeStateSink.PublishDeploymentUpsert(deployment); }
-        foreach (var deploymentId in changes.DeploymentRemoves) { routeCatalog.RemoveDeployment(deploymentId); runtimeStateSink.PublishDeploymentRemove(deploymentId); }
+        foreach (var node in changes.NodeUpserts) routeCatalog.Upsert(node);
+        foreach (var nodeId in changes.NodeRemoves) routeCatalog.RemoveNode(nodeId);
+        foreach (var model in changes.ModelUpserts) routeCatalog.Upsert(model);
+        foreach (var modelId in changes.ModelRemoves) routeCatalog.RemoveModel(modelId);
+        foreach (var deployment in changes.DeploymentUpserts) routeCatalog.Upsert(deployment);
+        foreach (var deploymentId in changes.DeploymentRemoves) routeCatalog.RemoveDeployment(deploymentId);
     }
 
     private void Clear(DbContext? dbContext)

@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Domain.Governance;
 using Microsoft.EntityFrameworkCore;
@@ -8,8 +7,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace LlmProxy.Infrastructure.Governance;
 
 public sealed class RateLimitPolicyRuntimeStateInterceptor(
-    RequestRateLimiter rateLimiter,
-    IRuntimeStateEventSink runtimeStateSink) : SaveChangesInterceptor
+    RequestRateLimiter rateLimiter) : SaveChangesInterceptor
 {
     private sealed record PendingChanges(
         IReadOnlyList<RateLimitPolicySnapshot> Upserts,
@@ -95,13 +93,11 @@ public sealed class RateLimitPolicyRuntimeStateInterceptor(
         foreach (var policy in changes.Upserts)
         {
             rateLimiter.UpsertPolicy(policy);
-            runtimeStateSink.PublishRatePolicyUpsert(policy);
         }
 
         foreach (var policyId in changes.Removes)
         {
             rateLimiter.RemovePolicy(policyId);
-            runtimeStateSink.PublishRatePolicyRemove(policyId);
         }
     }
 

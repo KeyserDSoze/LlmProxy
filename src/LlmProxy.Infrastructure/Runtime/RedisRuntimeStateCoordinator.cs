@@ -9,14 +9,14 @@ using StackExchange.Redis;
 
 namespace LlmProxy.Infrastructure.Runtime;
 
-public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeStateEventSink
+public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeStateEventSink, IRuntimeStateDurablePublisher
 {
-    private const string RouteCatalogKind = "route.catalog";
-    private const string NodeKind = "route.node";
-    private const string ModelKind = "route.model";
-    private const string DeploymentKind = "route.deployment";
-    private const string CredentialKind = "credential";
-    private const string RatePolicyKind = "rate-policy";
+    private const string RouteCatalogKind = RuntimeStateChangeKinds.RouteCatalog;
+    private const string NodeKind = RuntimeStateChangeKinds.Node;
+    private const string ModelKind = RuntimeStateChangeKinds.Model;
+    private const string DeploymentKind = RuntimeStateChangeKinds.Deployment;
+    private const string CredentialKind = RuntimeStateChangeKinds.Credential;
+    private const string RatePolicyKind = RuntimeStateChangeKinds.RatePolicy;
 
     private readonly IRouteCatalog _routeCatalog;
     private readonly IApiCredentialCache _credentialCache;
@@ -67,20 +67,45 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
         _lastError);
 
     public void PublishRouteCatalogSnapshot(IEnumerable<RouteNodeSnapshot> nodes, IEnumerable<RouteModelSnapshot> models, IEnumerable<RouteDeploymentSnapshot> deployments)
-        => Enqueue(RouteCatalogKind, "replace", null, new RouteCatalogPayload(nodes.ToArray(), models.ToArray(), deployments.ToArray()));
+        => Enqueue(RouteCatalogKind, RuntimeStateChangeKinds.Replace, null, new RouteCatalogPayload(nodes.ToArray(), models.ToArray(), deployments.ToArray()));
 
-    public void PublishNodeUpsert(RouteNodeSnapshot node) => Enqueue(NodeKind, "upsert", node.Id, node);
-    public void PublishNodeRemove(Guid nodeId) => Enqueue<object?>(NodeKind, "remove", nodeId, null);
-    public void PublishModelUpsert(RouteModelSnapshot model) => Enqueue(ModelKind, "upsert", model.Id, model);
-    public void PublishModelRemove(Guid modelId) => Enqueue<object?>(ModelKind, "remove", modelId, null);
-    public void PublishDeploymentUpsert(RouteDeploymentSnapshot deployment) => Enqueue(DeploymentKind, "upsert", deployment.Id, deployment);
-    public void PublishDeploymentRemove(Guid deploymentId) => Enqueue<object?>(DeploymentKind, "remove", deploymentId, null);
-    public void PublishCredentialSnapshot(IEnumerable<ApiCredentialSnapshot> credentials) => Enqueue(CredentialKind, "replace", null, credentials.ToArray());
-    public void PublishCredentialUpsert(ApiCredentialSnapshot credential) => Enqueue(CredentialKind, "upsert", credential.Id, credential);
-    public void PublishCredentialRemove(Guid credentialId) => Enqueue<object?>(CredentialKind, "remove", credentialId, null);
-    public void PublishRatePolicySnapshot(IEnumerable<RateLimitPolicySnapshot> policies) => Enqueue(RatePolicyKind, "replace", null, policies.ToArray());
-    public void PublishRatePolicyUpsert(RateLimitPolicySnapshot policy) => Enqueue(RatePolicyKind, "upsert", policy.Id, policy);
-    public void PublishRatePolicyRemove(Guid policyId) => Enqueue<object?>(RatePolicyKind, "remove", policyId, null);
+    public void PublishNodeUpsert(RouteNodeSnapshot node) => Enqueue(NodeKind, RuntimeStateChangeKinds.Upsert, node.Id, node);
+    public void PublishNodeRemove(Guid nodeId) => Enqueue<object?>(NodeKind, RuntimeStateChangeKinds.Remove, nodeId, null);
+    public void PublishModelUpsert(RouteModelSnapshot model) => Enqueue(ModelKind, RuntimeStateChangeKinds.Upsert, model.Id, model);
+    public void PublishModelRemove(Guid modelId) => Enqueue<object?>(ModelKind, RuntimeStateChangeKinds.Remove, modelId, null);
+    public void PublishDeploymentUpsert(RouteDeploymentSnapshot deployment) => Enqueue(DeploymentKind, RuntimeStateChangeKinds.Upsert, deployment.Id, deployment);
+    public void PublishDeploymentRemove(Guid deploymentId) => Enqueue<object?>(DeploymentKind, RuntimeStateChangeKinds.Remove, deploymentId, null);
+    public void PublishCredentialSnapshot(IEnumerable<ApiCredentialSnapshot> credentials) => Enqueue(CredentialKind, RuntimeStateChangeKinds.Replace, null, credentials.ToArray());
+    public void PublishCredentialUpsert(ApiCredentialSnapshot credential) => Enqueue(CredentialKind, RuntimeStateChangeKinds.Upsert, credential.Id, credential);
+    public void PublishCredentialRemove(Guid credentialId) => Enqueue<object?>(CredentialKind, RuntimeStateChangeKinds.Remove, credentialId, null);
+    public void PublishRatePolicySnapshot(IEnumerable<RateLimitPolicySnapshot> policies) => Enqueue(RatePolicyKind, RuntimeStateChangeKinds.Replace, null, policies.ToArray());
+    public void PublishRatePolicyUpsert(RateLimitPolicySnapshot policy) => Enqueue(RatePolicyKind, RuntimeStateChangeKinds.Upsert, policy.Id, policy);
+    public void PublishRatePolicyRemove(Guid policyId) => Enqueue<object?>(RatePolicyKind, RuntimeStateChangeKinds.Remove, policyId, null);
+
+    public async Task PublishAsync(RuntimeStateChange change, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var connection = _connection;
+        if (connection is null || !connection.IsConnected)
+        {
+            throw new InvalidOperationException("Redis runtime-state coordinator is not connected.");
+        }
+
+        var message = new RuntimeStateMessage(
+            change.Kind,
+            change.Action,
+            change.EntityId,
+            change.PayloadJson,
+            _instanceId,
+            change.OccurredAtUtc,
+            0);
+
+        await PublishMessageAsync(
+            connection.GetDatabase(),
+            connection.GetSubscriber(),
+            message,
+            cancellationToken);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -129,14 +154,11 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
             {
                 try
                 {
-                    var database = _connection!.GetDatabase();
-                    await PersistAsync(database, message);
-                    var version = await database.StringIncrementAsync(Key("version"));
-                    var versioned = message with { Version = version };
-                    await subscriber.PublishAsync(RedisChannel.Literal(ChannelKey), JsonSerializer.Serialize(versioned));
-                    SetMax(ref _lastAppliedVersion, version);
-                    Interlocked.Increment(ref _publishedEvents);
-                    _lastError = null;
+                    await PublishMessageAsync(
+                        _connection!.GetDatabase(),
+                        subscriber,
+                        message,
+                        cancellationToken);
                     break;
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
@@ -147,6 +169,29 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
                 }
             }
         }
+    }
+
+    private async Task PublishMessageAsync(
+        IDatabase database,
+        ISubscriber subscriber,
+        RuntimeStateMessage message,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await PersistAsync(database, message);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var version = await database.StringIncrementAsync(Key("version"));
+        var versioned = message with { Version = version };
+        await subscriber.PublishAsync(RedisChannel.Literal(ChannelKey), JsonSerializer.Serialize(versioned));
+
+        // The replica that wins the PostgreSQL outbox lock may not be the replica that originated
+        // the database mutation. Apply the acknowledged Redis event locally as well as publishing it;
+        // the subscriber intentionally ignores same-origin messages.
+        ApplyToLocalState(versioned);
+        SetMax(ref _lastAppliedVersion, version);
+        Interlocked.Increment(ref _publishedEvents);
+        _lastError = null;
     }
 
     private async Task ReconcileLoopAsync(CancellationToken cancellationToken)
@@ -217,7 +262,7 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
 
     private void ApplyToLocalState(RuntimeStateMessage message)
     {
-        if (message.Kind == RouteCatalogKind && message.Action == "replace")
+        if (message.Kind == RouteCatalogKind && message.Action == RuntimeStateChangeKinds.Replace)
         {
             var payload = Deserialize<RouteCatalogPayload>(message.PayloadJson);
             _routeCatalog.Replace(payload.Nodes, payload.Models, payload.Deployments);
@@ -226,37 +271,37 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
 
         if (message.Kind == NodeKind)
         {
-            if (message.Action == "remove") _routeCatalog.RemoveNode(message.EntityId!.Value);
+            if (message.Action == RuntimeStateChangeKinds.Remove) _routeCatalog.RemoveNode(message.EntityId!.Value);
             else _routeCatalog.Upsert(Deserialize<RouteNodeSnapshot>(message.PayloadJson));
             return;
         }
 
         if (message.Kind == ModelKind)
         {
-            if (message.Action == "remove") _routeCatalog.RemoveModel(message.EntityId!.Value);
+            if (message.Action == RuntimeStateChangeKinds.Remove) _routeCatalog.RemoveModel(message.EntityId!.Value);
             else _routeCatalog.Upsert(Deserialize<RouteModelSnapshot>(message.PayloadJson));
             return;
         }
 
         if (message.Kind == DeploymentKind)
         {
-            if (message.Action == "remove") _routeCatalog.RemoveDeployment(message.EntityId!.Value);
+            if (message.Action == RuntimeStateChangeKinds.Remove) _routeCatalog.RemoveDeployment(message.EntityId!.Value);
             else _routeCatalog.Upsert(Deserialize<RouteDeploymentSnapshot>(message.PayloadJson));
             return;
         }
 
         if (message.Kind == CredentialKind)
         {
-            if (message.Action == "replace") _credentialCache.Replace(Deserialize<ApiCredentialSnapshot[]>(message.PayloadJson));
-            else if (message.Action == "remove") _credentialCache.Remove(message.EntityId!.Value);
+            if (message.Action == RuntimeStateChangeKinds.Replace) _credentialCache.Replace(Deserialize<ApiCredentialSnapshot[]>(message.PayloadJson));
+            else if (message.Action == RuntimeStateChangeKinds.Remove) _credentialCache.Remove(message.EntityId!.Value);
             else _credentialCache.Upsert(Deserialize<ApiCredentialSnapshot>(message.PayloadJson));
             return;
         }
 
         if (message.Kind == RatePolicyKind)
         {
-            if (message.Action == "replace") _rateLimiter.ReplacePolicies(Deserialize<RateLimitPolicySnapshot[]>(message.PayloadJson));
-            else if (message.Action == "remove") _rateLimiter.RemovePolicy(message.EntityId!.Value);
+            if (message.Action == RuntimeStateChangeKinds.Replace) _rateLimiter.ReplacePolicies(Deserialize<RateLimitPolicySnapshot[]>(message.PayloadJson));
+            else if (message.Action == RuntimeStateChangeKinds.Remove) _rateLimiter.RemovePolicy(message.EntityId!.Value);
             else _rateLimiter.UpsertPolicy(Deserialize<RateLimitPolicySnapshot>(message.PayloadJson));
         }
     }
@@ -265,7 +310,7 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
     {
         switch (message.Kind, message.Action)
         {
-            case (RouteCatalogKind, "replace"):
+            case (RouteCatalogKind, RuntimeStateChangeKinds.Replace):
             {
                 var payload = Deserialize<RouteCatalogPayload>(message.PayloadJson);
                 await ReplaceHashAsync(database, Key("route:nodes"), payload.Nodes, item => item.Id);
@@ -274,44 +319,46 @@ public sealed class RedisRuntimeStateCoordinator : BackgroundService, IRuntimeSt
                 await database.StringSetAsync(Key("route:seeded"), "1");
                 break;
             }
-            case (NodeKind, "upsert"):
+            case (NodeKind, RuntimeStateChangeKinds.Upsert):
                 await UpsertHashAsync(database, Key("route:nodes"), message);
                 break;
-            case (NodeKind, "remove"):
+            case (NodeKind, RuntimeStateChangeKinds.Remove):
                 await database.HashDeleteAsync(Key("route:nodes"), IdField(message));
                 break;
-            case (ModelKind, "upsert"):
+            case (ModelKind, RuntimeStateChangeKinds.Upsert):
                 await UpsertHashAsync(database, Key("route:models"), message);
                 break;
-            case (ModelKind, "remove"):
+            case (ModelKind, RuntimeStateChangeKinds.Remove):
                 await database.HashDeleteAsync(Key("route:models"), IdField(message));
                 break;
-            case (DeploymentKind, "upsert"):
+            case (DeploymentKind, RuntimeStateChangeKinds.Upsert):
                 await UpsertHashAsync(database, Key("route:deployments"), message);
                 break;
-            case (DeploymentKind, "remove"):
+            case (DeploymentKind, RuntimeStateChangeKinds.Remove):
                 await database.HashDeleteAsync(Key("route:deployments"), IdField(message));
                 break;
-            case (CredentialKind, "replace"):
+            case (CredentialKind, RuntimeStateChangeKinds.Replace):
                 await ReplaceHashAsync(database, Key("credentials"), Deserialize<ApiCredentialSnapshot[]>(message.PayloadJson), item => item.Id);
                 await database.StringSetAsync(Key("credentials:seeded"), "1");
                 break;
-            case (CredentialKind, "upsert"):
+            case (CredentialKind, RuntimeStateChangeKinds.Upsert):
                 await UpsertHashAsync(database, Key("credentials"), message);
                 break;
-            case (CredentialKind, "remove"):
+            case (CredentialKind, RuntimeStateChangeKinds.Remove):
                 await database.HashDeleteAsync(Key("credentials"), IdField(message));
                 break;
-            case (RatePolicyKind, "replace"):
+            case (RatePolicyKind, RuntimeStateChangeKinds.Replace):
                 await ReplaceHashAsync(database, Key("rate-policies"), Deserialize<RateLimitPolicySnapshot[]>(message.PayloadJson), item => item.Id);
                 await database.StringSetAsync(Key("rate-policies:seeded"), "1");
                 break;
-            case (RatePolicyKind, "upsert"):
+            case (RatePolicyKind, RuntimeStateChangeKinds.Upsert):
                 await UpsertHashAsync(database, Key("rate-policies"), message);
                 break;
-            case (RatePolicyKind, "remove"):
+            case (RatePolicyKind, RuntimeStateChangeKinds.Remove):
                 await database.HashDeleteAsync(Key("rate-policies"), IdField(message));
                 break;
+            default:
+                throw new InvalidOperationException($"Unsupported runtime-state change {message.Kind}/{message.Action}.");
         }
     }
 

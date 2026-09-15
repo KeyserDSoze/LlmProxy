@@ -193,6 +193,23 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("request_metrics");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RuntimeStateOutboxRecord", b =>
+        {
+            b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+            b.Property<string>("Action").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+            b.Property<int>("AttemptCount").HasColumnType("integer");
+            b.Property<Guid?>("EntityId").HasColumnType("uuid");
+            b.Property<string>("Kind").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("LastError").HasMaxLength(2000).HasColumnType("character varying(2000)");
+            b.Property<DateTimeOffset?>("NextAttemptAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset>("OccurredAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("PayloadJson").HasColumnType("text");
+            b.Property<DateTimeOffset?>("ProcessedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.HasIndex("ProcessedAtUtc", "NextAttemptAtUtc", "Id");
+            b.ToTable("runtime_state_outbox");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>
         {
             b.HasOne("LlmProxy.Domain.Models.ModelDefinition", null)

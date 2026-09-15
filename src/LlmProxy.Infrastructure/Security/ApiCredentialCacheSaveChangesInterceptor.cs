@@ -7,8 +7,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace LlmProxy.Infrastructure.Security;
 
 public sealed class ApiCredentialCacheSaveChangesInterceptor(
-    IApiCredentialCache credentialCache,
-    IRuntimeStateEventSink runtimeStateSink) : SaveChangesInterceptor
+    IApiCredentialCache credentialCache) : SaveChangesInterceptor
 {
     private sealed record PendingChanges(IReadOnlyList<ApiCredentialSnapshot> Upserts, IReadOnlyList<Guid> Removes);
     private readonly ConditionalWeakTable<DbContext, PendingChanges> _pending = new();
@@ -69,13 +68,11 @@ public sealed class ApiCredentialCacheSaveChangesInterceptor(
         foreach (var credential in changes.Upserts)
         {
             credentialCache.Upsert(credential);
-            runtimeStateSink.PublishCredentialUpsert(credential);
         }
 
         foreach (var credentialId in changes.Removes)
         {
             credentialCache.Remove(credentialId);
-            runtimeStateSink.PublishCredentialRemove(credentialId);
         }
     }
 

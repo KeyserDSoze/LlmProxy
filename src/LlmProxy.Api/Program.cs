@@ -45,7 +45,10 @@ if (redisEnabled)
     builder.Services.AddSingleton<IRequestCapacityGate, RedisRequestCapacityGate>();
     builder.Services.AddSingleton<RedisRuntimeStateCoordinator>();
     builder.Services.AddSingleton<IRuntimeStateEventSink>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
+    builder.Services.AddSingleton<IRuntimeStateDurablePublisher>(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
+    builder.Services.AddSingleton<RuntimeStateOutboxSaveChangesInterceptor>();
     builder.Services.AddHostedService(services => services.GetRequiredService<RedisRuntimeStateCoordinator>());
+    builder.Services.AddHostedService<RuntimeStateOutboxWorker>();
 }
 else
 {
@@ -59,12 +62,19 @@ builder.Services.AddSingleton<ApiCredentialCacheSaveChangesInterceptor>();
 builder.Services.AddSingleton<RouteCatalogSaveChangesInterceptor>();
 builder.Services.AddSingleton<RateLimitPolicyRuntimeStateInterceptor>();
 builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
+{
     options
         .UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
         .AddInterceptors(
             services.GetRequiredService<ApiCredentialCacheSaveChangesInterceptor>(),
             services.GetRequiredService<RouteCatalogSaveChangesInterceptor>(),
-            services.GetRequiredService<RateLimitPolicyRuntimeStateInterceptor>()));
+            services.GetRequiredService<RateLimitPolicyRuntimeStateInterceptor>());
+
+    if (redisEnabled)
+    {
+        options.AddInterceptors(services.GetRequiredService<RuntimeStateOutboxSaveChangesInterceptor>());
+    }
+});
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
