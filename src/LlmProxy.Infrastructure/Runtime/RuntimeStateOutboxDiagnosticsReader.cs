@@ -69,7 +69,7 @@ public sealed class RuntimeStateOutboxDiagnosticsReader(GatewayDbContext dbConte
             .Select(record => record.ProcessedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var oldestAge = oldestPendingAtUtc is DateTimeOffset oldest
+        long? oldestAge = oldestPendingAtUtc is DateTimeOffset oldest
             ? Math.Max(0L, (long)Math.Floor((observedAtUtc - oldest).TotalSeconds))
             : null;
 
