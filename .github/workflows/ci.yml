@@ -129,3 +129,6 @@ jobs:
 
       - name: Backup and clean-target restore smoke suite
         run: bash tests/backend/integration/backup_restore_smoke.sh
+
+      - name: PowerShell backup and restore smoke suite
+        run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
