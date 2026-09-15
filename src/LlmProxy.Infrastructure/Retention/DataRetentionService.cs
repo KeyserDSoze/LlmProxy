@@ -17,17 +17,21 @@ public sealed class DataRetentionService(
         var startedAtUtc = nowUtc ?? DateTimeOffset.UtcNow;
         var requestMetricsCutoffUtc = startedAtUtc.AddDays(-Settings.RequestMetricsDays);
         var auditEventsCutoffUtc = startedAtUtc.AddDays(-Settings.AuditEventsDays);
+        var runtimeStateOutboxCutoffUtc = startedAtUtc.AddDays(-Settings.RuntimeStateOutboxDays);
 
         var deletedRequestMetrics = await DeleteRequestMetricsAsync(requestMetricsCutoffUtc, cancellationToken);
         var deletedAuditEvents = await DeleteAuditEventsAsync(auditEventsCutoffUtc, cancellationToken);
+        var deletedRuntimeStateOutbox = await DeleteRuntimeStateOutboxAsync(runtimeStateOutboxCutoffUtc, cancellationToken);
 
         return new DataRetentionResult(
             startedAtUtc,
             DateTimeOffset.UtcNow,
             requestMetricsCutoffUtc,
             auditEventsCutoffUtc,
+            runtimeStateOutboxCutoffUtc,
             deletedRequestMetrics,
-            deletedAuditEvents);
+            deletedAuditEvents,
+            deletedRuntimeStateOutbox);
     }
 
     private async Task<int> DeleteRequestMetricsAsync(
@@ -78,6 +82,32 @@ public sealed class DataRetentionService(
 
             total += await dbContext.AuditEvents
                 .Where(audit => ids.Contains(audit.Id))
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+    }
+
+    private async Task<int> DeleteRuntimeStateOutboxAsync(
+        DateTimeOffset cutoffUtc,
+        CancellationToken cancellationToken)
+    {
+        var total = 0;
+        while (true)
+        {
+            var ids = await dbContext.RuntimeStateOutbox
+                .AsNoTracking()
+                .Where(record => record.ProcessedAtUtc != null && record.ProcessedAtUtc < cutoffUtc)
+                .OrderBy(record => record.Id)
+                .Select(record => record.Id)
+                .Take(Settings.BatchSize)
+                .ToArrayAsync(cancellationToken);
+
+            if (ids.Length == 0)
+            {
+                return total;
+            }
+
+            total += await dbContext.RuntimeStateOutbox
+                .Where(record => ids.Contains(record.Id))
                 .ExecuteDeleteAsync(cancellationToken);
         }
     }

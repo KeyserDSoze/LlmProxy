@@ -6,6 +6,7 @@ public sealed record DataRetentionSettings(
     bool Enabled,
     int RequestMetricsDays,
     int AuditEventsDays,
+    int RuntimeStateOutboxDays,
     int IntervalHours,
     int BatchSize)
 {
@@ -14,6 +15,7 @@ public sealed record DataRetentionSettings(
             configuration.GetValue("Retention:Enabled", true),
             Math.Clamp(configuration.GetValue("Retention:RequestMetricsDays", 90), 1, 3650),
             Math.Clamp(configuration.GetValue("Retention:AuditEventsDays", 365), 1, 3650),
+            Math.Clamp(configuration.GetValue("Retention:RuntimeStateOutboxDays", 30), 1, 3650),
             Math.Clamp(configuration.GetValue("Retention:IntervalHours", 24), 1, 168),
             Math.Clamp(configuration.GetValue("Retention:BatchSize", 5000), 100, 50000));
 }
@@ -23,5 +25,7 @@ public sealed record DataRetentionResult(
     DateTimeOffset CompletedAtUtc,
     DateTimeOffset RequestMetricsCutoffUtc,
     DateTimeOffset AuditEventsCutoffUtc,
+    DateTimeOffset RuntimeStateOutboxCutoffUtc,
     int DeletedRequestMetrics,
-    int DeletedAuditEvents);
+    int DeletedAuditEvents,
+    int DeletedRuntimeStateOutbox);

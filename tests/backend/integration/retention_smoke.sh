@@ -37,6 +37,7 @@ export HARDWARE_METRICS_ENABLED="false"
 export RETENTION_ENABLED="false"
 export RETENTION_REQUEST_METRICS_DAYS="30"
 export RETENTION_AUDIT_EVENTS_DAYS="180"
+export RETENTION_RUNTIME_STATE_OUTBOX_DAYS="30"
 export RETENTION_INTERVAL_HOURS="24"
 export RETENTION_BATCH_SIZE="100"
 
@@ -46,7 +47,7 @@ fi
 wait_ready
 
 settings="$(curl --fail --silent http://127.0.0.1:8080/api/admin/retention)"
-echo "$settings" | jq -e '.enabled == false and .requestMetricsDays == 30 and .auditEventsDays == 180 and .batchSize == 100' >/dev/null
+echo "$settings" | jq -e '.enabled == false and .requestMetricsDays == 30 and .auditEventsDays == 180 and .runtimeStateOutboxDays == 30 and .batchSize == 100' >/dev/null
 
 "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" <<'SQL' >/dev/null
 INSERT INTO request_metrics
@@ -60,19 +61,31 @@ INSERT INTO audit_events
 VALUES
     (NOW() - INTERVAL '181 days', 'retention-smoke', 'retention.old', 'test', 'old'),
     (NOW() - INTERVAL '1 day', 'retention-smoke', 'retention.recent', 'test', 'recent');
+
+INSERT INTO runtime_state_outbox
+    ("Kind", "Action", "OccurredAtUtc", "AttemptCount", "ProcessedAtUtc")
+VALUES
+    ('retention-test', 'processed-old', NOW() - INTERVAL '31 days', 1, NOW() - INTERVAL '31 days'),
+    ('retention-test', 'processed-recent', NOW() - INTERVAL '1 day', 1, NOW() - INTERVAL '1 day'),
+    ('retention-test', 'pending-old', NOW() - INTERVAL '60 days', 7, NULL);
 SQL
 
 result="$(curl --fail --silent -X POST http://127.0.0.1:8080/api/admin/retention/run)"
-echo "$result" | jq -e '.deletedRequestMetrics == 1 and .deletedAuditEvents == 1' >/dev/null
+echo "$result" | jq -e '.deletedRequestMetrics == 1 and .deletedAuditEvents == 1 and .deletedRuntimeStateOutbox == 1' >/dev/null
 
 metric_old_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM request_metrics WHERE \"LogicalModel\" = 'retention-old';")"
 metric_recent_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM request_metrics WHERE \"LogicalModel\" = 'retention-recent';")"
 audit_old_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM audit_events WHERE \"Action\" = 'retention.old';")"
 audit_recent_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM audit_events WHERE \"Action\" = 'retention.recent';")"
 audit_run_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM audit_events WHERE \"Action\" = 'retention.cleanup.run';")"
+outbox_old_processed_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM runtime_state_outbox WHERE \"Action\" = 'processed-old';")"
+outbox_recent_processed_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM runtime_state_outbox WHERE \"Action\" = 'processed-recent';")"
+outbox_old_pending_count="$("${COMPOSE[@]}" exec -T postgres psql -At -U "${POSTGRES_USER:-llmproxy}" -d "${POSTGRES_DB:-llmproxy}" -c "SELECT count(*) FROM runtime_state_outbox WHERE \"Action\" = 'pending-old' AND \"ProcessedAtUtc\" IS NULL;")"
 
 [[ "$metric_old_count" == "0" && "$metric_recent_count" == "1" ]] || fail_with_diagnostics "Request-metric retention removed the wrong rows."
 [[ "$audit_old_count" == "0" && "$audit_recent_count" == "1" ]] || fail_with_diagnostics "Audit retention removed the wrong rows."
 [[ "$audit_run_count" == "1" ]] || fail_with_diagnostics "Manual retention cleanup was not audited."
+[[ "$outbox_old_processed_count" == "0" && "$outbox_recent_processed_count" == "1" ]] || fail_with_diagnostics "Processed outbox retention removed the wrong rows."
+[[ "$outbox_old_pending_count" == "1" ]] || fail_with_diagnostics "Retention must never delete an undelivered outbox row, regardless of age."
 
-echo "Retention smoke suite passed: independent request-metric/audit cutoffs and manual audited cleanup verified."
+echo "Retention smoke suite passed: request-metric/audit/processed-outbox cutoffs, pending-outbox safety and manual audited cleanup verified."

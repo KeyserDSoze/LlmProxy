@@ -18,6 +18,7 @@ public static class DataRetentionAdminEndpoints
                 service.Settings.Enabled,
                 service.Settings.RequestMetricsDays,
                 service.Settings.AuditEventsDays,
+                service.Settings.RuntimeStateOutboxDays,
                 service.Settings.IntervalHours,
                 service.Settings.BatchSize
             }));
@@ -35,8 +36,10 @@ public static class DataRetentionAdminEndpoints
             {
                 result.DeletedRequestMetrics,
                 result.DeletedAuditEvents,
+                result.DeletedRuntimeStateOutbox,
                 result.RequestMetricsCutoffUtc,
-                result.AuditEventsCutoffUtc
+                result.AuditEventsCutoffUtc,
+                result.RuntimeStateOutboxCutoffUtc
             });
 
             dbContext.AuditEvents.Add(new AuditEvent(
