@@ -50,10 +50,13 @@ export const api = {
   clearCredentialUsageGroup: (credentialId: string) =>
     request<void>(`/api/admin/api-credentials/${credentialId}/usage-group`, { method: 'DELETE' }),
   rateLimits: () => request<RateLimitPolicy[]>('/api/admin/rate-limits'),
-  createRateLimit: (body: { apiCredentialId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean }) =>
+  createRateLimit: (body: { apiCredentialId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<RateLimitPolicy>('/api/admin/rate-limits', { method: 'POST', body: JSON.stringify(body) }),
-  updateRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }) =>
+  updateRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<RateLimitPolicy>(`/api/admin/rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  setOutputTokenBudget: (id: string, outputTokensPerWindow: number, maxOutputTokensPerRequest: number) =>
+    request<RateLimitPolicy>(`/api/admin/rate-limits/${id}/output-token-budget`, { method: 'PUT', body: JSON.stringify({ outputTokensPerWindow, maxOutputTokensPerRequest }) }),
+  clearOutputTokenBudget: (id: string) => request<void>(`/api/admin/rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
   deleteRateLimit: (id: string) => request<void>(`/api/admin/rate-limits/${id}`, { method: 'DELETE' }),
   usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),

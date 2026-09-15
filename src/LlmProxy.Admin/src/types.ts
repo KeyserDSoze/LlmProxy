@@ -201,6 +201,8 @@ export type RateLimitPolicy = {
   logicalModel?: string | null
   requestsPerWindow: number
   windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
   enabled: boolean
   createdAtUtc: string
   updatedAtUtc: string

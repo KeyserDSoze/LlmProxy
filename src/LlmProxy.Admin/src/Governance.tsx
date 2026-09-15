@@ -30,6 +30,9 @@ export default function Governance() {
   const [rateModel, setRateModel] = useState('')
   const [requestsPerWindow, setRequestsPerWindow] = useState(60)
   const [windowSeconds, setWindowSeconds] = useState(60)
+  const [budgetPolicyId, setBudgetPolicyId] = useState('')
+  const [outputTokensPerWindow, setOutputTokensPerWindow] = useState(100000)
+  const [maxOutputTokensPerRequest, setMaxOutputTokensPerRequest] = useState(4096)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -50,6 +53,7 @@ export default function Governance() {
       setUsage(nextUsage)
       setModels(nextModels)
       setRateCredentialId(current => current || nextCredentials[0]?.id || '')
+      setBudgetPolicyId(current => current && nextRateLimits.some(policy => policy.id === current) ? current : nextRateLimits[0]?.id || '')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -60,6 +64,13 @@ export default function Governance() {
   useEffect(() => { void refresh() }, [refresh])
 
   const groupNames = useMemo(() => new Map(groups.map(group => [group.id, group.name])), [groups])
+  const budgetPolicy = useMemo(() => rateLimits.find(policy => policy.id === budgetPolicyId), [budgetPolicyId, rateLimits])
+
+  useEffect(() => {
+    if (!budgetPolicy) return
+    setOutputTokensPerWindow(budgetPolicy.outputTokensPerWindow ?? 100000)
+    setMaxOutputTokensPerRequest(budgetPolicy.maxOutputTokensPerRequest ?? 4096)
+  }, [budgetPolicy])
 
   async function createGroup(event: FormEvent) {
     event.preventDefault()
@@ -83,7 +94,8 @@ export default function Governance() {
     event.preventDefault()
     if (!rateCredentialId) return
     setMessage(null)
-    await api.createRateLimit({ apiCredentialId: rateCredentialId, logicalModel: rateModel || null, requestsPerWindow, windowSeconds, enabled: true })
+    const created = await api.createRateLimit({ apiCredentialId: rateCredentialId, logicalModel: rateModel || null, requestsPerWindow, windowSeconds, enabled: true })
+    setBudgetPolicyId(created.id)
     setMessage('Rate-limit policy created and applied live.')
     await refresh()
   }
@@ -105,6 +117,23 @@ export default function Governance() {
     await refresh()
   }
 
+  async function applyOutputTokenBudget(event: FormEvent) {
+    event.preventDefault()
+    if (!budgetPolicyId) return
+    setMessage(null)
+    await api.setOutputTokenBudget(budgetPolicyId, outputTokensPerWindow, maxOutputTokensPerRequest)
+    setMessage('Output-token budget updated and applied live.')
+    await refresh()
+  }
+
+  async function clearOutputTokenBudget() {
+    if (!budgetPolicyId) return
+    setMessage(null)
+    await api.clearOutputTokenBudget(budgetPolicyId)
+    setMessage('Output-token budget cleared. Request-rate policy remains active.')
+    await refresh()
+  }
+
   if (loading) return <div className="loading">Loading usage governance…</div>
 
   return <>
@@ -113,7 +142,7 @@ export default function Governance() {
 
     <section className="panel">
       <div className="panelTitle">
-        <div><h2>Usage & Governance</h2><span>Caller identity, group attribution, rate limits and consolidated usage.</span></div>
+        <div><h2>Usage & Governance</h2><span>Caller identity, group attribution, rate limits, output-token budgets and consolidated usage.</span></div>
         <div className="actions">
           <select aria-label="Usage window" value={days} onChange={event => setDays(Number(event.target.value))}>
             <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
@@ -162,8 +191,10 @@ export default function Governance() {
     <div className="gridTwo">
       <section className="panel">
         <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from DGX capacity backpressure.</span></div>
-        <table><thead><tr><th>Credential</th><th>Model</th><th>Limit</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={5}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}>
-          <td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
+        <table><thead><tr><th>Credential</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={6}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}>
+          <td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+          <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <><strong>{formatNumber(policy.outputTokensPerWindow)} tokens / {policy.windowSeconds}s</strong><div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
+          <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
           <td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td>
         </tr>)}</tbody></table>
       </section>
@@ -175,6 +206,16 @@ export default function Governance() {
         <button className="primary">Add rate limit</button>
       </form></section>
     </div>
+
+    <section className="panel formPanel">
+      <div className="panelTitle"><div><h2>Output-token budget</h2><span>Reserve before inference, then settle to actual output usage. Redis-enabled gateways enforce one shared budget.</span></div></div>
+      {rateLimits.length === 0 ? <p className="muted">Create a rate-limit policy first; output-token budgets reuse the same credential/model scope and window.</p> : <form onSubmit={event => void applyOutputTokenBudget(event)}>
+        <label>Budget policy<select aria-label="Budget policy" value={budgetPolicyId} onChange={event => setBudgetPolicyId(event.target.value)} required>{rateLimits.map(policy => <option key={policy.id} value={policy.id}>{policy.credentialName ?? policy.apiCredentialId} · {policy.logicalModel ?? 'All models'} · {policy.windowSeconds}s</option>)}</select></label>
+        <label>Output tokens per window<input aria-label="Output tokens per window" type="number" min="1" value={outputTokensPerWindow} onChange={event => setOutputTokensPerWindow(Number(event.target.value))} /></label>
+        <label>Max output tokens per request<input aria-label="Max output tokens per request" type="number" min="1" max={outputTokensPerWindow} value={maxOutputTokensPerRequest} onChange={event => setMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
+        <div className="actions"><button className="primary">Apply token budget</button><button type="button" className="secondary" disabled={!budgetPolicy?.outputTokensPerWindow} onClick={() => void clearOutputTokenBudget()}>Clear token budget</button></div>
+      </form>}
+    </section>
 
     <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day window</span></div>
       <table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table>
