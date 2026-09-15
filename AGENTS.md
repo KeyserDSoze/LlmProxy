@@ -28,7 +28,7 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, with inference served by one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities are authentication, credential lifecycle, request/token governance, consolidated usage accounting, Usage Groups, logical-model routing, distributed physical-capacity admission and metadata-only enterprise observability.
+Core responsibilities are authentication, credential lifecycle, request/token governance, consolidated usage accounting, Usage Groups, logical-model routing, distributed physical-capacity admission, backup/recovery and metadata-only enterprise observability.
 
 Raw prompts, source code, generated outputs, bearer tokens and API secrets must never be persisted or added to logs/spans by default.
 
@@ -54,16 +54,25 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 
 Last reviewed: **2026-09-15**.
 
-Current product/runtime checkpoint:
+Current complete repository/operator checkpoint:
+
+```text
+66d7a809936f0f21f330d84887c1bb6a4e536f97
+fix: wait for queryable clean restore target
+CI 35018579785 — SUCCESS
+```
+
+The gate proves backend/unit/benchmark, React/Vitest/Playwright, production image build, all existing Docker/PostgreSQL smoke suites, destructive clean-target PostgreSQL backup/restore and the PowerShell backup/restore operator path.
+
+Current distributed runtime checkpoint remains:
 
 ```text
 628fbc15dc2c963db802f9f2d9aca4b324225c99
-fix: prevent caching rotated credential secrets
 CI         34996328467 — SUCCESS
 Full Stack 34996328588 — SUCCESS
 ```
 
-The gate proves backend/unit/benchmark, React/Vitest/Playwright, production image build, all PostgreSQL/Docker smoke suites, Redis runtime/outbox fault recovery, distributed output-token budgets and cross-replica credential rotation.
+That Full Stack run proves Redis runtime synchronization, transactional-outbox fault recovery, distributed output-token budgets and cross-replica credential rotation. The later backup/restore commits do not alter inference runtime code.
 
 ## Current runtime topology
 
@@ -87,31 +96,9 @@ Read `docs/runtime-cache.md` before changing this path.
 
 Credential creation and rotation never persist raw secrets. PostgreSQL/Redis/runtime state contain HMAC hashes and safe metadata only.
 
-Rotation is an **in-place hard cutover**:
+Rotation is an **in-place hard cutover**: the credential keeps the same identity, group and policy/history linkage while `KeyPrefix` + `KeyHash` are replaced. The replacement raw secret is returned once, the old secret becomes invalid, the response is `Cache-Control: no-store`, and audit contains safe prefix metadata only.
 
-```text
-same credential Id
-same Name / CreatedAtUtc / ExpiresAtUtc / UsageGroupId
-same request-rate and output-token policy linkage
-same historical accounting identity
-
-replace KeyPrefix + KeyHash
-return replacement raw secret once
-old secret becomes invalid
-```
-
-Rules:
-
-- `POST /api/admin/api-credentials/{id}/rotate` is AdminWrite when Entra is enabled;
-- revoked credentials cannot be rotated;
-- the response that exposes the one-time secret is `Cache-Control: no-store`;
-- audit records only safe old/new prefixes and non-secret metadata;
-- the raw replacement secret and HMAC are never written to audit;
-- originating gateway L1 changes after successful DB save;
-- Redis-enabled peers converge through the transactional outbox/runtime-state channel;
-- restart/startup hydration preserves only the rotated credential.
-
-Full Stack `34996328588` proves old key 200 before rotation, new key 200 + old key 401 after convergence on both gateways, Redis new-HMAC-only state, preserved Usage Group/policy identity and peer restart behavior.
+Full Stack `34996328588` proves old-key/new-key behavior across two gateways plus peer restart.
 
 Read `docs/usage-governance.md` before changing credential lifecycle or caller governance.
 
@@ -119,33 +106,28 @@ Read `docs/usage-governance.md` before changing credential lifecycle or caller g
 
 Request-rate and output-token governance share the same persisted credential/model `RateLimitPolicy` scope in V1.
 
-Output-token budget fields:
-
 ```text
 OutputTokensPerWindow : int?
 MaxOutputTokensPerRequest : int?
 ```
 
-The output-token budget uses the same `WindowSeconds` as request-rate policy in V1.
+The output-token budget uses the same `WindowSeconds` as request-rate policy. Reservation occurs before inference; successful known usage refunds unused reservation; no-upstream-attempt paths refund fully; uncertain usage after upstream work keeps the full reservation charged. Redis-enabled token-budget admission is shared across replicas and fails closed if Redis cannot coordinate.
 
-When a budget is configured:
+## Backup / restore: current contract
 
-```text
-before inference
-  -> cap/inject maximum output tokens
-  -> atomically reserve that amount
+Backup/restore is **DONE and CI-validated** for the repository-supported Compose path.
 
-successful response with observed output usage
-  -> refund Reserved - Actual
+- PostgreSQL is the durable recovery authority.
+- Backup artifact is `pg_dump` custom format plus SHA-256 sidecar and non-secret metadata.
+- Raw API secrets are not in PostgreSQL and cannot be recovered from the dump.
+- `Authentication__ApiKeyPepper` and other deployment secrets are external recovery dependencies and must be preserved separately.
+- Restore is explicit/destructive: stop writers, recreate the target DB, restore with `pg_restore`, then rebuild runtime state.
+- Redis is not restored as authoritative state. LlmProxy-prefixed runtime keys are cleared when the selected Compose stack owns Redis; startup republishes snapshots from restored PostgreSQL.
+- Current request-rate/token windows and capacity leases may reset during DR.
+- Linux Bash and PowerShell operator scripts are present under `docker/scripts/`.
+- CI `35018579785` proves an actual destroyed-volume -> clean-target restore, preserved credential/group/governance/history state, authenticated inference, clean-Redis republish, and the PowerShell binary-copy/restore workflow.
 
-no upstream attempt
-  -> refund full reservation
-
-upstream work with uncertain/missing usage, cancellation or interrupted stream
-  -> keep full reservation charged
-```
-
-Redis-enabled token-budget admission is shared across replicas and fails closed if Redis cannot coordinate.
+Read `docs/backup-restore.md` before changing recovery behavior. Native customer Windows/Docker Desktop and production backup storage remain deployment-environment acceptance, while the PowerShell script semantics are exercised under `pwsh` in CI.
 
 ## Error/admission taxonomy
 
@@ -165,15 +147,13 @@ Keep caller request rate, caller token budget and physical capacity distinct.
 
 ## Current development focus / resume point
 
-Credential rotation is DONE and validated. Default next order:
+Output-token budget V1, credential rotation and repository backup/restore are DONE and validated. Default next order:
 
-1. **Backup/restore + actual restore verification** — ACTIVE NEXT.
-2. Optional quota evolution only if required: input/total-token budgets, monetary budgets or independent token-budget periods.
-3. Long-term usage rollups / production HA-storage guidance as required.
-4. Model/runtime upgrade + draining strategy.
+1. **Model/runtime upgrade + draining strategy** — ACTIVE NEXT. Define safe replacement/upgrade sequencing so in-flight work is not cut off and routing never sends new work to a deployment being upgraded.
+2. Optional quota evolution only if requirements call for input/total-token budgets, monetary budgets or independent token-budget periods.
+3. Long-term usage rollups if reporting must outlive raw retention.
+4. Customer-specific Redis/observability HA and production storage/backup scheduling guidance.
 5. Physical acceptance on real DGX/Copilot/Entra/Cloudflare environment.
-
-Backup/restore work must verify an actual restore into a clean target, not only document `pg_dump`. At minimum preserve configuration, credentials as hashes/safe metadata, Usage Groups, policies, audit/history required by product scope, and prove restored runtime startup/republication works.
 
 Do not implement input/total-token admission without explicit tokenizer/estimation semantics. Do not implement monetary budgets without stable cost/pricing semantics.
 
@@ -189,6 +169,7 @@ A centrally configured GitHub Copilot BYOK provider may use one shared credentia
 - Cloudflare Tunnel/public domain;
 - real GitHub Copilot BYOK end-to-end;
 - on-prem self-hosted deployment runner;
+- customer production backup destination/retention/encryption and native Windows/Docker Desktop acceptance where used;
 - Copilot usage-metrics behavior if used for per-user analytics.
 
 ## Architecture decision: NVIDIA PAIR
@@ -203,6 +184,7 @@ docs/full-stack.md                       Redis + OTEL/Grafana + outbox operation
 docs/project-status.md                   canonical state and exact resume point
 docs/runtime-cache.md                    L1/L2 + transactional outbox + distributed coordination
 docs/usage-governance.md                 auth, credential lifecycle, groups, rate/token governance, usage
+docs/backup-restore.md                   PostgreSQL backup/restore, secrets boundary and restore proof
 docs/data-retention.md                   request/audit/processed-outbox retention
 docs/development-log.md                  chronological engineering + validation trace
 docs/roadmap.md                          milestone state/backlog

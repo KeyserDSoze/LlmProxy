@@ -54,7 +54,10 @@ For canonical current state use `docs/project-status.md`.
 - DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
 - DONE: production image/Compose CI validation.
 - DONE: outbox batch/poll and processed-outbox retention knobs.
+- DONE: PostgreSQL backup/restore Bash + PowerShell operator scripts.
+- DONE: destructive clean-target restore CI proof and PowerShell operator-path CI proof.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
+- EXTERNAL: customer backup destination, encryption, retention schedule and native deployment-host acceptance.
 
 ## M7 - Caller governance — DONE FOR CURRENT V1
 
@@ -83,6 +86,7 @@ Future quota extensions are PLANNED only when requirements justify them: input/t
 - DONE: usage aggregation/UI by group, credential and logical model.
 - DONE: credential rotation preserves group and historical credential identity.
 - PLANNED: archive/deletion semantics if required.
+- PLANNED: long-term rollups if reporting must outlive raw retention.
 - PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics.
 
 Shared Copilot credentials are not individual user identity. Never infer users from IP.
@@ -122,15 +126,16 @@ local RAM  = per-replica request-path L1
 - DONE: outbox backlog/retry/error diagnostics + processed-only retention.
 - DONE: Redis shared output-token budget admission/settlement.
 - DONE: credential rotation propagation and old-hash removal across replicas.
+- DONE: clean Redis runtime reconstruction from restored PostgreSQL demonstrated in restore smoke.
 - PLANNED: customer-specific Redis HA/redundancy production guidance.
 
 ## M12 - Product hardening — ACTIVE
 
 - DONE: V1 output-token quota reservation/settlement.
 - DONE: credential rotation workflow.
-- ACTIVE NEXT: backup/restore + actual restore verification.
+- DONE: backup/restore + actual clean-target restore verification.
+- ACTIVE NEXT: model/runtime upgrade + draining strategy.
 - PLANNED: long-term reporting rollups where required.
-- PLANNED: model/runtime upgrade and draining strategy.
 
 Credential-rotation validation checkpoint:
 
@@ -140,12 +145,20 @@ CI         34996328467
 Full Stack 34996328588
 ```
 
+Backup/restore validation checkpoint:
+
+```text
+commit     66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI         35018579785 SUCCESS
+```
+
+The backup/restore CI proves destructive Linux clean-target recovery plus PowerShell operator semantics. Native customer Windows/Docker Desktop remains deployment-environment acceptance rather than repository CI.
+
 ## Current development order
 
-1. Add backup/restore procedures and automated/explicit restore verification against a clean target.
+1. Implement safe model/runtime upgrade + draining sequencing with no new work routed to a draining target and no unsafe interruption of in-flight streaming work.
 2. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
-3. Add reporting rollups / production HA-storage guidance as required.
-4. Add model/runtime upgrade + draining strategy.
-5. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
+3. Add reporting rollups / customer-specific production HA-storage and scheduled-backup guidance as required.
+4. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue with LlmProxy + vLLM unless explicitly reopened.

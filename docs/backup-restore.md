@@ -1,6 +1,17 @@
 # Backup and restore
 
-PostgreSQL is the durable application authority for LlmProxy. This document defines the repository-supported backup/restore path and the boundaries that are intentionally outside the database artifact.
+PostgreSQL is the durable application authority for LlmProxy. This document defines the repository-supported backup/restore path and the boundaries intentionally outside the database artifact.
+
+## Validation status
+
+Repository backup/restore is **DONE and CI-validated**.
+
+```text
+implementation/operator checkpoint 66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI                               35018579785 SUCCESS
+```
+
+The final CI run passes both the destructive Linux clean-target restore and the PowerShell operator-path restore. Native customer Windows/Docker Desktop remains deployment-environment acceptance; the PowerShell scripts themselves are exercised under `pwsh` in CI against real Docker/PostgreSQL containers.
 
 ## What is backed up
 
@@ -46,13 +57,13 @@ Current Redis-only state includes transient/fixed-window coordination such as:
 - physical-capacity leases;
 - runtime snapshot/version/pubsub state.
 
-A disaster restore therefore starts with clean LlmProxy Redis keys. Current request/token windows reset as part of DR. If a customer needs exact preservation of in-flight quota windows across disaster recovery, that is a separate requirement and must be designed explicitly; copying arbitrary Redis state from a different point in time is not safe.
+A disaster restore therefore starts with clean LlmProxy Redis keys. Current request/token windows reset as part of DR. If a customer needs exact preservation of in-flight quota windows across disaster recovery, that is a separate requirement; copying arbitrary Redis state from a different point in time is not safe.
 
 Tempo/Loki/Prometheus/Grafana storage is also outside this application-state backup. Production observability retention/DR should follow the chosen production storage backend.
 
-## Create a backup
+## Linux / Bash operators
 
-Default full-stack deployment:
+Create a backup with the default full-stack deployment:
 
 ```bash
 bash docker/scripts/postgres-backup.sh
@@ -72,20 +83,6 @@ ENV_FILE=docker/.env.full \
 bash docker/scripts/postgres-backup.sh backups/llmproxy-prod.dump
 ```
 
-The script requires the `postgres` Compose service to be running and writes:
-
-```text
-<file>.dump          PostgreSQL custom-format archive
-<file>.dump.sha256   SHA-256 checksum
-<file>.dump.meta     non-secret metadata + pepper recovery warning
-```
-
-Before publishing the artifact, the script asks `pg_restore --list` to parse it. Empty/unreadable archives are rejected.
-
-Store the dump/checksum in access-controlled backup storage and store deployment secrets separately in the approved secret manager.
-
-## Restore
-
 Restore is intentionally destructive and requires an explicit confirmation flag:
 
 ```bash
@@ -101,20 +98,69 @@ REDIS_KEY_PREFIX=llmproxy \
 bash docker/scripts/postgres-restore.sh backups/llmproxy-prod.dump --confirm-destructive
 ```
 
-The script:
+## PowerShell operators
 
-1. verifies SHA-256 when the checksum sidecar exists;
-2. validates that `pg_restore` can read the archive before changing the DB;
-3. stops the Compose-managed LlmProxy gateway;
-4. terminates remaining sessions to the target database;
-5. drops and recreates the target database instead of merging rows;
-6. restores with `--no-owner --no-acl --exit-on-error`;
-7. when a Redis service belongs to the same Compose shape, removes only keys matching `${REDIS_KEY_PREFIX}:*`;
-8. restarts the Compose-managed gateway unless `RESTORE_START_GATEWAY=false`.
+Create a backup:
+
+```powershell
+pwsh -NoProfile -File docker/scripts/postgres-backup.ps1
+```
+
+Explicit file:
+
+```powershell
+pwsh -NoProfile -File docker/scripts/postgres-backup.ps1 `
+  -BackupFile backups/llmproxy-prod.dump
+```
+
+Custom Compose/env configuration uses the same environment variables as Bash:
+
+```powershell
+$env:COMPOSE_FILE = "docker/docker-compose.full.yml"
+$env:ENV_FILE = "docker/.env.full"
+pwsh -NoProfile -File docker/scripts/postgres-backup.ps1 `
+  -BackupFile backups/llmproxy-prod.dump
+```
+
+Destructive restore:
+
+```powershell
+pwsh -NoProfile -File docker/scripts/postgres-restore.ps1 `
+  -BackupFile backups/llmproxy-prod.dump `
+  -ConfirmDestructive
+```
+
+The PowerShell backup writes the binary custom-format archive inside the PostgreSQL container and copies it to the host with `docker compose cp`. Do not replace this with a text pipeline such as redirecting `docker compose exec pg_dump` output through PowerShell; binary archive integrity must be preserved.
+
+## Backup artifact
+
+Both operator paths produce:
+
+```text
+<file>.dump          PostgreSQL custom-format archive
+<file>.dump.sha256   SHA-256 checksum
+<file>.dump.meta     non-secret metadata + pepper recovery warning
+```
+
+Before publishing the artifact, the scripts ask `pg_restore --list` to parse it. Empty/unreadable archives are rejected.
+
+Store the dump/checksum in access-controlled backup storage and store deployment secrets separately in the approved secret manager.
+
+## Restore semantics
+
+The scripts:
+
+1. verify SHA-256 when the checksum sidecar exists;
+2. validate that `pg_restore` can read the archive before changing the DB;
+3. stop the Compose-managed LlmProxy gateway;
+4. drop/recreate the target database instead of merging rows;
+5. restore with `--no-owner --no-acl --exit-on-error`;
+6. when a Redis service belongs to the same Compose shape, remove only keys matching `${REDIS_KEY_PREFIX}:*`;
+7. restart the Compose-managed gateway unless `RESTORE_START_GATEWAY=false`.
 
 ### Multi-replica requirement
 
-All external gateway replicas/writers that use the same PostgreSQL database must be stopped before restore. The script can stop only the `llmproxy` service that belongs to the selected Compose project.
+All external gateway replicas/writers that use the same PostgreSQL database must be stopped before restore. The scripts can stop only the `llmproxy` service belonging to the selected Compose project.
 
 Do not run a point-in-time restore while other replicas continue mutating the same DB.
 
@@ -135,27 +181,52 @@ Pending transactional-outbox rows restored from PostgreSQL remain durable work a
 
 ## Automated restore proof
 
-CI runs `tests/backend/integration/backup_restore_smoke.sh` against the same Linux operator scripts.
+CI runs two complementary tests.
 
-The smoke:
+### Linux destructive clean-target proof
+
+`tests/backend/integration/backup_restore_smoke.sh`:
 
 - creates non-bootstrap Usage Group, credential and request/token policy state;
 - performs authenticated inference;
 - creates a custom-format backup + checksum;
 - destroys the PostgreSQL volume completely;
-- starts a clean empty PostgreSQL target and proves the application schema is absent;
-- runs the destructive restore script;
+- starts a clean empty PostgreSQL target and requires a real `SELECT 1` before considering the new DB queryable;
+- proves the application schema is absent;
+- runs the destructive Bash restore script;
 - boots the gateway from restored data and proves the preserved credential still authenticates;
 - verifies Usage Group, policy and audit/history preservation;
 - attaches a completely clean Redis + peer gateway;
 - proves startup republishes credential/route/policy snapshots from restored PostgreSQL;
 - performs authenticated inference through that Redis-enabled restored peer.
 
-This test is the minimum evidence required before backup/restore is considered validated.
+The explicit SQL readiness check exists because `pg_isready` alone can report an accepting postmaster before the configured initialization database is actually queryable.
+
+### PowerShell operator proof
+
+`tests/backend/integration/backup_restore_powershell_smoke.sh`:
+
+- creates credential/group/request-rate/output-token state;
+- performs authenticated inference;
+- backs up through `postgres-backup.ps1` and validates artifact/checksum/metadata;
+- creates a durable **post-backup mutation**;
+- restores through `postgres-restore.ps1`;
+- proves the mutation disappeared, demonstrating actual rollback to the backup point;
+- proves the pre-backup credential, Usage Group and governance policy survive;
+- performs authenticated inference after restore.
+
+Final evidence:
+
+```text
+CI 35018579785
+  Backup and clean-target restore smoke suite  SUCCESS
+  PowerShell backup and restore smoke suite    SUCCESS
+```
 
 ## Recovery caveats
 
-- Keep PostgreSQL server/restore tooling version-compatible with the backup archive. The bundled scripts execute `pg_dump`/`pg_restore` inside the deployment's PostgreSQL image to reduce version mismatch risk.
+- Keep PostgreSQL server/restore tooling version-compatible with the backup archive. The scripts execute `pg_dump`/`pg_restore` inside the deployment's PostgreSQL image to reduce version mismatch risk.
 - The restored application image may run newer EF migrations on startup. Test upgrades separately before relying on cross-version disaster recovery.
 - A database backup does not recover a raw API secret that an operator/client lost. It recovers the HMAC that lets the *existing* secret continue to work when the same pepper is restored.
 - Rotation after the backup means a restore to that older backup also restores the credential version that existed at that backup point. Coordinate client secret rollback/rotation as part of DR if restoring to an older point in time.
+- Current repository validation covers correctness, not customer-specific RPO/RTO, backup scheduling, remote/off-site storage, encryption-at-rest policy or retention lifecycle. Those belong to production deployment design.

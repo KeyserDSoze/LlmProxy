@@ -4,9 +4,9 @@ This is the chronological engineering trace for LlmProxy. For canonical current 
 
 ## 2026-09-09 — Repository, gateway and multi-DGX foundation
 
-Created the .NET 10 layered solution, React/TypeScript admin, PostgreSQL persistence, Docker packaging and GitHub Actions foundations. Added logical client-facing models, internal DGX nodes/deployments, `/v1/models`, `/v1/chat/completions`, SSE streaming and `/v1/responses`.
+Created the .NET 10 layered solution, React/TypeScript admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical client-facing models, internal DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility.
 
-Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, drain/disable, audit, weighted least loaded / round robin / weighted round robin and pre-response-only failover. Added metadata-only request metrics, vLLM pressure signals and smart-routing tuning. Prompts/source/generated content remain excluded from telemetry.
+Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, drain/disable, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM runtime signals. Prompts/source/generated content remain excluded from telemetry.
 
 ## 2026-09-09 — Repository-first handover discipline
 
@@ -34,10 +34,6 @@ Added persisted benchmark-derived Capacity Profiles and aggregate physical-node 
 
 Checkpoint: `600ad42cc53ad1e97a259819654ca5cf5480e1db`.
 
-## 2026-09-14 — Operator onboarding / GHCR deployment
-
-Added Linux/Windows quickstart, private GHCR path and minimal/full Compose installation shapes.
-
 ## 2026-09-14 — Caller governance + Usage Groups — VALIDATED
 
 Implemented persisted Usage Groups, request-time group snapshots, credential/model request-rate policies, governance audit and usage reporting/UI.
@@ -47,23 +43,16 @@ commit 798f0a460dcc4f89b17e2ce89df66f511d324241
 CI     34859931084
 ```
 
-## 2026-09-14 — Runtime credential authentication — VALIDATED
+## 2026-09-14 — Runtime credential and route-catalog hot path — VALIDATED
 
-Removed API-credential SQL lookup from `/v1`; added local runtime credential cache, startup rebuild, live publication and buffered last-used persistence.
-
-```text
-commit 1f607c8433fe2ca08a1c243b68d87587204f35ee
-CI     34860662747
-```
-
-## 2026-09-14 — Runtime route/model/deployment catalog — VALIDATED
-
-Removed synchronous route-catalog SQL lookup from ordinary inference and added PostgreSQL-outage coverage for already-published state.
+Removed synchronous SQL configuration lookups from ordinary inference. Credential, node/model/deployment and caller-policy definitions are rebuilt at startup and maintained in local runtime state.
 
 ```text
-commit 42c44753cd00d679a81bf065f410b7a497cdc000
-CI     34871542047
+credential cache 1f607c8433fe2ca08a1c243b68d87587204f35ee / CI 34860662747
+route catalog     42c44753cd00d679a81bf065f410b7a497cdc000 / CI 34871542047
 ```
+
+PostgreSQL-outage smoke proves already-published inference configuration remains usable.
 
 ## 2026-09-14 — Retention foundation
 
@@ -73,30 +62,9 @@ Added independent request-metric and audit retention, background batched cleanup
 
 Promoted Redis to shared runtime/coordination L2 while preserving local L1 and PostgreSQL durable authority. Added Redis snapshot/version/event synchronization, reconciliation and bundled OTEL Collector + Tempo + Loki + Prometheus + Grafana.
 
-## 2026-09-15 — Shared request-rate counters + distributed DGX capacity leases
+## 2026-09-15 — Distributed request/capacity coordination — VALIDATED
 
-Request-rate policies stay in local runtime state while distributed counters use Redis. Added Redis atomic deployment + physical-node capacity leases and fail-closed acquisition.
-
-Key capacity milestone:
-
-```text
-cc454c325810b39a419107f49ad42a3ab7b70769
-feat: coordinate physical capacity through redis leases
-```
-
-## 2026-09-15 — Active lease-loss cancellation and hardening — VALIDATED
-
-Introduced active lease coordination-loss signaling and inference cancellation, then hardened the watchdog sampling so cancellation occurs before Redis TTL reuse.
-
-```text
-a12afa877e6b44538f45bc60061a56c34a5895b2
-5d49f464829525c69621504321c95209002c9884
-12535e439b6b17413a01942ebeb8504ad655a5ca
-3740692ffa3afa140e1a8f0ade5440e430838599
-edb7008ca1e3548f80dde2f7242ed30f779b13a7
-9d00c74c6ce50bf25004ea443f10e46fe0c43d2f
-6ec3c29176584f2e0bffd98b5d8cbbb0e833e76f
-```
+Added Redis shared request-rate counters, atomic deployment + physical-node capacity leases, fail-closed acquisition and active lease-loss inference cancellation.
 
 Final lease-hardening validation:
 
@@ -105,154 +73,52 @@ CI         34961566507 SUCCESS
 Full Stack 34961566463 SUCCESS
 ```
 
-## 2026-09-15 — Transactional runtime-state outbox — IMPLEMENTED
+## 2026-09-15 — Transactional runtime-state outbox — VALIDATED
 
-Closed the PostgreSQL-commit -> Redis-publication process-crash window.
+Closed the PostgreSQL-commit -> Redis-publication process-crash window. Runtime Node/Model/Deployment/Credential/RatePolicy mutations now capture an outbox row in the same PostgreSQL transaction. One advisory-lock worker publishes ordered events, retries failures and marks rows processed only after durable Redis acknowledgement.
+
+Fault validation stops Redis, commits a policy, stops the origin gateway, recovers Redis and requires a surviving peer to publish/enforce the change.
 
 ```text
-9c6289ef172bed0502068df112b6e6aec4ee8521
-feat: add transactional runtime-state outbox
+implementation 9c6289ef172bed0502068df112b6e6aec4ee8521
+CI             34968324786 SUCCESS
+Full Stack     34968114492 SUCCESS
 ```
 
-Added same-transaction outbox capture for runtime Node/Model/Deployment/Credential/RatePolicy mutations, one globally serialized publisher via PostgreSQL advisory lock, strict Id ordering, retry/backoff and acknowledged Redis state/version/pubsub publication before marking rows processed.
-
-A non-originating gateway can win the publisher lock; therefore the durable publisher applies its acknowledged event to its own L1 because same-origin Redis pub/sub is intentionally ignored.
-
-## 2026-09-15 — Transactional outbox fault validation — VALIDATED
+Outbox diagnostics/retention and deployment knobs were then validated:
 
 ```text
-4d9e241f8f8feee5afdaae6f7926cb6bdca70439
-test: validate transactional outbox recovery across replicas
-
-e5b3bad2d46d7c61997f29f1b840b2f9ac601283
-```
-
-Fault smoke stops Redis, commits a rate policy, proves pending/retry state, stops the origin gateway, recovers Redis and requires the surviving peer to publish and enforce the change from its own L1.
-
-```text
-CI         34968324786 SUCCESS
-Full Stack 34968114492 SUCCESS
-```
-
-## 2026-09-15 — Outbox diagnostics + retention hardening — VALIDATED
-
-Added outbox backlog/retry/error diagnostics to `/api/admin/runtime-sync` and processed-outbox retention with a hard rule that pending rows are never deleted.
-
-```text
-97e3b8f6b909156cbd58363d12f2fcbaf0627f5a
-cfc742db84223a7bed2f8a80cab3e5680615efad
-CI         34969410867 SUCCESS
-Full Stack 34969410860 SUCCESS
-```
-
-## 2026-09-15 — Outbox deployment wiring — VALIDATED
-
-Exposed `REDIS_OUTBOX_BATCH_SIZE`, `REDIS_OUTBOX_POLL_MILLISECONDS` and `RETENTION_RUNTIME_STATE_OUTBOX_DAYS`. Strengthened runtime-sync fault diagnostics.
-
-```text
+97e3b8f6b909156cbd58363d12f2fcbaf0627f5a / cfc742db84223a7bed2f8a80cab3e5680615efad
 79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
-chore: wire outbox operations into deployment
 CI         34976465066 SUCCESS
 Full Stack 34976465149 SUCCESS
 ```
 
-## 2026-09-15 — Output-token budget reservation/settlement — IMPLEMENTED
+## 2026-09-15 — Output-token budget V1 — VALIDATED
 
-Implemented the first quota slice as an **output-token** budget attached to the existing credential/model `RateLimitPolicy`:
+Added `OutputTokensPerWindow` + `MaxOutputTokensPerRequest` to caller policy. Chat/Responses output caps are injected/capped before inference, capacity is reserved atomically, known output usage refunds unused reservation, no-upstream-attempt paths refund fully, and uncertain post-upstream usage remains conservatively charged.
 
-```text
-ff9af90144a19159d3c8208d8cedd95500b3b984
-feat: add output token budget reservations
-```
-
-A first CI compile exposed a missing namespace for the buffered metrics sink. The only backend compile fix was:
+Redis-enabled token-budget admission is shared and fails closed; quota definitions reuse the transactional outbox + peer L1 path.
 
 ```text
-3bd81bc80d1f0976ef9398e4b860318d91a27d75
-fix: reference buffered metrics sink for token budgets
+implementation ff9af90144a19159d3c8208d8cedd95500b3b984
+runtime proof  887ebfac98389c0115eaf9c102a60133ede745ff
+CI             34987407172 SUCCESS
+Full Stack     34987407169 SUCCESS
 ```
 
-Implementation contract:
-
-- `OutputTokensPerWindow` + `MaxOutputTokensPerRequest` are persisted and runtime-published with rate policies;
-- request-rate updates preserve token-budget fields unless explicitly changed;
-- Chat `max_completion_tokens` / `max_tokens` and Responses `max_output_tokens` are capped/injected before forwarding;
-- an atomic reservation occurs before inference;
-- 2xx responses with observed output usage refund unused reservation;
-- no-upstream-attempt paths refund fully;
-- cancellation/failure/interrupted-stream/missing-usage paths retain the full reservation conservatively;
-- Redis-enabled token-budget admission is shared and fail closed; there is no local fallback;
-- dedicated errors are `token_budget_exceeded` and `token_budget_coordination_unavailable`;
-- quota policy changes reuse the transactional outbox + peer L1 pipeline.
-
-Unit tests cover concurrency, reservation/refund, uncertain usage, window reset and Chat/Responses payload cap behavior.
-
-## 2026-09-15 — Output-token budget integration validation — VALIDATED
-
-Added local and distributed fault/integration coverage:
-
-```text
-887ebfac98389c0115eaf9c102a60133ede745ff
-test: validate output token budgets end to end
-```
-
-Standard governance smoke proves budget `17`, reservation `10`, mock actual output `7`: first request settles to 7, second succeeds only because 3 tokens were refunded, third returns `429 token_budget_exceeded`. It also verifies invalid cap handling and policy rebuild after gateway restart.
-
-Dedicated Redis smoke starts a peer before policy creation, proves live policy propagation into peer L1, then proves shared settlement `7 -> 14`, cross-gateway rejection, Redis-down fail-closed `503 token_budget_coordination_unavailable` and recovery with the exhausted window preserved.
-
-Validation:
-
-```text
-CI         34987407172 SUCCESS
-Full Stack 34987407169 SUCCESS
-```
-
-## 2026-09-15 — React Admin output-token budget management — VALIDATED
-
-Added token-budget fields to the admin client types/API, budget visibility in the rate-policy table and a dedicated Apply/Clear workflow on `/admin/governance`. Clearing a token budget leaves request-rate policy intact.
-
-Playwright covers create rate policy -> apply token budget -> visible limits -> clear budget.
+React Admin Apply/Clear management was validated at:
 
 ```text
 426c545e841865406615998ca50b28a45c40e6f4
-feat: manage output token budgets in admin
 CI 34988084106 SUCCESS
 ```
 
-## 2026-09-15 — Credential rotation — IMPLEMENTED AND VALIDATED
+## 2026-09-15 — Credential rotation — VALIDATED
 
-Implemented API-key rotation as an in-place hard cutover on the existing credential identity.
+Implemented API-key rotation as an in-place hard cutover on the existing credential identity. The same credential ID/group/policy/history linkage is preserved while prefix/HMAC change. Replacement raw secret is returned once with `Cache-Control: no-store`; revoked credentials cannot rotate; audit never stores secret/HMAC.
 
-Key implementation commits in the increment:
-
-```text
-2491996638185c4b38f477deabcefbf9534733c6  endpoint foundation
-def147c2f20f3b7c77a1635bda2ee5c2ee07ca55  domain Rotate semantics
-afc1ab6c9ae0eac16410e2bef51f15f01d365864  API wiring
-a0699da9d836c3b5201683d512eef4ec7a080397  domain tests
-352f8d2060e5f243e6c612216eda3a6f520ef0ee  cross-replica rotation smoke
-049e59260db13e7c1a85c8bfc8555e2f78d95a2a  Full Stack gate wiring
-82ef575bc2cc52f2cbe8fc3bdd10275fcf7e6105  admin client
-a682ca195733bef9ebaa66998a8ad4e237af09bc  governance UI
-2f96c27904d6238c5781f50e2c0e0bf0f3425423  Playwright workflow
-628fbc15dc2c963db802f9f2d9aca4b324225c99  no-store one-time-secret hardening
-```
-
-Contract:
-
-- same credential `Id`, name, timestamps, expiry, Usage Group and caller-policy linkage;
-- new random secret, new prefix and HMAC;
-- old HMAC is removed from local credential cache on same-ID upsert;
-- revoked credentials cannot be rotated;
-- raw replacement secret is returned once and never persisted;
-- rotation response carries `Cache-Control: no-store`;
-- `credential.rotate` audit stores only safe prefix transition/group/expiry metadata;
-- Redis/outbox runtime state contains the new HMAC only;
-- peers converge through the existing transactional runtime-state publication path.
-
-The dedicated Full Stack smoke starts two gateways before rotation, verifies the old key on both, rotates through the primary, requires new-key 200 / old-key 401 on both, checks Redis for new-HMAC-only state, verifies Usage Group and rate-policy preservation, checks audit secrecy and restarts the peer to prove durable/startup hydration.
-
-Validation:
+Dedicated Full Stack coverage verifies old key before rotation, new-key 200 / old-key 401 after convergence on both replicas, Redis new-HMAC-only state, preserved Usage Group/policy identity and peer restart hydration.
 
 ```text
 commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
@@ -260,8 +126,57 @@ CI         34996328467 SUCCESS
 Full Stack 34996328588 SUCCESS
 ```
 
-## Next increment — backup/restore verification
+## 2026-09-15 — PostgreSQL backup/restore foundation — VALIDATED
 
-Credential rotation is complete. The next production-hardening increment is backup/restore with an **actual clean-target restore test**, not documentation-only commands. Define the backup artifact, restore procedure and verification that durable configuration/credential hashes/governance state recover and a restored gateway can rebuild/publish runtime state and serve authenticated traffic.
+Added Bash operators:
 
-Further quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics.
+```text
+docker/scripts/postgres-backup.sh
+docker/scripts/postgres-restore.sh
+```
+
+Backup uses PostgreSQL custom format plus SHA-256 and non-secret metadata. Restore is explicit/destructive, recreates the database and treats Redis as rebuildable runtime state. `Authentication__ApiKeyPepper` and other external secrets are documented as separate recovery dependencies.
+
+The first destructive smoke creates durable governance state, performs inference, backs up, destroys the PostgreSQL volume, proves the new target is clean, restores it, validates the original credential/group/policy/history and inference, then attaches a clean Redis peer and proves runtime snapshots are republished from PostgreSQL.
+
+```text
+commit b3cbe1ace209989aef845024259c0e4c6def4039
+CI     34997715107 SUCCESS
+```
+
+## 2026-09-15 — Cross-platform backup/restore operators — VALIDATED
+
+Added PowerShell equivalents:
+
+```text
+docker/scripts/postgres-backup.ps1
+docker/scripts/postgres-restore.ps1
+```
+
+The PowerShell backup deliberately writes the custom-format archive inside the PostgreSQL container and transfers it with binary-safe `docker compose cp`, avoiding text-pipeline corruption. The restore verifies checksum/archive, recreates the target DB, restores, optionally clears the LlmProxy Redis prefix and restarts the selected gateway.
+
+A new PowerShell smoke creates credential/group/request+token policy state, backs up through `pwsh`, performs a post-backup mutation, restores through `pwsh`, then proves the mutation disappeared while the backed-up credential/group/policy and authenticated inference returned.
+
+The first cross-platform run exposed a nondeterministic test readiness race after destructive volume recreation: `pg_isready` could report accepting before the configured database was actually queryable. The smoke was hardened to require a real `SELECT 1` round-trip before the clean-target assertion.
+
+Final validation:
+
+```text
+implementation/operator commit 66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI                           35018579785 SUCCESS
+```
+
+The same final CI run passes both:
+
+```text
+Backup and clean-target restore smoke suite  SUCCESS
+PowerShell backup and restore smoke suite    SUCCESS
+```
+
+PowerShell semantics are exercised under `pwsh` in GitHub-hosted CI; native customer Windows/Docker Desktop remains deployment-environment acceptance.
+
+## Next increment — model/runtime upgrade + draining
+
+Backup/restore is complete for the repository-supported operator path. The next default production-hardening increment is a safe model/runtime upgrade and draining strategy: stop routing new work, observe/await in-flight work, upgrade/restart/replace the target, validate health/warmup, then re-enable routing without violating the existing pre-response-only failover and streaming-safety rules.
+
+Further quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics. Long-term rollups and customer-specific HA/storage/backup scheduling are also requirements/deployment driven.

@@ -4,7 +4,16 @@ Last reviewed: **2026-09-15**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
-## Current validated product baseline
+## Current validated product / operator baseline
+
+```text
+commit     66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI         35018579785 SUCCESS
+```
+
+This checkpoint includes the current product/runtime code plus repository-supported PostgreSQL backup/restore operators for Bash and PowerShell. CI proves backend/unit/benchmark, frontend/Vitest/Playwright, production image build, all ordinary Docker/PostgreSQL smoke suites, destructive clean-target restore and the PowerShell backup/restore path.
+
+The latest distributed runtime Full Stack evidence remains:
 
 ```text
 commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
@@ -12,7 +21,7 @@ CI         34996328467 SUCCESS
 Full Stack 34996328588 SUCCESS
 ```
 
-This baseline includes output-token budgets, React governance controls and the credential-rotation workflow. The standard CI proves backend/unit/benchmark, frontend/Vitest/Playwright, production image build and all Docker/PostgreSQL smoke suites. The dedicated Full Stack run proves Redis runtime sync, transactional outbox recovery, distributed token-budget coordination and cross-replica credential rotation.
+The backup/restore increment does not change inference/runtime coordination behavior relative to that Full Stack checkpoint.
 
 ## Core product scope
 
@@ -25,7 +34,8 @@ LlmProxy is Agic's enterprise inference-governance boundary, not only a DGX rout
 4. configurable Usage Groups
 5. logical-model routing across DGX/vLLM
 6. distributed multi-instance coordination with Redis
-7. metadata-only observability and operational controls
+7. backup/recovery of durable application state
+8. metadata-only observability and operational controls
 ```
 
 ## Current request path
@@ -52,33 +62,11 @@ Ordinary inference configuration lookup remains DB-free after startup/runtime pu
 
 Secrets are generated and shown once. PostgreSQL stores HMAC-SHA256 hashes and safe metadata; Redis/runtime payloads also contain only hashes and safe credential state.
 
-Rotation endpoint:
+`POST /api/admin/api-credentials/{id}/rotate` performs an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/HMAC, replacement secret shown once, old secret invalid immediately after convergence. The response uses `Cache-Control: no-store` and audit contains no raw secret/HMAC.
 
-```http
-POST /api/admin/api-credentials/{id}/rotate
-```
+Full Stack `34996328588` proves old key works before rotation, new key works and old key fails on both replicas after convergence, Redis contains the new HMAC only, and restart hydration preserves the cutover.
 
-Rotation is an in-place hard cutover. The credential keeps the same `Id`, name, creation time, expiry, Usage Group assignment and all policy/history linkage. Only `KeyPrefix` and `KeyHash` are replaced.
-
-Validated properties:
-
-- revoked credentials return conflict and cannot be rotated;
-- replacement secret is returned one time only;
-- secret response is `Cache-Control: no-store`;
-- old secret is removed from local cache when the same credential ID changes hash;
-- origin gateway applies the committed credential immediately through the existing post-save cache interceptor;
-- Redis-enabled replicas converge through the transactional outbox/runtime event path;
-- Redis stores the new HMAC and no raw secret;
-- the old HMAC is replaced, not retained as an accepted alias;
-- Usage Group and request-rate/output-token policies remain attached to the same credential ID;
-- audit `credential.rotate` records safe previous/new prefixes and never the raw secret/HMAC;
-- peer restart/startup hydration accepts only the rotated key.
-
-Full Stack `34996328588` explicitly proves old key works on both replicas before rotation, then new key returns 200 and old key 401 on both replicas after convergence, and the same behavior remains after peer restart.
-
-React **Usage & Governance** provides a `Rotate` action and one-time copy box for the replacement secret. Playwright covers the workflow and preservation of group membership.
-
-## Usage Groups / request-rate governance
+## Usage Groups / request-rate governance — DONE / VALIDATED
 
 - persisted Usage Groups and primary group per credential;
 - request-time UsageGroup snapshot in metrics;
@@ -111,7 +99,40 @@ Semantics:
 - policy definitions propagate through the transactional runtime-state outbox and peer L1 synchronization;
 - Admin API/UI supports visibility, Apply and Clear.
 
-## Routing / physical capacity
+## Backup / restore — DONE / VALIDATED
+
+PostgreSQL is the durable recovery authority. Redis is runtime/coordination state and is rebuilt after restore.
+
+Repository-supported operator scripts:
+
+```text
+docker/scripts/postgres-backup.sh
+docker/scripts/postgres-restore.sh
+docker/scripts/postgres-backup.ps1
+docker/scripts/postgres-restore.ps1
+```
+
+Backup creates a PostgreSQL custom-format archive, SHA-256 checksum and non-secret metadata. Restore validates the archive/checksum, stops the Compose-managed gateway, recreates the target database instead of merging rows, restores with `pg_restore`, clears only LlmProxy-prefixed Redis runtime state when Redis belongs to the selected Compose stack, then restarts the gateway.
+
+Critical recovery boundary: raw API secrets are never in PostgreSQL. `Authentication__ApiKeyPepper` and all external deployment secrets must be preserved independently in the approved secret manager. A DB restore with a different pepper cannot authenticate the existing client secrets.
+
+CI `35018579785` proves:
+
+- real custom-format dump + checksum generation;
+- complete destruction of the PostgreSQL volume;
+- creation of a genuinely clean/queryable target DB;
+- destructive restore from the backup artifact;
+- recovery of credential identity/HMAC, Usage Group membership, request-rate/output-token policies and audit/history state;
+- authenticated inference using the same pre-backup credential/pepper;
+- clean Redis startup and republishing of credential/route/policy snapshots from restored PostgreSQL;
+- PowerShell operator path using binary-safe `docker compose cp`;
+- a post-backup mutation disappears after PowerShell restore, proving rollback to the backup point rather than a no-op restore.
+
+PowerShell is exercised under `pwsh` in GitHub-hosted CI. Native customer Windows/Docker Desktop execution and production backup storage/encryption/retention remain deployment-environment acceptance items.
+
+Read `docs/backup-restore.md` for procedure and caveats.
+
+## Routing / physical capacity — DONE FOR CURRENT MVP
 
 - logical models hide provider/DGX topology;
 - weighted least loaded / round robin / weighted round robin;
@@ -124,7 +145,7 @@ Semantics:
 - fail-closed capacity acquisition;
 - active-inference cancellation before an unsafe distributed lease can expire.
 
-## Distributed runtime state / transactional outbox
+## Distributed runtime state / transactional outbox — DONE FOR CURRENT MVP
 
 ```text
 PostgreSQL = durable source of truth + transactional runtime-state outbox
@@ -167,16 +188,17 @@ Full stack includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Pro
 
 ## Current development focus
 
-Credential rotation is complete and validated. The next production-hardening order is:
+Credential rotation and backup/restore are complete and validated. The next production-hardening order is:
 
-1. **backup/restore + actual restore verification**;
+1. **model/runtime upgrade + draining strategy**;
 2. decide whether product requirements need input/total-token budgets, monetary budgets or a token-budget period independent from request-rate `WindowSeconds`;
 3. optional long-term usage rollups;
-4. production Redis/observability HA/storage guidance where required;
-5. model/runtime upgrade and draining strategy;
-6. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
+4. customer-specific Redis/observability HA/storage and scheduled backup guidance;
+5. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
 
-Backup/restore must be tested against a clean restore target. Merely documenting backup commands is not sufficient. The verification should demonstrate recovery of durable configuration and safe credential hashes, then show a restored gateway can rebuild/publish runtime state and serve authenticated traffic.
+The next implementation should define how a deployment/node enters drain, stops accepting new work, waits for active work to reach zero, is upgraded/restarted/replaced, passes health/warmup checks and only then re-enters routing. Preserve the rule that in-flight streaming work is never failed over after downstream bytes have started.
+
+Quota expansion remains requirements-driven: input/total-token admission needs tokenizer/estimation semantics and monetary budgets need stable pricing/accounting rules.
 
 ## Identity limitation
 
@@ -190,15 +212,16 @@ A centrally configured GitHub Copilot BYOK provider may use one shared credentia
 - Cloudflare Tunnel/public hostname;
 - real GitHub Copilot BYOK end-to-end;
 - self-hosted deployment runner;
+- customer production backup destination/encryption/retention and native Windows/Docker Desktop acceptance where applicable;
 - Copilot usage-metrics/custom-model reporting if per-user analytics are required.
 
 ## Exact resume point
 
 A new development session should:
 
-1. read `AGENTS.md`, this file, `docs/usage-governance.md`, `docs/runtime-cache.md` and latest development-log entries;
+1. read `AGENTS.md`, this file, `docs/development-log.md`, `docs/roadmap.md`, `docs/routing.md`, `docs/capacity-control.md` and `docs/backup-restore.md`;
 2. inspect latest `main` and Actions before changing code;
-3. treat `628fbc15dc2c963db802f9f2d9aca4b324225c99` / CI `34996328467` / Full Stack `34996328588` as the current validated runtime/product baseline;
-4. begin backup/restore with an explicit backup artifact format, clean-target restore procedure and automated restore verification;
-5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics and DB-free configuration lookup on the inference path;
+3. treat `66d7a809936f0f21f330d84887c1bb6a4e536f97` / CI `35018579785` as the complete repository/operator checkpoint, with distributed runtime evidence `628fbc15dc2c963db802f9f2d9aca4b324225c99` / Full Stack `34996328588`;
+4. start the model/runtime upgrade + draining strategy increment;
+5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, DB-free configuration lookup and pre-response-only failover;
 6. update docs and validation evidence after every meaningful increment.
