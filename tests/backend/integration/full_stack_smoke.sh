@@ -14,6 +14,8 @@ export POSTGRES_PASSWORD=full-stack-postgres
 export REDIS_PASSWORD=full-stack-redis
 export REDIS_KEY_PREFIX=llmproxy
 export REDIS_RECONCILE_SECONDS=1
+export REDIS_CAPACITY_LEASE_SECONDS=20
+export REDIS_CAPACITY_RENEW_SECONDS=4
 export LLM_PROXY_API_KEY=full-stack-api-key
 export LLM_PROXY_API_KEY_PEPPER=full-stack-pepper
 export GRAFANA_ADMIN_USER=admin
@@ -266,4 +268,56 @@ grep --quiet 'data: \[DONE\]' /tmp/full-stack-capacity-stream.txt
 recovered_status="$(call_model 8081 /tmp/full-stack-capacity-recovered)"
 [[ "$recovered_status" == "200" ]] || fail_with_diagnostics "Expected traffic to recover after shared capacity lease release; got ${recovered_status}."
 
-echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits and distributed DGX capacity leases are operational."
+# If Redis disappears during a long stream, the gateway must abort before its lease can expire and be reused elsewhere.
+loss_stream_file=/tmp/full-stack-capacity-coordination-loss.txt
+loss_stream_err=/tmp/full-stack-capacity-coordination-loss.err
+curl --silent --show-error --no-buffer \
+  -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"agic-code-fast","stream":true,"mock_stream_delay_seconds":12,"messages":[{"role":"user","content":"lose Redis coordination before lease expiry"}]}' \
+  http://127.0.0.1:8080/v1/chat/completions > "$loss_stream_file" 2> "$loss_stream_err" &
+loss_stream_pid="$!"
+
+first_event_seen=false
+for attempt in {1..50}; do
+  if grep -q '"content":"first"' "$loss_stream_file" 2>/dev/null; then
+    first_event_seen=true
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$first_event_seen" != "true" ]]; then
+  kill "$loss_stream_pid" >/dev/null 2>&1 || true
+  wait "$loss_stream_pid" >/dev/null 2>&1 || true
+  fail_with_diagnostics "Long-running stream did not begin before Redis outage simulation."
+fi
+
+loss_started_epoch="$(date +%s)"
+"${COMPOSE[@]}" stop redis >/dev/null
+set +e
+wait "$loss_stream_pid"
+loss_stream_exit="$?"
+set -e
+loss_elapsed_seconds="$(( $(date +%s) - loss_started_epoch ))"
+
+if grep -q 'data: \[DONE\]' "$loss_stream_file"; then
+  fail_with_diagnostics "Inference reached [DONE] after Redis coordination was lost; expected proactive cancellation."
+fi
+[[ "$loss_elapsed_seconds" -lt "$REDIS_CAPACITY_LEASE_SECONDS" ]] \
+  || fail_with_diagnostics "Inference was not cancelled before Redis lease expiry (${loss_elapsed_seconds}s, curl exit ${loss_stream_exit})."
+
+coordination_loss_recorded=false
+for attempt in {1..30}; do
+  coordination_loss_count="$("${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+    psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+    "SELECT COUNT(*) FROM request_metrics WHERE \"ErrorCode\" = 'capacity_coordination_lost';" 2>/dev/null | tr -d '[:space:]')"
+  if [[ "$coordination_loss_count" =~ ^[0-9]+$ && "$coordination_loss_count" -ge 1 ]]; then
+    coordination_loss_recorded=true
+    break
+  fi
+  sleep 1
+done
+[[ "$coordination_loss_recorded" == "true" ]] \
+  || fail_with_diagnostics "Expected capacity_coordination_lost request metric after Redis outage."
+
+echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed DGX capacity leases and lease-loss cancellation are operational."

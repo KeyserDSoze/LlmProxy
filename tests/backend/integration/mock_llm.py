@@ -124,6 +124,9 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
         })
 
     def _stream(self, payload: dict):
+        delay_seconds = float(payload.get("mock_stream_delay_seconds", 0.5))
+        delay_seconds = min(max(delay_seconds, 0.0), 30.0)
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -140,7 +143,7 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
             }
             self.wfile.write(f"data: {json.dumps(event, separators=(',', ':'))}\n\n".encode("utf-8"))
             self.wfile.flush()
-            time.sleep(0.5)
+            time.sleep(delay_seconds)
 
         usage_event = {
             "id": f"chatcmpl_{self.server.runtime_name}",
