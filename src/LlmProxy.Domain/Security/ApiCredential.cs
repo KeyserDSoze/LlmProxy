@@ -44,6 +44,27 @@ public sealed class ApiCredential
 
     public void Revoke() => Enabled = false;
 
+    public void Rotate(string keyPrefix, string keyHash)
+    {
+        if (!Enabled)
+        {
+            throw new InvalidOperationException("Revoked credentials cannot be rotated.");
+        }
+
+        if (string.IsNullOrWhiteSpace(keyPrefix))
+        {
+            throw new ArgumentException("Key prefix is required.", nameof(keyPrefix));
+        }
+
+        if (string.IsNullOrWhiteSpace(keyHash))
+        {
+            throw new ArgumentException("Key hash is required.", nameof(keyHash));
+        }
+
+        KeyPrefix = keyPrefix;
+        KeyHash = keyHash;
+    }
+
     public void AssignUsageGroup(Guid usageGroupId)
     {
         if (usageGroupId == Guid.Empty)
