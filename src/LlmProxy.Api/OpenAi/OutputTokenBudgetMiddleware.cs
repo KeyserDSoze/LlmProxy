@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
+using LlmProxy.Infrastructure.Telemetry;
 
 namespace LlmProxy.Api.OpenAi;
 
@@ -161,7 +162,7 @@ public sealed class OutputTokenBudgetMiddleware(RequestDelegate next)
         {
             requestObject = JsonNode.Parse(rawBody) as JsonObject ?? null!;
         }
-        catch (System.Text.Json.JsonException)
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or FormatException)
         {
             return false;
         }
