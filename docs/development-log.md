@@ -188,8 +188,47 @@ Full Stack    35075387186 SUCCESS
 Publish GHCR  35075788954 SUCCESS
 ```
 
+## 2026-09-16 — OCI SBOM + SLSA provenance / 0.2.0-preview.2 — VALIDATED
+
+Bumped product to `0.2.0-preview.2` and hardened the GHCR publication path.
+
+Implemented:
+
+- Buildx SPDX SBOM attestation (`sbom: true`);
+- Buildx SLSA/BuildKit provenance with `mode=max`;
+- immutable registry digest capture for every pushed image;
+- post-push registry verification against `IMAGE@DIGEST` rather than mutable tags;
+- raw OCI image-index inspection;
+- resolution of descriptors annotated `vnd.docker.reference.type=attestation-manifest`;
+- validation of in-toto layer media types and predicate annotations;
+- required SPDX predicate `https://spdx.dev/Document`;
+- required SLSA predicate prefix `https://slsa.dev/provenance/`;
+- attestation subject validation against runnable image manifests when the OCI subject is present;
+- Actions `release-manifest.json` artifact with image/digest/version/source/build time plus verified attestation descriptors.
+
+Initial implementation commit `2410976536c9d313e7b991ca161e4a64b8386a2a` correctly generated/pushed the attestations, but Publish `35079256326` failed because the verifier assumed the convenience rendering shape `.Provenance.SLSA`. Build logs proved BuildKit had already exported the attestation manifest and provenance metadata.
+
+The verifier was deliberately fixed rather than weakened: `d134603672f361474bac9ea330f3bd1a142b5dfa` now follows the OCI-native index/attestation descriptors and checks the predicate annotations defined by Docker's attestation storage format.
+
+Validation:
+
+```text
+version               0.2.0-preview.2
+commit                d134603672f361474bac9ea330f3bd1a142b5dfa
+CI                    35080118201 SUCCESS
+Publish GHCR          35080565404 SUCCESS
+image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+release artifact      10440082178
+artifact digest       sha256:149071900ed52b2ffc471281c639f1c9264b40c40bb9729172d47411f12a35a6
+```
+
+No inference/runtime semantics changed in this slice, so latest relevant distributed-runtime validation remains Full Stack `35075387186 SUCCESS`.
+
 ## Current next increment
 
-Repository hardening is complete through historical usage rollups. The next non-external engineering work should be supply-chain/release hardening only where useful: immutable tagged release workflow, SBOM/provenance/attestation and operator-verifiable image identity. Customer-specific Redis/observability HA/storage and scheduled backup guidance follows when deployment topology is known.
+Repository hardening is complete through historical usage rollups plus registry-verified SPDX/SLSA attestations. The next non-external engineering work is to harden the **exact Git-tag release path** so a versioned SemVer tag cannot bypass the repository's validation gate before publication; an immutable GitHub Release may be created only after that validated tag path succeeds.
 
-Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics.
+Customer-specific Redis/observability HA/storage and scheduled backup guidance follows when deployment topology is known. Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics.

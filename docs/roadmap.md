@@ -52,7 +52,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: maintenance marker participates in atomic Redis admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
-## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH
+## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH / TAGGED RELEASE HARDENING ACTIVE
 
 - DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
 - DONE: production image/Compose CI validation.
@@ -62,7 +62,12 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: source SHA/build date embedded in image/runtime identity.
 - DONE: mechanical tag/version consistency validation.
 - DONE: `main` publishes `main` + immutable SHA alias; exact version tag only from matching Git tag.
-- PLANNED: optional supply-chain hardening with SBOM/provenance/attestation and formal tagged GitHub Release workflow.
+- DONE: SPDX SBOM emitted as OCI attestation.
+- DONE: SLSA/BuildKit provenance emitted as OCI attestation.
+- DONE: immutable image digest recorded for every publication.
+- DONE: post-push GHCR verification reads the OCI index and requires both SPDX and SLSA in-toto predicates.
+- DONE: release-manifest Actions artifact records image/digest/version/source/build time and attestation descriptors.
+- ACTIVE NEXT: make the exact SemVer-tag release path consume an equivalent validation gate before publication; optionally create a GitHub Release only after that gate succeeds.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
 - EXTERNAL: customer backup destination, encryption, retention schedule and deployment-host acceptance.
 
@@ -133,7 +138,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED: customer-specific Redis HA/redundancy guidance.
 
-## M12 — Product hardening — DONE THROUGH 0.2 PREVIEW / NEXT HARDENING PLANNED
+## M12 — Product hardening — DONE THROUGH 0.2.0-preview.2 / TAGGED RELEASE GATE NEXT
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -142,22 +147,25 @@ local RAM  = per-replica request-path L1
 - DONE: SemVer + runtime release object + Admin patch notes.
 - DONE: release/build identity and tag consistency automation.
 - DONE: long-term usage rollups.
-- PLANNED NEXT: supply-chain release hardening where useful (SBOM/provenance/attestation + immutable tagged release workflow).
+- DONE: GHCR SBOM/provenance generation and registry-native verification.
+- DONE: immutable digest + release-manifest artifact.
+- ACTIVE NEXT: validated immutable tagged-release/GitHub Release path.
 - PLANNED: customer-specific production HA/storage/scheduled-backup guidance.
 
 Current checkpoint:
 
 ```text
-version       0.2.0-preview.1
-commit        5d66c7dcdae42955c6e26849aba84bed4787ff00
-CI            35075387110 SUCCESS
-Full Stack    35075387186 SUCCESS
-Publish GHCR  35075788954 SUCCESS
+version          0.2.0-preview.2
+commit           d134603672f361474bac9ea330f3bd1a142b5dfa
+CI               35080118201 SUCCESS
+Publish GHCR     35080565404 SUCCESS
+image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+runtime FullStack 35075387186 SUCCESS
 ```
 
 ## Current development order
 
-1. Add supply-chain/release hardening only where it improves operator trust: SBOM/provenance/attestation and immutable tagged release workflow.
+1. Harden the exact Git-tag release path so no versioned release can bypass repository validation before publication; add a GitHub Release only after that gate succeeds.
 2. Add customer-specific Redis/observability HA/storage and scheduled-backup guidance when deployment shape is known.
 3. Expand quota semantics only with explicit tokenizer/pricing requirements.
 4. Run real DGX + Copilot BYOK + Entra/Cloudflare acceptance when external access exists.

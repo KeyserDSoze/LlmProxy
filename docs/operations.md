@@ -102,7 +102,7 @@ The manual test is diagnostic; persisted background health and maintenance resum
 Current product version:
 
 ```text
-0.2.0-preview.1
+0.2.0-preview.2
 ```
 
 Operators can inspect identity through:
@@ -139,18 +139,46 @@ stable Git tag      -> may also publish major.minor alias
 prerelease Git tag  -> never updates stable-looking alias
 ```
 
+## Verify a published image
+
+`0.2.0-preview.2` adds registry-native SBOM/provenance verification to the publish workflow. Operators should prefer the immutable digest over a mutable tag when recording or deploying a known build.
+
+Validated example:
+
+```text
+image        ghcr.io/keyserdsoze/llmproxy
+version      0.2.0-preview.2
+source       d134603672f361474bac9ea330f3bd1a142b5dfa
+digest       sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+```
+
+The publish gate reads the OCI index back from GHCR, follows `attestation-manifest` descriptors and requires in-toto layers containing:
+
+```text
+https://spdx.dev/Document
+https://slsa.dev/provenance/...
+```
+
+Validated predicates for the current baseline:
+
+```text
+attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+```
+
+The successful publish also uploads `release-manifest.json` as Actions artifact `10440082178`. It records image, digest, version, source SHA, build timestamp and the verified attestation descriptors. Artifact retention is 30 days; the immutable image/attestations live in GHCR according to registry/package retention policy.
+
 Current release/build validation:
 
 ```text
-release hardening c37479bb474d44f9e36726bebba74cdf38e5661e
-CI                35064353402 SUCCESS
-Publish GHCR      35064707488 SUCCESS
-
-0.2 product       5d66c7dcdae42955c6e26849aba84bed4787ff00
-CI                35075387110 SUCCESS
-Full Stack        35075387186 SUCCESS
-Publish GHCR      35075788954 SUCCESS
+0.2.0-preview.2  d134603672f361474bac9ea330f3bd1a142b5dfa
+CI               35080118201 SUCCESS
+Publish GHCR     35080565404 SUCCESS
+runtime FullStack 35075387186 SUCCESS
 ```
+
+The runtime Full Stack predates `preview.2` because this slice changes release engineering only; no runtime behavior changed.
 
 See `docs/versioning.md` and root `CHANGELOG.md`.
 
@@ -178,4 +206,4 @@ Audit must never contain raw inference API secrets, Entra client secrets, Cloudf
 
 ## Integration-test behavior
 
-Repository CI/Full Stack covers service-root prefixes, health/models probes, routing changes, SSE delivery, health hysteresis, physical capacity, distributed runtime/outbox behavior, caller governance, historical rollups, backup/restore, credential rotation and cross-replica maintenance.
+Repository CI/Full Stack covers service-root prefixes, health/models probes, routing changes, SSE delivery, health hysteresis, physical capacity, distributed runtime/outbox behavior, caller governance, historical rollups, backup/restore, credential rotation and cross-replica maintenance. Release publication separately proves GHCR digest + SPDX/SLSA attestation verification.

@@ -9,27 +9,28 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 Current formal product version:
 
 ```text
-0.2.0-preview.1
+0.2.0-preview.2
 ```
 
-Validated product checkpoint:
+Validated product/release checkpoint:
 
 ```text
-implementation  5d66c7dcdae42955c6e26849aba84bed4787ff00
-CI              35075387110 SUCCESS
-Full Stack      35075387186 SUCCESS
-Publish GHCR    35075788954 SUCCESS
+implementation   d134603672f361474bac9ea330f3bd1a142b5dfa
+CI               35080118201 SUCCESS
+Publish GHCR     35080565404 SUCCESS
+image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+release artifact 10440082178
 ```
 
-Release/build identity hardening included in the same baseline was introduced at:
+The latest distributed-runtime Full Stack checkpoint remains:
 
 ```text
-c37479bb474d44f9e36726bebba74cdf38e5661e
-CI           35064353402 SUCCESS
-Publish GHCR 35064707488 SUCCESS
+Full Stack 35075387186 SUCCESS
 ```
 
-The standard CI proves backend build/unit/benchmark, React/Vitest/Playwright, version metadata validation, production image identity, Docker/PostgreSQL integration, caller governance, route-catalog outage behavior, retention/usage-rollup compaction, and Bash/PowerShell restore paths. Full Stack proves Redis/observability operation, transactional-outbox recovery, distributed output-token budgets, credential rotation and safe node maintenance.
+`0.2.0-preview.2` changes release/supply-chain behavior, not inference/runtime semantics, so the existing Full Stack remains the relevant Redis/runtime proof.
+
+The standard CI proves backend build/unit/benchmark, React/Vitest/Playwright, version metadata validation, production image identity, Docker/PostgreSQL integration, caller governance, route-catalog outage behavior, retention/usage-rollup compaction, and Bash/PowerShell restore paths.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -45,9 +46,38 @@ CHANGELOG.md                            human-readable product history
 docs/versioning.md                     release/version/build rules
 ```
 
-Current release history starts at `0.1.0-preview.1`; `0.2.0-preview.1` adds historical usage rollups. Older versions were intentionally not fabricated.
+Current release history starts at `0.1.0-preview.1`; `0.2.0-preview.1` adds historical usage rollups; `0.2.0-preview.2` adds GHCR SBOM/provenance verification and immutable image-digest evidence. Older versions were intentionally not fabricated.
 
-Production images include OCI version/revision/created labels plus runtime build SHA/date. CI validates current SemVer/changelog alignment and an intentionally mismatched candidate tag. Main publishing produces `main` + `sha-<7>`; exact version tags are produced only from a matching Git tag.
+## Supply-chain release evidence — DONE / VALIDATED FOR MAIN BUILDS
+
+Production publication now:
+
+1. runs only after green `CI` for `main`;
+2. builds with explicit product version, source SHA and UTC build time;
+3. publishes `main` + `sha-<7>` for main builds;
+4. emits an SPDX SBOM OCI attestation;
+5. emits SLSA/BuildKit provenance with `mode=max`;
+6. records the immutable registry digest returned by Buildx;
+7. reads the pushed OCI index back from GHCR;
+8. follows descriptors annotated `vnd.docker.reference.type=attestation-manifest`;
+9. verifies in-toto layers contain both SPDX and SLSA predicate types;
+10. uploads `release-manifest.json` with image/digest/version/source/build time and attestation descriptors.
+
+Validated registry evidence:
+
+```text
+image                 ghcr.io/keyserdsoze/llmproxy
+image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+artifact              10440082178
+artifact digest       sha256:149071900ed52b2ffc471281c639f1c9264b40c40bb9729172d47411f12a35a6
+```
+
+The first post-push verifier attempted to use Buildx rendering helpers and failed even though BuildKit had generated/pushed the attestations. Commit `d134603672f361474bac9ea330f3bd1a142b5dfa` fixed the verifier to inspect OCI-native manifests/predicate annotations directly; Publish `35080565404` proves the corrected gate end-to-end.
+
+Exact version tags are still produced only by matching Git tag events. The next release-engineering increment is to ensure a tagged exact release cannot bypass the same validation discipline used for `main` before publication.
 
 ## Core product scope
 
@@ -63,6 +93,7 @@ LlmProxy is Agic's enterprise inference-governance boundary:
 7. backup/recovery of durable application state
 8. metadata-only observability and audit
 9. product version/build identity + operator release notes
+10. registry-native image SBOM/provenance evidence
 ```
 
 ## Current request path
@@ -92,9 +123,7 @@ Redis      = distributed L2 + request/capacity/token-budget/maintenance coordina
 local RAM  = per-gateway request-path L1
 ```
 
-Node/Model/Deployment/Credential/RatePolicy mutations and outbox rows commit in the same PostgreSQL transaction. The globally ordered advisory-lock worker publishes/retries Redis state, updates its own L1 and marks rows processed only after acknowledged publication.
-
-Pending outbox rows are never retention-deleted. `GET /api/admin/runtime-sync` exposes backlog/retry diagnostics.
+Node/Model/Deployment/Credential/RatePolicy mutations and outbox rows commit in the same PostgreSQL transaction. The globally ordered advisory-lock worker publishes/retries Redis state, updates its own L1 and marks rows processed only after acknowledged publication. Pending outbox rows are never retention-deleted. `GET /api/admin/runtime-sync` exposes backlog/retry diagnostics.
 
 ## Safe model/runtime maintenance — DONE / VALIDATED
 
@@ -130,7 +159,7 @@ Input/total-token admission remains requirements-driven because tokenizer/estima
 
 ## Usage Groups + historical reporting — DONE / VALIDATED
 
-`0.2.0-preview.1` adds PostgreSQL daily usage rollups.
+`0.2.0-preview.1` added PostgreSQL daily usage rollups.
 
 Defaults:
 
@@ -142,19 +171,7 @@ processed runtime outbox      30 days
 cleanup interval              24 hours
 ```
 
-Compaction contract:
-
-- only complete expired UTC calendar days are compacted;
-- rollup key: day + credential + Usage Group + logical model;
-- credential/group attribution uses the request-time snapshot;
-- aggregate + raw deletion commit atomically for each compaction transaction;
-- PostgreSQL advisory transaction lock serializes retention compaction across gateway replicas;
-- rerunning cleanup is idempotent;
-- reporting combines historical rollups with newer raw metrics without double counting;
-- API response exposes raw/rolled-up request counts and whether rollups contributed;
-- Admin Usage & Governance supports up to 730 days and discloses historical-rollup usage.
-
-CI `35075387110` proves the old raw record is rolled up, removed, still visible in usage reporting, and not duplicated by a second cleanup.
+Compaction covers only complete expired UTC days; rollup key is day + credential + Usage Group + logical model; request-time attribution is preserved; aggregate + raw deletion are atomic; a PostgreSQL advisory transaction lock serializes compaction across gateway replicas; reruns are idempotent; reporting merges rollups with newer raw metrics without double counting.
 
 ## Backup / restore — DONE / VALIDATED
 
@@ -198,9 +215,9 @@ Full stack includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Pro
 
 ## Current development focus
 
-Repository-supported hardening is complete through release identity and historical usage rollups. Default order from here:
+Repository-supported hardening is complete through release identity, historical usage rollups and OCI SBOM/provenance verification. Default order from here:
 
-1. supply-chain/release hardening where useful: immutable tagged release workflow, SBOM/provenance/attestation, operator-verifiable image identity;
+1. formalize an immutable tagged-release path where an exact SemVer tag cannot bypass validation before publication; optionally create a GitHub Release only after that gate passes;
 2. customer-specific Redis/observability HA, production storage and scheduled backup guidance;
 3. quota evolution only when requirements define tokenizer/pricing semantics;
 4. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
@@ -226,7 +243,8 @@ A new development session should:
 
 1. read `AGENTS.md`, this file, `CHANGELOG.md`, `docs/versioning.md`, latest `docs/development-log.md`, `docs/roadmap.md` and focused docs;
 2. inspect latest `main` and Actions before changing code;
-3. treat version `0.2.0-preview.1`, implementation `5d66c7dcdae42955c6e26849aba84bed4787ff00`, CI `35075387110`, Full Stack `35075387186` and Publish `35075788954` as the validated baseline;
+3. treat version `0.2.0-preview.2`, implementation `d134603672f361474bac9ea330f3bd1a142b5dfa`, CI `35080118201`, Publish `35080565404`, image digest `sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880` and latest runtime Full Stack `35075387186` as the validated baseline;
 4. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free configuration lookup, rollup/raw no-double-counting and pre-response-only failover;
-5. for new product/operator-visible behavior, bump version/release notes according to `docs/versioning.md`;
-6. update engineering docs/evidence after every meaningful increment.
+5. preserve post-push registry verification of both SPDX and SLSA attestations;
+6. for new product/operator-visible behavior, bump version/release notes according to `docs/versioning.md`;
+7. update engineering docs/evidence after every meaningful increment.

@@ -29,7 +29,7 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, and metadata-only enterprise observability.
+Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, supply-chain identity, and metadata-only enterprise observability.
 
 Raw prompts, source code, generated outputs, bearer tokens and API secrets must never be persisted or added to logs/spans by default.
 
@@ -50,7 +50,7 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 - GPU/DCGM telemetry is observational unless benchmarks justify scheduling use.
 - Every meaningful increment updates focused docs, project status, development log and roadmap where status changes.
 - Every product/operator-visible change follows `docs/versioning.md` and updates version/release notes when required.
-- Never silently reuse a tagged/published product version for different product bits.
+- Never silently reuse a tagged/published exact version for different product bits.
 - Never call work DONE because it was committed; require relevant green CI/integration evidence.
 
 ## Current product version and validated baseline
@@ -58,19 +58,26 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 Current formal version:
 
 ```text
-0.2.0-preview.1
+0.2.0-preview.2
 ```
 
-Current validated product checkpoint:
+Current validated product/release checkpoint:
 
 ```text
-implementation  5d66c7dcdae42955c6e26849aba84bed4787ff00
-CI              35075387110 SUCCESS
-Full Stack      35075387186 SUCCESS
-Publish GHCR    35075788954 SUCCESS
+implementation   d134603672f361474bac9ea330f3bd1a142b5dfa
+CI               35080118201 SUCCESS
+Publish GHCR     35080565404 SUCCESS
+image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+release artifact 10440082178
 ```
 
-The same checkpoint includes release/build identity hardening introduced at `c37479bb474d44f9e36726bebba74cdf38e5661e`, validated by CI `35064353402` and Publish container `35064707488`.
+The latest distributed-runtime Full Stack checkpoint remains:
+
+```text
+Full Stack 35075387186 SUCCESS
+```
+
+No runtime path changed in `0.2.0-preview.2`; that Full Stack evidence remains the relevant distributed-runtime proof.
 
 Runtime identity is exposed by:
 
@@ -125,8 +132,6 @@ Read `docs/usage-governance.md` before changing caller governance.
 
 ## Historical usage / retention contract
 
-Version `0.2.0-preview.1` adds durable daily usage rollups.
-
 Defaults:
 
 ```text
@@ -138,8 +143,6 @@ processed runtime outbox      30 days
 
 Before expired raw request metrics are deleted, complete UTC days are aggregated into PostgreSQL rollups keyed by day + credential + Usage Group + logical model. Compaction is transactional and serialized across replicas with a PostgreSQL advisory transaction lock. Reporting combines rollups with newer raw metrics without double counting.
 
-Usage-report windows are UTC calendar days. `/admin/governance` exposes up to 730 days and states when historical rollups contribute.
-
 Read `docs/data-retention.md` before changing retention/reporting semantics.
 
 ## Backup / restore contract
@@ -150,9 +153,9 @@ PostgreSQL is the recovery authority; Redis is rebuildable runtime state. Suppor
 
 Read `docs/backup-restore.md` before changing recovery behavior.
 
-## Release/build contract
+## Release/build/supply-chain contract
 
-Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. CI validates SemVer, changelog presence and a deliberately invalid tag case. Production images carry OCI version/revision/created labels plus `LLMPROXY_BUILD_SHA` and `LLMPROXY_BUILD_DATE`.
+Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. CI validates SemVer, changelog presence and a deliberately invalid candidate tag case. Production images carry OCI version/revision/created labels plus `LLMPROXY_BUILD_SHA` and `LLMPROXY_BUILD_DATE`.
 
 Publishing behavior:
 
@@ -163,16 +166,34 @@ stable tag only         -> optional major.minor alias
 prerelease tag          -> never updates a stable-looking alias
 ```
 
+`0.2.0-preview.2` adds registry-native supply-chain evidence:
+
+- Buildx publishes an SPDX SBOM OCI attestation;
+- Buildx publishes SLSA/BuildKit provenance (`mode=max`);
+- publish records the immutable image digest;
+- post-push verification resolves the pushed digest from GHCR, reads the OCI image index, follows `attestation-manifest` descriptors and validates `application/vnd.in-toto+json` layers;
+- verification requires both predicate types `https://spdx.dev/Document` and `https://slsa.dev/provenance/...`;
+- an Actions `release-manifest.json` artifact records image, digest, version, source SHA, build timestamp and verified attestation descriptors.
+
+Validated `0.2.0-preview.2` registry evidence:
+
+```text
+image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+```
+
 Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Repository-supported hardening is now complete through release identity and historical usage rollups. Default next order:
+Repository-supported hardening is complete through historical usage rollups and GHCR SBOM/provenance verification. Default next order:
 
-1. supply-chain/release hardening where useful: immutable tagged release workflow, SBOM/provenance/attestation, and operator-verifiable image identity;
-2. customer-specific Redis/observability HA, production storage and scheduled backup guidance;
-3. quota evolution only when explicit product requirements define tokenizer/pricing semantics;
-4. physical acceptance on real DGX/Copilot/Entra/Cloudflare infrastructure.
+1. harden **immutable tagged releases** so an exact SemVer tag cannot bypass the repository's validation gate; add a formal tagged-release/GitHub Release workflow only if it preserves the current CI-before-publish rule;
+2. add customer-specific Redis/observability HA, production storage and scheduled backup guidance when deployment topology is known;
+3. evolve quota semantics only when explicit requirements define tokenizer/pricing behavior;
+4. run physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
 
 Do not invent per-user identity from a shared GitHub Copilot BYOK credential or from IP addresses.
 
@@ -198,11 +219,11 @@ CHANGELOG.md                        product-visible release history
 docs/project-status.md             canonical state and exact resume point
 docs/development-log.md            chronological engineering + validation trace
 docs/roadmap.md                    milestone state/backlog
-docs/versioning.md                 SemVer/release/build identity rules
+docs/versioning.md                 SemVer/release/build/supply-chain rules
 docs/data-retention.md             raw metrics + daily rollups + audit/outbox retention
 docs/usage-governance.md           auth, credential lifecycle, groups, quotas, usage
 docs/runtime-cache.md              L1/L2 + transactional outbox
-docs/operations.md                 health, safe maintenance, build identity, audit
+docs/operations.md                 health, safe maintenance, build/release identity, audit
 docs/backup-restore.md             PostgreSQL recovery contract
 docs/full-stack.md                 Redis + observability bundle
 docs/capacity-control.md           physical admission + capacity leases
