@@ -8,6 +8,22 @@ The project follows Semantic Versioning from the first formal preview release on
 
 No unreleased product changes are recorded after the current preview baseline yet.
 
+## [0.2.0-preview.3] - 2026-09-16
+
+### Added
+
+- Exact SemVer tag publication now requires evidence that the same source SHA already completed the repository `CI` workflow successfully from a push to `main`.
+- Release manifests record the validating CI run ID alongside image digest, source SHA, build timestamp, SBOM and provenance evidence.
+- The tagged-release validation predicate is a reusable shell guard with positive and negative CI fixtures, so the gate is tested without creating a real immutable tag.
+
+### Changed
+
+- A direct `vX.Y.Z` tag push can no longer publish an exact-version GHCR image solely because the tag matches compiled version metadata; unvalidated source SHAs fail before GHCR publication.
+
+### Security
+
+- Exact versioned container releases are now tied to previously validated `main` source rather than trusting tag creation alone.
+
 ## [0.2.0-preview.2] - 2026-09-16
 
 ### Added

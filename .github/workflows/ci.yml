@@ -30,6 +30,42 @@ jobs:
             exit 1
           fi
 
+      - name: Validate tagged-release source gate
+        shell: bash
+        run: |
+          GOOD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          cat > /tmp/validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 10, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 11, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 99, "name": "CI", "event": "pull_request", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          test "$(bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/validating-runs.json)" = "11"
+
+          cat > /tmp/non-validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 20, "name": "CI", "event": "push", "head_branch": "feature", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 21, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "failure"},
+              {"id": 22, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          if bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/non-validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted workflow runs that do not validate the requested main SHA." >&2
+            exit 1
+          fi
+
+          if bash docker/scripts/validate-release-main-ci.sh "not-a-sha" /tmp/validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted an invalid source SHA." >&2
+            exit 1
+          fi
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:

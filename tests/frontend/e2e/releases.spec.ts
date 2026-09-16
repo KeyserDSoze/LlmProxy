@@ -7,12 +7,21 @@ async function json(route: Route, body: unknown, status = 200) {
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
-    version: '0.2.0-preview.2',
+    version: '0.2.0-preview.3',
     channel: 'preview',
     releasedOn: '2026-09-16',
     buildRevision: 'abcdef1234567890',
     builtAtUtc: null,
     releases: [
+      {
+        version: '0.2.0-preview.3',
+        releasedOn: '2026-09-16',
+        title: 'Validated tagged releases',
+        sections: {
+          Added: ['Exact SemVer tag publication requires evidence that the same source SHA already completed CI successfully from a push to main.'],
+          Security: ['Exact versioned container releases are tied to previously validated main source rather than trusting tag creation alone.']
+        }
+      },
       {
         version: '0.2.0-preview.2',
         releasedOn: '2026-09-16',
@@ -45,9 +54,10 @@ test('release notes page exposes the current product version and versioned patch
 
   await page.goto('/admin/releases')
   await expect(page.getByRole('heading', { name: 'Release notes' })).toBeVisible()
-  await expect(page.getByText('0.2.0-preview.2', { exact: true })).toBeVisible()
+  await expect(page.getByText('0.2.0-preview.3', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Validated tagged releases/ })).toBeVisible()
+  await expect(page.getByText('Exact SemVer tag publication requires evidence that the same source SHA already completed CI successfully from a push to main.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Container SBOM and provenance/ })).toBeVisible()
-  await expect(page.getByText('GHCR container publication emits an SPDX software bill of materials as an OCI attestation.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Historical usage rollups/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Initial versioned preview baseline/ })).toBeVisible()
   await expect(page.getByText('abcdef123456')).toBeVisible()

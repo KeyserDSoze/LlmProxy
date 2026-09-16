@@ -40,6 +40,27 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.3",
+            new DateOnly(2026, 9, 16),
+            "Validated tagged releases",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Exact SemVer tag publication requires evidence that the same source SHA already completed CI successfully from a push to main.",
+                    "Release manifests record the validating CI run ID alongside image digest, source SHA, build timestamp, SBOM and provenance evidence.",
+                    "The tagged-release validation predicate has positive and negative CI fixtures so the gate is tested without creating a real immutable tag."
+                ],
+                ["Changed"] =
+                [
+                    "A direct version tag can no longer publish an exact-version GHCR image solely because the tag matches compiled version metadata."
+                ],
+                ["Security"] =
+                [
+                    "Exact versioned container releases are tied to previously validated main source rather than trusting tag creation alone."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.2",
             new DateOnly(2026, 9, 16),
             "Container SBOM and provenance",

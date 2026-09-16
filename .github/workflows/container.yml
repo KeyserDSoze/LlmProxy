@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: write
 
 jobs:
@@ -71,6 +72,42 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Validate publication source CI
+        id: validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            CI_RUN_ID="${{ github.event.workflow_run.id }}"
+            CI_HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            CI_HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+            CI_CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+
+            if [[ "$CI_HEAD_SHA" != "$SOURCE_SHA" || "$CI_HEAD_BRANCH" != "main" || "$CI_CONCLUSION" != "success" ]]; then
+              echo "Main publication was not triggered by a successful CI run for the selected source SHA." >&2
+              exit 1
+            fi
+          else
+            RUNS_FILE="$(mktemp)"
+            trap 'rm -f "$RUNS_FILE"' EXIT
+
+            curl --fail --silent --show-error \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100" \
+              > "$RUNS_FILE"
+
+            if ! CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"; then
+              echo "Tagged release source $SOURCE_SHA has no successful CI push run on main. Refusing exact-version publication." >&2
+              exit 1
+            fi
+          fi
+
+          echo "ci_run_id=$CI_RUN_ID" >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -107,6 +144,7 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           BUILD_DATE: ${{ steps.meta.outputs.build_date }}
+          VALIDATING_CI_RUN_ID: ${{ steps.validation.outputs.ci_run_id }}
         run: |
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "Build did not return a valid immutable image digest: '$DIGEST'." >&2
@@ -217,8 +255,9 @@ jobs:
             --arg version "$VERSION" \
             --arg sourceSha "$SOURCE_SHA" \
             --arg builtAtUtc "$BUILD_DATE" \
+            --arg validatingCiRunId "$VALIDATING_CI_RUN_ID" \
             --argjson attestations "$VERIFIED_ATTESTATIONS" \
-            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,sbom:"SPDX",provenance:"SLSA/BuildKit",attestations:$attestations}' \
+            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,validatingCiRunId:$validatingCiRunId,sbom:"SPDX",provenance:"SLSA/BuildKit",attestations:$attestations}' \
             > release-manifest.json
 
           {
@@ -226,6 +265,7 @@ jobs:
             echo ""
             echo "- Version: \`$VERSION\`"
             echo "- Source: \`$SOURCE_SHA\`"
+            echo "- Validating CI run: \`$VALIDATING_CI_RUN_ID\`"
             echo "- Digest: \`$DIGEST\`"
             echo "- SBOM: SPDX OCI attestation verified"
             echo "- Provenance: SLSA/BuildKit OCI attestation verified"
