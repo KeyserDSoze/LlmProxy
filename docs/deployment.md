@@ -17,6 +17,37 @@ LlmProxy + PostgreSQL + Redis
 
 The smaller quickstart/minimal Compose paths remain for development and local smoke testing. Production deployment and `.github/workflows/deploy.yml` use `docker/docker-compose.full.yml` through `docker/scripts/deploy.sh`.
 
+## Preferred Linux host installation
+
+From a repository checkout on a new Linux host, the preferred path is:
+
+```bash
+sudo -E bash docker/scripts/install-linux.sh \
+  --dgx-url http://10.0.0.21:8000 \
+  --provider-model <exact-vllm-model-id> \
+  --image-tag main
+```
+
+The installer:
+
+```text
+detects the Linux distribution/package manager
+  -> installs host prerequisites
+  -> installs/preserves Docker Engine
+  -> ensures Docker Compose v2
+  -> prepares /opt/llmproxy
+  -> generates initial production secrets without printing them
+  -> creates /opt/llmproxy/.env
+  -> optionally authenticates to GHCR from GHCR_USER/GHCR_TOKEN
+  -> validates DGX /health + /v1/models
+  -> invokes the canonical full-stack deploy.sh
+  -> requires /healthz + /readyz
+```
+
+Docker's official package repositories are used for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other distributions can use their native `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk` packages with a Docker Compose plugin fallback. Existing Docker installations are preserved. Unknown distributions with no supported package manager must have Docker Engine + Compose v2 installed manually, after which the same installer can be rerun with `--skip-docker-install`.
+
+Use `--prepare-only` when you want the script to install/prepare the host and environment but not start containers yet. Use `--validate-only` for a no-change compatibility check.
+
 ## Production filesystem contract
 
 ```text
@@ -26,11 +57,7 @@ The smaller quickstart/minimal Compose paths remain for development and local sm
   backups/              example PostgreSQL backup destination
 ```
 
-Start from:
-
-```text
-docker/.env.production.example
-```
+Start from `docker/.env.production.example` when configuring manually. The installer creates the same file automatically and preserves an existing one.
 
 `deploy.sh` copies the runtime Compose/configuration assets from the checked-out repository into `/opt/llmproxy/runtime` before running Docker Compose. Running services therefore do not depend on the lifetime of a GitHub Actions runner workspace.
 
@@ -51,7 +78,7 @@ validated/published image tag
   -> /readyz
 ```
 
-Manual deployment:
+Manual redeployment/update after host preparation:
 
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
@@ -88,4 +115,4 @@ The workflow uses the same `docker/scripts/deploy.sh` path as manual operation, 
 
 EF Core applies pending migrations during application startup. Container rollback is performed by redeploying the prior known-good image tag. A prior image cannot reverse a destructive schema migration, so any destructive migration requires a backup and explicit compatibility/restore plan first.
 
-Read `docs/linux-production-deployment.md` for the complete host setup, DGX validation, Entra/Cloudflare enablement, backup, logs, update and rollback procedure.
+Read `docs/linux-production-deployment.md` for the complete host setup, installer options, DGX validation, Entra/Cloudflare enablement, backup, logs, update and rollback procedure.
