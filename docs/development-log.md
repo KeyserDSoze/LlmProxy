@@ -175,8 +175,87 @@ PowerShell backup and restore smoke suite    SUCCESS
 
 PowerShell semantics are exercised under `pwsh` in GitHub-hosted CI; native customer Windows/Docker Desktop remains deployment-environment acceptance.
 
-## Next increment — model/runtime upgrade + draining
+## 2026-09-15 — Safe model/runtime maintenance — VALIDATED
 
-Backup/restore is complete for the repository-supported operator path. The next default production-hardening increment is a safe model/runtime upgrade and draining strategy: stop routing new work, observe/await in-flight work, upgrade/restart/replace the target, validate health/warmup, then re-enable routing without violating the existing pre-response-only failover and streaming-safety rules.
+Implemented the model/runtime upgrade guardrail as a distributed maintenance protocol rather than a simple node-state change.
 
-Further quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics. Long-term rollups and customer-specific HA/storage/backup scheduling are also requirements/deployment driven.
+The gateway now:
+
+- establishes a local/Redis admission pre-block before persisting `Draining`;
+- enforces the Redis marker inside atomic capacity admission, so a stale peer L1 cannot route new work to a draining target;
+- observes globally active capacity leases while existing streams/requests finish;
+- rejects resume until active work reaches zero;
+- validates `/health`, `/v1/models` and a one-token Chat Completions warm-up for each enabled provider model before returning the node to `Healthy`;
+- keeps the node draining on validation failure;
+- supports retry repair when durable health succeeded but clearing the Redis marker was temporarily unavailable;
+- deprecates the historical direct drain endpoint as an unsafe maintenance bypass.
+
+Implementation/test sequence:
+
+```text
+8220967141b9a3be7d96bbd7500d8958df60dbc1  feat: add safe node maintenance draining
+9fca1e18dca37ab50c421e718f32365771a2032a  test: validate safe node maintenance across replicas
+2e3e8e285267bcf9f1d80dc4e2b494914226c50f  feat: route admin drain through safe maintenance
+```
+
+Validation:
+
+```text
+CI         35021524018 SUCCESS
+Full Stack 35021524019 SUCCESS
+```
+
+The dedicated HA smoke starts with an active stream, drains through one gateway, proves another gateway cannot newly admit the target, rejects premature resume, tests unhealthy-runtime failure, then restores the runtime and requires successful health/models/warm-up before routing resumes.
+
+## 2026-09-16 — Product SemVer + patch notes in Admin — VALIDATED
+
+Formalized the first product version as:
+
+```text
+0.1.0-preview.1
+```
+
+No fake historical versions were created. Existing implemented capabilities are documented as the initial preview baseline.
+
+Added:
+
+- compiled version identity in root `Directory.Build.props`;
+- `GET /healthz` version exposure;
+- `GET /api/admin/product` product/release object with version, channel, release date, optional build revision/date and versioned notes;
+- persistent Admin version badge;
+- `/admin/releases` patch-note page;
+- root `CHANGELOG.md`;
+- `docs/versioning.md` with SemVer, release categories and release checklist;
+- backend unit coverage for the release catalog;
+- Playwright coverage for version/build/release-note rendering.
+
+The initial product implementation commit is:
+
+```text
+4b1f42daf8acb449526658b3a189535d7674c4b3
+feat: add product version and release notes UI
+```
+
+The first CI attempt proved backend/unit/benchmark, frontend build/Vitest and the new release-note Playwright test; it failed only because the existing maintenance test used a non-exact `Healthy` locator that matched both the status and the text `last healthy ...`. The maintenance operation itself had already executed successfully. The test was corrected without weakening coverage:
+
+```text
+ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
+test: make maintenance status assertions exact
+```
+
+Final validation:
+
+```text
+CI         35063494349 SUCCESS
+Full Stack 35063309417 SUCCESS
+```
+
+CI proves backend/unit/benchmark, React/Vitest/Playwright including the release page, production image build, ordinary Docker/PostgreSQL smoke suites and both backup/restore operator paths. Full Stack proves the versioned product bits preserve runtime synchronization, transactional outbox recovery, distributed quota, credential rotation and safe maintenance behavior.
+
+From this checkpoint onward, every product/operator-visible change must be represented in product release notes/version metadata according to `docs/versioning.md`; engineering-only implementation history remains here.
+
+## Next increment — release/build automation hardening
+
+The runtime product version and patch-note UI are now established. The next default hardening increment is to mechanically connect image build identity to source SHA/build timestamp and validate Git tag/version consistency before tagged container publication.
+
+Quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics. Long-term rollups and customer-specific HA/storage/backup scheduling remain requirements/deployment driven.

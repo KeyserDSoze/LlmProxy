@@ -2,12 +2,13 @@
 
 Status legend: `DONE` implemented and validated; `ACTIVE` current development focus; `PLANNED` not complete; `EXTERNAL` requires target environment/hardware.
 
-For canonical current state use `docs/project-status.md`.
+For canonical current state use `docs/project-status.md`. Product-visible changes and versions are summarized in `CHANGELOG.md` and rendered in `/admin/releases`.
 
 ## M0 - Repository bootstrap — DONE
 
-- .NET 10 layered solution, React/TypeScript admin, PostgreSQL/EF, Docker/GitHub Actions/GHCR.
-- repository-first handover discipline.
+- DONE: .NET 10 layered solution, React/TypeScript admin, PostgreSQL/EF, Docker/GitHub Actions/GHCR.
+- DONE: repository-first handover discipline.
+- DONE: SemVer product identity, release catalog, `CHANGELOG.md` and Admin release-notes page.
 
 ## M1 - Copilot -> gateway -> one DGX — ACTIVE / EXTERNAL VALIDATION REMAINS
 
@@ -18,11 +19,12 @@ For canonical current state use `docs/project-status.md`.
 
 ## M2 - Multi-DGX — DONE FOR CURRENT MVP
 
-- DONE: node/model/deployment administration, health hysteresis, drain/disable.
+- DONE: node/model/deployment administration and health hysteresis.
 - DONE: weighted least loaded / round robin / weighted round robin.
 - DONE: pre-response-only failover.
 - DONE: deployment + physical-node capacity admission.
 - DONE: Redis distributed capacity leases and fail-closed active lease-loss handling.
+- DONE: safe distributed maintenance drain/resume with cross-replica admission pre-block and validated warm-up.
 
 ## M3 - Enterprise administration — DONE FOR MVP / EXTERNAL SETUP REMAINS
 
@@ -31,6 +33,7 @@ For canonical current state use `docs/project-status.md`.
 - DONE: HMAC-hashed DB-backed credentials + runtime cache.
 - DONE: asynchronous last-used persistence + audit.
 - DONE: in-place credential rotation with one-time secret, safe audit and cross-replica hard cutover.
+- DONE: product version/build and release-note visibility in Admin.
 - EXTERNAL: real Entra app registration/roles.
 
 ## M4 - Observability — DONE FOR CURRENT MVP / STORAGE EVOLUTION REMAINS
@@ -47,6 +50,7 @@ For canonical current state use `docs/project-status.md`.
 - DONE: persisted routing tuning and benchmark-derived Capacity Profiles.
 - DONE: benchmark harness + audited capacity apply workflow.
 - DONE: Redis lease renewal/recovery and proactive safety watchdog.
+- DONE: distributed maintenance marker participates in atomic Redis node/deployment admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
 ## M6 - Operator onboarding / deployability — DONE FOR REPOSITORY PATH / EXTERNAL DEPLOYMENT REMAINS
@@ -56,6 +60,8 @@ For canonical current state use `docs/project-status.md`.
 - DONE: outbox batch/poll and processed-outbox retention knobs.
 - DONE: PostgreSQL backup/restore Bash + PowerShell operator scripts.
 - DONE: destructive clean-target restore CI proof and PowerShell operator-path CI proof.
+- DONE: explicit product version and operator-visible patch notes.
+- PLANNED: release/build automation enforcing image build SHA and version/tag consistency.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
 - EXTERNAL: customer backup destination, encryption, retention schedule and native deployment-host acceptance.
 
@@ -98,6 +104,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 - DONE: PostgreSQL-outage inference smoke.
 - DONE: Redis L2 synchronization while preserving L1.
 - DONE: credential hash replacement removes old secret acceptance from local L1.
+- DONE: maintenance block piggybacks on distributed capacity admission instead of adding a separate hot-path Redis lookup.
 
 ## M10 - Retention and operational hygiene — DONE FOR CURRENT MVP
 
@@ -112,7 +119,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 
 ```text
 PostgreSQL = durable source of truth + runtime-state outbox
-Redis      = distributed L2 + shared request/capacity/token-budget coordination
+Redis      = distributed L2 + shared request/capacity/token-budget/maintenance coordination
 local RAM  = per-replica request-path L1
 ```
 
@@ -127,6 +134,7 @@ local RAM  = per-replica request-path L1
 - DONE: Redis shared output-token budget admission/settlement.
 - DONE: credential rotation propagation and old-hash removal across replicas.
 - DONE: clean Redis runtime reconstruction from restored PostgreSQL demonstrated in restore smoke.
+- DONE: cross-replica maintenance pre-block/drain/resume coordination.
 - PLANNED: customer-specific Redis HA/redundancy production guidance.
 
 ## M12 - Product hardening — ACTIVE
@@ -134,29 +142,31 @@ local RAM  = per-replica request-path L1
 - DONE: V1 output-token quota reservation/settlement.
 - DONE: credential rotation workflow.
 - DONE: backup/restore + actual clean-target restore verification.
-- ACTIVE NEXT: model/runtime upgrade + draining strategy.
+- DONE: model/runtime safe upgrade + draining strategy.
+- DONE: formal SemVer baseline + runtime product/release object + Admin patch-note page.
+- ACTIVE NEXT: release/build identity and tag consistency automation.
 - PLANNED: long-term reporting rollups where required.
 
-Credential-rotation validation checkpoint:
+Safe-maintenance / versioning checkpoint:
 
 ```text
-commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
-CI         34996328467
-Full Stack 34996328588
+product implementation 4b1f42daf8acb449526658b3a189535d7674c4b3
+final test fix         ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
+CI                     35063494349 SUCCESS
+Full Stack              35063309417 SUCCESS
+product version         0.1.0-preview.1
 ```
 
-Backup/restore validation checkpoint:
+Backup/restore checkpoint remains included in the current CI and was originally validated at:
 
 ```text
-commit     66d7a809936f0f21f330d84887c1bb6a4e536f97
-CI         35018579785 SUCCESS
+commit 66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI     35018579785 SUCCESS
 ```
-
-The backup/restore CI proves destructive Linux clean-target recovery plus PowerShell operator semantics. Native customer Windows/Docker Desktop remains deployment-environment acceptance rather than repository CI.
 
 ## Current development order
 
-1. Implement safe model/runtime upgrade + draining sequencing with no new work routed to a draining target and no unsafe interruption of in-flight streaming work.
+1. Harden release/build automation: source SHA/build date in images and mechanical tag/version consistency checks before a tagged publish.
 2. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
 3. Add reporting rollups / customer-specific production HA-storage and scheduled-backup guidance as required.
 4. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
