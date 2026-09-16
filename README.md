@@ -60,7 +60,7 @@ CHANGELOG.md              product-visible release history
 
 ## Development quickstart
 
-For a minimal local development stack use the quickstart assets documented in the repository. For the distributed Redis/observability bundle use:
+For the distributed Redis/observability development/demo bundle use:
 
 ```bash
 bash docker/scripts/full-stack-init.sh
@@ -80,20 +80,42 @@ docs/linux-production-deployment.md
 
 Production uses the Redis-enabled full stack, not the legacy minimal overlay.
 
-Prepare an operator-owned environment file:
+### Preferred first installation
+
+From a repository checkout on a new Linux host:
 
 ```bash
-sudo install -d -m 0750 -o "$USER" -g "$USER" /opt/llmproxy
-cp docker/.env.production.example /opt/llmproxy/.env
-chmod 600 /opt/llmproxy/.env
+export GHCR_USER='<github-user>'
+export GHCR_TOKEN='<token-with-package-read-access>'
+
+sudo -E bash docker/scripts/install-linux.sh \
+  --dgx-url http://10.0.0.21:8000 \
+  --provider-model '<exact-vllm-model-id>' \
+  --image-tag main
 ```
 
-After replacing all `CHANGE_ME` values and validating DGX connectivity, deploy a published image:
+`docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks DGX `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
+
+Docker official repositories are used for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other distributions can use `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk`; when Compose v2 is missing the installer has a CLI-plugin fallback. Existing Docker installations are preserved.
+
+For policy-controlled hosts use `--prepare-only` or pre-install Docker and rerun with `--skip-docker-install`. `--validate-only` performs a no-change installer/repository compatibility check.
+
+Generated passwords/API credential/pepper are not printed. The protected operator-owned configuration is stored at:
+
+```text
+/opt/llmproxy/.env
+```
+
+Back up `LLM_PROXY_API_KEY_PEPPER` separately before treating the host as production.
+
+### Manual/redeployment path
+
+After first host preparation, or when provisioning manually, deploy a published image with:
 
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh main
+  bash docker/scripts/deploy.sh sha-abcdef1
 ```
 
 For controlled production changes prefer an immutable `sha-<7>` alias or an exact SemVer tag rather than mutable `main`.
@@ -111,7 +133,7 @@ Cloudflare is optional. Leave `CLOUDFLARE_TUNNEL_TOKEN` blank for private-LAN bo
 
 ## Automated production deployment
 
-`.github/workflows/deploy.yml` is the supported GitHub Actions deployment path. It runs on a dedicated Linux self-hosted runner labelled:
+`.github/workflows/deploy.yml` is the supported GitHub Actions deployment path after the host exists. It runs on a dedicated Linux self-hosted runner labelled:
 
 ```text
 self-hosted
@@ -224,13 +246,13 @@ ENTRA_CLIENT_SECRET
 CLOUDFLARE_TUNNEL_TOKEN
 ```
 
-Use `docker/.env.production.example` as the production template.
+Use `docker/.env.production.example` as the manual production template; the Linux installer creates the equivalent host-owned file automatically when it does not already exist.
 
 ## Documentation map
 
 Start with:
 
-- `docs/linux-production-deployment.md` — canonical Linux production runbook.
+- `docs/linux-production-deployment.md` — canonical zero-to-running Linux production runbook.
 - `docs/deployment.md` — deployment contract and automation summary.
 - `docs/full-stack.md` — Redis + observability bundle details.
 - `docs/operations.md` — health, maintenance, release identity and audit.
@@ -244,6 +266,7 @@ Start with:
 
 Repository automation cannot replace environment validation for:
 
+- actual package/repository behavior on the chosen Linux distro/version;
 - real DGX Spark/vLLM/model benchmark sweeps;
 - representative multi-DGX coding load;
 - real Entra app/role setup;
