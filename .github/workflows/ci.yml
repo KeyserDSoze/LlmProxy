@@ -66,12 +66,14 @@ jobs:
             exit 1
           fi
 
-      - name: Validate Linux host installer
+      - name: Validate Linux host tooling
         shell: bash
         run: |
           set -euo pipefail
           bash docker/scripts/install-linux.sh --validate-only
           bash docker/scripts/install-linux.sh --help >/dev/null
+          bash docker/scripts/environment-acceptance.sh --validate-only
+          bash docker/scripts/environment-acceptance.sh --help >/dev/null
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -165,6 +167,7 @@ jobs:
           set -euo pipefail
           bash -n docker/scripts/deploy.sh
           bash -n docker/scripts/install-linux.sh
+          bash -n docker/scripts/environment-acceptance.sh
           TMP_DIR="$(mktemp -d)"
           trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -201,6 +204,10 @@ jobs:
           LLMPROXY_ENV_FILE="$TMP_DIR/public.env" \
           LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
             bash docker/scripts/deploy.sh sha-ci-public
+
+      - name: Environment acceptance harness smoke
+        shell: bash
+        run: bash tests/backend/integration/environment_acceptance_smoke.sh
 
       - name: Validate production image build and identity
         shell: bash

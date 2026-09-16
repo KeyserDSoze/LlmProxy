@@ -40,6 +40,12 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self):
+        if self.path in {self._expected("/healthz"), self._expected("/readyz")}:
+            self._json(200, {
+                "status": "ok",
+                "served_by": self.server.runtime_name,
+            })
+            return
         if self.path == self._expected("/health"):
             status = self.server.health_status
             self._json(status, {

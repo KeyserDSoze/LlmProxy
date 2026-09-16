@@ -40,6 +40,27 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.5",
+            new DateOnly(2026, 9, 16),
+            "Production environment acceptance evidence",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.",
+                    "Acceptance evidence records metadata-only PASS/FAIL, HTTP status, content type and timing for direct DGX and gateway Models, Chat, Responses and SSE probes.",
+                    "A dedicated acceptance runbook defines pass criteria and the remaining benchmark, Entra, Cloudflare, Copilot and deployment-runner follow-on work."
+                ],
+                ["Changed"] =
+                [
+                    "Target-host acceptance is now an executable, repeatable evidence step rather than only a manual checklist."
+                ],
+                ["Security"] =
+                [
+                    "Acceptance evidence excludes prompts, request and response bodies, generated model output and API secrets, and the script rejects generated evidence if a supplied bearer secret appears in it."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.4",
             new DateOnly(2026, 9, 16),
             "Consolidated Linux production deployment",

@@ -7,12 +7,22 @@ async function json(route: Route, body: unknown, status = 200) {
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
-    version: '0.2.0-preview.4',
+    version: '0.2.0-preview.5',
     channel: 'preview',
     releasedOn: '2026-09-16',
     buildRevision: 'abcdef1234567890',
     builtAtUtc: null,
     releases: [
+      {
+        version: '0.2.0-preview.5',
+        releasedOn: '2026-09-16',
+        title: 'Production environment acceptance evidence',
+        sections: {
+          Added: ['A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.'],
+          Changed: ['Target-host acceptance is now an executable, repeatable evidence step rather than only a manual checklist.'],
+          Security: ['Acceptance evidence excludes prompts, request and response bodies, generated model output and API secrets.']
+        }
+      },
       {
         version: '0.2.0-preview.4',
         releasedOn: '2026-09-16',
@@ -64,9 +74,10 @@ test('release notes page exposes the current product version and versioned patch
 
   await page.goto('/admin/releases')
   await expect(page.getByRole('heading', { name: 'Release notes' })).toBeVisible()
-  await expect(page.getByText('0.2.0-preview.4', { exact: true })).toBeVisible()
+  await expect(page.getByText('0.2.0-preview.5', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Production environment acceptance evidence/ })).toBeVisible()
+  await expect(page.getByText('A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Consolidated Linux production deployment/ })).toBeVisible()
-  await expect(page.getByText('Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Validated tagged releases/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Container SBOM and provenance/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Historical usage rollups/ })).toBeVisible()

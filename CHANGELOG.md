@@ -8,6 +8,23 @@ The project follows Semantic Versioning from the first formal preview release on
 
 No unreleased product changes are recorded after the current preview baseline yet.
 
+## [0.2.0-preview.5] - 2026-09-16
+
+### Added
+
+- `docker/scripts/environment-acceptance.sh` turns target-host acceptance into an executable production step after installation.
+- The acceptance runner checks Linux/Docker/Compose plus direct VM-to-DGX and gateway Models, Chat, Responses and SSE surfaces, including provider/logical-model advertisement.
+- `docs/environment-acceptance.md` defines the evidence contract, pass criteria and the follow-on benchmark/Entra/Cloudflare/Copilot/runner acceptance sequence.
+- CI exercises the acceptance runner against the repository mock runtime so syntax, HTTP probes, streaming validation and evidence generation are continuously checked.
+
+### Changed
+
+- Environment acceptance is no longer only a manual checklist: operators get a repeatable PASS/FAIL evidence bundle with HTTP status, content type, TTFB and total request timing.
+
+### Security
+
+- Acceptance evidence is metadata-only and intentionally excludes prompts, request/response bodies, generated output and bearer secrets. Synthetic payloads and response bodies live only in a temporary owner-only directory, and evidence generation fails if a supplied bearer secret is detected in the bundle.
+
 ## [0.2.0-preview.4] - 2026-09-16
 
 ### Added
