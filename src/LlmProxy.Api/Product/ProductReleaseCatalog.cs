@@ -55,6 +55,10 @@ public static class ProductReleaseCatalog
                 [
                     "Target-host acceptance is now an executable, repeatable evidence step rather than only a manual checklist."
                 ],
+                ["Fixed"] =
+                [
+                    "DGX health acceptance validates the canonical vLLM status-only /health response without incorrectly requiring a JSON body or content type."
+                ],
                 ["Security"] =
                 [
                     "Acceptance evidence excludes prompts, request and response bodies, generated model output and API secrets, and the script rejects generated evidence if a supplied bearer secret appears in it."
@@ -71,7 +75,7 @@ public static class ProductReleaseCatalog
                     "Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.",
                     "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate DGX connectivity and run the canonical full-stack deployment.",
                     "A production environment template and end-to-end Linux runbook cover private bootstrap, DGX connectivity, Entra/public exposure, backup, update and rollback.",
-                    "Production deployment stages runtime Compose and observability assets under /opt/llmproxy so containers do not depend on a transient runner workspace.",
+                    "Production deployment stages runtime Compose and observability assets under /opt/llmproxy/runtime so containers do not depend on a transient runner workspace.",
                     "Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is configured."
                 ],
                 ["Changed"] =

@@ -21,6 +21,10 @@ No unreleased product changes are recorded after the current preview baseline ye
 
 - Environment acceptance is no longer only a manual checklist: operators get a repeatable PASS/FAIL evidence bundle with HTTP status, content type, TTFB and total request timing.
 
+### Fixed
+
+- DGX `/health` acceptance now matches canonical vLLM behavior: a successful bodyless status response is accepted without incorrectly requiring JSON or a content type.
+
 ### Security
 
 - Acceptance evidence is metadata-only and intentionally excludes prompts, request/response bodies, generated output and bearer secrets. Synthetic payloads and response bodies live only in a temporary owner-only directory, and evidence generation fails if a supplied bearer secret is detected in the bundle.
@@ -40,7 +44,7 @@ No unreleased product changes are recorded after the current preview baseline ye
 
 - `docker/scripts/deploy.sh` and `.github/workflows/deploy.yml` now deploy the same Redis-enabled full-stack topology used by the supported production documentation instead of the legacy minimal Compose overlay.
 - Production deployment performs Compose validation before pull/up and verifies both `/healthz` and `/readyz` before succeeding.
-- The production DGX bootstrap address is an explicit `CHANGE_ME` placeholder rather than a plausible example IP, preventing accidental unattended deployment against sample infrastructure.
+- The production DGX address is an explicit `CHANGE_ME` placeholder rather than a plausible example IP, preventing accidental unattended deployment against sample infrastructure.
 
 ### Security
 
@@ -120,7 +124,7 @@ No unreleased product changes are recorded after the current preview baseline ye
 ### Security
 
 - Raw prompts, generated content and API secrets remain excluded from persistent telemetry and audit by default.
-- Inference credentials are persisted as HMAC hashes; raw credential material is returned only at creation or rotation time.
+- Inference credentials are persisted as HMAC hashes; raw credential material is returned only at creation/rotation time.
 
 ### External validation still required
 
