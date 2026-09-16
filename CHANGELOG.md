@@ -13,19 +13,21 @@ No unreleased product changes are recorded after the current preview baseline ye
 ### Added
 
 - A single Linux production deployment path now installs the validated full stack: LlmProxy, PostgreSQL, Redis and bundled observability.
+- `docker/scripts/install-linux.sh` can prepare a new Linux host across the common Debian/Ubuntu, RHEL/Fedora, SUSE, Arch and Alpine package-manager families: it installs or preserves Docker Engine/Compose v2, prepares `/opt/llmproxy`, generates initial secrets, optionally logs into GHCR, validates DGX connectivity and runs the canonical deployment.
 - `docker/.env.production.example` provides an operator-oriented production template separate from development/full-stack examples.
 - The production deploy script stages Compose and observability assets under `/opt/llmproxy/runtime`, so running containers do not depend on a transient GitHub Actions workspace.
 - Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is present.
-- A dedicated Linux production guide covers private-LAN bootstrap, DGX connectivity, Entra/public exposure, self-hosted runner setup, backup, update and rollback.
+- A dedicated Linux production guide covers zero-to-running host bootstrap, private-LAN acceptance, DGX connectivity, Entra/public exposure, self-hosted runner setup, backup, update and rollback.
 
 ### Changed
 
 - `docker/scripts/deploy.sh` and `.github/workflows/deploy.yml` now deploy the same Redis-enabled full-stack topology used by the supported production documentation instead of the legacy minimal Compose overlay.
 - Production deployment performs Compose validation before pull/up and verifies both `/healthz` and `/readyz` before succeeding.
+- The production DGX bootstrap address is an explicit `CHANGE_ME` placeholder rather than a plausible example IP, preventing accidental unattended deployment against sample infrastructure.
 
 ### Security
 
-- Grafana can bind to loopback independently from the gateway, and the production guide requires Entra configuration before exposing administrative surfaces through a public tunnel.
+- Grafana can bind to loopback independently from the gateway; generated installer secrets are not printed; and the production path requires Entra configuration before exposing administrative surfaces through a public tunnel.
 
 ## [0.2.0-preview.3] - 2026-09-16
 
@@ -65,7 +67,7 @@ No unreleased product changes are recorded after the current preview baseline ye
 
 - Daily PostgreSQL usage rollups preserve request/token/error accounting after granular request metrics age out.
 - Raw request-metric retention and historical rollup retention are independently configurable; defaults are 90 and 730 days.
-- Usage reporting transparently combines recent raw metrics with historical rollups without double counting.
+- Usage reporting transparently combines recent raw metrics with historical rollups and newer raw metrics without double counting.
 - Admin Usage & Governance supports reporting windows up to 730 days and shows whether historical rollups contributed to the result.
 
 ### Changed
