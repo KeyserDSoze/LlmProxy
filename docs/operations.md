@@ -102,7 +102,7 @@ The manual test is diagnostic; persisted background health and maintenance resum
 Current product version:
 
 ```text
-0.2.0-preview.2
+0.2.0-preview.3
 ```
 
 Operators can inspect identity through:
@@ -133,23 +133,26 @@ org.opencontainers.image.created
 Publishing rules:
 
 ```text
-green main CI       -> main + sha-<7>
-matching Git tag    -> exact SemVer + sha-<7>
-stable Git tag      -> may also publish major.minor alias
-prerelease Git tag  -> never updates stable-looking alias
+validated main SHA      -> main + sha-<7>
+validated matching tag  -> exact SemVer + sha-<7>
+stable Git tag          -> may also publish major.minor alias
+prerelease Git tag      -> never updates stable-looking alias
 ```
+
+Before GHCR login, every publication queries GitHub Actions for a successful `CI` run produced by a push to `main` on the exact source SHA. A workflow-run publication additionally requires that API-selected CI run ID to equal the triggering run. An exact tag also has to match the compiled product version.
 
 ## Verify a published image
 
-`0.2.0-preview.2` adds registry-native SBOM/provenance verification to the publish workflow. Operators should prefer the immutable digest over a mutable tag when recording or deploying a known build.
+Current registry-native validation includes source-CI verification before push and SBOM/provenance verification after push. Operators should prefer the immutable digest over a mutable tag when recording or deploying a known build.
 
 Validated example:
 
 ```text
-image        ghcr.io/keyserdsoze/llmproxy
-version      0.2.0-preview.2
-source       d134603672f361474bac9ea330f3bd1a142b5dfa
-digest       sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+image          ghcr.io/keyserdsoze/llmproxy
+version        0.2.0-preview.3
+source         e9c8805e8473d3ad4df118d6a623ccef08723761
+validating CI  35083646699
+digest         sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
 ```
 
 The publish gate reads the OCI index back from GHCR, follows `attestation-manifest` descriptors and requires in-toto layers containing:
@@ -162,23 +165,25 @@ https://slsa.dev/provenance/...
 Validated predicates for the current baseline:
 
 ```text
-attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+attestation manifest  sha256:6d60bd6cb26cce447e403081ae1aa6129920f2716a0a1ccfb579b196054997a9
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
 ```
 
-The successful publish also uploads `release-manifest.json` as Actions artifact `10440082178`. It records image, digest, version, source SHA, build timestamp and the verified attestation descriptors. Artifact retention is 30 days; the immutable image/attestations live in GHCR according to registry/package retention policy.
+The successful publish uploads `release-manifest.json` as Actions artifact `10441770750`. It records image, digest, version, source SHA, build timestamp, validating CI run ID and the verified attestation descriptors. Artifact retention is 30 days; the immutable image/attestations live in GHCR according to registry/package retention policy.
 
 Current release/build validation:
 
 ```text
-0.2.0-preview.2  d134603672f361474bac9ea330f3bd1a142b5dfa
-CI               35080118201 SUCCESS
-Publish GHCR     35080565404 SUCCESS
+0.2.0-preview.3  e9c8805e8473d3ad4df118d6a623ccef08723761
+CI               35083646699 SUCCESS
+Publish GHCR     35084132389 SUCCESS
 runtime FullStack 35075387186 SUCCESS
 ```
 
-The runtime Full Stack predates `preview.2` because this slice changes release engineering only; no runtime behavior changed.
+The runtime Full Stack predates `preview.3` because this slice changes release engineering only; no inference/runtime behavior changed.
+
+No exact `v0.2.0-preview.3` Git tag or GitHub Release has been created. Creating one is an explicit release action; the repository guard that would protect it is already implemented and tested.
 
 See `docs/versioning.md` and root `CHANGELOG.md`.
 
@@ -206,4 +211,4 @@ Audit must never contain raw inference API secrets, Entra client secrets, Cloudf
 
 ## Integration-test behavior
 
-Repository CI/Full Stack covers service-root prefixes, health/models probes, routing changes, SSE delivery, health hysteresis, physical capacity, distributed runtime/outbox behavior, caller governance, historical rollups, backup/restore, credential rotation and cross-replica maintenance. Release publication separately proves GHCR digest + SPDX/SLSA attestation verification.
+Repository CI/Full Stack covers service-root prefixes, health/models probes, routing changes, SSE delivery, health hysteresis, physical capacity, distributed runtime/outbox behavior, caller governance, historical rollups, backup/restore, credential rotation and cross-replica maintenance. Release publication separately proves pre-GHCR source-CI validation plus GHCR digest + SPDX/SLSA attestation verification.

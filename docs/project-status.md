@@ -9,17 +9,17 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 Current formal product version:
 
 ```text
-0.2.0-preview.2
+0.2.0-preview.3
 ```
 
 Validated product/release checkpoint:
 
 ```text
-implementation   d134603672f361474bac9ea330f3bd1a142b5dfa
-CI               35080118201 SUCCESS
-Publish GHCR     35080565404 SUCCESS
-image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
-release artifact 10440082178
+implementation   e9c8805e8473d3ad4df118d6a623ccef08723761
+CI               35083646699 SUCCESS
+Publish GHCR     35084132389 SUCCESS
+image digest     sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
+release artifact 10441770750
 ```
 
 The latest distributed-runtime Full Stack checkpoint remains:
@@ -28,9 +28,9 @@ The latest distributed-runtime Full Stack checkpoint remains:
 Full Stack 35075387186 SUCCESS
 ```
 
-`0.2.0-preview.2` changes release/supply-chain behavior, not inference/runtime semantics, so the existing Full Stack remains the relevant Redis/runtime proof.
+`0.2.0-preview.3` changes release validation/supply-chain behavior, not inference/runtime semantics, so the existing Full Stack remains the relevant Redis/runtime proof.
 
-The standard CI proves backend build/unit/benchmark, React/Vitest/Playwright, version metadata validation, production image identity, Docker/PostgreSQL integration, caller governance, route-catalog outage behavior, retention/usage-rollup compaction, and Bash/PowerShell restore paths.
+The standard CI proves backend build/unit/benchmark, React/Vitest/Playwright, release-source guard fixtures, version metadata validation, production image identity, Docker/PostgreSQL integration, caller governance, route-catalog outage behavior, retention/usage-rollup compaction, and Bash/PowerShell restore paths.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -46,38 +46,44 @@ CHANGELOG.md                            human-readable product history
 docs/versioning.md                     release/version/build rules
 ```
 
-Current release history starts at `0.1.0-preview.1`; `0.2.0-preview.1` adds historical usage rollups; `0.2.0-preview.2` adds GHCR SBOM/provenance verification and immutable image-digest evidence. Older versions were intentionally not fabricated.
+Current release history starts at `0.1.0-preview.1`; `0.2.0-preview.1` adds historical usage rollups; `0.2.0-preview.2` adds GHCR SBOM/provenance verification; `0.2.0-preview.3` ties all container publication, including exact SemVer tags, to previously successful `main` CI for the same source SHA. Older versions were intentionally not fabricated.
 
-## Supply-chain release evidence — DONE / VALIDATED FOR MAIN BUILDS
+## Supply-chain release evidence — DONE / VALIDATED FOR REPOSITORY PATH
 
 Production publication now:
 
-1. runs only after green `CI` for `main`;
-2. builds with explicit product version, source SHA and UTC build time;
-3. publishes `main` + `sha-<7>` for main builds;
-4. emits an SPDX SBOM OCI attestation;
-5. emits SLSA/BuildKit provenance with `mode=max`;
-6. records the immutable registry digest returned by Buildx;
-7. reads the pushed OCI index back from GHCR;
-8. follows descriptors annotated `vnd.docker.reference.type=attestation-manifest`;
-9. verifies in-toto layers contain both SPDX and SLSA predicate types;
-10. uploads `release-manifest.json` with image/digest/version/source/build time and attestation descriptors.
+1. resolves one exact source SHA;
+2. queries the GitHub Actions API before GHCR login;
+3. requires a `CI` workflow run with event `push`, branch `main`, exact source SHA and conclusion `success`;
+4. for `workflow_run` publication, requires the API-selected CI run ID to equal the triggering CI run ID;
+5. for exact `vX.Y.Z` tag publication, also requires tag version == compiled version;
+6. builds with explicit product version, source SHA and UTC build time;
+7. publishes `main` + `sha-<7>` for main builds, or exact SemVer + `sha-<7>` for a matching validated tag;
+8. emits an SPDX SBOM OCI attestation;
+9. emits SLSA/BuildKit provenance with `mode=max`;
+10. records the immutable registry digest returned by Buildx;
+11. reads the pushed OCI index back from GHCR and verifies both SPDX and SLSA in-toto predicates;
+12. uploads `release-manifest.json` with image/digest/version/source/build time, validating CI run ID and attestation descriptors.
 
-Validated registry evidence:
+Validated repository-path evidence:
 
 ```text
 image                 ghcr.io/keyserdsoze/llmproxy
-image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
-attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+version               0.2.0-preview.3
+source                e9c8805e8473d3ad4df118d6a623ccef08723761
+validating CI         35083646699
+Publish GHCR          35084132389
+image digest          sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
+attestation manifest  sha256:6d60bd6cb26cce447e403081ae1aa6129920f2716a0a1ccfb579b196054997a9
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-artifact              10440082178
-artifact digest       sha256:149071900ed52b2ffc471281c639f1c9264b40c40bb9729172d47411f12a35a6
+artifact              10441770750
+artifact digest       sha256:5315122e2df9238702655332273e48744a08b895c2fcca25cbe7dcd6ff42d13d
 ```
 
-The first post-push verifier attempted to use Buildx rendering helpers and failed even though BuildKit had generated/pushed the attestations. Commit `d134603672f361474bac9ea330f3bd1a142b5dfa` fixed the verifier to inspect OCI-native manifests/predicate annotations directly; Publish `35080565404` proves the corrected gate end-to-end.
+CI exercises the reusable source guard with positive and negative fixtures without creating a real immutable tag. Publish `35084132389` proves the same Actions-API guard end-to-end on a real `main` publication before GHCR login, followed by digest/SBOM/provenance verification.
 
-Exact version tags are still produced only by matching Git tag events. The next release-engineering increment is to ensure a tagged exact release cannot bypass the same validation discipline used for `main` before publication.
+No immutable Git tag or GitHub Release has been created. That remains an explicit product-owner publication action rather than missing repository implementation.
 
 ## Core product scope
 
@@ -93,7 +99,7 @@ LlmProxy is Agic's enterprise inference-governance boundary:
 7. backup/recovery of durable application state
 8. metadata-only observability and audit
 9. product version/build identity + operator release notes
-10. registry-native image SBOM/provenance evidence
+10. validated container publication + registry-native SBOM/provenance evidence
 ```
 
 ## Current request path
@@ -215,12 +221,14 @@ Full stack includes PostgreSQL, Redis, OpenTelemetry Collector, Tempo, Loki, Pro
 
 ## Current development focus
 
-Repository-supported hardening is complete through release identity, historical usage rollups and OCI SBOM/provenance verification. Default order from here:
+Repository-supported MVP hardening is complete through release identity, historical usage rollups, OCI SBOM/provenance verification and source-validated main/tag publication.
 
-1. formalize an immutable tagged-release path where an exact SemVer tag cannot bypass validation before publication; optionally create a GitHub Release only after that gate passes;
-2. customer-specific Redis/observability HA, production storage and scheduled backup guidance;
+Default order from here:
+
+1. customer-specific Redis/observability HA, production storage and scheduled backup guidance when deployment topology is known;
+2. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available;
 3. quota evolution only when requirements define tokenizer/pricing semantics;
-4. physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
+4. create an immutable Git tag/GitHub Release only when the project owner explicitly wants a distributable release.
 
 ## Identity limitation
 
@@ -243,8 +251,8 @@ A new development session should:
 
 1. read `AGENTS.md`, this file, `CHANGELOG.md`, `docs/versioning.md`, latest `docs/development-log.md`, `docs/roadmap.md` and focused docs;
 2. inspect latest `main` and Actions before changing code;
-3. treat version `0.2.0-preview.2`, implementation `d134603672f361474bac9ea330f3bd1a142b5dfa`, CI `35080118201`, Publish `35080565404`, image digest `sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880` and latest runtime Full Stack `35075387186` as the validated baseline;
+3. treat version `0.2.0-preview.3`, implementation `e9c8805e8473d3ad4df118d6a623ccef08723761`, CI `35083646699`, Publish `35084132389`, image digest `sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec` and latest runtime Full Stack `35075387186` as the validated baseline;
 4. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free configuration lookup, rollup/raw no-double-counting and pre-response-only failover;
-5. preserve post-push registry verification of both SPDX and SLSA attestations;
+5. preserve the pre-GHCR Actions-API source-validation gate plus post-push registry verification of both SPDX and SLSA attestations;
 6. for new product/operator-visible behavior, bump version/release notes according to `docs/versioning.md`;
 7. update engineering docs/evidence after every meaningful increment.

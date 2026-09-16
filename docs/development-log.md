@@ -227,8 +227,44 @@ artifact digest       sha256:149071900ed52b2ffc471281c639f1c9264b40c40bb9729172d
 
 No inference/runtime semantics changed in this slice, so latest relevant distributed-runtime validation remains Full Stack `35075387186 SUCCESS`.
 
+## 2026-09-16 — Source-validated publication / 0.2.0-preview.3 — VALIDATED
+
+Bumped product to `0.2.0-preview.3` and closed the remaining exact-tag publication bypass.
+
+Implemented:
+
+- reusable `docker/scripts/validate-release-main-ci.sh` predicate;
+- guard requires workflow name `CI`, event `push`, branch `main`, exact source SHA and successful conclusion;
+- CI positive fixture plus negative wrong-branch, failed-CI and wrong-SHA fixtures;
+- exact `vX.Y.Z` publication requires tag/version match **and** previously successful `main` CI for the same SHA;
+- release manifest records the validating CI run ID;
+- final workflow refactor makes **every** publication query the GitHub Actions API through the same source guard before GHCR login;
+- workflow-run publication additionally requires the API-selected run ID to equal the CI run that triggered publication, preventing a stale/different successful run from satisfying the gate;
+- existing immutable digest + OCI SPDX/SLSA post-push verification remains mandatory.
+
+The first `preview.3` implementation was `d52d6b37582fad5ca6e56329412882cf30c8dc72`; CI `35081932463` and Publish `35082360343` were green. The final refactor `e9c8805e8473d3ad4df118d6a623ccef08723761` then made ordinary main publication exercise the same Actions API/JSON/guard path as a future tag.
+
+Final validation:
+
+```text
+version               0.2.0-preview.3
+commit                e9c8805e8473d3ad4df118d6a623ccef08723761
+CI                    35083646699 SUCCESS
+Publish GHCR          35084132389 SUCCESS
+validating CI run     35083646699
+image digest          sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
+attestation manifest  sha256:6d60bd6cb26cce447e403081ae1aa6129920f2716a0a1ccfb579b196054997a9
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+release artifact      10441770750
+artifact digest       sha256:5315122e2df9238702655332273e48744a08b895c2fcca25cbe7dcd6ff42d13d
+runtime Full Stack    35075387186 SUCCESS
+```
+
+No real immutable Git tag or GitHub Release was created. The repository path that would protect such a release is implemented and mechanically tested without consuming a version tag.
+
 ## Current next increment
 
-Repository hardening is complete through historical usage rollups plus registry-verified SPDX/SLSA attestations. The next non-external engineering work is to harden the **exact Git-tag release path** so a versioned SemVer tag cannot bypass the repository's validation gate before publication; an immutable GitHub Release may be created only after that validated tag path succeeds.
+Repository-supported MVP hardening is complete through historical usage rollups, registry-verified SPDX/SLSA attestations and source-validated main/tag publication. The next work is deployment-specific rather than another generic product feature: customer Redis/observability HA/storage/scheduled-backup guidance, followed by physical DGX + Copilot BYOK + Entra/Cloudflare acceptance when access is available.
 
-Customer-specific Redis/observability HA/storage and scheduled backup guidance follows when deployment topology is known. Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics.
+Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics. Creating a real immutable Git tag/GitHub Release is an explicit product-owner publication decision.

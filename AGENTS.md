@@ -58,17 +58,17 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 Current formal version:
 
 ```text
-0.2.0-preview.2
+0.2.0-preview.3
 ```
 
 Current validated product/release checkpoint:
 
 ```text
-implementation   d134603672f361474bac9ea330f3bd1a142b5dfa
-CI               35080118201 SUCCESS
-Publish GHCR     35080565404 SUCCESS
-image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
-release artifact 10440082178
+implementation   e9c8805e8473d3ad4df118d6a623ccef08723761
+CI               35083646699 SUCCESS
+Publish GHCR     35084132389 SUCCESS
+image digest     sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
+release artifact 10441770750
 ```
 
 The latest distributed-runtime Full Stack checkpoint remains:
@@ -77,7 +77,7 @@ The latest distributed-runtime Full Stack checkpoint remains:
 Full Stack 35075387186 SUCCESS
 ```
 
-No runtime path changed in `0.2.0-preview.2`; that Full Stack evidence remains the relevant distributed-runtime proof.
+No inference/runtime path changed in `0.2.0-preview.3`; that Full Stack evidence remains the relevant distributed-runtime proof.
 
 Runtime identity is exposed by:
 
@@ -155,45 +155,52 @@ Read `docs/backup-restore.md` before changing recovery behavior.
 
 ## Release/build/supply-chain contract
 
-Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. CI validates SemVer, changelog presence and a deliberately invalid candidate tag case. Production images carry OCI version/revision/created labels plus `LLMPROXY_BUILD_SHA` and `LLMPROXY_BUILD_DATE`.
+Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. CI validates SemVer, changelog presence and deliberately invalid release candidates. Production images carry OCI version/revision/created labels plus `LLMPROXY_BUILD_SHA` and `LLMPROXY_BUILD_DATE`.
 
 Publishing behavior:
 
 ```text
-main push after green CI -> main + sha-<7>
-Git tag vX.Y.Z          -> exact X.Y.Z + sha-<7>
-stable tag only         -> optional major.minor alias
-prerelease tag          -> never updates a stable-looking alias
+validated main SHA -> main + sha-<7>
+validated Git tag vX.Y.Z -> exact X.Y.Z + sha-<7>
+stable tag only -> optional major.minor alias
+prerelease tag -> never updates a stable-looking alias
 ```
 
-`0.2.0-preview.2` adds registry-native supply-chain evidence:
+Every container publication, including ordinary `main` publication and an exact Git-tag publication, must query GitHub Actions and prove that the selected source SHA already has a successful `CI` run produced by a push to `main`. The reusable `docker/scripts/validate-release-main-ci.sh` guard enforces workflow name, push event, `main` branch, exact SHA and `success` conclusion. A `workflow_run` publication additionally requires the API-selected run ID to equal the run that triggered publication. This gate runs before GHCR login.
+
+Registry-native supply-chain evidence remains mandatory:
 
 - Buildx publishes an SPDX SBOM OCI attestation;
 - Buildx publishes SLSA/BuildKit provenance (`mode=max`);
 - publish records the immutable image digest;
 - post-push verification resolves the pushed digest from GHCR, reads the OCI image index, follows `attestation-manifest` descriptors and validates `application/vnd.in-toto+json` layers;
 - verification requires both predicate types `https://spdx.dev/Document` and `https://slsa.dev/provenance/...`;
-- an Actions `release-manifest.json` artifact records image, digest, version, source SHA, build timestamp and verified attestation descriptors.
+- an Actions `release-manifest.json` artifact records image, digest, version, source SHA, build timestamp, validating CI run ID and verified attestation descriptors.
 
-Validated `0.2.0-preview.2` registry evidence:
+Validated `0.2.0-preview.3` release evidence:
 
 ```text
-image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
-attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
+validating CI         35083646699
+Publish GHCR          35084132389
+image digest          sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
+attestation manifest  sha256:6d60bd6cb26cce447e403081ae1aa6129920f2716a0a1ccfb579b196054997a9
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
+release artifact      10441770750
 ```
+
+No immutable Git tag or GitHub Release has been created. Creating one is an explicit product-owner release action, not a prerequisite for considering the repository release gate implemented and validated.
 
 Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Repository-supported hardening is complete through historical usage rollups and GHCR SBOM/provenance verification. Default next order:
+Repository-supported MVP hardening is complete through historical usage rollups, registry-verified SPDX/SLSA attestations and the shared main/tag publication-source gate. Default next order:
 
-1. harden **immutable tagged releases** so an exact SemVer tag cannot bypass the repository's validation gate; add a formal tagged-release/GitHub Release workflow only if it preserves the current CI-before-publish rule;
-2. add customer-specific Redis/observability HA, production storage and scheduled backup guidance when deployment topology is known;
+1. add customer-specific Redis/observability HA, production storage and scheduled backup guidance when deployment topology is known;
+2. run physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available;
 3. evolve quota semantics only when explicit requirements define tokenizer/pricing behavior;
-4. run physical DGX/Copilot/Entra/Cloudflare acceptance when external access is available.
+4. create an immutable Git tag/GitHub Release only when the project owner explicitly wants to publish a distributable release.
 
 Do not invent per-user identity from a shared GitHub Copilot BYOK credential or from IP addresses.
 

@@ -52,7 +52,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: maintenance marker participates in atomic Redis admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
-## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH / TAGGED RELEASE HARDENING ACTIVE
+## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH
 
 - DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
 - DONE: production image/Compose CI validation.
@@ -66,8 +66,10 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: SLSA/BuildKit provenance emitted as OCI attestation.
 - DONE: immutable image digest recorded for every publication.
 - DONE: post-push GHCR verification reads the OCI index and requires both SPDX and SLSA in-toto predicates.
-- DONE: release-manifest Actions artifact records image/digest/version/source/build time and attestation descriptors.
-- ACTIVE NEXT: make the exact SemVer-tag release path consume an equivalent validation gate before publication; optionally create a GitHub Release only after that gate succeeds.
+- DONE: release-manifest Actions artifact records image/digest/version/source/build time, validating CI run and attestation descriptors.
+- DONE: reusable tagged-release source guard requires successful `CI` from a push to `main` on the exact source SHA.
+- DONE: every main/tag publication queries GitHub Actions through the same pre-GHCR source gate; main publication additionally proves the API-selected run equals the triggering CI run.
+- PLANNED/OWNER ACTION: create an immutable Git tag/GitHub Release only when a distributable release is explicitly requested.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
 - EXTERNAL: customer backup destination, encryption, retention schedule and deployment-host acceptance.
 
@@ -138,7 +140,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED: customer-specific Redis HA/redundancy guidance.
 
-## M12 — Product hardening — DONE THROUGH 0.2.0-preview.2 / TAGGED RELEASE GATE NEXT
+## M12 — Product hardening — DONE THROUGH 0.2.0-preview.3
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -149,25 +151,26 @@ local RAM  = per-replica request-path L1
 - DONE: long-term usage rollups.
 - DONE: GHCR SBOM/provenance generation and registry-native verification.
 - DONE: immutable digest + release-manifest artifact.
-- ACTIVE NEXT: validated immutable tagged-release/GitHub Release path.
+- DONE: exact SemVer tag path requires previously successful `main` CI for the same SHA.
+- DONE: the same Actions-API source-validation gate is exercised by every ordinary main publication before GHCR login.
 - PLANNED: customer-specific production HA/storage/scheduled-backup guidance.
 
 Current checkpoint:
 
 ```text
-version          0.2.0-preview.2
-commit           d134603672f361474bac9ea330f3bd1a142b5dfa
-CI               35080118201 SUCCESS
-Publish GHCR     35080565404 SUCCESS
-image digest     sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
+version           0.2.0-preview.3
+commit            e9c8805e8473d3ad4df118d6a623ccef08723761
+CI                35083646699 SUCCESS
+Publish GHCR      35084132389 SUCCESS
+image digest      sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
 runtime FullStack 35075387186 SUCCESS
 ```
 
 ## Current development order
 
-1. Harden the exact Git-tag release path so no versioned release can bypass repository validation before publication; add a GitHub Release only after that gate succeeds.
-2. Add customer-specific Redis/observability HA/storage and scheduled-backup guidance when deployment shape is known.
+1. Add customer-specific Redis/observability HA/storage and scheduled-backup guidance when deployment shape is known.
+2. Run real DGX + Copilot BYOK + Entra/Cloudflare acceptance when external access exists.
 3. Expand quota semantics only with explicit tokenizer/pricing requirements.
-4. Run real DGX + Copilot BYOK + Entra/Cloudflare acceptance when external access exists.
+4. Create a real immutable Git tag/GitHub Release only when the project owner explicitly requests publication.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.
