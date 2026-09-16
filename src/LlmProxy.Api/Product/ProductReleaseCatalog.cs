@@ -4,8 +4,6 @@ namespace LlmProxy.Api.Product;
 
 public static class ProductReleaseCatalog
 {
-    private static readonly DateOnly InitialVersionedReleaseDate = new(2026, 9, 16);
-
     public static ProductReleaseInfo GetInfo()
     {
         var assembly = typeof(ProductReleaseCatalog).Assembly;
@@ -26,9 +24,43 @@ public static class ProductReleaseCatalog
             ? parsedBuildDate
             : (DateTimeOffset?)null;
 
-        var release = new ProductRelease(
+        var releases = BuildReleases();
+        var currentRelease = releases.FirstOrDefault(release => release.Version == version) ?? releases[0];
+
+        return new ProductReleaseInfo(
+            "LlmProxy",
             version,
-            InitialVersionedReleaseDate,
+            version.Contains('-', StringComparison.Ordinal) ? "preview" : "stable",
+            currentRelease.ReleasedOn,
+            buildRevision,
+            builtAtUtc,
+            releases);
+    }
+
+    private static IReadOnlyList<ProductRelease> BuildReleases() =>
+    [
+        new ProductRelease(
+            "0.2.0-preview.1",
+            new DateOnly(2026, 9, 16),
+            "Historical usage rollups",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Daily PostgreSQL usage rollups preserve request/token/error accounting after granular request metrics age out.",
+                    "Raw request-metric retention and historical rollup retention are independently configurable; defaults are 90 and 730 days.",
+                    "Usage reporting transparently combines recent raw metrics with historical rollups without double counting.",
+                    "Admin Usage & Governance supports reporting windows up to 730 days and shows whether historical rollups contributed to the result."
+                ],
+                ["Changed"] =
+                [
+                    "Usage reporting windows are defined as UTC calendar days so daily historical rollups have deterministic boundaries.",
+                    "Request-metric cleanup rolls complete UTC days into durable aggregates before deleting the corresponding raw rows."
+                ]
+            }),
+        new ProductRelease(
+            "0.1.0-preview.1",
+            new DateOnly(2026, 9, 16),
             "Initial versioned preview baseline",
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
             {
@@ -48,9 +80,7 @@ public static class ProductReleaseCatalog
                 ["Changed"] =
                 [
                     "Node maintenance is now the supported path for runtime/model upgrades; a draining node cannot re-enter routing until validation succeeds.",
-                    "Release management now follows SemVer while the product remains pre-1.0.",
-                    "Published container images carry OCI product-version, source-revision and build-date metadata that is also available to the runtime release view.",
-                    "Tagged container publication rejects a Git tag that does not exactly match the compiled product version; prereleases do not update stable major/minor aliases."
+                    "Release management now follows SemVer while the product remains pre-1.0."
                 ],
                 ["Fixed"] =
                 [
@@ -62,17 +92,8 @@ public static class ProductReleaseCatalog
                     "Raw prompts, generated content and API secrets remain excluded from persistent telemetry and audit by default.",
                     "Inference credentials are persisted as HMAC hashes; raw credential material is returned only at creation or rotation time."
                 ]
-            });
-
-        return new ProductReleaseInfo(
-            "LlmProxy",
-            version,
-            version.Contains('-', StringComparison.Ordinal) ? "preview" : "stable",
-            InitialVersionedReleaseDate,
-            buildRevision,
-            builtAtUtc,
-            [release]);
-    }
+            })
+    ];
 
     private static string? FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();

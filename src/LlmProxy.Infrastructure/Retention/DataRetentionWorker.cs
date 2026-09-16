@@ -38,11 +38,14 @@ public sealed class DataRetentionWorker(
             var result = await service.RunAsync(cancellationToken: cancellationToken);
 
             logger.LogInformation(
-                "Data retention cleanup completed. DeletedRequestMetrics={DeletedRequestMetrics} DeletedAuditEvents={DeletedAuditEvents} RequestMetricsCutoffUtc={RequestMetricsCutoffUtc} AuditEventsCutoffUtc={AuditEventsCutoffUtc}.",
+                "Data retention cleanup completed. RolledUpRequestMetricDays={RolledUpRequestMetricDays} DeletedRequestMetrics={DeletedRequestMetrics} DeletedUsageRollups={DeletedUsageRollups} DeletedAuditEvents={DeletedAuditEvents} DeletedRuntimeStateOutbox={DeletedRuntimeStateOutbox} RequestMetricsCutoffUtc={RequestMetricsCutoffUtc} UsageRollupsCutoffUtc={UsageRollupsCutoffUtc}.",
+                result.RolledUpRequestMetricDays,
                 result.DeletedRequestMetrics,
+                result.DeletedUsageRollups,
                 result.DeletedAuditEvents,
+                result.DeletedRuntimeStateOutbox,
                 result.RequestMetricsCutoffUtc,
-                result.AuditEventsCutoffUtc);
+                result.UsageRollupsCutoffUtc);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

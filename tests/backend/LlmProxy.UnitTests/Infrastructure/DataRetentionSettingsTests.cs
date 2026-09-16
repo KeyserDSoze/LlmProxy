@@ -14,6 +14,7 @@ public sealed class DataRetentionSettingsTests
 
         Assert.True(settings.Enabled);
         Assert.Equal(90, settings.RequestMetricsDays);
+        Assert.Equal(730, settings.UsageRollupsDays);
         Assert.Equal(365, settings.AuditEventsDays);
         Assert.Equal(30, settings.RuntimeStateOutboxDays);
         Assert.Equal(24, settings.IntervalHours);
@@ -27,6 +28,7 @@ public sealed class DataRetentionSettingsTests
         {
             ["Retention:Enabled"] = "false",
             ["Retention:RequestMetricsDays"] = "0",
+            ["Retention:UsageRollupsDays"] = "99999",
             ["Retention:AuditEventsDays"] = "99999",
             ["Retention:RuntimeStateOutboxDays"] = "0",
             ["Retention:IntervalHours"] = "999",
@@ -40,6 +42,7 @@ public sealed class DataRetentionSettingsTests
 
         Assert.False(settings.Enabled);
         Assert.Equal(1, settings.RequestMetricsDays);
+        Assert.Equal(3650, settings.UsageRollupsDays);
         Assert.Equal(3650, settings.AuditEventsDays);
         Assert.Equal(1, settings.RuntimeStateOutboxDays);
         Assert.Equal(168, settings.IntervalHours);

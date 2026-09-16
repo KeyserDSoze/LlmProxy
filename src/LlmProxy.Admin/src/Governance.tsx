@@ -5,6 +5,12 @@ import type { CreatedApiCredential, GovernanceCredential, Model, RateLimitPolicy
 const emptyUsage: UsageReport = {
   windowDays: 30,
   sinceUtc: '',
+  windowGranularity: 'utc_day',
+  rawRetentionDays: 90,
+  rollupRetentionDays: 730,
+  rawRequestCount: 0,
+  rolledUpRequestCount: 0,
+  historicalRollupsUsed: false,
   requestCount: 0,
   errorCount: 0,
   inputTokens: 0,
@@ -159,7 +165,7 @@ export default function Governance() {
         <div><h2>Usage & Governance</h2><span>Caller identity, group attribution, rate limits, output-token budgets and consolidated usage.</span></div>
         <div className="actions">
           <select aria-label="Usage window" value={days} onChange={event => setDays(Number(event.target.value))}>
-            <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+            <option value={7}>Last 7 UTC days</option><option value={30}>Last 30 UTC days</option><option value={90}>Last 90 UTC days</option><option value={180}>Last 180 UTC days</option><option value={365}>Last 365 UTC days</option><option value={730}>Last 730 UTC days</option>
           </select>
           <button className="secondary" onClick={() => void refresh()}>Refresh</button>
         </div>
@@ -171,6 +177,8 @@ export default function Governance() {
         <GovernanceMetric label="Rate limited" value={formatNumber(usage.rateLimitedRequests)} />
         <GovernanceMetric label="Capacity exhausted" value={formatNumber(usage.capacityExhaustedRequests)} />
       </div>
+      <div className="muted">UTC calendar-day reporting · raw request metrics {usage.rawRetentionDays}d · daily usage rollups {usage.rollupRetentionDays}d.</div>
+      {usage.historicalRollupsUsed && <div className="notice" data-testid="historical-rollup-notice">Historical rollups included: {formatNumber(usage.rolledUpRequestCount)} rolled-up requests + {formatNumber(usage.rawRequestCount)} raw requests in this window.</div>}
     </section>
 
     <section className="panel">
@@ -196,23 +204,14 @@ export default function Governance() {
 
     <section className="panel">
       <div className="panelTitle"><h2>Credential → group membership & rotation</h2><span>Rotation is an in-place hard cutover: identity, group, policies and history are preserved.</span></div>
-      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
-        <td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td>
-        <td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
-        <td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td>
-      </tr>)}</tbody></table>
+      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}><td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td><td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td><td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td></tr>)}</tbody></table>
       {rotatedCredential && <div className="secretBox" data-testid="rotated-credential-secret"><strong>Copy the rotated key now</strong><p>The previous key is invalid and this secret will not be shown again.</p><code>{rotatedCredential.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(rotatedCredential.secret)}>Copy</button></div>}
     </section>
 
     <div className="gridTwo">
       <section className="panel">
         <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from DGX capacity backpressure.</span></div>
-        <table><thead><tr><th>Credential</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={6}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}>
-          <td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
-          <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <><strong>{formatNumber(policy.outputTokensPerWindow)} tokens / {policy.windowSeconds}s</strong><div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
-          <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
-          <td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td>
-        </tr>)}</tbody></table>
+        <table><thead><tr><th>Credential</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={6}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}><td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td><td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <><strong>{formatNumber(policy.outputTokensPerWindow)} tokens / {policy.windowSeconds}s</strong><div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td></tr>)}</tbody></table>
       </section>
       <section className="panel formPanel"><h2>Add rate limit</h2><form onSubmit={event => void createRateLimit(event)}>
         <label>Credential<select value={rateCredentialId} onChange={event => setRateCredentialId(event.target.value)} required><option value="">Select credential</option>{credentials.map(credential => <option key={credential.id} value={credential.id}>{credential.name}</option>)}</select></label>
@@ -233,13 +232,9 @@ export default function Governance() {
       </form>}
     </section>
 
-    <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day window</span></div>
-      <table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table>
-    </section>
+    <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day UTC window</span></div><table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table></section>
 
-    <section className="panel"><div className="panelTitle"><h2>Usage by credential</h2><span>Gateway identity, not inferred end-user identity.</span></div>
-      <table><thead><tr><th>Credential</th><th>Group</th><th>Requests</th><th>Total tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.credentials.map(row => <tr key={`${row.apiCredentialId}-${row.usageGroupId ?? 'none'}`}><td><strong>{row.name}</strong><div className="muted mono">{row.keyPrefix}</div></td><td>{row.usageGroupId ? groupNames.get(row.usageGroupId) ?? row.usageGroupId : 'Ungrouped'}</td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table>
-    </section>
+    <section className="panel"><div className="panelTitle"><h2>Usage by credential</h2><span>Gateway identity, not inferred end-user identity.</span></div><table><thead><tr><th>Credential</th><th>Group</th><th>Requests</th><th>Total tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.credentials.map(row => <tr key={`${row.apiCredentialId}-${row.usageGroupId ?? 'none'}`}><td><strong>{row.name}</strong><div className="muted mono">{row.keyPrefix}</div></td><td>{row.usageGroupId ? groupNames.get(row.usageGroupId) ?? row.usageGroupId : 'Ungrouped'}</td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table></section>
   </>
 }
 

@@ -6,7 +6,21 @@ The project follows [Semantic Versioning](https://semver.org/) from the first fo
 
 ## [Unreleased]
 
-No unreleased product changes are recorded after the initial versioned preview baseline yet.
+No unreleased product changes are recorded after the current preview baseline yet.
+
+## [0.2.0-preview.1] - 2026-09-16
+
+### Added
+
+- Daily PostgreSQL usage rollups preserve request/token/error accounting after granular request metrics age out.
+- Raw request-metric retention and historical rollup retention are independently configurable; defaults are 90 and 730 days.
+- Usage reporting transparently combines recent raw metrics with historical rollups without double counting.
+- Admin Usage & Governance supports reporting windows up to 730 days and shows whether historical rollups contributed to the result.
+
+### Changed
+
+- Usage reporting windows are defined as UTC calendar days so daily historical rollups have deterministic boundaries.
+- Request-metric cleanup rolls complete UTC days into durable aggregates before deleting the corresponding raw rows.
 
 ## [0.1.0-preview.1] - 2026-09-16
 
@@ -27,9 +41,6 @@ No unreleased product changes are recorded after the initial versioned preview b
 
 - Node maintenance is now the supported path for runtime/model upgrades; a draining node cannot re-enter routing until validation succeeds.
 - Release management now follows SemVer while the product remains pre-1.0.
-- Published container images carry OCI product-version, source-revision and build-date metadata that is also available to the runtime release view.
-- Tagged container publication rejects a Git tag that does not exactly match the compiled product version.
-- Prerelease image tags publish the exact prerelease version plus source-SHA alias without updating a stable major/minor alias.
 
 ### Fixed
 

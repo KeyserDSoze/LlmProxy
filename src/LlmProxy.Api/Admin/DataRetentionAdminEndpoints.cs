@@ -17,6 +17,7 @@ public static class DataRetentionAdminEndpoints
             {
                 service.Settings.Enabled,
                 service.Settings.RequestMetricsDays,
+                service.Settings.UsageRollupsDays,
                 service.Settings.AuditEventsDays,
                 service.Settings.RuntimeStateOutboxDays,
                 service.Settings.IntervalHours,
@@ -34,10 +35,13 @@ public static class DataRetentionAdminEndpoints
             var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
             var details = JsonSerializer.Serialize(new
             {
+                result.RolledUpRequestMetricDays,
                 result.DeletedRequestMetrics,
+                result.DeletedUsageRollups,
                 result.DeletedAuditEvents,
                 result.DeletedRuntimeStateOutbox,
                 result.RequestMetricsCutoffUtc,
+                result.UsageRollupsCutoffUtc,
                 result.AuditEventsCutoffUtc,
                 result.RuntimeStateOutboxCutoffUtc
             });

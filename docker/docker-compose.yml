@@ -36,6 +36,7 @@ services:
       HardwareMetrics__IntervalSeconds: ${HARDWARE_METRICS_INTERVAL_SECONDS:-10}
       Retention__Enabled: ${RETENTION_ENABLED:-true}
       Retention__RequestMetricsDays: ${RETENTION_REQUEST_METRICS_DAYS:-90}
+      Retention__UsageRollupsDays: ${RETENTION_USAGE_ROLLUPS_DAYS:-730}
       Retention__AuditEventsDays: ${RETENTION_AUDIT_EVENTS_DAYS:-365}
       Retention__RuntimeStateOutboxDays: ${RETENTION_RUNTIME_STATE_OUTBOX_DAYS:-30}
       Retention__IntervalHours: ${RETENTION_INTERVAL_HOURS:-24}

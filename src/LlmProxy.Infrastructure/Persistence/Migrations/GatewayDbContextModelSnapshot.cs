@@ -164,6 +164,29 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("api_credentials");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DailyUsageRollupRecord", b =>
+        {
+            b.Property<DateOnly>("DayUtc").HasColumnType("date");
+            b.Property<Guid>("ApiCredentialId").HasColumnType("uuid");
+            b.Property<long>("CapacityExhaustedRequests").HasColumnType("bigint");
+            b.Property<long>("DurationMillisecondsTotal").HasColumnType("bigint");
+            b.Property<long>("ErrorCount").HasColumnType("bigint");
+            b.Property<long>("InputTokens").HasColumnType("bigint");
+            b.Property<string>("LogicalModel").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<long>("OutputTokens").HasColumnType("bigint");
+            b.Property<long>("RateLimitedRequests").HasColumnType("bigint");
+            b.Property<long>("RequestCount").HasColumnType("bigint");
+            b.Property<long>("TotalTokens").HasColumnType("bigint");
+            b.Property<long>("TtftMillisecondsTotal").HasColumnType("bigint");
+            b.Property<long>("TtftSampleCount").HasColumnType("bigint");
+            b.Property<Guid>("UsageGroupId").HasColumnType("uuid");
+            b.HasKey("DayUtc", "ApiCredentialId", "UsageGroupId", "LogicalModel");
+            b.HasIndex("ApiCredentialId", "DayUtc");
+            b.HasIndex("LogicalModel", "DayUtc");
+            b.HasIndex("UsageGroupId", "DayUtc");
+            b.ToTable("daily_usage_rollups");
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RequestMetricRecord", b =>
         {
             b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");

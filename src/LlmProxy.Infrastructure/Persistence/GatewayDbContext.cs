@@ -20,6 +20,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
+    public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<RuntimeStateOutboxRecord> RuntimeStateOutbox => Set<RuntimeStateOutboxRecord>();
 
@@ -115,6 +116,16 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => new { x.UsageGroupId, x.StartedAtUtc });
             entity.HasIndex(x => new { x.LogicalModel, x.StartedAtUtc });
             entity.HasIndex(x => new { x.NodeId, x.StartedAtUtc });
+        });
+
+        modelBuilder.Entity<DailyUsageRollupRecord>(entity =>
+        {
+            entity.ToTable("daily_usage_rollups");
+            entity.HasKey(x => new { x.DayUtc, x.ApiCredentialId, x.UsageGroupId, x.LogicalModel });
+            entity.Property(x => x.LogicalModel).HasMaxLength(160).IsRequired();
+            entity.HasIndex(x => new { x.ApiCredentialId, x.DayUtc });
+            entity.HasIndex(x => new { x.UsageGroupId, x.DayUtc });
+            entity.HasIndex(x => new { x.LogicalModel, x.DayUtc });
         });
 
         modelBuilder.Entity<AuditEvent>(entity =>

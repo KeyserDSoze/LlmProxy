@@ -13,7 +13,10 @@ const mockedApi = vi.hoisted(() => ({
   clearCredentialUsageGroup: vi.fn(),
   createRateLimit: vi.fn(),
   updateRateLimit: vi.fn(),
-  deleteRateLimit: vi.fn()
+  deleteRateLimit: vi.fn(),
+  rotateApiCredential: vi.fn(),
+  setOutputTokenBudget: vi.fn(),
+  clearOutputTokenBudget: vi.fn()
 }))
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
@@ -31,8 +34,21 @@ const credential = {
 }
 
 const usage = {
-  windowDays: 30, sinceUtc: '2026-08-15T10:00:00Z', requestCount: 42, errorCount: 2,
-  inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3, capacityExhaustedRequests: 1,
+  windowDays: 30,
+  sinceUtc: '2026-08-18T00:00:00Z',
+  windowGranularity: 'utc_day',
+  rawRetentionDays: 90,
+  rollupRetentionDays: 730,
+  rawRequestCount: 12,
+  rolledUpRequestCount: 30,
+  historicalRollupsUsed: true,
+  requestCount: 42,
+  errorCount: 2,
+  inputTokens: 1000,
+  outputTokens: 500,
+  totalTokens: 1500,
+  rateLimitedRequests: 3,
+  capacityExhaustedRequests: 1,
   groups: [{ usageGroupId: 'group-1', name: 'Development CRM', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3, averageTtftMilliseconds: 210, averageDurationMilliseconds: 1200 }],
   credentials: [{ apiCredentialId: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', usageGroupId: 'group-1', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }],
   models: [{ logicalModel: 'agic-code-fast', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }]
@@ -54,14 +70,25 @@ describe('Usage governance', () => {
     mockedApi.deleteRateLimit.mockResolvedValue(undefined)
   })
 
-  it('shows consolidated usage by group, credential and model', async () => {
+  it('shows consolidated usage and makes historical rollup coverage explicit', async () => {
     render(<Governance />)
 
     expect(await screen.findByRole('heading', { name: 'Usage & Governance' })).toBeInTheDocument()
     expect(screen.getAllByText('Development CRM').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Copilot CRM').length).toBeGreaterThan(0)
     expect(screen.getAllByText('agic-code-fast').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('historical-rollup-notice')).toHaveTextContent('30 rolled-up requests + 12 raw requests')
+    expect(screen.getByText(/raw request metrics 90d · daily usage rollups 730d/)).toBeInTheDocument()
     expect(mockedApi.usageSummary).toHaveBeenCalledWith(30)
+  })
+
+  it('supports long-term UTC-day reporting windows', async () => {
+    const user = userEvent.setup()
+    render(<Governance />)
+    await screen.findByRole('heading', { name: 'Usage & Governance' })
+
+    await user.selectOptions(screen.getByLabelText('Usage window'), '365')
+    await waitFor(() => expect(mockedApi.usageSummary).toHaveBeenLastCalledWith(365))
   })
 
   it('creates groups and rate-limit policies through the admin API', async () => {

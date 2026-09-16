@@ -268,6 +268,12 @@ export type UsageModelSummary = {
 export type UsageReport = {
   windowDays: number
   sinceUtc: string
+  windowGranularity: 'utc_day'
+  rawRetentionDays: number
+  rollupRetentionDays: number
+  rawRequestCount: number
+  rolledUpRequestCount: number
+  historicalRollupsUsed: boolean
   requestCount: number
   errorCount: number
   inputTokens: number
