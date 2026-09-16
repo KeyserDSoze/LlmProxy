@@ -48,7 +48,9 @@ public static class ProductReleaseCatalog
                 ["Changed"] =
                 [
                     "Node maintenance is now the supported path for runtime/model upgrades; a draining node cannot re-enter routing until validation succeeds.",
-                    "Release management now follows SemVer while the product remains pre-1.0."
+                    "Release management now follows SemVer while the product remains pre-1.0.",
+                    "Published container images carry OCI product-version, source-revision and build-date metadata that is also available to the runtime release view.",
+                    "Tagged container publication rejects a Git tag that does not exactly match the compiled product version; prereleases do not update stable major/minor aliases."
                 ],
                 ["Fixed"] =
                 [

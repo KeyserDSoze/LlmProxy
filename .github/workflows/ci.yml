@@ -20,6 +20,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate product version metadata
+        shell: bash
+        run: |
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          bash docker/scripts/validate-release-version.sh "$VERSION" >/dev/null
+          if bash docker/scripts/validate-release-version.sh "0.0.0-ci-mismatch" >/dev/null 2>&1; then
+            echo "Version validator accepted an intentionally mismatched release tag." >&2
+            exit 1
+          fi
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
@@ -106,8 +116,22 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ci-full-grafana
         run: docker compose -f docker/docker-compose.full.yml config >/dev/null
 
-      - name: Validate production image build
-        run: docker build -f docker/Dockerfile -t llmproxy:ci .
+      - name: Validate production image build and identity
+        shell: bash
+        run: |
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker build -f docker/Dockerfile \
+            --build-arg "LLMPROXY_VERSION=$VERSION" \
+            --build-arg "LLMPROXY_BUILD_SHA=$GITHUB_SHA" \
+            --build-arg "LLMPROXY_BUILD_DATE=$BUILD_DATE" \
+            -t llmproxy:ci .
+
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' llmproxy:ci)" = "$VERSION"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' llmproxy:ci)" = "$GITHUB_SHA"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.created" }}' llmproxy:ci)" = "$BUILD_DATE"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_SHA=$GITHUB_SHA"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_DATE=$BUILD_DATE"
 
       - name: Backend integration smoke suite
         run: bash tests/backend/integration/smoke.sh

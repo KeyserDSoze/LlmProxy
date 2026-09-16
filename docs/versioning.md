@@ -25,9 +25,33 @@ src/LlmProxy.Api/Product/              runtime release catalog / Admin API
 CHANGELOG.md                            human-readable product changelog
 src/LlmProxy.Admin/src/ReleaseNotesPage.tsx
                                         rendered Admin release-notes experience
+docker/scripts/validate-release-version.sh
+                                        mechanical version consistency check
 ```
 
-`src/LlmProxy.Admin/package.json` should stay aligned with the product version for the bundled Admin application, but the runtime API/assembly version remains authoritative.
+`src/LlmProxy.Admin/package.json` stays aligned with the product version for the bundled Admin application, while the runtime API/assembly version remains authoritative.
+
+## Mechanical consistency check
+
+Run:
+
+```bash
+bash docker/scripts/validate-release-version.sh
+```
+
+The validator requires:
+
+- a valid SemVer `<Version>` in root `Directory.Build.props`;
+- the same version in `src/LlmProxy.Admin/package.json`;
+- a matching release section in `CHANGELOG.md`.
+
+To validate a candidate Git tag as well:
+
+```bash
+bash docker/scripts/validate-release-version.sh 0.1.0-preview.1
+```
+
+A mismatch exits non-zero. Standard CI exercises both the accepted current version and an intentionally mismatched candidate, so the release-blocking branch is tested before any real tag is pushed.
 
 ## Version rules
 
@@ -35,8 +59,10 @@ While the product remains below `1.0.0`:
 
 - increment the prerelease/minor line for meaningful new product capabilities or contract changes;
 - increment the patch/prerelease sequence for bug fixes and hardening that do not intentionally change public behavior;
-- call out incompatible API/configuration behavior explicitly under `Changed` or `Breaking` in the release notes;
-- never silently reuse a published version number for different bits.
+- call out incompatible API/configuration behavior explicitly under `Changed` or `Breaking` in release notes;
+- never silently reuse a **published/tagged** version number for different bits.
+
+Before a preview is actually tagged/published, its baseline may still be completed with release-engineering hardening as long as the release notes and validation checkpoint are updated before publication.
 
 After `1.0.0`, standard SemVer compatibility rules apply:
 
@@ -71,21 +97,64 @@ For every product version:
 3. keep `src/LlmProxy.Admin/package.json` aligned;
 4. add the release entry to `CHANGELOG.md`;
 5. update `ProductReleaseCatalog` so `/api/admin/product` and the UI render the same release notes;
-6. add/update tests for version and release-note rendering;
-7. run standard CI and any affected Full Stack smoke suites;
-8. only after green evidence, record the validated commit/run IDs in `docs/project-status.md` and `docs/development-log.md`;
-9. tag/publish the version when the project owner wants a distributable release.
+6. run `docker/scripts/validate-release-version.sh`;
+7. add/update tests for version and release-note rendering;
+8. run standard CI and any affected Full Stack smoke suites;
+9. only after green evidence, record the validated commit/run IDs in `docs/project-status.md` and `docs/development-log.md`;
+10. tag/publish the version when the project owner wants a distributable release.
 
-## Build identity
+## Container build identity
 
-`/api/admin/product` exposes optional `buildRevision` and `builtAtUtc` fields. Deployments may supply:
+Published/CI production images receive:
 
 ```text
 LLMPROXY_BUILD_SHA
 LLMPROXY_BUILD_DATE
 ```
 
-When available, these identify the exact build without changing the SemVer product version. If no explicit build SHA is supplied, a source revision embedded by the .NET build may be used. The Admin UI displays `local / unknown` when no build revision is available.
+and OCI labels:
+
+```text
+org.opencontainers.image.version
+org.opencontainers.image.revision
+org.opencontainers.image.created
+```
+
+`/api/admin/product` consumes the build SHA/date environment values, so `/admin/releases` can identify the exact running build without changing SemVer.
+
+The container publishing workflow validates the Git tag against the compiled product version before building a tagged image. A tag such as:
+
+```text
+v0.1.0-preview.1
+```
+
+must match product version `0.1.0-preview.1` exactly or publication fails.
+
+### Image aliases
+
+For `main` builds:
+
+```text
+main
+sha-<7 chars>
+```
+
+For prerelease tags:
+
+```text
+0.1.0-preview.1
+sha-<7 chars>
+```
+
+For stable tags, the workflow may additionally publish the stable major/minor alias, for example:
+
+```text
+1.2.3
+1.2
+sha-<7 chars>
+```
+
+Prereleases intentionally do **not** update `0.1`, `1.2`, or other stable-looking aliases.
 
 ## UI
 
@@ -95,4 +164,4 @@ The Admin UI exposes a persistent version badge linking to:
 /admin/releases
 ```
 
-The page shows current version/channel/build identity and the versioned patch notes, so operators can see what changed in the product they are running without reading repository engineering logs.
+The page shows current version/channel/build identity and versioned patch notes, so operators can see exactly what changed in the product they are running without reading repository engineering logs.

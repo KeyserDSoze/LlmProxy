@@ -17,9 +17,18 @@ COPY src/ src/
 RUN dotnet publish src/LlmProxy.Api/LlmProxy.Api.csproj -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+ARG LLMPROXY_VERSION=dev
+ARG LLMPROXY_BUILD_SHA=
+ARG LLMPROXY_BUILD_DATE=
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080 \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    LLMPROXY_BUILD_SHA=${LLMPROXY_BUILD_SHA} \
+    LLMPROXY_BUILD_DATE=${LLMPROXY_BUILD_DATE}
+LABEL org.opencontainers.image.title="LlmProxy" \
+      org.opencontainers.image.version="${LLMPROXY_VERSION}" \
+      org.opencontainers.image.revision="${LLMPROXY_BUILD_SHA}" \
+      org.opencontainers.image.created="${LLMPROXY_BUILD_DATE}"
 EXPOSE 8080
 COPY --from=api-build /app/publish ./
 COPY --from=admin-build /admin/dist ./wwwroot/admin
