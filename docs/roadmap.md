@@ -1,6 +1,6 @@
 # Roadmap
 
-Status legend: `DONE` implemented and validated; `ACTIVE` current focus; `PLANNED` not complete; `EXTERNAL` requires target infrastructure/tenant/hardware.
+Status legend: `DONE` implemented and validated; `PLANNED` not complete; `EXTERNAL` requires target infrastructure/tenant/hardware; `OWNER ACTION` requires an explicit product-owner decision.
 
 For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.
 
@@ -41,7 +41,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: vLLM pressure + optional DCGM telemetry.
 - DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
 - DONE: trace correlation and capacity-lease-loss evidence.
-- PLANNED: customer-specific production HA/object-storage choices.
+- PLANNED/EXTERNAL: customer-specific HA/object-storage/retention choices.
 
 ## M5 — Capacity and smart routing — DONE FOR CURRENT MVP / EXTERNAL CALIBRATION REMAINS
 
@@ -52,26 +52,27 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: maintenance marker participates in atomic Redis admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
-## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH
+## M6 — Operator onboarding / Linux deployability — DONE FOR REPOSITORY PATH / EXTERNAL HOST ACCEPTANCE REMAINS
 
-- DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
-- DONE: production image/Compose CI validation.
-- DONE: PostgreSQL backup/restore Bash + PowerShell operators.
-- DONE: destructive clean-target restore and PowerShell restore CI proof.
-- DONE: SemVer + Admin release notes.
-- DONE: source SHA/build date embedded in image/runtime identity.
-- DONE: mechanical tag/version consistency validation.
-- DONE: `main` publishes `main` + immutable SHA alias; exact version tag only from matching Git tag.
-- DONE: SPDX SBOM emitted as OCI attestation.
-- DONE: SLSA/BuildKit provenance emitted as OCI attestation.
-- DONE: immutable image digest recorded for every publication.
-- DONE: post-push GHCR verification reads the OCI index and requires both SPDX and SLSA in-toto predicates.
-- DONE: release-manifest Actions artifact records image/digest/version/source/build time, validating CI run and attestation descriptors.
-- DONE: reusable tagged-release source guard requires successful `CI` from a push to `main` on the exact source SHA.
-- DONE: every main/tag publication queries GitHub Actions through the same pre-GHCR source gate; main publication additionally proves the API-selected run equals the triggering CI run.
-- PLANNED/OWNER ACTION: create an immutable Git tag/GitHub Release only when a distributable release is explicitly requested.
+- DONE: development quickstart and distributed full-stack Compose bundle.
+- DONE: canonical production topology is the Redis-enabled full stack.
+- DONE: dedicated production env template with explicit secret/DGX placeholders.
+- DONE: `docker/scripts/install-linux.sh` prepares a new host and invokes the canonical production deploy path.
+- DONE: Docker official repository path for Debian, Ubuntu, Fedora, CentOS and RHEL.
+- DONE: common distro-package fallbacks for `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk`, plus Compose CLI-plugin fallback.
+- DONE: preserve existing working Docker + Compose installations and existing `/opt/llmproxy/.env`.
+- DONE: generate initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them.
+- DONE: optional GHCR login without persisting the package token into application config.
+- DONE: DGX `/health` + `/v1/models` precheck before normal first deployment.
+- DONE: production runtime assets staged under `/opt/llmproxy/runtime` instead of runner workspace.
+- DONE: manual deployment and GitHub Actions deployment share `docker/scripts/deploy.sh`.
+- DONE: production preflight validates placeholders, Production environment, Compose rendering and Entra-before-public-Cloudflare rule.
+- DONE: deployment requires `/healthz` + `/readyz` before success.
+- DONE: PostgreSQL backup/restore Bash + PowerShell operators with clean-target proof.
+- DONE: full Linux production runbook including installer, Entra/Cloudflare, backup, update and rollback.
+- EXTERNAL: execute installer on the chosen production distro/version and record package/service behavior.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
-- EXTERNAL: customer backup destination, encryption, retention schedule and deployment-host acceptance.
+- EXTERNAL: customer backup destination, encryption and retention schedule.
 
 ## M7 — Caller governance — DONE FOR CURRENT V1
 
@@ -84,7 +85,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: runtime/outbox policy propagation.
 - DONE: Admin Apply/Clear UI and audit.
 
-Future quota extensions remain PLANNED only when requirements justify them: input/total-token budgets require tokenizer/estimation semantics; monetary budgets require pricing/accounting semantics; independent token-budget periods require a product contract.
+Future quota extensions remain requirements-driven: input/total-token budgets need tokenizer/estimation semantics; monetary budgets need pricing/accounting semantics.
 
 ## M8 — Usage Groups and reporting — DONE FOR CURRENT MVP
 
@@ -138,9 +139,9 @@ local RAM  = per-replica request-path L1
 - DONE: clean Redis reconstruction from restored PostgreSQL.
 - DONE: cross-replica maintenance pre-block/drain/resume.
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
-- PLANNED: customer-specific Redis HA/redundancy guidance.
+- PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product hardening — DONE THROUGH 0.2.0-preview.3
+## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.4
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -152,25 +153,30 @@ local RAM  = per-replica request-path L1
 - DONE: GHCR SBOM/provenance generation and registry-native verification.
 - DONE: immutable digest + release-manifest artifact.
 - DONE: exact SemVer tag path requires previously successful `main` CI for the same SHA.
-- DONE: the same Actions-API source-validation gate is exercised by every ordinary main publication before GHCR login.
-- PLANNED: customer-specific production HA/storage/scheduled-backup guidance.
+- DONE: every main/tag publication uses the same Actions-API source-validation gate before GHCR login.
+- DONE: production Linux deployment consolidated onto the Redis-enabled full stack.
+- DONE: cross-distribution host bootstrap script + production runbook.
+- OWNER ACTION: create a real immutable Git tag/GitHub Release only when explicitly requested.
 
 Current checkpoint:
 
 ```text
-version           0.2.0-preview.3
-commit            e9c8805e8473d3ad4df118d6a623ccef08723761
-CI                35083646699 SUCCESS
-Publish GHCR      35084132389 SUCCESS
-image digest      sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
-runtime FullStack 35075387186 SUCCESS
+version           0.2.0-preview.4
+commit            58a80a60c2f3a049b279be6bf9583ffa4c1cc088
+CI                35095161900 SUCCESS
+Full Stack        35088765577 SUCCESS
+Publish GHCR      35095620725 SUCCESS
+image digest      sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
 ```
 
 ## Current development order
 
-1. Add customer-specific Redis/observability HA/storage and scheduled-backup guidance when deployment shape is known.
-2. Run real DGX + Copilot BYOK + Entra/Cloudflare acceptance when external access exists.
-3. Expand quota semantics only with explicit tokenizer/pricing requirements.
-4. Create a real immutable Git tag/GitHub Release only when the project owner explicitly requests publication.
+1. Run the installer on the actual target Linux host and capture distro/Docker/DGX acceptance evidence.
+2. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
+3. Validate real Entra + Cloudflare + GitHub Copilot BYOK end-to-end.
+4. Validate the on-prem self-hosted deployment runner.
+5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
+6. Expand quota semantics only with explicit tokenizer/pricing requirements.
+7. Create a Git tag/GitHub Release only when explicitly requested.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.

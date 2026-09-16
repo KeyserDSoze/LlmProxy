@@ -4,17 +4,13 @@ Chronological engineering trace for LlmProxy. Canonical current state and resume
 
 ## 2026-09-09 — Repository, gateway and multi-DGX foundation
 
-Created the .NET 10 layered solution, React/TypeScript Admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical client-facing models, internal DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility.
-
-Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM runtime signals. Raw prompts/source/generated content remain excluded from telemetry.
+Created the .NET 10 layered solution, React/TypeScript Admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical models, DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility. Added bearer credentials, Entra administration plumbing, health hysteresis, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM signals.
 
 ## 2026-09-09 — Repository-first handover discipline
 
 Introduced root `AGENTS.md` and the rule that meaningful increments update focused docs, project status, development log and roadmap with actual validation evidence.
 
 ## 2026-09-10 — DGX/DCGM telemetry + benchmark harness — VALIDATED
-
-Optional DGX/DCGM GPU telemetry remains observational. Added the .NET benchmark harness for direct-vLLM vs gateway measurements, streaming/non-streaming, Chat/Responses and concurrency sweeps.
 
 ```text
 telemetry checkpoint 6c238a095273843e713a72fb2e26b2c7c434fc62
@@ -25,7 +21,7 @@ Architecture decision: NVIDIA PAIR was evaluated; project owner chose custom Llm
 
 ## 2026-09-13 — Capacity Profiles + physical-node admission — VALIDATED
 
-Added persisted benchmark-derived Capacity Profiles and aggregate physical-node concurrency admission. Saturation returns `429 capacity_exhausted` with `Retry-After: 1`.
+Added persisted benchmark-derived Capacity Profiles and aggregate physical-node concurrency admission.
 
 ```text
 600ad42cc53ad1e97a259819654ca5cf5480e1db
@@ -49,13 +45,9 @@ credential cache 1f607c8433fe2ca08a1c243b68d87587204f35ee / CI 34860662747
 route catalog     42c44753cd00d679a81bf065f410b7a497cdc000 / CI 34871542047
 ```
 
-## 2026-09-15 — Redis L2 + observability stack
+## 2026-09-15 — Redis L2 + observability + distributed coordination — VALIDATED
 
-Promoted Redis to shared runtime/coordination L2 while preserving local L1 and PostgreSQL durable authority. Added reconciliation plus OTEL Collector, Tempo, Loki, Prometheus and Grafana.
-
-## 2026-09-15 — Distributed request/capacity coordination — VALIDATED
-
-Added Redis shared request-rate counters, atomic deployment + physical-node capacity leases, fail-closed acquisition and active lease-loss inference cancellation.
+Promoted Redis to shared runtime/coordination L2 while preserving local L1 and PostgreSQL authority. Added OTEL Collector, Tempo, Loki, Prometheus and Grafana; then shared request-rate counters, distributed capacity leases and active lease-loss cancellation.
 
 ```text
 CI         34961566507 SUCCESS
@@ -64,7 +56,7 @@ Full Stack 34961566463 SUCCESS
 
 ## 2026-09-15 — Transactional runtime-state outbox — VALIDATED
 
-Closed the PostgreSQL-commit -> Redis-publication process-crash window. Runtime Node/Model/Deployment/Credential/RatePolicy changes now write an outbox row in the same PostgreSQL transaction. An advisory-lock worker publishes globally ordered state, retries failures and marks rows processed only after acknowledged Redis persistence/publication.
+Runtime Node/Model/Deployment/Credential/RatePolicy mutations write an outbox row in the same PostgreSQL transaction. A globally serialized advisory-lock worker publishes ordered Redis state, retries failures and marks rows processed only after acknowledged publication.
 
 ```text
 implementation 9c6289ef172bed0502068df112b6e6aec4ee8521
@@ -72,23 +64,22 @@ CI             34968324786 SUCCESS
 Full Stack     34968114492 SUCCESS
 ```
 
-Outbox diagnostics/retention were later validated by CI `34976465066` and Full Stack `34976465149`. Pending rows remain non-deletable.
+Later diagnostics/retention proof: CI `34976465066`, Full Stack `34976465149`.
 
 ## 2026-09-15 — Output-token budget V1 — VALIDATED
 
-Added `OutputTokensPerWindow` + `MaxOutputTokensPerRequest`. Chat/Responses output caps are injected/capped before inference; output capacity is reserved atomically; known usage refunds unused reservation; no-upstream-attempt paths refund fully; uncertain post-upstream usage remains conservatively charged. Redis mode is shared/fail-closed.
+Added shared credential/model output-token budgets with pre-inference reservation, Chat/Responses cap injection, known-usage refund and conservative uncertain-usage charging. Redis coordination is fail closed.
 
 ```text
-implementation ff9af90144a19159d3c8208d8cedd95500b3b984
-runtime proof  887ebfac98389c0115eaf9c102a60133ede745ff
-CI             34987407172 SUCCESS
-Full Stack     34987407169 SUCCESS
-Admin UI       426c545e841865406615998ca50b28a45c40e6f4 / CI 34988084106 SUCCESS
+runtime proof 887ebfac98389c0115eaf9c102a60133ede745ff
+CI            34987407172 SUCCESS
+Full Stack    34987407169 SUCCESS
+Admin UI      426c545e841865406615998ca50b28a45c40e6f4 / CI 34988084106 SUCCESS
 ```
 
 ## 2026-09-15 — Credential rotation — VALIDATED
 
-Implemented in-place hard-cutover rotation on the existing credential identity. Group/policy/history linkage is preserved; replacement secret is returned once with `Cache-Control: no-store`; audit never stores secret/HMAC. Full Stack proves old-key rejection/new-key acceptance across replicas and restart hydration.
+Implemented in-place hard-cutover rotation preserving credential identity/group/policy/history linkage and returning the replacement secret once.
 
 ```text
 commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
@@ -98,91 +89,37 @@ Full Stack 34996328588 SUCCESS
 
 ## 2026-09-15 — PostgreSQL backup/restore — VALIDATED
 
-Added Bash and PowerShell operators. Backup uses PostgreSQL custom format + SHA-256 + non-secret metadata. Restore is explicit/destructive; Redis is rebuilt from PostgreSQL. `Authentication__ApiKeyPepper` remains an external recovery dependency.
-
-The first destructive smoke destroys the source PostgreSQL volume, restores to a clean target and proves credential/group/policy/history/inference plus clean-Redis republish. PowerShell parity is exercised under `pwsh` using binary-safe `docker compose cp`.
+Added Bash and PowerShell custom-format PostgreSQL backup/restore operators with SHA-256/non-secret metadata and destructive clean-target restore proof. Redis is rebuilt from PostgreSQL; `Authentication__ApiKeyPepper` remains an external recovery dependency.
 
 ```text
-Linux foundation  b3cbe1ace209989aef845024259c0e4c6def4039 / CI 34997715107 SUCCESS
-cross-platform     66d7a809936f0f21f330d84887c1bb6a4e536f97 / CI 35018579785 SUCCESS
+cross-platform 66d7a809936f0f21f330d84887c1bb6a4e536f97
+CI             35018579785 SUCCESS
 ```
 
 ## 2026-09-15 — Safe model/runtime maintenance — VALIDATED
 
-Implemented distributed maintenance drain/resume:
-
-- pre-block admission before `Draining`;
-- Redis maintenance marker checked inside atomic capacity admission;
-- existing requests/streams drain normally;
-- resume requires zero global active work;
-- `/health`, `/v1/models` and one-token model warm-up validation;
-- failed validation keeps node draining;
-- legacy direct drain endpoint deprecated.
+Implemented distributed maintenance drain/resume with pre-block admission, shared maintenance marker inside capacity admission, drain-to-zero, `/health` + `/v1/models` + one-token warm-up validation and deprecated unsafe legacy drain.
 
 ```text
-8220967141b9a3be7d96bbd7500d8958df60dbc1  backend protocol
-9fca1e18dca37ab50c421e718f32365771a2032a  HA smoke
-2e3e8e285267bcf9f1d80dc4e2b494914226c50f  Admin safe routing
 CI         35021524018 SUCCESS
 Full Stack 35021524019 SUCCESS
 ```
 
-## 2026-09-16 — Product SemVer + patch notes in Admin — VALIDATED
+## 2026-09-16 — Product SemVer + release/build identity — VALIDATED
 
-Formalized first product baseline `0.1.0-preview.1` with compiled version identity, `/healthz`, `/api/admin/product`, persistent Admin version badge, `/admin/releases`, `CHANGELOG.md`, `docs/versioning.md`, backend tests and Playwright coverage.
-
-```text
-implementation 4b1f42daf8acb449526658b3a189535d7674c4b3
-final test fix ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
-CI             35063494349 SUCCESS
-Full Stack     35063309417 SUCCESS
-```
-
-From this point every product/operator-visible change must be represented in version metadata and release notes.
-
-## 2026-09-16 — Release/build identity hardening — VALIDATED
-
-Added:
-
-- source SHA + UTC build timestamp into runtime identity;
-- OCI `version`, `revision`, `created` labels;
-- CI verification of image labels/environment values;
-- SemVer/changelog/Admin package consistency validator;
-- negative CI test proving mismatched candidate tag is rejected;
-- container publish rule: main -> `main` + `sha-<7>`; matching Git tag -> exact version + SHA; prerelease never updates stable-looking aliases.
+Formalized `0.1.0-preview.1`, `/api/admin/product`, `/admin/releases`, compiled/runtime version identity, source SHA/build date, OCI identity labels and main/tag container publication rules.
 
 ```text
-commit        c37479bb474d44f9e36726bebba74cdf38e5661e
-CI            35064353402 SUCCESS
-Publish GHCR  35064707488 SUCCESS
+SemVer final test fix  ee9ac0d17a95b68a79a464dc430e5c8427c9ded9 / CI 35063494349
+release identity       c37479bb474d44f9e36726bebba74cdf38e5661e / CI 35064353402 / Publish 35064707488
 ```
 
-## 2026-09-16 — Historical usage rollups / 0.2 preview — VALIDATED
+## 2026-09-16 — Historical usage rollups / 0.2.0-preview.1 — VALIDATED
 
-Bumped product to `0.2.0-preview.1` and added durable daily PostgreSQL usage rollups so reporting survives raw metric expiry.
-
-Implemented:
-
-- one rollup cube keyed by UTC day + credential + Usage Group + logical model;
-- request/token/error/rate-limit/capacity counts plus duration/TTFT sums and sample counts;
-- independent retention defaults: raw request metrics 90 days, rollups 730 days;
-- complete-day rollup-before-delete compaction;
-- transactional aggregate + delete semantics;
-- PostgreSQL advisory transaction lock to serialize compaction across gateway replicas;
-- idempotent rerun behavior;
-- reporting merge of historical rollups + newer raw metrics without double counting;
-- API provenance fields for raw vs rolled-up request counts;
-- UTC calendar-day reporting semantics;
-- Admin reporting windows through 730 days and visible historical-rollup notice;
-- updated changelog/runtime release catalog preserving `0.1.0-preview.1` as prior release.
-
-The retention smoke inserts old/recent metrics, compacts the expired day, deletes its raw row, proves the 60-day report still contains the old usage from the rollup, runs cleanup again and proves the rollup is not duplicated. Existing audit/outbox/pending-outbox safety checks remain.
-
-Validation:
+Added daily PostgreSQL usage rollups, raw 90-day vs rollup 730-day retention, complete-day transactional rollup-before-delete, advisory-lock serialization across replicas, idempotent cleanup and raw+rollup reporting without double counting.
 
 ```text
 commit        5d66c7dcdae42955c6e26849aba84bed4787ff00
-version       0.2.0-preview.1
 CI            35075387110 SUCCESS
 Full Stack    35075387186 SUCCESS
 Publish GHCR  35075788954 SUCCESS
@@ -190,81 +127,90 @@ Publish GHCR  35075788954 SUCCESS
 
 ## 2026-09-16 — OCI SBOM + SLSA provenance / 0.2.0-preview.2 — VALIDATED
 
-Bumped product to `0.2.0-preview.2` and hardened the GHCR publication path.
-
-Implemented:
-
-- Buildx SPDX SBOM attestation (`sbom: true`);
-- Buildx SLSA/BuildKit provenance with `mode=max`;
-- immutable registry digest capture for every pushed image;
-- post-push registry verification against `IMAGE@DIGEST` rather than mutable tags;
-- raw OCI image-index inspection;
-- resolution of descriptors annotated `vnd.docker.reference.type=attestation-manifest`;
-- validation of in-toto layer media types and predicate annotations;
-- required SPDX predicate `https://spdx.dev/Document`;
-- required SLSA predicate prefix `https://slsa.dev/provenance/`;
-- attestation subject validation against runnable image manifests when the OCI subject is present;
-- Actions `release-manifest.json` artifact with image/digest/version/source/build time plus verified attestation descriptors.
-
-Initial implementation commit `2410976536c9d313e7b991ca161e4a64b8386a2a` correctly generated/pushed the attestations, but Publish `35079256326` failed because the verifier assumed the convenience rendering shape `.Provenance.SLSA`. Build logs proved BuildKit had already exported the attestation manifest and provenance metadata.
-
-The verifier was deliberately fixed rather than weakened: `d134603672f361474bac9ea330f3bd1a142b5dfa` now follows the OCI-native index/attestation descriptors and checks the predicate annotations defined by Docker's attestation storage format.
-
-Validation:
+Added Buildx SPDX SBOM and SLSA/BuildKit provenance, immutable digest capture and post-push OCI-native verification against GHCR. The first convenience-rendering verifier failed despite valid pushed attestations; it was fixed by following OCI attestation descriptors/predicate annotations instead of weakening validation.
 
 ```text
-version               0.2.0-preview.2
 commit                d134603672f361474bac9ea330f3bd1a142b5dfa
 CI                    35080118201 SUCCESS
 Publish GHCR          35080565404 SUCCESS
 image digest          sha256:cc26617a5860e126957da2d0e59c8cd8accd1cd3280576d991819ddc2001d880
 attestation manifest  sha256:83457ab3eb69c4aac638874daed1f2cf396fa157001f2be9257e48d0d067253d
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
 release artifact      10440082178
-artifact digest       sha256:149071900ed52b2ffc471281c639f1c9264b40c40bb9729172d47411f12a35a6
 ```
-
-No inference/runtime semantics changed in this slice, so latest relevant distributed-runtime validation remains Full Stack `35075387186 SUCCESS`.
 
 ## 2026-09-16 — Source-validated publication / 0.2.0-preview.3 — VALIDATED
 
-Bumped product to `0.2.0-preview.3` and closed the remaining exact-tag publication bypass.
-
-Implemented:
-
-- reusable `docker/scripts/validate-release-main-ci.sh` predicate;
-- guard requires workflow name `CI`, event `push`, branch `main`, exact source SHA and successful conclusion;
-- CI positive fixture plus negative wrong-branch, failed-CI and wrong-SHA fixtures;
-- exact `vX.Y.Z` publication requires tag/version match **and** previously successful `main` CI for the same SHA;
-- release manifest records the validating CI run ID;
-- final workflow refactor makes **every** publication query the GitHub Actions API through the same source guard before GHCR login;
-- workflow-run publication additionally requires the API-selected run ID to equal the CI run that triggered publication, preventing a stale/different successful run from satisfying the gate;
-- existing immutable digest + OCI SPDX/SLSA post-push verification remains mandatory.
-
-The first `preview.3` implementation was `d52d6b37582fad5ca6e56329412882cf30c8dc72`; CI `35081932463` and Publish `35082360343` were green. The final refactor `e9c8805e8473d3ad4df118d6a623ccef08723761` then made ordinary main publication exercise the same Actions API/JSON/guard path as a future tag.
-
-Final validation:
+Added `validate-release-main-ci.sh`. Every publication now queries GitHub Actions before GHCR login and requires successful `CI` from a push to `main` on the exact source SHA; workflow-run publication also requires the API-selected CI run to be the triggering run. Exact tags additionally require tag/version match.
 
 ```text
-version               0.2.0-preview.3
 commit                e9c8805e8473d3ad4df118d6a623ccef08723761
 CI                    35083646699 SUCCESS
 Publish GHCR          35084132389 SUCCESS
-validating CI run     35083646699
 image digest          sha256:6a7d082ef05d86851926beaf876b933de0fab96255ec25f3ad5ee84a7ac414ec
 attestation manifest  sha256:6d60bd6cb26cce447e403081ae1aa6129920f2716a0a1ccfb579b196054997a9
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
 release artifact      10441770750
-artifact digest       sha256:5315122e2df9238702655332273e48744a08b895c2fcca25cbe7dcd6ff42d13d
-runtime Full Stack    35075387186 SUCCESS
 ```
 
-No real immutable Git tag or GitHub Release was created. The repository path that would protect such a release is implemented and mechanically tested without consuming a version tag.
+No real immutable Git tag/GitHub Release was created.
+
+## 2026-09-16 — Consolidated Linux production deployment / 0.2.0-preview.4 — VALIDATED
+
+Consolidated production deployment onto the Redis-enabled full stack instead of maintaining a separate minimal production overlay.
+
+Implemented:
+
+- canonical Linux production topology: LlmProxy + PostgreSQL + Redis + OTEL Collector + Prometheus/Tempo/Loki/Grafana;
+- optional Cloudflare Tunnel Compose profile;
+- separate production `.env` template with fail-safe secret/DGX placeholders;
+- `docker/scripts/deploy.sh` as the single manual/self-hosted-runner deployment implementation;
+- staging of Compose + observability assets into `/opt/llmproxy/runtime` so running containers do not depend on a transient runner workspace;
+- production preflight requiring resolved placeholders and `ASPNETCORE_ENVIRONMENT=Production`;
+- Entra-before-public-Cloudflare validation;
+- Compose rendering before container changes;
+- both `/healthz` and `/readyz` required before deployment success;
+- GitHub Actions deploy workflow aligned to the same full-stack script.
+
+Added cross-distribution host bootstrap `docker/scripts/install-linux.sh`:
+
+- reads `/etc/os-release` and detects common package managers;
+- Docker official-repository installation for Debian, Ubuntu, Fedora, CentOS and RHEL;
+- controlled distro-package fallbacks for `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families;
+- Docker Compose v2 CLI-plugin fallback when required;
+- preserves working existing Docker/Compose and an existing production `.env`;
+- prepares `/opt/llmproxy/{runtime,backups}`;
+- generates initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them;
+- optional GHCR login using transient `GHCR_USER`/`GHCR_TOKEN` inputs;
+- DGX `/health` and `/v1/models` preflight;
+- `--prepare-only`, `--skip-dgx-check`, `--skip-docker-install`, `--non-interactive`, `--validate-only` and help modes;
+- invokes the same canonical deploy script after host preparation.
+
+Focused documentation now uses `docs/linux-production-deployment.md` as the zero-to-running runbook. `README.md` cleanly separates development quickstart from production installation.
+
+An accidental empty `NONEXISTENT` file was created during an API experiment while preparing this increment and immediately removed by a normal fast-forward corrective commit; history was not rewritten and no such file remains.
+
+Validation:
+
+```text
+version               0.2.0-preview.4
+final source          58a80a60c2f3a049b279be6bf9583ffa4c1cc088
+CI                    35095161900 SUCCESS
+Full Stack            35088765577 SUCCESS
+Publish GHCR          35095620725 SUCCESS
+validating CI run     35095161900
+image digest          sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
+attestation manifest  sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
+SBOM predicate        https://spdx.dev/Document
+provenance predicate  https://slsa.dev/provenance/v1
+release artifact      10445034650
+artifact digest       sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
+```
+
+CI explicitly proves installer compatibility/syntax mode and production deployment rendering for both private-LAN and Entra+Cloudflare configurations. Full Stack proves the Compose/runtime change does not regress Redis/OTEL, outbox recovery, shared token budgets, cross-replica rotation or safe maintenance.
+
+Repository validation deliberately does not claim that package installation has been executed on every Linux derivative. Actual target-distro package/service behavior remains an environment acceptance step; unknown hosts can preinstall Docker Engine + Compose v2 and reuse the same installer/deploy path with `--skip-docker-install`.
 
 ## Current next increment
 
-Repository-supported MVP hardening is complete through historical usage rollups, registry-verified SPDX/SLSA attestations and source-validated main/tag publication. The next work is deployment-specific rather than another generic product feature: customer Redis/observability HA/storage/scheduled-backup guidance, followed by physical DGX + Copilot BYOK + Entra/Cloudflare acceptance when access is available.
+Generic repository hardening is complete for the current preview. Next work should be physical/environment acceptance: install on the intended Linux host, validate real DGX/vLLM/model benchmarks, then Entra/Cloudflare/Copilot BYOK and the self-hosted deployment runner. Customer-specific HA/storage/backup destination choices follow the actual deployment topology.
 
-Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics. Creating a real immutable Git tag/GitHub Release is an explicit product-owner publication decision.
+Quota expansion remains requirements-driven. Creating a real immutable Git tag/GitHub Release remains an explicit product-owner publication decision.
