@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current preview line: `0.2.0-preview.4`.
+> Current preview line: `0.2.0-preview.5`.
 
 ## What this product is
 
@@ -45,6 +45,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Metadata-only metrics/audit/OTEL; prompts/source/generated content are excluded by default.
 - PostgreSQL backup/restore operators.
 - SemVer/build identity, release notes, GHCR digest evidence, SPDX SBOM and SLSA provenance.
+- Executable production environment acceptance for Linux host, direct DGX/vLLM and gateway Chat/Responses/SSE surfaces.
 
 ## Repository structure
 
@@ -53,9 +54,9 @@ src/                    product code (.NET 10 + React/TypeScript)
 tests/                  unit, frontend, integration and performance tests
 docker/                 images, Compose, observability and operator scripts
 docs/                   architecture/deployment/operations documentation
-.github/workflows/       CI, publication and production deployment
+.github/workflows/       CI, publication, deployment and environment acceptance
 AGENTS.md                mandatory engineering handover entry point
-CHANGELOG.md              product-visible release history
+CHANGELOG.md             product-visible release history
 ```
 
 ## Development quickstart
@@ -91,7 +92,7 @@ export GHCR_TOKEN='<token-with-package-read-access>'
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
-  --image-tag main
+  --image-tag sha-723c47d
 ```
 
 `docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks DGX `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
@@ -115,21 +116,14 @@ After first host preparation, or when provisioning manually, deploy a published 
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh sha-abcdef1
+  bash docker/scripts/deploy.sh sha-723c47d
 ```
 
 For controlled production changes prefer an immutable `sha-<7>` alias or an exact SemVer tag rather than mutable `main`.
 
-`deploy.sh`:
+`deploy.sh` validates production settings, refuses public Cloudflare exposure until Entra is configured, stages runtime assets under `/opt/llmproxy/runtime`, validates Compose, starts the full stack and requires both `/healthz` and `/readyz`.
 
-1. validates required production settings;
-2. refuses public Cloudflare exposure until Entra is enabled/configured;
-3. stages Compose/observability assets under `/opt/llmproxy/runtime`;
-4. validates the rendered Compose model;
-5. pulls and starts the full stack;
-6. requires both `/healthz` and `/readyz` to succeed.
-
-Cloudflare is optional. Leave `CLOUDFLARE_TUNNEL_TOKEN` blank for private-LAN bootstrap. When configured, the deploy script enables the `cloudflare` Compose profile automatically.
+Cloudflare is optional. Leave `CLOUDFLARE_TUNNEL_TOKEN` blank for private-LAN bootstrap.
 
 ## Automated production deployment
 
@@ -142,7 +136,40 @@ x64
 llmproxy-prod
 ```
 
-The runner keeps production secrets in `/opt/llmproxy/.env`; secrets are not committed to Git. The workflow uses the same `docker/scripts/deploy.sh` as manual deployment, so there is one production implementation rather than separate manual/CI paths.
+The runner keeps production secrets in `/opt/llmproxy/.env`; secrets are not committed to Git. The workflow uses the same `docker/scripts/deploy.sh` as manual deployment.
+
+## Production environment acceptance
+
+`0.2.0-preview.5` adds an executable target-host acceptance harness:
+
+```bash
+sudo -E bash docker/scripts/environment-acceptance.sh
+```
+
+It validates:
+
+- Linux/Docker/Compose host prerequisites;
+- direct VM -> DGX/vLLM `/health`, `/v1/models`, Chat, Responses and SSE;
+- LlmProxy `/healthz`, `/readyz`, `/v1/models`, Chat, Responses and SSE;
+- exact provider model and logical public model visibility.
+
+The evidence bundle contains only metadata in `summary.md` and `checks.tsv`. Request bodies, prompts, source, generated output, response bodies and bearer/API secrets are not persisted. Canonical vLLM `/health` is treated as a status-only endpoint because a healthy vLLM server may return HTTP 200 with an empty body.
+
+Read:
+
+```text
+docs/environment-acceptance.md
+```
+
+After the `llmproxy-prod` self-hosted runner is installed, the same acceptance is manually launchable through:
+
+```text
+.github/workflows/environment-acceptance.yml
+```
+
+The workflow accepts no API-key inputs. It reads the protected host configuration, uploads only `summary.md` and `checks.tsv` as a short-lived Actions artifact, and removes the runner-local evidence afterward.
+
+This proves connectivity and functional compatibility. It does **not** establish production concurrency; real DGX/model Capacity Profiles still require benchmark evidence.
 
 ## DGX service roots
 
@@ -163,8 +190,6 @@ LlmProxy derives:
 <root>/v1/responses
 ```
 
-The Admin UI includes a connection test for the configured service root.
-
 ## Public API
 
 ```http
@@ -175,13 +200,7 @@ GET  /healthz
 GET  /readyz
 ```
 
-Inference uses bearer credentials:
-
-```http
-Authorization: Bearer lp_xxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Raw credential secrets are returned only at creation/rotation time and are not stored in PostgreSQL.
+Inference uses bearer credentials. Raw credential secrets are returned only at creation/rotation time and are not stored in PostgreSQL.
 
 ## Administration
 
@@ -218,17 +237,21 @@ Read `docs/backup-restore.md` before production restore work.
 
 Pushes/PRs execute backend, frontend, Docker/PostgreSQL and operational smokes. A container is published only after successful CI for the same `main` source SHA.
 
-Published images include:
+Published images include source/version/build identity. The publish workflow records the immutable image digest and verifies registry-native SPDX SBOM and SLSA/BuildKit provenance attestations.
+
+Validated `0.2.0-preview.5` runtime checkpoint:
 
 ```text
-org.opencontainers.image.version
-org.opencontainers.image.revision
-org.opencontainers.image.created
-LLMPROXY_BUILD_SHA
-LLMPROXY_BUILD_DATE
+source                 723c47d919a59cf95e447c071ef377ab92a06498
+CI                     35099356925 SUCCESS
+Publish GHCR           35099987458 SUCCESS
+image digest           sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest   sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+release artifact       10448046779
+artifact digest        sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
 
-The publish workflow records the immutable image digest and verifies registry-native SPDX SBOM and SLSA/BuildKit provenance attestations. Exact SemVer tag publication additionally requires that the tagged source SHA already has a successful `CI` push run on `main`.
+No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created.
 
 ## Important production configuration
 
@@ -244,6 +267,7 @@ ENTRA_TENANT_ID
 ENTRA_CLIENT_ID
 ENTRA_CLIENT_SECRET
 CLOUDFLARE_TUNNEL_TOKEN
+LLMPROXY_ACCEPTANCE_DGX_API_KEY
 ```
 
 Use `docker/.env.production.example` as the manual production template; the Linux installer creates the equivalent host-owned file automatically when it does not already exist.
@@ -253,6 +277,7 @@ Use `docker/.env.production.example` as the manual production template; the Linu
 Start with:
 
 - `docs/linux-production-deployment.md` — canonical zero-to-running Linux production runbook.
+- `docs/environment-acceptance.md` — production host/DGX/gateway acceptance and evidence rules.
 - `docs/deployment.md` — deployment contract and automation summary.
 - `docs/full-stack.md` — Redis + observability bundle details.
 - `docs/operations.md` — health, maintenance, release identity and audit.
@@ -267,11 +292,12 @@ Start with:
 Repository automation cannot replace environment validation for:
 
 - actual package/repository behavior on the chosen Linux distro/version;
-- real DGX Spark/vLLM/model benchmark sweeps;
+- real DGX Spark/vLLM/model acceptance and benchmark sweeps;
 - representative multi-DGX coding load;
 - real Entra app/role setup;
 - real Cloudflare hostname/tunnel routing;
 - GitHub Copilot BYOK end-to-end;
+- self-hosted runner permissions/reboot behavior;
 - customer backup destination/encryption/retention;
 - customer-specific PostgreSQL/Redis/observability HA and durable storage choices.
 

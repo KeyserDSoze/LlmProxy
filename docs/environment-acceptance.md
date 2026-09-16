@@ -2,7 +2,7 @@
 
 This runbook captures the environment-specific evidence that repository CI cannot prove: the actual Linux host, Docker/Compose, VM-to-DGX connectivity, intended vLLM model surfaces and the deployed LlmProxy gateway.
 
-Use this only after the supported production deployment in `docs/linux-production-deployment.md` is running.
+Use this after the supported production deployment in `docs/linux-production-deployment.md` is running.
 
 ## Acceptance command
 
@@ -27,6 +27,36 @@ sudo -E bash docker/scripts/environment-acceptance.sh \
   --evidence-dir /opt/llmproxy/acceptance/customer-uat-01
 ```
 
+## GitHub Actions acceptance
+
+After the production host also has the dedicated self-hosted runner used by deployment, the same acceptance can be launched manually through:
+
+```text
+.github/workflows/environment-acceptance.yml
+```
+
+The workflow uses the existing runner labels:
+
+```text
+self-hosted
+linux
+x64
+llmproxy-prod
+```
+
+It has no workflow-dispatch inputs for API keys or other secrets. The gateway credential is read by the acceptance script from the protected host-owned `/opt/llmproxy/.env`. If direct DGX bearer authentication is required, use the manual acceptance path with `LLMPROXY_ACCEPTANCE_DGX_API_KEY` in the process environment until an approved host-secret injection mechanism is configured.
+
+The workflow runs the acceptance script with non-interactive `sudo`, copies only the generated metadata evidence to the runner account, uploads only:
+
+```text
+summary.md
+checks.tsv
+```
+
+and removes the runner-local evidence directory afterward. The Actions artifact retention is 14 days. The artifact can still contain infrastructure metadata such as distro/kernel and service-root addresses, so access remains governed by repository/environment permissions.
+
+A workflow run is successful only when the acceptance script exits `0`. Evidence is still uploaded on functional acceptance failure when the metadata files were produced, so operators can inspect the failed checks without persisting prompts, responses or credentials.
+
 ## What is validated
 
 Host/runtime checks:
@@ -47,6 +77,8 @@ POST /v1/responses          stream=true
 ```
 
 The provider model configured by `PROVIDER_MODEL_NAME` must be advertised by `/v1/models`.
+
+Canonical vLLM `/health` may return HTTP `200` with an empty response body and no JSON content type. Acceptance therefore treats `/health` as a status-only probe. This is intentional; requiring JSON there would incorrectly reject a healthy standard vLLM server.
 
 Gateway checks:
 
@@ -100,7 +132,7 @@ The script performs a final guard that rejects an evidence bundle if either secr
 
 ## Overrides
 
-A production `.env` should normally provide all required values. Explicit non-secret overrides are available for acceptance against staged or alternate endpoints:
+A production `.env` should normally provide all required non-secret target values. Explicit overrides are available for staged or alternate endpoints:
 
 ```bash
 bash docker/scripts/environment-acceptance.sh \
@@ -142,7 +174,7 @@ After the private-LAN environment acceptance is green, continue with the remaini
 2. configure and validate real Entra `LlmProxy.Admin` / `LlmProxy.Reader` roles;
 3. configure the intended Cloudflare Tunnel/public hostname;
 4. validate GitHub Copilot BYOK through the public gateway;
-5. validate the self-hosted GitHub Actions deployment runner;
+5. validate deployment and acceptance through the self-hosted GitHub Actions runner;
 6. finalize PostgreSQL/Redis/observability HA/storage and backup destination/encryption/retention.
 
-Do not upload real environment evidence into the repository by default. It can contain infrastructure metadata such as host and service-root addresses even though it intentionally excludes prompts, generated output and secrets.
+Do not commit real environment evidence into the repository. The GitHub Actions artifact path is intentionally short-lived and metadata-only, but it can still reveal infrastructure metadata and must be treated as operational evidence rather than product source.

@@ -1,0 +1,143 @@
+name: Production environment acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llmproxy-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: [self-hosted, linux, x64, llmproxy-prod]
+    timeout-minutes: 20
+    environment:
+      name: production
+    env:
+      LLMPROXY_ENV_FILE: /opt/llmproxy/.env
+
+    steps:
+      - name: Checkout acceptance assets
+        uses: actions/checkout@v4
+
+      - name: Preflight self-hosted runner
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$LLMPROXY_ENV_FILE" || {
+            echo "Production env file is missing: $LLMPROXY_ENV_FILE" >&2
+            exit 1
+          }
+
+          sudo -n true || {
+            echo "The llmproxy-prod runner requires non-interactive sudo for production acceptance." >&2
+            exit 1
+          }
+
+          evidence_dir="$RUNNER_TEMP/llmproxy-acceptance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "evidence_dir=$evidence_dir" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### LlmProxy production environment acceptance"
+            echo
+            echo "- Source: \`$GITHUB_SHA\`"
+            echo "- Runner: self-hosted \`llmproxy-prod\`"
+            echo "- Evidence policy: metadata-only \`summary.md\` + \`checks.tsv\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run production environment acceptance
+        id: acceptance
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          sudo bash docker/scripts/environment-acceptance.sh \
+            --env-file "$LLMPROXY_ENV_FILE" \
+            --evidence-dir "${{ steps.preflight.outputs.evidence_dir }}"
+          exit_code=$?
+          set -e
+
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Validate evidence boundary
+        id: evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          evidence_dir="${{ steps.preflight.outputs.evidence_dir }}"
+          [[ -n "$evidence_dir" ]] || {
+            echo "Acceptance evidence directory was not resolved." >&2
+            exit 1
+          }
+
+          sudo test -d "$evidence_dir" || {
+            echo "Acceptance did not produce an evidence directory." >&2
+            exit 1
+          }
+
+          sudo test -f "$evidence_dir/summary.md" || {
+            echo "Acceptance summary.md is missing." >&2
+            exit 1
+          }
+          sudo test -f "$evidence_dir/checks.tsv" || {
+            echo "Acceptance checks.tsv is missing." >&2
+            exit 1
+          }
+
+          unexpected="$(sudo find "$evidence_dir" -maxdepth 1 -type f \
+            ! -name 'summary.md' ! -name 'checks.tsv' -printf '%f\n')"
+          if [[ -n "$unexpected" ]]; then
+            echo "Refusing evidence upload because unexpected files were produced." >&2
+            exit 1
+          fi
+
+          sudo chown -R "$(id -u):$(id -g)" "$evidence_dir"
+          chmod 700 "$evidence_dir"
+          chmod 600 "$evidence_dir/summary.md" "$evidence_dir/checks.tsv"
+
+      - name: Upload metadata-only acceptance evidence
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: llmproxy-environment-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.preflight.outputs.evidence_dir }}/summary.md
+            ${{ steps.preflight.outputs.evidence_dir }}/checks.tsv
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce acceptance result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          exit_code="${{ steps.acceptance.outputs.exit_code }}"
+          if [[ ! "$exit_code" =~ ^[0-9]+$ ]]; then
+            echo "Acceptance did not return a valid exit code." >&2
+            exit 1
+          fi
+
+          if [[ "$exit_code" != "0" ]]; then
+            echo "Production environment acceptance failed with exit code $exit_code." >&2
+            exit "$exit_code"
+          fi
+
+          echo "Production environment acceptance passed."
+
+      - name: Remove runner-local acceptance evidence
+        if: always()
+        shell: bash
+        run: |
+          evidence_dir="${{ steps.preflight.outputs.evidence_dir }}"
+          if [[ -n "$evidence_dir" ]]; then
+            rm -rf "$evidence_dir" 2>/dev/null || sudo rm -rf "$evidence_dir"
+          fi
