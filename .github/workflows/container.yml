@@ -72,36 +72,32 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Validate publication source CI
+      - name: Validate publication source CI through Actions API
         id: validation
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
+          RUNS_FILE="$(mktemp)"
+          trap 'rm -f "$RUNS_FILE"' EXIT
+
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100" \
+            > "$RUNS_FILE"
+
+          if ! CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"; then
+            echo "Publication source $SOURCE_SHA has no successful CI push run on main. Refusing container publication." >&2
+            exit 1
+          fi
+
           if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
-            CI_RUN_ID="${{ github.event.workflow_run.id }}"
-            CI_HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-            CI_HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
-            CI_CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-
-            if [[ "$CI_HEAD_SHA" != "$SOURCE_SHA" || "$CI_HEAD_BRANCH" != "main" || "$CI_CONCLUSION" != "success" ]]; then
-              echo "Main publication was not triggered by a successful CI run for the selected source SHA." >&2
-              exit 1
-            fi
-          else
-            RUNS_FILE="$(mktemp)"
-            trap 'rm -f "$RUNS_FILE"' EXIT
-
-            curl --fail --silent --show-error \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100" \
-              > "$RUNS_FILE"
-
-            if ! CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"; then
-              echo "Tagged release source $SOURCE_SHA has no successful CI push run on main. Refusing exact-version publication." >&2
+            TRIGGERING_CI_RUN_ID="${{ github.event.workflow_run.id }}"
+            if [[ "$CI_RUN_ID" != "$TRIGGERING_CI_RUN_ID" ]]; then
+              echo "Actions API selected CI run $CI_RUN_ID but this publication was triggered by run $TRIGGERING_CI_RUN_ID." >&2
               exit 1
             fi
           fi
