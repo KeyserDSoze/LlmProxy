@@ -5,10 +5,10 @@ LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview bas
 ## Current version
 
 ```text
-0.2.0-preview.4
+0.2.0-preview.5
 ```
 
-The product remains pre-1.0 while real DGX/Copilot/Entra/Cloudflare and target-host acceptance are outside repository CI.
+The product remains pre-1.0 while target-host, real DGX/Copilot/Entra/Cloudflare acceptance remains outside repository CI.
 
 Runtime identity is exposed by:
 
@@ -39,13 +39,13 @@ The runtime/assembly version is authoritative; Admin package version must stay a
 
 ```bash
 bash docker/scripts/validate-release-version.sh
-bash docker/scripts/validate-release-version.sh 0.2.0-preview.4
+bash docker/scripts/validate-release-version.sh 0.2.0-preview.5
 bash docker/scripts/validate-release-main-ci.sh <40-char-source-sha> <workflow-runs.json>
 ```
 
 The version validator requires valid SemVer in `Directory.Build.props`, the same Admin package version and a matching `CHANGELOG.md` section. CI also exercises an intentionally invalid candidate.
 
-The publication-source guard accepts only a `CI` run whose event is `push`, branch is `main`, `head_sha` matches exactly and conclusion is `success`. CI contains positive and negative fixtures without creating an immutable tag.
+The publication-source guard accepts only a `CI` run whose event is `push`, branch is `main`, `head_sha` matches exactly and conclusion is `success`.
 
 ## Version rules while pre-1.0
 
@@ -62,7 +62,10 @@ Formal sequence:
 0.2.0-preview.2  GHCR SBOM/provenance + immutable digest verification
 0.2.0-preview.3  source-validated main/tag container publication
 0.2.0-preview.4  consolidated Linux production deployment + host installer
+0.2.0-preview.5  production environment acceptance evidence
 ```
+
+`0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
 
 ## Release-note categories
 
@@ -121,18 +124,18 @@ sha-<7 chars>
 A Git tag such as:
 
 ```text
-v0.2.0-preview.4
+v0.2.0-preview.5
 ```
 
 must satisfy both conditions before publication:
 
-1. tag version exactly matches compiled version `0.2.0-preview.4`;
+1. tag version exactly matches compiled version `0.2.0-preview.5`;
 2. the tagged source SHA already has successful repository `CI` from a push to `main`.
 
 A matching prerelease tag may publish:
 
 ```text
-0.2.0-preview.4
+0.2.0-preview.5
 sha-<7 chars>
 ```
 
@@ -140,7 +143,7 @@ Prereleases do not update stable-looking aliases. A stable tag may additionally 
 
 The same Actions-API source gate is used for ordinary main and Git-tag publications. For a `workflow_run`-triggered publication, the API-selected CI run ID must equal the triggering CI run ID. The gate runs before GHCR login.
 
-A docs-only main commit cannot overwrite an exact version tag because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.4` tag has been created.
+Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.5` tag has been created.
 
 ## OCI SBOM and provenance contract
 
@@ -153,53 +156,24 @@ sbom: true
 provenance: mode=max
 ```
 
-The post-push gate:
+The post-push gate requires an immutable digest, reads the pushed OCI index back from GHCR, resolves attestation manifests, verifies in-toto layers, verifies `https://spdx.dev/Document`, verifies an SLSA provenance predicate and uploads `release-manifest.json`.
 
-1. requires a valid immutable `sha256:<64>` Buildx digest;
-2. reads `IMAGE@DIGEST` back from GHCR as raw OCI JSON;
-3. requires an OCI index with at least one runnable image manifest;
-4. resolves descriptors annotated `vnd.docker.reference.type=attestation-manifest`;
-5. requires `application/vnd.in-toto+json` layers;
-6. verifies `https://spdx.dev/Document`;
-7. verifies an SLSA predicate beginning `https://slsa.dev/provenance/`;
-8. verifies attestation subject linkage when the subject is present;
-9. uploads `release-manifest.json`.
-
-The release manifest records:
+Validated `0.2.0-preview.5` runtime evidence:
 
 ```text
-image
-digest
-version
-sourceSha
-builtAtUtc
-validatingCiRunId
-sbom
-provenance
-attestations[] { manifestDigest, predicateType }
-```
-
-Validated `0.2.0-preview.4` evidence:
-
-```text
-commit                58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-CI                    35095161900 SUCCESS
-Full Stack            35088765577 SUCCESS
-Publish GHCR          35095620725 SUCCESS
-image digest          sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-attestation manifest  sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
+commit                723c47d919a59cf95e447c071ef377ab92a06498
+CI                    35099356925 SUCCESS
+Publish GHCR          35099987458 SUCCESS
+image digest          sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-release artifact      10445034650
-artifact digest       sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
-validating CI run     35095161900
+release artifact      10448046779
+artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+validating CI run     35099356925
 ```
 
-## Deployment-version note
-
-`0.2.0-preview.4` is operator-visible because it changes the supported Linux production deployment contract and adds the host installer. The product version bump is intentional even though core inference semantics did not change.
-
-For production host installation/update, follow `docs/linux-production-deployment.md`. For controlled changes prefer immutable `sha-<7>` aliases or an exact SemVer tag when a real release has been explicitly created, rather than mutable `main`.
+For production acceptance/deployment, `sha-723c47d` remains the immutable image alias for this validated runtime checkpoint even if later documentation/operator commits move mutable `main`.
 
 ## Current release state
 

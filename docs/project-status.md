@@ -9,23 +9,34 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 Current formal product version:
 
 ```text
-0.2.0-preview.4
+0.2.0-preview.5
 ```
 
-Validated product/release checkpoint:
+Validated runtime/release checkpoint:
 
 ```text
-implementation   58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-CI               35095161900 SUCCESS
-Full Stack       35088765577 SUCCESS
-Publish GHCR     35095620725 SUCCESS
-image digest     sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-release artifact 10445034650
+implementation          723c47d919a59cf95e447c071ef377ab92a06498
+CI                      35099356925 SUCCESS
+Publish GHCR            35099987458 SUCCESS
+immutable image alias   sha-723c47d
+image digest            sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest    sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+release artifact        10448046779
+artifact digest         sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
 
-The final CI proves backend build/unit/benchmark, React/Vitest/Playwright, version/source-release guards, Linux installer validation, private/public production deployment rendering, image identity, Docker/PostgreSQL integration, caller governance, route-catalog PostgreSQL-outage behavior, retention/rollup compaction, and Bash/PowerShell restore paths.
+Validated operator-workflow checkpoint:
 
-Full Stack `35088765577` validates the production full-stack Compose changes through Redis + OpenTelemetry + Grafana, transactional outbox recovery, distributed output-token budgets, cross-replica credential rotation and safe node maintenance.
+```text
+commit                  cdd21d6155de08c6202754560f5b3c9f590071f9
+CI                      35110131158 SUCCESS
+```
+
+The runtime checkpoint is the currently validated product image. The later operator-workflow checkpoint adds self-hosted environment-acceptance automation, README/runbook updates and no runtime implementation changes. Mutable `main` may republish after docs/operator commits; use `sha-723c47d` when the validated `preview.5` runtime image is required.
+
+CI `35099356925` proves the complete `preview.5` implementation including the environment-acceptance harness and the canonical bodyless vLLM `/health` behavior. CI `35110131158` proves the repository with the new self-hosted acceptance workflow and re-runs backend, frontend and all Docker/PostgreSQL regressives, including `Environment acceptance harness smoke`.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -49,7 +60,10 @@ Formal release sequence:
 0.2.0-preview.2  GHCR SBOM/provenance verification
 0.2.0-preview.3  source-validated main/tag publication
 0.2.0-preview.4  consolidated Linux production deployment + host installer
+0.2.0-preview.5  production environment acceptance evidence
 ```
+
+No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created. That remains an explicit product-owner publication action.
 
 ## Linux production deployment — DONE / VALIDATED FOR REPOSITORY PATH
 
@@ -74,65 +88,94 @@ Canonical first-install script:
 docker/scripts/install-linux.sh
 ```
 
-It supports Docker official repository installation on Debian, Ubuntu, Fedora, CentOS and RHEL, and controlled distribution-package fallbacks for common `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families. Existing Docker + Compose v2 is preserved. Unknown hosts can preinstall Docker/Compose and rerun with `--skip-docker-install`.
+It supports Docker official repository installation on Debian, Ubuntu, Fedora, CentOS and RHEL, controlled package-manager fallbacks for common `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families, preservation of existing working Docker + Compose v2, protected host-owned config, generated initial secrets, optional GHCR login, DGX precheck and invocation of the canonical `docker/scripts/deploy.sh`.
 
-The installer prepares:
+Production host state:
 
 ```text
 /opt/llmproxy/.env
 /opt/llmproxy/runtime/
 /opt/llmproxy/backups/
+/opt/llmproxy/acceptance/
 ```
 
-It generates initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them, optionally authenticates to GHCR, checks DGX `/health` and `/v1/models`, then invokes the same `docker/scripts/deploy.sh` used by `.github/workflows/deploy.yml`.
+Actual target-host package/service behavior is still external evidence; repository validation does not claim universal Linux package compatibility.
 
-Production deployment:
+## Production environment acceptance — REPOSITORY DONE / REAL ENVIRONMENT EXTERNAL
 
-1. validates required settings and rejects unresolved `CHANGE_ME` values;
-2. requires `ASPNETCORE_ENVIRONMENT=Production`;
-3. requires Entra before enabling the public Cloudflare profile;
-4. stages Compose + observability assets under `/opt/llmproxy/runtime` so running containers do not depend on an ephemeral runner checkout;
-5. runs `docker compose config` before changing containers;
-6. pulls/starts the Redis-enabled full stack;
-7. requires both `/healthz` and `/readyz`.
+Canonical manual command:
 
-The production DGX address is an explicit placeholder, preventing accidental deployment to a plausible sample IP. Grafana binds loopback by default in the production template.
+```bash
+sudo -E bash docker/scripts/environment-acceptance.sh
+```
 
-Repository validation does **not** claim that every possible Linux distribution/package repository has been exercised. Actual target-host package installation remains acceptance evidence to capture on the chosen distro/version.
+Focused runbook:
+
+```text
+docs/environment-acceptance.md
+```
+
+Self-hosted Actions path:
+
+```text
+.github/workflows/environment-acceptance.yml
+```
+
+The harness records Linux/Docker/Compose metadata and validates direct VM -> DGX/vLLM plus LlmProxy gateway surfaces:
+
+```text
+/health or /healthz + /readyz
+/v1/models
+/v1/chat/completions
+/v1/chat/completions stream=true
+/v1/responses
+/v1/responses stream=true
+```
+
+Direct provider-model visibility and gateway logical-model visibility are required. Canonical vLLM `/health` is a status-only check because a healthy vLLM server may return HTTP 200 with an empty body.
+
+Evidence is deliberately metadata-only:
+
+```text
+summary.md
+checks.tsv
+```
+
+Request bodies/prompts, source code, generated output, response bodies and API/bearer secrets are temporary only and are not copied into evidence. A final guard rejects evidence containing the gateway or optional DGX bearer value.
+
+The GitHub Actions workflow:
+
+- runs on `self-hosted, linux, x64, llmproxy-prod`;
+- uses the `production` GitHub environment;
+- has no API-key workflow-dispatch inputs;
+- reads `/opt/llmproxy/.env` through the root-owned acceptance process;
+- requires non-interactive sudo;
+- rejects unexpected evidence files;
+- uploads only `summary.md` and `checks.tsv` with 14-day retention;
+- preserves a failed acceptance result after uploading available metadata evidence;
+- deletes runner-local evidence afterward.
+
+Repository CI proves the script and workflow repository path without pretending to prove the physical environment. The first real run on the target VM/DGX remains **EXTERNAL**.
 
 ## Supply-chain release evidence — DONE / VALIDATED
 
-Every publication:
+Every publication resolves one exact source SHA, requires successful `CI` push evidence before GHCR login, enforces tag/version match for exact tags, builds with source/version/date identity, emits SPDX + SLSA/BuildKit attestations, verifies the pushed OCI index and uploads `release-manifest.json`.
 
-1. resolves one exact source SHA;
-2. queries GitHub Actions before GHCR login;
-3. requires successful `CI` from a push to `main` on that exact SHA;
-4. for `workflow_run` publication, requires the API-selected CI ID to equal the triggering CI run;
-5. for exact tags, additionally requires tag version == compiled version;
-6. builds with source/version/date identity;
-7. emits SPDX SBOM + SLSA/BuildKit provenance;
-8. records the immutable image digest;
-9. reads the pushed OCI index/attestation manifests back from GHCR;
-10. requires both SPDX and SLSA predicates;
-11. uploads `release-manifest.json`.
-
-Validated `preview.4` registry evidence:
+Validated `preview.5` runtime registry evidence:
 
 ```text
 image                 ghcr.io/keyserdsoze/llmproxy
-version               0.2.0-preview.4
-source                58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-validating CI         35095161900
-Publish GHCR          35095620725
-image digest          sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-attestation manifest  sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
+version               0.2.0-preview.5
+source                723c47d919a59cf95e447c071ef377ab92a06498
+validating CI         35099356925
+Publish GHCR          35099987458
+image digest          sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-artifact              10445034650
-artifact digest       sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
+artifact              10448046779
+artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
-
-No immutable Git tag or GitHub Release has been created. That is an explicit product-owner publication action.
 
 ## Core runtime scope — DONE FOR CURRENT MVP
 
@@ -207,15 +250,16 @@ Prompts/source/generated output/API secrets remain excluded from persistent tele
 
 ## Current development focus
 
-The next step is environment acceptance, not another generic repository feature:
+The next step is **physical environment acceptance**, not another generic repository feature:
 
-1. install `preview.4` on the actual target Linux distro/version using `docs/linux-production-deployment.md`;
-2. validate real DGX Spark/vLLM/model connectivity and benchmark capacity;
-3. validate real Entra roles and Cloudflare/public hostname;
-4. validate GitHub Copilot BYOK end-to-end;
-5. install/validate the self-hosted deployment runner;
-6. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
-7. create an immutable Git tag/GitHub Release only when explicitly requested.
+1. install immutable `sha-723c47d` on the actual target Linux distro/version;
+2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
+3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
+4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
+5. validate real Entra roles and Cloudflare/public hostname;
+6. validate GitHub Copilot BYOK end-to-end;
+7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
+8. create an immutable Git tag/GitHub Release only when explicitly requested.
 
 ## Identity limitation
 
@@ -227,9 +271,10 @@ A new development session should:
 
 1. read `AGENTS.md`, this file, `CHANGELOG.md`, `docs/versioning.md`, latest `docs/development-log.md`, `docs/roadmap.md` and focused docs;
 2. inspect latest `main` and Actions before changing code;
-3. treat version `0.2.0-preview.4`, implementation `58a80a60c2f3a049b279be6bf9583ffa4c1cc088`, CI `35095161900`, Full Stack `35088765577`, Publish `35095620725` and image digest `sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a` as the validated baseline;
-4. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free configuration lookup, rollup/raw no-double-counting and pre-response-only failover;
-5. preserve the Linux production full-stack contract and one manual/Actions `deploy.sh` implementation;
-6. preserve the pre-GHCR source-validation gate and post-push SPDX/SLSA registry verification;
-7. for new product/operator-visible behavior, bump version/release notes according to `docs/versioning.md`;
-8. update engineering docs/evidence after every meaningful increment.
+3. treat `0.2.0-preview.5`, runtime source `723c47d919a59cf95e447c071ef377ab92a06498`, CI `35099356925`, Publish `35099987458`, image alias `sha-723c47d` and digest `sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa` as the validated runtime baseline;
+4. treat operator workflow commit `cdd21d6155de08c6202754560f5b3c9f590071f9` / CI `35110131158` as the validated repository acceptance-automation checkpoint;
+5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free config lookup, rollup/raw no-double-counting and pre-response-only failover;
+6. preserve metadata-only acceptance evidence and the bodyless vLLM `/health` status-only rule;
+7. preserve the pre-GHCR source-validation gate and post-push SPDX/SLSA registry verification;
+8. for new product/operator-visible behavior, follow `docs/versioning.md`;
+9. update engineering docs/evidence after every meaningful increment.

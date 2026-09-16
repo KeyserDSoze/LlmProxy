@@ -1,15 +1,19 @@
-# Operations: Linux deployment, DGX health, safe maintenance, build identity and audit
+# Operations: Linux deployment, environment acceptance, DGX health, safe maintenance, build identity and audit
 
 ## Current product baseline
 
 ```text
-version        0.2.0-preview.4
-source         58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-CI             35095161900 SUCCESS
-Full Stack     35088765577 SUCCESS
-Publish GHCR   35095620725 SUCCESS
-image digest   sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
+version                0.2.0-preview.5
+runtime source         723c47d919a59cf95e447c071ef377ab92a06498
+CI                     35099356925 SUCCESS
+Publish GHCR           35099987458 SUCCESS
+image digest           sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest   sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+release artifact       10448046779
+artifact digest        sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
+
+For controlled production use, prefer immutable `sha-723c47d` over mutable `main` until an explicit exact SemVer tag/release is created.
 
 Operators can inspect runtime identity through:
 
@@ -33,16 +37,14 @@ export GHCR_TOKEN='<package-read-token>'
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
-  --image-tag main
+  --image-tag sha-723c47d
 ```
 
-For controlled production updates prefer a validated immutable `sha-<7>` tag over mutable `main`.
-
-The installer detects `/etc/os-release` and common package managers. Docker's official repository path is implemented for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other hosts may use native `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk` Docker packages and a Docker Compose v2 CLI-plugin fallback. A host with an unrecognized package manager must preinstall Docker Engine + Compose v2 and rerun with `--skip-docker-install`.
+The installer detects `/etc/os-release` and common package managers. Docker's official repository path is implemented for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other hosts may use native `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk` packages and a Compose v2 CLI-plugin fallback. Unknown hosts can preinstall Docker Engine + Compose v2 and rerun with `--skip-docker-install`.
 
 Do not describe this as a guarantee that every Linux derivative/version has been package-tested. Target-host installation remains an external acceptance step.
 
-The installer preserves an existing working Docker/Compose installation and existing `/opt/llmproxy/.env`. New hosts receive generated PostgreSQL/Redis/API-key/pepper/Grafana secrets; the values are not printed.
+The installer preserves a working Docker/Compose installation and existing `/opt/llmproxy/.env`. New hosts receive generated PostgreSQL/Redis/API-key/pepper/Grafana secrets; values are not printed.
 
 Production host contract:
 
@@ -50,20 +52,10 @@ Production host contract:
 /opt/llmproxy/.env
 /opt/llmproxy/runtime/
 /opt/llmproxy/backups/
+/opt/llmproxy/acceptance/
 ```
 
 Preserve `LLM_PROXY_API_KEY_PEPPER` outside the host as a recovery dependency.
-
-Installer modes:
-
-```bash
-bash docker/scripts/install-linux.sh --help
-bash docker/scripts/install-linux.sh --validate-only
-sudo -E bash docker/scripts/install-linux.sh --prepare-only ...
-sudo -E bash docker/scripts/install-linux.sh --skip-docker-install ...
-```
-
-`--skip-dgx-check` is for deliberate staged provisioning only; normal first deployment should validate DGX `/health` and `/v1/models`.
 
 ## Production deploy/update
 
@@ -78,23 +70,12 @@ Example:
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh sha-abcdef1
+  bash docker/scripts/deploy.sh sha-723c47d
 ```
 
-The deploy script:
+The deploy script rejects unresolved production settings, requires `ASPNETCORE_ENVIRONMENT=Production`, requires Entra before public Cloudflare exposure, stages assets under `/opt/llmproxy/runtime`, validates Compose before container changes, starts the Redis-enabled full stack and requires both `/healthz` and `/readyz`.
 
-1. rejects missing/unresolved production settings;
-2. requires `ASPNETCORE_ENVIRONMENT=Production`;
-3. requires Entra settings before enabling a public Cloudflare profile;
-4. stages full-stack Compose and observability assets to `/opt/llmproxy/runtime`;
-5. validates `docker compose config` before container changes;
-6. pulls/starts PostgreSQL, Redis, observability and LlmProxy;
-7. enables the Cloudflare profile automatically when a tunnel token is present;
-8. requires `/healthz` and `/readyz` before reporting success.
-
-The production template keeps Grafana loopback-only by default. Do not expose Admin publicly until Entra authentication/roles are configured and validated.
-
-GitHub Actions production deployment uses a dedicated self-hosted Linux runner labelled:
+GitHub Actions deployment uses a self-hosted Linux runner labelled:
 
 ```text
 self-hosted
@@ -104,6 +85,66 @@ llmproxy-prod
 ```
 
 Keep production secrets in `/opt/llmproxy/.env`, not workflow YAML.
+
+## Production environment acceptance
+
+The canonical manual acceptance is:
+
+```bash
+sudo -E bash docker/scripts/environment-acceptance.sh
+```
+
+Focused runbook:
+
+```text
+docs/environment-acceptance.md
+```
+
+Default evidence:
+
+```text
+/opt/llmproxy/acceptance/<UTC timestamp>/summary.md
+/opt/llmproxy/acceptance/<UTC timestamp>/checks.tsv
+```
+
+The harness validates:
+
+1. Linux distribution/kernel/architecture metadata;
+2. Docker Engine + Docker Compose v2;
+3. direct VM -> DGX/vLLM `/health` and `/v1/models`;
+4. direct vLLM Chat + Responses, streaming and non-streaming;
+5. LlmProxy `/healthz`, `/readyz`, `/v1/models`;
+6. gateway Chat + Responses, streaming and non-streaming;
+7. exact provider-model and public logical-model visibility.
+
+Canonical vLLM `/health` is treated as an HTTP-status-only probe. A healthy vLLM server may return `200` with an empty body and no JSON content type.
+
+The evidence bundle is metadata-only. Do not persist request bodies, prompts, source, generated output, response bodies, bearer tokens or API secrets. The script performs a final secret scan before success.
+
+### Self-hosted Actions acceptance
+
+Once the production runner exists, launch manually through:
+
+```text
+.github/workflows/environment-acceptance.yml
+```
+
+The workflow:
+
+- runs on `self-hosted, linux, x64, llmproxy-prod`;
+- uses GitHub `environment: production`;
+- accepts no API-key workflow inputs;
+- reads `/opt/llmproxy/.env` through the root-owned acceptance process;
+- requires non-interactive `sudo` for the dedicated runner;
+- uploads only `summary.md` and `checks.tsv`;
+- rejects unexpected files before artifact upload;
+- keeps the Actions artifact for 14 days;
+- uploads metadata evidence even when functional acceptance fails, then preserves the run failure;
+- removes runner-local evidence after the run.
+
+If the DGX/vLLM endpoint itself requires bearer authentication, use the manual path with `LLMPROXY_ACCEPTANCE_DGX_API_KEY` in the acceptance process environment until an approved host-secret injection mechanism is configured.
+
+The workflow being present in the repository does not prove the production environment. A green real run requires the actual self-hosted runner, target Linux host and DGX/vLLM service.
 
 ## Health state model
 
@@ -127,57 +168,15 @@ POST /api/admin/nodes/{nodeId}/maintenance/drain
 POST /api/admin/nodes/{nodeId}/maintenance/resume
 ```
 
-### Begin drain
+Drain establishes the new-admission block before committing `Draining`; existing streams finish. In Redis mode the maintenance marker participates in atomic capacity admission across replicas.
 
-`POST .../maintenance/drain` establishes the new-admission block before committing the node to `Draining` and auditing `node.maintenance.drain`. In Redis mode the maintenance marker is checked inside atomic capacity admission, so a peer with stale local route state cannot admit new work. Existing work is allowed to finish.
-
-Typical outcomes:
-
-```text
-202 drain started / existing work may remain
-409 node_disabled
-503 maintenance_coordination_unavailable
-```
-
-### Observe drain
-
-Wait for:
-
-```text
-nodeStatus = Draining
-admissionBlocked = true
-activeRequests = 0
-drained = true
-```
-
-Do not restart/replace vLLM before drain completion unless interruption is explicitly accepted. LlmProxy never fails over an already-started downstream stream.
-
-### Perform external upgrade
-
-Once drained, perform the DGX/vLLM/model/driver/container operation outside LlmProxy. The gateway owns traffic safety and validation around the operation; it does not execute host upgrades itself.
-
-### Resume with validation
-
-`POST .../maintenance/resume` requires zero distributed active work, then checks:
+Resume requires zero distributed active work and validates:
 
 1. `GET <service-root>/health`;
 2. `GET <service-root>/v1/models`;
 3. one non-streaming Chat Completions warm-up with one output token for each enabled provider model on the node.
 
-Only successful validation returns the node to `Healthy` and clears the maintenance block.
-
-Failure responses include:
-
-```text
-409 node_not_draining
-409 node_still_draining
-503 maintenance_coordination_unavailable
-503 node_validation_failed
-```
-
-The legacy direct endpoint `POST /api/admin/nodes/{nodeId}/drain` is deprecated and must not be restored as a maintenance bypass.
-
-Current full-stack proof including maintenance is `35088765577 SUCCESS`.
+The legacy direct `POST /api/admin/nodes/{nodeId}/drain` remains deprecated and must not become a maintenance bypass.
 
 ## Manual DGX connection test
 
@@ -196,57 +195,28 @@ http://10.0.0.25:8000/vllm
 https://dgx-01.internal:8443/inference
 ```
 
-The manual test is diagnostic; background health and maintenance resume have their own semantics.
+The manual Admin test is diagnostic; production environment acceptance and maintenance resume have stricter, separate semantics.
 
 ## Verify a published image
 
-Production images carry:
+Production images carry source/version/build identity. Before GHCR login, every publication queries GitHub Actions for successful `CI` from a push to `main` on the exact source SHA. Exact tags must also match compiled version metadata.
+
+Validated `preview.5` registry evidence:
 
 ```text
-LLMPROXY_BUILD_SHA
-LLMPROXY_BUILD_DATE
-org.opencontainers.image.version
-org.opencontainers.image.revision
-org.opencontainers.image.created
-```
-
-Publishing rules:
-
-```text
-validated main SHA      -> main + sha-<7>
-validated matching tag  -> exact SemVer + sha-<7>
-stable Git tag          -> may also publish major.minor alias
-prerelease Git tag      -> never updates stable-looking alias
-```
-
-Before GHCR login, every publication queries GitHub Actions for successful `CI` from a push to `main` on the exact source SHA. Exact tags also have to match compiled version metadata.
-
-Validated `preview.4` registry example:
-
-```text
-image          ghcr.io/keyserdsoze/llmproxy
-version        0.2.0-preview.4
-source         58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-validating CI  35095161900
-digest         sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-```
-
-Post-push verification reads the OCI index/attestation manifests back from GHCR and requires:
-
-```text
-attestation manifest  sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
+image                 ghcr.io/keyserdsoze/llmproxy
+version               0.2.0-preview.5
+source                723c47d919a59cf95e447c071ef377ab92a06498
+validating CI         35099356925
+digest                sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
+artifact id           10448046779
+artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
 
-Release manifest artifact:
-
-```text
-artifact id      10445034650
-artifact digest  sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
-```
-
-No exact `v0.2.0-preview.4` Git tag or GitHub Release has been created.
+No exact `v0.2.0-preview.5` Git tag or GitHub Release has been created.
 
 ## Usage retention operational note
 
@@ -261,13 +231,9 @@ processed runtime outbox      30 days
 
 Retention compacts complete expired UTC days before deleting raw rows. Reporting merges rollups with newer raw metrics. Pending runtime outbox rows are never retention-deleted.
 
-Read `docs/data-retention.md` before changing retention/reporting behavior.
-
 ## PostgreSQL backup
 
 PostgreSQL is durable recovery authority; Redis is rebuildable.
-
-Example on the production host:
 
 ```bash
 ENV_FILE=/opt/llmproxy/.env \
@@ -276,22 +242,29 @@ COMPOSE_FILE=/opt/llmproxy/runtime/docker-compose.full.yml \
   /opt/llmproxy/backups/llmproxy-$(date -u +%Y%m%dT%H%M%SZ).dump
 ```
 
-Preserve the DB dump/checksum/metadata plus the API-key pepper and deployment secrets in the appropriate external secret/recovery system. Read `docs/backup-restore.md` before restore.
+Preserve the DB dump/checksum/metadata plus the API-key pepper and deployment secrets in the appropriate external recovery system. Read `docs/backup-restore.md` before restore.
 
 ## Administrative audit trail
 
-Administrative changes are stored in `audit_events`:
+Administrative changes are stored in `audit_events` and available through:
 
 ```http
 GET /api/admin/audit?take=100
 ```
 
-Representative audited actions include routing/node/model/deployment changes, connection tests, maintenance drain/resume, credential creation/rotation/revoke, governance changes and manual retention cleanup.
-
-With Entra enabled the actor comes from the authenticated principal. Development mode without Entra records the local administrator identity.
-
 Audit must never contain raw inference API secrets, Entra client secrets, Cloudflare tokens, prompts, source code, generated code or model responses.
 
-## Integration-test behavior
+## Validation boundary
 
-Final `preview.4` CI `35095161900` covers installer validation, production private/public deploy rendering, product/backend/frontend tests, image identity, PostgreSQL/runtime smokes, governance, retention and restore. Full Stack `35088765577` separately proves Redis/OTEL wiring, outbox recovery, shared token budgets, cross-replica rotation and safe maintenance. Publish `35095620725` proves pre-GHCR source-CI validation plus immutable digest/SPDX/SLSA registry verification.
+Repository CI can validate scripts, Compose rendering, mocks and regression behavior. It cannot prove:
+
+- package/service behavior on the actual target Linux distribution;
+- VM/DGX network policy;
+- real vLLM/model behavior and production capacity;
+- real Entra roles;
+- real Cloudflare/public DNS;
+- GitHub Copilot BYOK end-to-end;
+- self-hosted runner permissions/reboot behavior;
+- customer HA/storage/backup policy.
+
+Those become environment acceptance evidence on the real installation.

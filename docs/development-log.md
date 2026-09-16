@@ -155,40 +155,7 @@ No real immutable Git tag/GitHub Release was created.
 
 ## 2026-09-16 — Consolidated Linux production deployment / 0.2.0-preview.4 — VALIDATED
 
-Consolidated production deployment onto the Redis-enabled full stack instead of maintaining a separate minimal production overlay.
-
-Implemented:
-
-- canonical Linux production topology: LlmProxy + PostgreSQL + Redis + OTEL Collector + Prometheus/Tempo/Loki/Grafana;
-- optional Cloudflare Tunnel Compose profile;
-- separate production `.env` template with fail-safe secret/DGX placeholders;
-- `docker/scripts/deploy.sh` as the single manual/self-hosted-runner deployment implementation;
-- staging of Compose + observability assets into `/opt/llmproxy/runtime` so running containers do not depend on a transient runner workspace;
-- production preflight requiring resolved placeholders and `ASPNETCORE_ENVIRONMENT=Production`;
-- Entra-before-public-Cloudflare validation;
-- Compose rendering before container changes;
-- both `/healthz` and `/readyz` required before deployment success;
-- GitHub Actions deploy workflow aligned to the same full-stack script.
-
-Added cross-distribution host bootstrap `docker/scripts/install-linux.sh`:
-
-- reads `/etc/os-release` and detects common package managers;
-- Docker official-repository installation for Debian, Ubuntu, Fedora, CentOS and RHEL;
-- controlled distro-package fallbacks for `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families;
-- Docker Compose v2 CLI-plugin fallback when required;
-- preserves working existing Docker/Compose and an existing production `.env`;
-- prepares `/opt/llmproxy/{runtime,backups}`;
-- generates initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them;
-- optional GHCR login using transient `GHCR_USER`/`GHCR_TOKEN` inputs;
-- DGX `/health` and `/v1/models` preflight;
-- `--prepare-only`, `--skip-dgx-check`, `--skip-docker-install`, `--non-interactive`, `--validate-only` and help modes;
-- invokes the same canonical deploy script after host preparation.
-
-Focused documentation now uses `docs/linux-production-deployment.md` as the zero-to-running runbook. `README.md` cleanly separates development quickstart from production installation.
-
-An accidental empty `NONEXISTENT` file was created during an API experiment while preparing this increment and immediately removed by a normal fast-forward corrective commit; history was not rewritten and no such file remains.
-
-Validation:
+Consolidated production deployment onto the Redis-enabled full stack. Added the canonical `docker/scripts/deploy.sh`, cross-distribution `docker/scripts/install-linux.sh`, production `.env` contract, optional Cloudflare profile, Entra-before-public validation, runtime-asset staging, `/healthz` + `/readyz` success gate and complete zero-to-running runbook.
 
 ```text
 version               0.2.0-preview.4
@@ -196,21 +163,89 @@ final source          58a80a60c2f3a049b279be6bf9583ffa4c1cc088
 CI                    35095161900 SUCCESS
 Full Stack            35088765577 SUCCESS
 Publish GHCR          35095620725 SUCCESS
-validating CI run     35095161900
 image digest          sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
 attestation manifest  sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
 release artifact      10445034650
 artifact digest       sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
 ```
 
-CI explicitly proves installer compatibility/syntax mode and production deployment rendering for both private-LAN and Entra+Cloudflare configurations. Full Stack proves the Compose/runtime change does not regress Redis/OTEL, outbox recovery, shared token budgets, cross-replica rotation or safe maintenance.
+Repository validation deliberately did not claim actual target-distro execution.
 
-Repository validation deliberately does not claim that package installation has been executed on every Linux derivative. Actual target-distro package/service behavior remains an environment acceptance step; unknown hosts can preinstall Docker Engine + Compose v2 and reuse the same installer/deploy path with `--skip-docker-install`.
+## 2026-09-16 — Production environment acceptance / 0.2.0-preview.5 — VALIDATED
+
+Implemented `docker/scripts/environment-acceptance.sh` as the executable bridge from repository validation to physical-environment evidence.
+
+The harness:
+
+- records Linux distro/kernel/architecture plus Docker Engine and Compose v2 availability;
+- probes direct VM -> DGX/vLLM `/health`, `/v1/models`, Chat and Responses, streaming and non-streaming;
+- probes LlmProxy `/healthz`, `/readyz`, `/v1/models`, Chat and Responses, streaming and non-streaming;
+- requires exact provider-model visibility directly and logical public-model visibility through the gateway;
+- records status/content-type/TTFB/total-time metadata only;
+- keeps synthetic requests and response bodies temporary;
+- rejects evidence containing gateway/DGX bearer values;
+- writes only `summary.md` + `checks.tsv`.
+
+During current-vLLM compatibility review, canonical `/health` behavior was verified to permit an empty/bodyless HTTP 200 response. The initial harness incorrectly expected JSON and would have false-failed a standard healthy vLLM server. The implementation and CI mock were corrected to validate status only and explicitly exercise bodyless health.
+
+Validated runtime/release evidence:
+
+```text
+version                0.2.0-preview.5
+runtime source         723c47d919a59cf95e447c071ef377ab92a06498
+CI                     35099356925 SUCCESS
+Publish GHCR           35099987458 SUCCESS
+image alias            sha-723c47d
+image digest           sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest   sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+SBOM predicate         https://spdx.dev/Document
+provenance predicate   https://slsa.dev/provenance/v1
+release artifact       10448046779
+artifact digest        sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+```
+
+CI `35099356925` includes the acceptance harness smoke with bodyless `/health`, direct/gateway Chat + Responses SSE/non-SSE, secret scan and the complete existing regression suite.
+
+## 2026-09-16 — Self-hosted production acceptance workflow — VALIDATED
+
+Added `.github/workflows/environment-acceptance.yml` so the same acceptance contract can be launched manually from GitHub Actions once the dedicated production runner exists.
+
+Workflow contract:
+
+- labels: `self-hosted, linux, x64, llmproxy-prod`;
+- GitHub environment: `production`;
+- no API-key workflow-dispatch inputs;
+- protected host configuration read from `/opt/llmproxy/.env` by the root-owned acceptance process;
+- non-interactive sudo required on the dedicated runner;
+- unexpected evidence files rejected;
+- only `summary.md` + `checks.tsv` uploaded;
+- 14-day artifact retention;
+- available metadata uploaded even when functional acceptance fails, followed by a failing run result;
+- runner-local evidence deleted afterward.
+
+Repository checkpoint:
+
+```text
+commit                  cdd21d6155de08c6202754560f5b3c9f590071f9
+CI                      35110131158 SUCCESS
+changed paths           .github/workflows/environment-acceptance.yml
+                        README.md
+                        docs/environment-acceptance.md
+```
+
+CI `35110131158` revalidated backend, frontend/Playwright and the full Docker/PostgreSQL suite: Linux production deployment rendering, environment-acceptance smoke, image identity, backend integration, DGX telemetry, capacity/backpressure, governance, PostgreSQL-outage routing, retention and Bash/PowerShell restore.
+
+This workflow commit is an operator/repository checkpoint, not a replacement for the validated runtime image `sha-723c47d`. The first actual run against the target VM + DGX/vLLM remains external.
 
 ## Current next increment
 
-Generic repository hardening is complete for the current preview. Next work should be physical/environment acceptance: install on the intended Linux host, validate real DGX/vLLM/model benchmarks, then Entra/Cloudflare/Copilot BYOK and the self-hosted deployment runner. Customer-specific HA/storage/backup destination choices follow the actual deployment topology.
+Repository hardening, Linux bootstrap and executable acceptance automation are complete for the current preview. The next work should be physical/environment acceptance:
+
+1. install immutable `sha-723c47d` on the target Linux host;
+2. install/validate the `llmproxy-prod` self-hosted runner;
+3. run `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence;
+4. benchmark intended models and apply evidence-backed Capacity Profiles;
+5. validate real Entra/Cloudflare/GitHub Copilot BYOK;
+6. finalize customer-specific HA/storage/backup topology.
 
 Quota expansion remains requirements-driven. Creating a real immutable Git tag/GitHub Release remains an explicit product-owner publication decision.

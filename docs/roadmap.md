@@ -52,7 +52,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: maintenance marker participates in atomic Redis admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
-## M6 — Operator onboarding / Linux deployability — DONE FOR REPOSITORY PATH / EXTERNAL HOST ACCEPTANCE REMAINS
+## M6 — Operator onboarding / Linux deployability — REPOSITORY DONE / EXTERNAL HOST ACCEPTANCE REMAINS
 
 - DONE: development quickstart and distributed full-stack Compose bundle.
 - DONE: canonical production topology is the Redis-enabled full stack.
@@ -70,8 +70,14 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: deployment requires `/healthz` + `/readyz` before success.
 - DONE: PostgreSQL backup/restore Bash + PowerShell operators with clean-target proof.
 - DONE: full Linux production runbook including installer, Entra/Cloudflare, backup, update and rollback.
+- DONE: executable `docker/scripts/environment-acceptance.sh` for host, direct DGX/vLLM and gateway functional acceptance.
+- DONE: metadata-only `summary.md` + `checks.tsv` acceptance evidence with secret-content guard.
+- DONE: canonical bodyless vLLM `/health` handled as status-only acceptance.
+- DONE: CI smoke exercises Chat/Responses streaming and non-streaming through direct/mock DGX and gateway surfaces.
+- DONE: `.github/workflows/environment-acceptance.yml` for manual production acceptance on the `llmproxy-prod` self-hosted runner; no API-key dispatch inputs; short-lived metadata artifact only.
 - EXTERNAL: execute installer on the chosen production distro/version and record package/service behavior.
-- EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
+- EXTERNAL: execute the acceptance workflow against the real VM + DGX/vLLM.
+- EXTERNAL: production Cloudflare Tunnel + self-hosted runner operational/reboot proof.
 - EXTERNAL: customer backup destination, encryption and retention schedule.
 
 ## M7 — Caller governance — DONE FOR CURRENT V1
@@ -141,7 +147,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.4
+## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.5
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -156,25 +162,35 @@ local RAM  = per-replica request-path L1
 - DONE: every main/tag publication uses the same Actions-API source-validation gate before GHCR login.
 - DONE: production Linux deployment consolidated onto the Redis-enabled full stack.
 - DONE: cross-distribution host bootstrap script + production runbook.
+- DONE: production environment-acceptance harness + metadata-only evidence contract.
+- DONE: bodyless canonical vLLM health compatibility fix.
+- DONE: self-hosted manual acceptance workflow on the production runner labels.
 - OWNER ACTION: create a real immutable Git tag/GitHub Release only when explicitly requested.
 
-Current checkpoint:
+Validated runtime checkpoint:
 
 ```text
-version           0.2.0-preview.4
-commit            58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-CI                35095161900 SUCCESS
-Full Stack        35088765577 SUCCESS
-Publish GHCR      35095620725 SUCCESS
-image digest      sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
+version           0.2.0-preview.5
+commit            723c47d919a59cf95e447c071ef377ab92a06498
+CI                35099356925 SUCCESS
+Publish GHCR      35099987458 SUCCESS
+image alias       sha-723c47d
+image digest      sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+```
+
+Validated operator-workflow checkpoint:
+
+```text
+commit            cdd21d6155de08c6202754560f5b3c9f590071f9
+CI                35110131158 SUCCESS
 ```
 
 ## Current development order
 
-1. Run the installer on the actual target Linux host and capture distro/Docker/DGX acceptance evidence.
-2. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
-3. Validate real Entra + Cloudflare + GitHub Copilot BYOK end-to-end.
-4. Validate the on-prem self-hosted deployment runner.
+1. Install immutable `sha-723c47d` on the actual target Linux host.
+2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM.
+3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
+4. Validate real Entra + Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
 6. Expand quota semantics only with explicit tokenizer/pricing requirements.
 7. Create a Git tag/GitHub Release only when explicitly requested.

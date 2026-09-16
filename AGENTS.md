@@ -29,9 +29,9 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, and metadata-only enterprise observability.
+Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and metadata-only enterprise observability.
 
-Raw prompts, source code, generated outputs, bearer tokens and API secrets must never be persisted or added to logs/spans by default.
+Raw prompts, source code, generated outputs, response bodies, bearer tokens and API secrets must never be persisted or added to logs/spans/evidence by default.
 
 ## Engineering conventions
 
@@ -53,26 +53,39 @@ Raw prompts, source code, generated outputs, bearer tokens and API secrets must 
 - Never silently reuse a tagged/published exact version for different product bits.
 - Never call work DONE because it was committed; require relevant green CI/integration evidence.
 
-## Current product version and validated baseline
+## Current product version and validated baselines
 
 Current formal version:
 
 ```text
-0.2.0-preview.4
+0.2.0-preview.5
 ```
 
-Validated product/release checkpoint:
+Validated runtime/release checkpoint:
 
 ```text
-implementation   58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-CI               35095161900 SUCCESS
-Full Stack       35088765577 SUCCESS
-Publish GHCR     35095620725 SUCCESS
-image digest     sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-release artifact 10445034650
+implementation          723c47d919a59cf95e447c071ef377ab92a06498
+CI                      35099356925 SUCCESS
+Publish GHCR            35099987458 SUCCESS
+image alias             sha-723c47d
+image digest            sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
+attestation manifest    sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+release artifact        10448046779
+artifact digest         sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
 ```
 
-`0.2.0-preview.4` changes operator/deployment behavior rather than inference semantics. Full Stack `35088765577` is the relevant Redis/OTEL/distributed-runtime proof for the full-stack Compose changes; final CI `35095161900` proves the complete final source including the cross-distribution installer and production deployment validation.
+Validated environment-acceptance workflow checkpoint:
+
+```text
+operator workflow       cdd21d6155de08c6202754560f5b3c9f590071f9
+CI                      35110131158 SUCCESS
+```
+
+The second checkpoint adds repository/operator automation and documentation; it does not replace the immutable runtime image checkpoint above. Mutable `main` may move or republish after docs/operator commits. Until an explicit exact SemVer release is created, use `sha-723c47d` when the validated `preview.5` runtime image is required.
+
+No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
 
 Runtime identity is exposed by:
 
@@ -93,8 +106,6 @@ local RAM  = per-replica request-path configuration L1
 
 Ordinary credential/route/policy configuration lookup is DB-free after startup/runtime publication.
 
-### Transactional runtime publication
-
 Runtime Node/Model/Deployment/Credential/RatePolicy mutations and `runtime_state_outbox` rows commit in the same PostgreSQL transaction. The ordered advisory-lock worker retries Redis publication, applies acknowledged state to the publisher L1, then marks the row processed. Pending outbox rows are never retention-deleted.
 
 Read `docs/runtime-cache.md` before changing this path.
@@ -111,7 +122,7 @@ POST /api/admin/nodes/{id}/maintenance/resume
 
 Drain establishes an admission block before persisting `Draining`. Redis mode checks that block inside atomic distributed capacity admission. Existing work drains normally. Resume requires zero global active work plus `/health`, `/v1/models` and one-token warm-up validation before returning the node to routing.
 
-The legacy `/api/admin/nodes/{id}/drain` must remain deprecated as an unsafe bypass.
+The legacy `/api/admin/nodes/{id}/drain` remains deprecated as an unsafe bypass.
 
 Read `docs/operations.md` and `docs/capacity-control.md` before changing maintenance/capacity behavior.
 
@@ -150,7 +161,7 @@ Read `docs/backup-restore.md` before changing recovery behavior.
 
 ## Linux production deployment contract
 
-The canonical production topology is the Redis-enabled full stack:
+Canonical topology:
 
 ```text
 LlmProxy + PostgreSQL + Redis
@@ -167,88 +178,84 @@ Canonical first-install entry point:
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://<dgx>:8000 \
   --provider-model '<provider-model-id>' \
-  --image-tag <validated-tag>
+  --image-tag sha-723c47d
 ```
 
-`docker/scripts/install-linux.sh`:
+The installer supports Docker official repository paths for Debian, Ubuntu, Fedora, CentOS and RHEL plus controlled package-manager fallbacks; preserves working existing Docker/Compose and an existing protected `/opt/llmproxy/.env`; generates initial secrets without printing them; optionally logs into GHCR; checks DGX `/health` + `/v1/models`; and invokes the canonical `docker/scripts/deploy.sh`.
 
-- detects `/etc/os-release` and common package managers;
-- uses Docker's official repository path for Debian, Ubuntu, Fedora, CentOS and RHEL;
-- supports common derivative/other families through `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk` distribution packages plus a Compose CLI-plugin fallback when needed;
-- preserves a working existing Docker Engine + Compose v2 installation;
-- prepares `/opt/llmproxy/{runtime,backups}` and a protected `/opt/llmproxy/.env`;
-- generates initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them;
-- optionally authenticates to GHCR from `GHCR_USER`/`GHCR_TOKEN` without storing the token in `.env`;
-- checks DGX `/health` and `/v1/models` unless explicitly skipped for staged provisioning;
-- invokes the same canonical `docker/scripts/deploy.sh` used by GitHub Actions.
-
-Do not claim literal automatic package installation on every possible Linux distribution. For an unrecognized host/package manager, preinstall Docker Engine + Compose v2 and rerun with `--skip-docker-install`; the application deployment path remains the same.
-
-Production host state contract:
+Production host contract:
 
 ```text
 /opt/llmproxy/.env       operator-owned secrets/config
 /opt/llmproxy/runtime/   staged Compose + observability assets
 /opt/llmproxy/backups/   backup destination example
+/opt/llmproxy/acceptance environment acceptance evidence
 ```
 
-`deploy.sh` validates production configuration, stages runtime assets out of the transient checkout/runner workspace, validates Compose before changing containers, pulls/starts the full stack, and requires both `/healthz` and `/readyz`.
+Cloudflare is optional. Public-tunnel deployment requires Entra enabled/configured first. Grafana binds loopback by default.
 
-Cloudflare is optional. A non-empty tunnel token enables the `cloudflare` profile; public-tunnel deployment requires Entra enabled/configured first. Grafana binds loopback by default in the production template.
+Read `docs/linux-production-deployment.md` and `docs/deployment.md` before changing production deployment behavior.
 
-Read `docs/linux-production-deployment.md` and `docs/deployment.md` before changing production installation/deployment behavior.
+## Production environment acceptance contract
+
+Manual entry point:
+
+```bash
+sudo -E bash docker/scripts/environment-acceptance.sh
+```
+
+Focused runbook:
+
+```text
+docs/environment-acceptance.md
+```
+
+Repository-supported Actions path:
+
+```text
+.github/workflows/environment-acceptance.yml
+```
+
+The workflow runs on the production self-hosted labels `self-hosted, linux, x64, llmproxy-prod`, accepts no API-key dispatch inputs, reads the host-owned `/opt/llmproxy/.env`, requires non-interactive sudo, uploads only `summary.md` and `checks.tsv` with 14-day retention, rejects unexpected files and removes runner-local evidence after the run.
+
+The harness validates host Docker/Compose, direct VM->DGX/vLLM and gateway `/v1/models`, Chat, Responses and SSE surfaces. Canonical vLLM `/health` is status-only: HTTP 200 with an empty body is valid and must not be rejected for lacking JSON.
+
+Evidence is metadata-only. Never add prompts, source, generated output, response bodies or credentials to acceptance evidence.
+
+Repository CI validates the harness against mocks and the workflow repository path. The first real self-hosted-runner run on the target VM/DGX remains **EXTERNAL** and is the next acceptance milestone.
 
 ## Release/build/supply-chain contract
 
 Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. Every container publication queries GitHub Actions before GHCR login and proves that the selected source SHA already has successful `CI` from a push to `main`. Exact tags additionally require tag version == compiled version.
 
-Registry-native supply-chain evidence remains mandatory:
-
-- Buildx SPDX SBOM OCI attestation;
-- SLSA/BuildKit provenance (`mode=max`);
-- immutable image digest;
-- post-push GHCR OCI index/attestation verification;
-- `release-manifest.json` recording image, digest, version, source SHA, build timestamp, validating CI run ID and attestation descriptors.
-
-Validated `0.2.0-preview.4` evidence:
-
-```text
-source                 58a80a60c2f3a049b279be6bf9583ffa4c1cc088
-validating CI          35095161900
-Publish GHCR           35095620725
-image digest           sha256:12f6e615d3b5460247c9f0aec7081c8b98b1bf4264d86e30cbe890ad7bcfb40a
-attestation manifest   sha256:cd92f248e73e58fca570a687ca0002d10cfc8e5b308e60ce31351454b4933b0b
-SBOM predicate         https://spdx.dev/Document
-provenance predicate   https://slsa.dev/provenance/v1
-release artifact       10445034650
-artifact digest        sha256:cb2bf6b6d8d34a545c080b866866d7098cedbab66f66f475aa168caf6a93c977
-```
-
-No immutable Git tag or GitHub Release has been created. Creating one is an explicit product-owner release action.
+Registry-native evidence remains mandatory: Buildx SPDX SBOM, SLSA/BuildKit provenance, immutable digest, post-push OCI attestation verification and `release-manifest.json`.
 
 Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Repository-supported MVP hardening and Linux production bootstrap are complete for the current preview. Default next order:
+Repository-supported MVP hardening, Linux bootstrap and executable environment-acceptance tooling are complete for the current preview. Default next order:
 
-1. run an actual target-host installation using `docs/linux-production-deployment.md` and capture distro/Docker/DGX/Entra/Cloudflare acceptance evidence;
-2. calibrate real DGX capacity with intended vLLM models and representative Copilot load;
-3. add customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption choices when deployment topology is known;
-4. evolve quota semantics only with explicit tokenizer/pricing requirements;
-5. create an immutable Git tag/GitHub Release only when the project owner explicitly wants a distributable release.
+1. install `sha-723c47d` on the actual target Linux host;
+2. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
+3. calibrate real DGX capacity with intended models and representative Copilot load;
+4. validate real Entra roles, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
+5. define customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption;
+6. evolve quota semantics only with explicit tokenizer/pricing requirements;
+7. create an immutable Git tag/GitHub Release only when the project owner explicitly wants a distributable release.
 
 Do not invent per-user identity from a shared GitHub Copilot BYOK credential or from IP addresses.
 
 ## External validation still required
 
 - installer/package behavior on the actual target Linux distribution/version;
+- first real environment-acceptance run on the production VM/DGX;
 - real DGX Spark + intended vLLM/model benchmark sweeps;
 - representative multi-DGX coding load;
 - real Entra app/roles;
 - real Cloudflare Tunnel/public domain;
 - real GitHub Copilot BYOK end-to-end;
-- on-prem self-hosted deployment runner permissions/reboot behavior;
+- on-prem self-hosted runner permissions/reboot behavior;
 - customer backup destination/retention/encryption;
 - customer-specific PostgreSQL/Redis/observability HA/storage;
 - Copilot usage-metrics behavior if per-user analytics are required.
@@ -260,25 +267,26 @@ NVIDIA Personal AI Router was evaluated and rejected for the current direction. 
 ## Documentation map
 
 ```text
-README.md                           product/developer entry point
-CHANGELOG.md                        product-visible release history
-docs/project-status.md             canonical state and exact resume point
-docs/development-log.md            chronological engineering + validation trace
-docs/roadmap.md                    milestone state/backlog
+README.md                            product/developer entry point
+CHANGELOG.md                         product-visible release history
+docs/project-status.md              canonical state and exact resume point
+docs/development-log.md             chronological engineering + validation trace
+docs/roadmap.md                     milestone state/backlog
 docs/linux-production-deployment.md zero-to-running Linux production runbook
-docs/deployment.md                 deployment contract/automation summary
-docs/versioning.md                 SemVer/release/build/supply-chain rules
-docs/operations.md                 health, maintenance, deployment/release operations
-docs/data-retention.md             raw metrics + daily rollups + audit/outbox retention
-docs/usage-governance.md           auth, credential lifecycle, groups, quotas, usage
-docs/runtime-cache.md              L1/L2 + transactional outbox
-docs/backup-restore.md             PostgreSQL recovery contract
-docs/full-stack.md                 Redis + observability bundle
-docs/capacity-control.md           physical admission + capacity leases
-docs/benchmarking.md               benchmark protocol
-docs/routing.md                    routing and tuning
-docs/hardware-telemetry.md         DGX/DCGM boundary
-docs/github-copilot.md             Copilot/BYOK limitations and external validation
+docs/environment-acceptance.md      target-host/DGX/gateway acceptance contract
+docs/deployment.md                  deployment contract/automation summary
+docs/versioning.md                  SemVer/release/build/supply-chain rules
+docs/operations.md                  health, acceptance, maintenance and release operations
+docs/data-retention.md              raw metrics + daily rollups + audit/outbox retention
+docs/usage-governance.md            auth, credential lifecycle, groups, quotas, usage
+docs/runtime-cache.md               L1/L2 + transactional outbox
+docs/backup-restore.md              PostgreSQL recovery contract
+docs/full-stack.md                  Redis + observability bundle
+docs/capacity-control.md            physical admission + capacity leases
+docs/benchmarking.md                benchmark protocol
+docs/routing.md                     routing and tuning
+docs/hardware-telemetry.md          DGX/DCGM boundary
+docs/github-copilot.md              Copilot/BYOK limitations and external validation
 ```
 
 ## Handover checklist
