@@ -113,20 +113,103 @@ jobs:
             exit 1
           }
 
-          docker buildx imagetools inspect "$IMAGE@$DIGEST" >/dev/null
-
-          SBOM="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .SBOM.SPDX}}')"
-          PROVENANCE="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Provenance.SLSA}}')"
-
-          echo "$SBOM" | jq -e 'type == "object" and .SPDXID == "SPDXRef-DOCUMENT" and (.packages | type == "array")' >/dev/null || {
-            echo "Published image does not expose an SPDX SBOM attestation." >&2
+          ROOT_INDEX="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw)"
+          echo "$ROOT_INDEX" | jq -e '
+            .mediaType == "application/vnd.oci.image.index.v1+json" and
+            (.manifests | type == "array" and length > 0)
+          ' >/dev/null || {
+            echo "Published digest does not resolve to an OCI image index." >&2
             exit 1
           }
 
-          echo "$PROVENANCE" | jq -e 'type == "object" and (.buildType | type == "string") and (.metadata | type == "object")' >/dev/null || {
-            echo "Published image does not expose SLSA/BuildKit provenance." >&2
+          mapfile -t IMAGE_MANIFEST_DIGESTS < <(
+            echo "$ROOT_INDEX" | jq -r '
+              .manifests[]
+              | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
+              | .digest
+            '
+          )
+          mapfile -t ATTESTATION_DIGESTS < <(
+            echo "$ROOT_INDEX" | jq -r '
+              .manifests[]
+              | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
+              | .digest
+            '
+          )
+
+          if (( ${#IMAGE_MANIFEST_DIGESTS[@]} == 0 )); then
+            echo "Published OCI index does not contain a runnable image manifest." >&2
             exit 1
-          }
+          fi
+          if (( ${#ATTESTATION_DIGESTS[@]} == 0 )); then
+            echo "Published OCI index does not contain any attestation manifest." >&2
+            exit 1
+          fi
+
+          FOUND_SBOM=false
+          FOUND_PROVENANCE=false
+          VERIFIED_ATTESTATIONS='[]'
+
+          for ATTESTATION_DIGEST in "${ATTESTATION_DIGESTS[@]}"; do
+            ATTESTATION_MANIFEST="$(docker buildx imagetools inspect "$IMAGE@$ATTESTATION_DIGEST" --raw)"
+
+            echo "$ATTESTATION_MANIFEST" | jq -e '
+              .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+              (.layers | type == "array" and length > 0) and
+              ([.layers[] | select(.mediaType == "application/vnd.in-toto+json")] | length > 0)
+            ' >/dev/null || {
+              echo "Attestation descriptor $ATTESTATION_DIGEST is not a valid in-toto OCI attestation manifest." >&2
+              exit 1
+            }
+
+            SUBJECT_DIGEST="$(echo "$ATTESTATION_MANIFEST" | jq -r '.subject.digest // empty')"
+            if [[ -n "$SUBJECT_DIGEST" ]]; then
+              MATCHED_SUBJECT=false
+              for IMAGE_MANIFEST_DIGEST in "${IMAGE_MANIFEST_DIGESTS[@]}"; do
+                if [[ "$SUBJECT_DIGEST" == "$IMAGE_MANIFEST_DIGEST" ]]; then
+                  MATCHED_SUBJECT=true
+                  break
+                fi
+              done
+              if [[ "$MATCHED_SUBJECT" != true ]]; then
+                echo "Attestation $ATTESTATION_DIGEST refers to unknown subject $SUBJECT_DIGEST." >&2
+                exit 1
+              fi
+            fi
+
+            while IFS= read -r PREDICATE_TYPE; do
+              [[ -n "$PREDICATE_TYPE" ]] || continue
+
+              if [[ "$PREDICATE_TYPE" == "https://spdx.dev/Document" ]]; then
+                FOUND_SBOM=true
+              elif [[ "$PREDICATE_TYPE" == https://slsa.dev/provenance/* ]]; then
+                FOUND_PROVENANCE=true
+              fi
+
+              VERIFIED_ATTESTATIONS="$(
+                jq -c \
+                  --arg manifestDigest "$ATTESTATION_DIGEST" \
+                  --arg predicateType "$PREDICATE_TYPE" \
+                  '. + [{manifestDigest:$manifestDigest,predicateType:$predicateType}]' \
+                  <<< "$VERIFIED_ATTESTATIONS"
+              )"
+            done < <(
+              echo "$ATTESTATION_MANIFEST" | jq -r '
+                .layers[]
+                | select(.mediaType == "application/vnd.in-toto+json")
+                | .annotations["in-toto.io/predicate-type"] // empty
+              '
+            )
+          done
+
+          if [[ "$FOUND_SBOM" != true ]]; then
+            echo "Published image does not expose an SPDX SBOM OCI attestation." >&2
+            exit 1
+          fi
+          if [[ "$FOUND_PROVENANCE" != true ]]; then
+            echo "Published image does not expose an SLSA/BuildKit provenance OCI attestation." >&2
+            exit 1
+          fi
 
           jq -n \
             --arg image "$IMAGE" \
@@ -134,7 +217,8 @@ jobs:
             --arg version "$VERSION" \
             --arg sourceSha "$SOURCE_SHA" \
             --arg builtAtUtc "$BUILD_DATE" \
-            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,sbom:"SPDX",provenance:"SLSA/BuildKit"}' \
+            --argjson attestations "$VERIFIED_ATTESTATIONS" \
+            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,sbom:"SPDX",provenance:"SLSA/BuildKit",attestations:$attestations}' \
             > release-manifest.json
 
           {
@@ -145,6 +229,7 @@ jobs:
             echo "- Digest: \`$DIGEST\`"
             echo "- SBOM: SPDX OCI attestation verified"
             echo "- Provenance: SLSA/BuildKit OCI attestation verified"
+            echo "- Attestation manifests: ${#ATTESTATION_DIGESTS[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release manifest
