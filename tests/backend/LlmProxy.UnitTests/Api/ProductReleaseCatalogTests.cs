@@ -18,7 +18,7 @@ public sealed class ProductReleaseCatalogTests
         Assert.Equal(product.Version, current.Version);
         Assert.Contains("Added", current.Sections.Keys);
         Assert.Contains("Security", current.Sections.Keys);
-        Assert.Contains(current.Sections["Added"], item => item.Contains("SBOM", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(current.Sections["Added"], item => item.Contains("software bill of materials", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(current.Sections["Added"], item => item.Contains("provenance", StringComparison.OrdinalIgnoreCase));
 
         var rollups = product.Releases[1];
