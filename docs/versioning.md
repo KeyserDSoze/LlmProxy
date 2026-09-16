@@ -5,31 +5,33 @@ LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview bas
 ## Current version
 
 ```text
-0.1.0-preview.1
+0.2.0-preview.1
 ```
 
-The product is intentionally pre-1.0 while DGX/Copilot/Entra/Cloudflare acceptance is still external to repository CI. The current version is compiled into the .NET assemblies through root `Directory.Build.props` and surfaced at runtime by:
+The product remains pre-1.0 while real DGX/Copilot/Entra/Cloudflare acceptance is outside repository CI.
+
+Runtime version/build identity is exposed by:
 
 ```http
 GET /api/admin/product
 GET /healthz
 ```
 
-The React Admin UI reads the version from `/api/admin/product`; it does not hard-code the displayed runtime version.
+The React Admin UI reads version data from the backend and links to `/admin/releases`; it does not hard-code the displayed runtime version.
 
 ## Sources of truth
 
 ```text
 Directory.Build.props                  compiled product version
-src/LlmProxy.Api/Product/              runtime release catalog / Admin API
-CHANGELOG.md                            human-readable product changelog
-src/LlmProxy.Admin/src/ReleaseNotesPage.tsx
-                                        rendered Admin release-notes experience
+src/LlmProxy.Admin/package.json        bundled Admin version
+src/LlmProxy.Api/Product/              runtime release catalog
+CHANGELOG.md                            product changelog
+/admin/releases                        operator-visible release history
 docker/scripts/validate-release-version.sh
-                                        mechanical version consistency check
+                                        mechanical consistency check
 ```
 
-`src/LlmProxy.Admin/package.json` stays aligned with the product version for the bundled Admin application, while the runtime API/assembly version remains authoritative.
+The runtime/assembly version is authoritative; Admin package version must stay aligned.
 
 ## Mechanical consistency check
 
@@ -41,38 +43,33 @@ bash docker/scripts/validate-release-version.sh
 
 The validator requires:
 
-- a valid SemVer `<Version>` in root `Directory.Build.props`;
-- the same version in `src/LlmProxy.Admin/package.json`;
-- a matching release section in `CHANGELOG.md`.
+- valid SemVer in root `Directory.Build.props`;
+- same version in `src/LlmProxy.Admin/package.json`;
+- matching release section in `CHANGELOG.md`.
 
-To validate a candidate Git tag as well:
+Validate a candidate tag/version with:
 
 ```bash
-bash docker/scripts/validate-release-version.sh 0.1.0-preview.1
+bash docker/scripts/validate-release-version.sh 0.2.0-preview.1
 ```
 
-A mismatch exits non-zero. Standard CI exercises both the accepted current version and an intentionally mismatched candidate, so the release-blocking branch is tested before any real tag is pushed.
+A mismatch exits non-zero. Standard CI also exercises an intentionally invalid candidate so the blocking branch is tested before any real Git tag is created.
 
-## Version rules
+## Version rules while pre-1.0
 
-While the product remains below `1.0.0`:
+- meaningful new capability or intentional public contract change -> new preview/minor line;
+- compatible hardening/fix on the same preview line -> advance prerelease/patch sequence;
+- incompatible behavior must be explicit under `Changed` or `Breaking`;
+- never silently reuse a **tagged/published exact version** for different product bits.
 
-- increment the prerelease/minor line for meaningful new product capabilities or contract changes;
-- increment the patch/prerelease sequence for bug fixes and hardening that do not intentionally change public behavior;
-- call out incompatible API/configuration behavior explicitly under `Changed` or `Breaking` in release notes;
-- never silently reuse a **published/tagged** version number for different bits.
-
-Before a preview is actually tagged/published, its baseline may still be completed with release-engineering hardening as long as the release notes and validation checkpoint are updated before publication.
-
-After `1.0.0`, standard SemVer compatibility rules apply:
+The formal sequence so far is:
 
 ```text
-MAJOR  incompatible public contract change
-MINOR  backward-compatible feature
-PATCH  backward-compatible fix
+0.1.0-preview.1  initial versioned product baseline
+0.2.0-preview.1  historical usage rollups + long-window reporting
 ```
 
-## Required release-note categories
+## Release-note categories
 
 Use the categories that apply:
 
@@ -86,26 +83,26 @@ Removed
 Breaking
 ```
 
-Release notes describe product/operator-visible behavior, not every internal refactor. Engineering detail and CI evidence continue to live in `docs/development-log.md` and `docs/project-status.md`.
+Release notes describe product/operator-visible behavior. Engineering detail and exact CI evidence belong in `docs/development-log.md` and `docs/project-status.md`.
 
 ## Release checklist
 
-For every product version:
+For each product version:
 
-1. choose the new SemVer version;
+1. choose the new SemVer;
 2. update root `Directory.Build.props`;
-3. keep `src/LlmProxy.Admin/package.json` aligned;
-4. add the release entry to `CHANGELOG.md`;
-5. update `ProductReleaseCatalog` so `/api/admin/product` and the UI render the same release notes;
+3. align `src/LlmProxy.Admin/package.json`;
+4. add/update `CHANGELOG.md`;
+5. update `ProductReleaseCatalog` so API/UI show the same release history;
 6. run `docker/scripts/validate-release-version.sh`;
-7. add/update tests for version and release-note rendering;
-8. run standard CI and any affected Full Stack smoke suites;
-9. only after green evidence, record the validated commit/run IDs in `docs/project-status.md` and `docs/development-log.md`;
-10. tag/publish the version when the project owner wants a distributable release.
+7. add/update backend/frontend release tests;
+8. run standard CI and affected Full Stack smokes;
+9. record exact green commit/run IDs only after validation;
+10. create a matching Git tag only when the project owner wants an immutable distributable release.
 
 ## Container build identity
 
-Published/CI production images receive:
+Production images receive:
 
 ```text
 LLMPROXY_BUILD_SHA
@@ -120,33 +117,41 @@ org.opencontainers.image.revision
 org.opencontainers.image.created
 ```
 
-`/api/admin/product` consumes the build SHA/date environment values, so `/admin/releases` can identify the exact running build without changing SemVer.
+`/api/admin/product` exposes build revision/date, so `/admin/releases` can identify the exact running build without changing SemVer.
 
-The container publishing workflow validates the Git tag against the compiled product version before building a tagged image. A tag such as:
+Current validated release-engineering checkpoint:
 
 ```text
-v0.1.0-preview.1
+commit        c37479bb474d44f9e36726bebba74cdf38e5661e
+CI            35064353402 SUCCESS
+Publish GHCR  35064707488 SUCCESS
 ```
 
-must match product version `0.1.0-preview.1` exactly or publication fails.
+## Container tag rules
 
-### Image aliases
-
-For `main` builds:
+A green CI workflow on `main` publishes:
 
 ```text
 main
 sha-<7 chars>
 ```
 
-For prerelease tags:
+A Git tag such as:
 
 ```text
-0.1.0-preview.1
+v0.2.0-preview.1
+```
+
+must match compiled version `0.2.0-preview.1` exactly. A matching prerelease tag publishes:
+
+```text
+0.2.0-preview.1
 sha-<7 chars>
 ```
 
-For stable tags, the workflow may additionally publish the stable major/minor alias, for example:
+Prereleases intentionally do **not** update stable-looking aliases such as `0.2` or `1.2`.
+
+A stable tag may additionally publish its major/minor alias, for example:
 
 ```text
 1.2.3
@@ -154,14 +159,21 @@ For stable tags, the workflow may additionally publish the stable major/minor al
 sha-<7 chars>
 ```
 
-Prereleases intentionally do **not** update `0.1`, `1.2`, or other stable-looking aliases.
+A docs-only/main commit therefore cannot overwrite an exact version tag: exact version tags are only emitted from matching Git tag events.
 
-## UI
+## Current release validation
 
-The Admin UI exposes a persistent version badge linking to:
+Version `0.2.0-preview.1` product bits are validated by:
 
 ```text
-/admin/releases
+commit        5d66c7dcdae42955c6e26849aba84bed4787ff00
+CI            35075387110 SUCCESS
+Full Stack    35075387186 SUCCESS
+Publish GHCR  35075788954 SUCCESS
 ```
 
-The page shows current version/channel/build identity and versioned patch notes, so operators can see exactly what changed in the product they are running without reading repository engineering logs.
+This main publish updates only `main` + `sha-<7>`. The exact `0.2.0-preview.1` tag remains reserved for an explicit matching Git tag.
+
+## Future supply-chain hardening
+
+The next useful release-hardening layer, if pursued, is SBOM/provenance/attestation plus a formal immutable tagged-release workflow. This should complement—not replace—the existing source-SHA/build-date identity and tag/version guardrail.

@@ -1,124 +1,121 @@
 # Roadmap
 
-Status legend: `DONE` implemented and validated; `ACTIVE` current development focus; `PLANNED` not complete; `EXTERNAL` requires target environment/hardware.
+Status legend: `DONE` implemented and validated; `ACTIVE` current focus; `PLANNED` not complete; `EXTERNAL` requires target infrastructure/tenant/hardware.
 
-For canonical current state use `docs/project-status.md`. Product-visible changes and versions are summarized in `CHANGELOG.md` and rendered in `/admin/releases`.
+For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.
 
-## M0 - Repository bootstrap — DONE
+## M0 — Repository bootstrap — DONE
 
-- DONE: .NET 10 layered solution, React/TypeScript admin, PostgreSQL/EF, Docker/GitHub Actions/GHCR.
+- DONE: .NET 10 layered solution, React/TypeScript Admin, PostgreSQL/EF, Docker, GitHub Actions, GHCR.
 - DONE: repository-first handover discipline.
-- DONE: SemVer product identity, release catalog, `CHANGELOG.md` and Admin release-notes page.
+- DONE: SemVer identity, changelog and Admin release-notes page.
 
-## M1 - Copilot -> gateway -> one DGX — ACTIVE / EXTERNAL VALIDATION REMAINS
+## M1 — Copilot -> gateway -> one DGX — REPOSITORY DONE / EXTERNAL ACCEPTANCE REMAINS
 
 - DONE: logical models, `/v1/models`, Chat Completions + SSE, Responses compatibility.
 - DONE: bearer/API-key auth from runtime L1.
-- DONE: runtime route/model/deployment catalog.
+- DONE: route/model/deployment runtime catalog.
 - EXTERNAL: real GitHub Copilot BYOK through target public endpoint.
 
-## M2 - Multi-DGX — DONE FOR CURRENT MVP
+## M2 — Multi-DGX — DONE FOR CURRENT MVP
 
 - DONE: node/model/deployment administration and health hysteresis.
 - DONE: weighted least loaded / round robin / weighted round robin.
 - DONE: pre-response-only failover.
 - DONE: deployment + physical-node capacity admission.
-- DONE: Redis distributed capacity leases and fail-closed active lease-loss handling.
+- DONE: Redis distributed capacity leases and fail-closed lease-loss handling.
 - DONE: safe distributed maintenance drain/resume with cross-replica admission pre-block and validated warm-up.
 
-## M3 - Enterprise administration — DONE FOR MVP / EXTERNAL SETUP REMAINS
+## M3 — Enterprise administration — DONE FOR MVP / EXTERNAL SETUP REMAINS
 
 - DONE: Entra plumbing and Admin/Reader roles.
 - DONE: React control plane.
 - DONE: HMAC-hashed DB-backed credentials + runtime cache.
-- DONE: asynchronous last-used persistence + audit.
-- DONE: in-place credential rotation with one-time secret, safe audit and cross-replica hard cutover.
-- DONE: product version/build and release-note visibility in Admin.
+- DONE: one-time credential creation/rotation and audit.
+- DONE: product version/build and patch-note visibility.
 - EXTERNAL: real Entra app registration/roles.
 
-## M4 - Observability — DONE FOR CURRENT MVP / STORAGE EVOLUTION REMAINS
+## M4 — Observability — DONE FOR CURRENT MVP / PRODUCTION STORAGE EVOLUTION REMAINS
 
 - DONE: request/status/duration/TTFT/token/attempt metrics.
 - DONE: vLLM pressure + optional DCGM telemetry.
-- DONE: OTEL spans and Collector + Tempo + Loki + Prometheus + Grafana bundle.
-- DONE: trace correlation and `capacity_lease_lost` evidence.
+- DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
+- DONE: trace correlation and capacity-lease-loss evidence.
 - PLANNED: customer-specific production HA/object-storage choices.
 
-## M5 - Capacity and smart routing — DONE FOR CURRENT MVP / EXTERNAL CALIBRATION REMAINS
+## M5 — Capacity and smart routing — DONE FOR CURRENT MVP / EXTERNAL CALIBRATION REMAINS
 
 - DONE: vLLM queue/running/KV-cache signals and EWMA feedback.
 - DONE: persisted routing tuning and benchmark-derived Capacity Profiles.
 - DONE: benchmark harness + audited capacity apply workflow.
 - DONE: Redis lease renewal/recovery and proactive safety watchdog.
-- DONE: distributed maintenance marker participates in atomic Redis node/deployment admission.
+- DONE: maintenance marker participates in atomic Redis admission.
 - EXTERNAL: real DGX benchmark profiles + representative Copilot load.
 
-## M6 - Operator onboarding / deployability — DONE FOR REPOSITORY PATH / EXTERNAL DEPLOYMENT REMAINS
+## M6 — Operator onboarding / deployability — DONE FOR REPOSITORY PATH
 
 - DONE: private GHCR path, Linux/Windows quickstart, minimal/full Compose and init scripts.
 - DONE: production image/Compose CI validation.
-- DONE: outbox batch/poll and processed-outbox retention knobs.
-- DONE: PostgreSQL backup/restore Bash + PowerShell operator scripts.
-- DONE: destructive clean-target restore CI proof and PowerShell operator-path CI proof.
-- DONE: explicit product version and operator-visible patch notes.
-- PLANNED: release/build automation enforcing image build SHA and version/tag consistency.
+- DONE: PostgreSQL backup/restore Bash + PowerShell operators.
+- DONE: destructive clean-target restore and PowerShell restore CI proof.
+- DONE: SemVer + Admin release notes.
+- DONE: source SHA/build date embedded in image/runtime identity.
+- DONE: mechanical tag/version consistency validation.
+- DONE: `main` publishes `main` + immutable SHA alias; exact version tag only from matching Git tag.
+- PLANNED: optional supply-chain hardening with SBOM/provenance/attestation and formal tagged GitHub Release workflow.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted deployment runner.
-- EXTERNAL: customer backup destination, encryption, retention schedule and native deployment-host acceptance.
+- EXTERNAL: customer backup destination, encryption, retention schedule and deployment-host acceptance.
 
-## M7 - Caller governance — DONE FOR CURRENT V1
+## M7 — Caller governance — DONE FOR CURRENT V1
 
-- DONE: bearer/API-key inference authentication.
-- DONE: credential/model request-rate policies.
-- DONE: fixed-window rate admission + `Retry-After` + `429 rate_limit_exceeded`.
-- DONE: Redis shared request counters across replicas.
-- DONE: output-token budget policy on credential/model scope.
-- DONE: pre-inference reservation preventing concurrent oversubscription.
-- DONE: Chat/Responses output-cap injection/capping.
-- DONE: actual-output settlement and unused-reservation refund.
-- DONE: conservative full charge when post-upstream usage is uncertain.
-- DONE: `429 token_budget_exceeded`.
-- DONE: Redis shared output-token window across replicas.
-- DONE: fail-closed `503 token_budget_coordination_unavailable` when Redis cannot coordinate.
-- DONE: runtime/outbox propagation of quota policy to peer L1.
-- DONE: Admin API + React UI + audit for Apply/Clear output-token budget.
-- DONE: local restart and distributed Redis outage/recovery smoke coverage.
+- DONE: request-rate policies and Redis shared counters.
+- DONE: output-token budgets on credential/model scope.
+- DONE: pre-inference reservation and Chat/Responses output-cap injection.
+- DONE: settlement/refund and conservative uncertain-usage charge.
+- DONE: `429 rate_limit_exceeded` / `429 token_budget_exceeded` separation.
+- DONE: fail-closed Redis token-budget coordination.
+- DONE: runtime/outbox policy propagation.
+- DONE: Admin Apply/Clear UI and audit.
 
-Future quota extensions are PLANNED only when requirements justify them: input/total-token budgets after tokenizer/estimation semantics; monetary/cost budgets after pricing/accounting semantics; independent token-budget periods; provider-contract anomaly handling.
+Future quota extensions remain PLANNED only when requirements justify them: input/total-token budgets require tokenizer/estimation semantics; monetary budgets require pricing/accounting semantics; independent token-budget periods require a product contract.
 
-## M8 - Usage Groups and reporting — DONE FOR CURRENT MVP
+## M8 — Usage Groups and reporting — DONE FOR CURRENT MVP
 
-- DONE: UsageGroup administration and primary group per credential.
-- DONE: request-time group snapshot for stable historical accounting.
+- DONE: Usage Group administration and primary group per credential.
+- DONE: request-time group snapshot for historical attribution.
 - DONE: usage aggregation/UI by group, credential and logical model.
-- DONE: credential rotation preserves group and historical credential identity.
+- DONE: credential rotation preserves group/history identity.
+- DONE: daily PostgreSQL historical rollups.
+- DONE: raw + rollup reporting without double counting.
+- DONE: Admin windows up to 730 days with visible raw/rollup provenance.
 - PLANNED: archive/deletion semantics if required.
-- PLANNED: long-term rollups if reporting must outlive raw retention.
 - PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics.
 
 Shared Copilot credentials are not individual user identity. Never infer users from IP.
 
-## M9 - Inference hot-path hardening — DONE FOR CURRENT RUNTIME
+## M9 — Inference hot-path hardening — DONE
 
-- DONE: credential, route and caller-policy definitions from local L1.
-- DONE: DB-free ordinary configuration lookup after startup.
+- DONE: credentials/routes/policies from local L1.
+- DONE: DB-free ordinary config lookup after startup.
 - DONE: PostgreSQL-outage inference smoke.
 - DONE: Redis L2 synchronization while preserving L1.
-- DONE: credential hash replacement removes old secret acceptance from local L1.
-- DONE: maintenance block piggybacks on distributed capacity admission instead of adding a separate hot-path Redis lookup.
+- DONE: old credential hash removed after rotation convergence.
+- DONE: maintenance block piggybacks on distributed capacity admission.
 
-## M10 - Retention and operational hygiene — DONE FOR CURRENT MVP
+## M10 — Retention and operational hygiene — DONE FOR CURRENT MVP
 
-- DONE: request metrics 90-day default.
+- DONE: raw request metrics 90-day default.
+- DONE: daily usage rollups 730-day default.
 - DONE: audit 365-day default.
 - DONE: processed runtime outbox 30-day default.
 - DONE: pending outbox never retention-deleted.
-- DONE: batched worker + manual audited cleanup + Docker smoke.
-- PLANNED: long-term usage rollups if reporting must exceed raw retention.
+- DONE: daily rollup-before-delete compaction with PostgreSQL advisory lock.
+- DONE: manual/background cleanup, idempotent rerun and Docker smoke proof.
 
-## M11 - Distributed runtime state / HA — DONE FOR CURRENT MVP
+## M11 — Distributed runtime state / HA — DONE FOR CURRENT MVP
 
 ```text
-PostgreSQL = durable source of truth + runtime-state outbox
+PostgreSQL = durable source of truth + runtime-state outbox + usage rollups
 Redis      = distributed L2 + shared request/capacity/token-budget/maintenance coordination
 local RAM  = per-replica request-path L1
 ```
@@ -127,48 +124,42 @@ local RAM  = per-replica request-path L1
 - DONE: peer L1 updates and runtime-sync diagnostics.
 - DONE: global request-rate counters.
 - DONE: distributed capacity leases + active lease-loss safety.
-- DONE: PostgreSQL transactional outbox for DB -> Redis publication.
-- DONE: globally ordered advisory-lock worker with retry/idempotent replay.
-- DONE: non-originating publisher self-L1 application.
-- DONE: outbox backlog/retry/error diagnostics + processed-only retention.
-- DONE: Redis shared output-token budget admission/settlement.
-- DONE: credential rotation propagation and old-hash removal across replicas.
-- DONE: clean Redis runtime reconstruction from restored PostgreSQL demonstrated in restore smoke.
-- DONE: cross-replica maintenance pre-block/drain/resume coordination.
-- PLANNED: customer-specific Redis HA/redundancy production guidance.
+- DONE: PostgreSQL transactional outbox.
+- DONE: globally ordered advisory-lock publication/retry.
+- DONE: Redis shared token budget.
+- DONE: credential rotation propagation.
+- DONE: clean Redis reconstruction from restored PostgreSQL.
+- DONE: cross-replica maintenance pre-block/drain/resume.
+- DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
+- PLANNED: customer-specific Redis HA/redundancy guidance.
 
-## M12 - Product hardening — ACTIVE
+## M12 — Product hardening — DONE THROUGH 0.2 PREVIEW / NEXT HARDENING PLANNED
 
-- DONE: V1 output-token quota reservation/settlement.
-- DONE: credential rotation workflow.
-- DONE: backup/restore + actual clean-target restore verification.
-- DONE: model/runtime safe upgrade + draining strategy.
-- DONE: formal SemVer baseline + runtime product/release object + Admin patch-note page.
-- ACTIVE NEXT: release/build identity and tag consistency automation.
-- PLANNED: long-term reporting rollups where required.
+- DONE: output-token quota V1.
+- DONE: credential rotation.
+- DONE: backup/restore with real clean-target proof.
+- DONE: safe model/runtime upgrade + draining strategy.
+- DONE: SemVer + runtime release object + Admin patch notes.
+- DONE: release/build identity and tag consistency automation.
+- DONE: long-term usage rollups.
+- PLANNED NEXT: supply-chain release hardening where useful (SBOM/provenance/attestation + immutable tagged release workflow).
+- PLANNED: customer-specific production HA/storage/scheduled-backup guidance.
 
-Safe-maintenance / versioning checkpoint:
-
-```text
-product implementation 4b1f42daf8acb449526658b3a189535d7674c4b3
-final test fix         ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
-CI                     35063494349 SUCCESS
-Full Stack              35063309417 SUCCESS
-product version         0.1.0-preview.1
-```
-
-Backup/restore checkpoint remains included in the current CI and was originally validated at:
+Current checkpoint:
 
 ```text
-commit 66d7a809936f0f21f330d84887c1bb6a4e536f97
-CI     35018579785 SUCCESS
+version       0.2.0-preview.1
+commit        5d66c7dcdae42955c6e26849aba84bed4787ff00
+CI            35075387110 SUCCESS
+Full Stack    35075387186 SUCCESS
+Publish GHCR  35075788954 SUCCESS
 ```
 
 ## Current development order
 
-1. Harden release/build automation: source SHA/build date in images and mechanical tag/version consistency checks before a tagged publish.
-2. Expand quota semantics only if requirements call for input/total/cost budgets or independent periods.
-3. Add reporting rollups / customer-specific production HA-storage and scheduled-backup guidance as required.
-4. When hardware/tenant access exists, run real DGX benchmark + Copilot BYOK + Entra/Cloudflare acceptance.
+1. Add supply-chain/release hardening only where it improves operator trust: SBOM/provenance/attestation and immutable tagged release workflow.
+2. Add customer-specific Redis/observability HA/storage and scheduled-backup guidance when deployment shape is known.
+3. Expand quota semantics only with explicit tokenizer/pricing requirements.
+4. Run real DGX + Copilot BYOK + Entra/Cloudflare acceptance when external access exists.
 
-NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue with LlmProxy + vLLM unless explicitly reopened.
+NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.

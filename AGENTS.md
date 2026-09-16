@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file is the mandatory entry point for humans and AI coding agents working on **LlmProxy**. The repository, not old chat history, is the handover mechanism.
+This file is the mandatory entry point for humans and AI coding agents working on **LlmProxy**. The repository, not chat history, is the handover mechanism.
 
 ## Mandatory resume protocol
 
-Read before changing code:
+Read, in order:
 
 1. `AGENTS.md`.
 2. `docs/project-status.md`.
@@ -21,90 +21,71 @@ running code + migrations + tests + successful CI/integration evidence
     > docs/project-status.md
     > docs/development-log.md
     > docs/roadmap.md
-    > focused technical documents / CHANGELOG.md
+    > focused technical docs / CHANGELOG.md
     > old chat context
 ```
 
 ## Product goal
 
-LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, with inference served by one to six NVIDIA DGX Spark nodes running vLLM.
+LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities are authentication, credential lifecycle, request/token governance, consolidated usage accounting, Usage Groups, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, product version/release visibility and metadata-only enterprise observability.
+Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, and metadata-only enterprise observability.
 
 Raw prompts, source code, generated outputs, bearer tokens and API secrets must never be persisted or added to logs/spans by default.
 
-## Non-negotiable engineering conventions
+## Engineering conventions
 
 - Backend: .NET 10 / ASP.NET Core / C#.
 - Frontend: React + TypeScript.
 - Database: PostgreSQL via EF Core/Npgsql.
 - Deployment: Docker + GitHub Actions + GHCR.
-- Product code under `src/`; tests/tooling under `tests/`; Docker under `docker/`; docs under `docs/`.
+- Product code: `src/`; tests/tooling: `tests/`; Docker: `docker/`; docs: `docs/`.
 - Work directly on `main` unless the project owner says otherwise.
 - PostgreSQL is durable truth.
-- Redis is shared runtime L2 / coordination when enabled; local RAM remains configuration L1.
-- Preserve SSE streaming and cancellation end-to-end.
+- Redis is shared runtime L2/coordination when enabled; local RAM remains request-path configuration L1.
+- Preserve SSE streaming/cancellation end-to-end.
 - Never fail over after downstream bytes/tokens have started.
-- Public model names are logical aliases; DGX/provider identifiers stay internal.
+- Public model names are logical aliases; provider/DGX identifiers stay internal.
 - Capacity claims require benchmark evidence.
 - GPU/DCGM telemetry is observational unless benchmarks justify scheduling use.
 - Every meaningful increment updates focused docs, project status, development log and roadmap where status changes.
-- Every product/operator-visible change must also follow `docs/versioning.md`: update the appropriate release notes/version metadata and keep the Admin release view aligned.
-- Never silently reuse a published product version for different bits.
-- Never call work DONE merely because it was committed; require relevant green CI/integration evidence.
+- Every product/operator-visible change follows `docs/versioning.md` and updates version/release notes when required.
+- Never silently reuse a tagged/published product version for different product bits.
+- Never call work DONE because it was committed; require relevant green CI/integration evidence.
 
-## Product version / release contract
+## Current product version and validated baseline
 
-Current formal product version:
+Current formal version:
 
 ```text
-0.1.0-preview.1
+0.2.0-preview.1
 ```
 
-Version authority is root `Directory.Build.props`. `src/LlmProxy.Admin/package.json` stays aligned for the bundled Admin application. Runtime identity is exposed by:
+Current validated product checkpoint:
+
+```text
+implementation  5d66c7dcdae42955c6e26849aba84bed4787ff00
+CI              35075387110 SUCCESS
+Full Stack      35075387186 SUCCESS
+Publish GHCR    35075788954 SUCCESS
+```
+
+The same checkpoint includes release/build identity hardening introduced at `c37479bb474d44f9e36726bebba74cdf38e5661e`, validated by CI `35064353402` and Publish container `35064707488`.
+
+Runtime identity is exposed by:
 
 ```http
 GET /healthz
 GET /api/admin/product
 ```
 
-Operators can read the current version/build and patch notes at:
+Operators read version/build/patch notes at `/admin/releases`. `CHANGELOG.md` is human-readable product history; `ProductReleaseCatalog` is the runtime release catalog. Keep them aligned.
+
+## Runtime topology
 
 ```text
-/admin/releases
-```
-
-`CHANGELOG.md` is the human-readable product history. `src/LlmProxy.Api/Product/ProductReleaseCatalog.cs` is the release catalog rendered by the runtime Admin API/UI. Keep them semantically aligned when creating a new version. Engineering detail and CI history belong in `docs/development-log.md` rather than release notes.
-
-Read `docs/versioning.md` before changing version/release behavior.
-
-## Current validated baseline
-
-Last reviewed: **2026-09-16**.
-
-Current product/versioning implementation checkpoint:
-
-```text
-4b1f42daf8acb449526658b3a189535d7674c4b3
-feat: add product version and release notes UI
-Full Stack 35063309417 — SUCCESS
-```
-
-Final standard-CI checkpoint for the same product bits plus deterministic maintenance Playwright assertion:
-
-```text
-ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
-test: make maintenance status assertions exact
-CI 35063494349 — SUCCESS
-```
-
-The Full Stack gate proves Redis synchronization, transactional-outbox recovery, distributed output-token budgets, cross-replica credential rotation and safe node maintenance. The standard CI gate proves backend/unit/benchmark, React/Vitest/Playwright, production image build, ordinary Docker/PostgreSQL integration, backup/restore and PowerShell recovery paths.
-
-## Current runtime topology
-
-```text
-PostgreSQL = durable configuration/history + transactional runtime-state outbox
-Redis      = distributed L2 snapshots/events + shared rate/capacity/token-budget/maintenance coordination
+PostgreSQL = durable configuration/history + transactional runtime-state outbox + usage rollups
+Redis      = distributed L2 snapshots/events + shared request/capacity/token-budget/maintenance coordination
 local RAM  = per-replica request-path configuration L1
 ```
 
@@ -112,15 +93,11 @@ Ordinary credential/route/policy configuration lookup is DB-free after startup/r
 
 ### Transactional runtime publication
 
-Redis-enabled runtime mutations for Node/Model/Deployment/Credential/RatePolicy write a `runtime_state_outbox` row in the same PostgreSQL transaction. The ordered advisory-lock worker retries until acknowledged Redis persistence/version/pubsub succeeds, applies the acknowledged event to the publishing replica's own L1 and only then marks the row processed.
-
-Pending outbox rows are never retention-deleted. `GET /api/admin/runtime-sync` exposes backlog/retry diagnostics.
+Runtime Node/Model/Deployment/Credential/RatePolicy mutations and `runtime_state_outbox` rows commit in the same PostgreSQL transaction. The ordered advisory-lock worker retries Redis publication, applies acknowledged state to the publisher L1, then marks the row processed. Pending outbox rows are never retention-deleted.
 
 Read `docs/runtime-cache.md` before changing this path.
 
-## Safe node/runtime maintenance: current contract
-
-Model/runtime upgrade sequencing is **DONE and Full-Stack validated** for the repository-supported flow.
+## Safe node/runtime maintenance contract
 
 Supported operator path:
 
@@ -130,80 +107,74 @@ POST /api/admin/nodes/{id}/maintenance/drain
 POST /api/admin/nodes/{id}/maintenance/resume
 ```
 
-Drain establishes an admission block before persisting `Draining`. In Redis mode the block is checked inside atomic distributed capacity admission, closing the cross-replica L1 propagation race without adding a separate Redis lookup. Existing in-flight work is allowed to finish; resume is refused until global active work reaches zero. Resume then requires health, `/v1/models` and one-token warm-up inference for enabled provider models before publishing `Healthy` and clearing the admission block.
+Drain establishes an admission block before persisting `Draining`. Redis mode checks that block inside atomic distributed capacity admission, closing stale-peer admission races without another request-path lookup. Existing work drains normally. Resume requires zero global active work plus `/health`, `/v1/models` and one-token warm-up validation before returning the node to routing.
 
-The old `/api/admin/nodes/{id}/drain` is deprecated and must not be reintroduced as an unsafe bypass. Preserve the rule that in-flight streaming work is never failed over after downstream bytes have started.
+The legacy `/api/admin/nodes/{id}/drain` must remain deprecated as an unsafe bypass.
 
 Read `docs/operations.md` and `docs/capacity-control.md` before changing maintenance/capacity behavior.
 
-## Credential lifecycle: current contract
+## Credential and caller-governance contract
 
-Credential creation and rotation never persist raw secrets. PostgreSQL/Redis/runtime state contain HMAC hashes and safe metadata only.
+Credentials persist only HMAC hashes and safe metadata. Rotation is an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/hash, one-time replacement secret, `Cache-Control: no-store`, safe audit only.
 
-Rotation is an **in-place hard cutover**: the credential keeps the same identity, group and policy/history linkage while `KeyPrefix` + `KeyHash` are replaced. The replacement raw secret is returned once, the old secret becomes invalid after runtime convergence, the response is `Cache-Control: no-store`, and audit contains safe prefix metadata only.
+Request-rate and output-token governance share the persisted credential/model `RateLimitPolicy` scope in V1. Redis-enabled distributed token/capacity admission fails closed when coordination is unavailable.
 
-Read `docs/usage-governance.md` before changing credential lifecycle or caller governance.
+Do not add input/total-token admission without explicit tokenizer/estimation semantics. Do not add monetary budgets without stable pricing/accounting semantics.
 
-## Caller governance: current contract
+Read `docs/usage-governance.md` before changing caller governance.
 
-Request-rate and output-token governance share the same persisted credential/model `RateLimitPolicy` scope in V1.
+## Historical usage / retention contract
+
+Version `0.2.0-preview.1` adds durable daily usage rollups.
+
+Defaults:
 
 ```text
-OutputTokensPerWindow : int?
-MaxOutputTokensPerRequest : int?
+raw request metrics           90 days
+daily usage rollups          730 days
+audit events                 365 days
+processed runtime outbox      30 days
 ```
 
-The output-token budget uses the same `WindowSeconds` as request-rate policy. Reservation occurs before inference; successful known usage refunds unused reservation; no-upstream-attempt paths refund fully; uncertain usage after upstream work keeps the full reservation charged. Redis-enabled token-budget admission is shared across replicas and fails closed if Redis cannot coordinate.
+Before expired raw request metrics are deleted, complete UTC days are aggregated into PostgreSQL rollups keyed by day + credential + Usage Group + logical model. Compaction is transactional and serialized across replicas with a PostgreSQL advisory transaction lock. Reporting combines rollups with newer raw metrics without double counting.
 
-## Backup / restore: current contract
+Usage-report windows are UTC calendar days. `/admin/governance` exposes up to 730 days and states when historical rollups contribute.
 
-Backup/restore is **DONE and CI-validated** for the repository-supported Compose path.
+Read `docs/data-retention.md` before changing retention/reporting semantics.
 
-- PostgreSQL is the durable recovery authority.
-- Backup artifact is `pg_dump` custom format plus SHA-256 sidecar and non-secret metadata.
-- Raw API secrets are not in PostgreSQL and cannot be recovered from the dump.
-- `Authentication__ApiKeyPepper` and other deployment secrets are external recovery dependencies and must be preserved separately.
-- Restore is explicit/destructive: stop writers, recreate the target DB, restore with `pg_restore`, then rebuild runtime state.
-- Redis is not restored as authoritative state. LlmProxy-prefixed runtime keys are cleared when the selected Compose stack owns Redis; startup republishes snapshots from restored PostgreSQL.
-- Current request-rate/token windows and capacity leases may reset during DR.
-- Linux Bash and PowerShell operator scripts are present under `docker/scripts/`.
+## Backup / restore contract
+
+PostgreSQL is the recovery authority; Redis is rebuildable runtime state. Supported Bash and PowerShell backup/restore scripts live under `docker/scripts/`. Backup uses custom-format `pg_dump` + SHA-256 + non-secret metadata. Restore is explicit/destructive and rebuilds runtime state from PostgreSQL.
+
+`Authentication__ApiKeyPepper` and deployment secrets are external recovery dependencies and must be preserved separately.
 
 Read `docs/backup-restore.md` before changing recovery behavior.
 
-## Error/admission taxonomy
+## Release/build contract
+
+Version authority is `Directory.Build.props`; Admin `package.json` stays aligned. CI validates SemVer, changelog presence and a deliberately invalid tag case. Production images carry OCI version/revision/created labels plus `LLMPROXY_BUILD_SHA` and `LLMPROXY_BUILD_DATE`.
+
+Publishing behavior:
 
 ```text
-401 invalid_api_key
-400 invalid_output_token_limit
-409 node_disabled / node_not_draining / node_still_draining
-429 rate_limit_exceeded
-429 token_budget_exceeded
-429 capacity_exhausted
-503 token_budget_coordination_unavailable
-503 capacity_coordination_unavailable
-503 maintenance_coordination_unavailable
-503 node_validation_failed
-503/abort capacity_lease_lost
-503 no_healthy_deployment
+main push after green CI -> main + sha-<7>
+Git tag vX.Y.Z          -> exact X.Y.Z + sha-<7>
+stable tag only         -> optional major.minor alias
+prerelease tag          -> never updates a stable-looking alias
 ```
 
-Keep caller request rate, caller token budget, physical capacity and maintenance coordination distinct.
+Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Output-token budget V1, credential rotation, repository backup/restore, safe model/runtime maintenance, and product version/release visibility are DONE and validated. Default next order is requirements-driven rather than adding speculative governance semantics:
+Repository-supported hardening is now complete through release identity and historical usage rollups. Default next order:
 
-1. harden release/build automation so image build identity and version/tag consistency are mechanically checked;
-2. optional quota evolution only if requirements call for input/total-token budgets, monetary budgets or independent token-budget periods;
-3. long-term usage rollups if reporting must outlive raw retention;
-4. customer-specific Redis/observability HA and production storage/backup scheduling guidance;
-5. physical acceptance on real DGX/Copilot/Entra/Cloudflare environment.
+1. supply-chain/release hardening where useful: immutable tagged release workflow, SBOM/provenance/attestation, and operator-verifiable image identity;
+2. customer-specific Redis/observability HA, production storage and scheduled backup guidance;
+3. quota evolution only when explicit product requirements define tokenizer/pricing semantics;
+4. physical acceptance on real DGX/Copilot/Entra/Cloudflare infrastructure.
 
-Do not implement input/total-token admission without explicit tokenizer/estimation semantics. Do not implement monetary budgets without stable cost/pricing semantics.
-
-## Identity limitation
-
-A centrally configured GitHub Copilot BYOK provider may use one shared credential. LlmProxy can attribute gateway traffic to the credential/Usage Group, not reliably to an individual GitHub user. Never infer users from IP.
+Do not invent per-user identity from a shared GitHub Copilot BYOK credential or from IP addresses.
 
 ## External validation still required
 
@@ -214,34 +185,33 @@ A centrally configured GitHub Copilot BYOK provider may use one shared credentia
 - real GitHub Copilot BYOK end-to-end;
 - on-prem self-hosted deployment runner;
 - customer production backup destination/retention/encryption and native Windows/Docker Desktop acceptance where used;
-- Copilot usage-metrics behavior if used for per-user analytics.
+- Copilot usage-metrics behavior if per-user analytics are required.
 
 ## Architecture decision: NVIDIA PAIR
 
-NVIDIA Personal AI Router was evaluated. The project owner explicitly chose custom **LlmProxy + vLLM**. Do not redirect toward PAIR unless that decision is reopened.
+NVIDIA Personal AI Router was evaluated and rejected for the current direction. Continue custom **LlmProxy + vLLM** unless that decision is explicitly reopened.
 
 ## Documentation map
 
 ```text
-CHANGELOG.md                              product-visible release history
-QUICKSTART.md / docs/quickstart.md       installation and first smoke test
-docs/versioning.md                       SemVer/release-note/build identity rules
-docs/full-stack.md                       Redis + OTEL/Grafana + outbox operations
-docs/project-status.md                   canonical state and exact resume point
-docs/runtime-cache.md                    L1/L2 + transactional outbox + distributed coordination
-docs/usage-governance.md                 auth, credential lifecycle, groups, rate/token governance, usage
-docs/backup-restore.md                   PostgreSQL backup/restore, secrets boundary and restore proof
-docs/operations.md                       health, safe maintenance and admin audit
-docs/data-retention.md                   request/audit/processed-outbox retention
-docs/development-log.md                  chronological engineering + validation trace
-docs/roadmap.md                          milestone state/backlog
-docs/capacity-control.md                 physical admission and Redis capacity leases
-docs/benchmarking.md                     benchmark protocol
-docs/routing.md                          routing and smart-routing tuning
-docs/hardware-telemetry.md               DCGM boundary
-docs/github-copilot.md                   Copilot/BYOK and external validation
+CHANGELOG.md                        product-visible release history
+docs/project-status.md             canonical state and exact resume point
+docs/development-log.md            chronological engineering + validation trace
+docs/roadmap.md                    milestone state/backlog
+docs/versioning.md                 SemVer/release/build identity rules
+docs/data-retention.md             raw metrics + daily rollups + audit/outbox retention
+docs/usage-governance.md           auth, credential lifecycle, groups, quotas, usage
+docs/runtime-cache.md              L1/L2 + transactional outbox
+docs/operations.md                 health, safe maintenance, build identity, audit
+docs/backup-restore.md             PostgreSQL recovery contract
+docs/full-stack.md                 Redis + observability bundle
+docs/capacity-control.md           physical admission + capacity leases
+docs/benchmarking.md               benchmark protocol
+docs/routing.md                    routing and tuning
+docs/hardware-telemetry.md         DGX/DCGM boundary
+docs/github-copilot.md             Copilot/BYOK limitations and external validation
 ```
 
 ## Handover checklist
 
-Before ending a meaningful development session ensure the repository records: what changed, exact green CI evidence, what remains unverified, architecture decisions, exact next step, external dependencies, focused docs, and any product-visible release-note/version impact. If `docs/project-status.md` points to a completed next step or the Admin release notes omit a shipped product change, fix it before considering the handover clean.
+Before ending a meaningful development session, record what changed, exact green CI evidence, what remains unverified, architecture decisions, exact next step, external dependencies, focused docs, and any version/release-note impact.

@@ -1,38 +1,35 @@
 # Development log
 
-This is the chronological engineering trace for LlmProxy. For canonical current state and exact resume point use `docs/project-status.md`.
+Chronological engineering trace for LlmProxy. Canonical current state and resume point live in `docs/project-status.md`; product-visible release history lives in `CHANGELOG.md` and `/admin/releases`.
 
 ## 2026-09-09 — Repository, gateway and multi-DGX foundation
 
-Created the .NET 10 layered solution, React/TypeScript admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical client-facing models, internal DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility.
+Created the .NET 10 layered solution, React/TypeScript Admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical client-facing models, internal DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility.
 
-Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, drain/disable, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM runtime signals. Prompts/source/generated content remain excluded from telemetry.
+Added bearer credentials, Entra administration plumbing, node/model/deployment management, health hysteresis, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM runtime signals. Raw prompts/source/generated content remain excluded from telemetry.
 
 ## 2026-09-09 — Repository-first handover discipline
 
-Introduced root `AGENTS.md` and the rule that meaningful increments update focused docs, canonical project status, development log and roadmap with actual validation evidence.
+Introduced root `AGENTS.md` and the rule that meaningful increments update focused docs, project status, development log and roadmap with actual validation evidence.
 
-## 2026-09-10 — DGX/DCGM hardware telemetry — VALIDATED
+## 2026-09-10 — DGX/DCGM telemetry + benchmark harness — VALIDATED
 
-Added optional per-node NVIDIA/DCGM telemetry independent from vLLM health. GPU utilization, framebuffer memory, temperature and power remain observational.
+Optional DGX/DCGM GPU telemetry remains observational. Added the .NET benchmark harness for direct-vLLM vs gateway measurements, streaming/non-streaming, Chat/Responses and concurrency sweeps.
 
-Checkpoint: `6c238a095273843e713a72fb2e26b2c7c434fc62`.
+```text
+telemetry checkpoint 6c238a095273843e713a72fb2e26b2c7c434fc62
+benchmark checkpoint 49e7932f14118be403eec042a1393946143776ae
+```
 
-## 2026-09-10 — Architecture decision: custom LlmProxy, not NVIDIA PAIR
-
-NVIDIA Personal AI Router was evaluated. The project owner chose custom LlmProxy + vLLM.
-
-## 2026-09-10 — Benchmark harness — VALIDATED
-
-Added the .NET benchmark harness under `tests/performance/` for direct-vLLM vs gateway measurements, streaming/non-streaming, Chat/Responses and concurrency sweeps.
-
-Checkpoint: `49e7932f14118be403eec042a1393946143776ae`.
+Architecture decision: NVIDIA PAIR was evaluated; project owner chose custom LlmProxy + vLLM.
 
 ## 2026-09-13 — Capacity Profiles + physical-node admission — VALIDATED
 
-Added persisted benchmark-derived Capacity Profiles and aggregate physical-node concurrency admission. Defined saturation as `429 capacity_exhausted` with `Retry-After: 1`.
+Added persisted benchmark-derived Capacity Profiles and aggregate physical-node concurrency admission. Saturation returns `429 capacity_exhausted` with `Retry-After: 1`.
 
-Checkpoint: `600ad42cc53ad1e97a259819654ca5cf5480e1db`.
+```text
+600ad42cc53ad1e97a259819654ca5cf5480e1db
+```
 
 ## 2026-09-14 — Caller governance + Usage Groups — VALIDATED
 
@@ -40,33 +37,25 @@ Implemented persisted Usage Groups, request-time group snapshots, credential/mod
 
 ```text
 commit 798f0a460dcc4f89b17e2ce89df66f511d324241
-CI     34859931084
+CI     34859931084 SUCCESS
 ```
 
-## 2026-09-14 — Runtime credential and route-catalog hot path — VALIDATED
+## 2026-09-14 — Inference configuration hot path — VALIDATED
 
-Removed synchronous SQL configuration lookups from ordinary inference. Credential, node/model/deployment and caller-policy definitions are rebuilt at startup and maintained in local runtime state.
+Removed synchronous SQL configuration lookups from ordinary inference. Credentials, nodes/models/deployments and caller policies are hydrated at startup and maintained in runtime L1. PostgreSQL-outage smoke proves published configuration remains usable.
 
 ```text
 credential cache 1f607c8433fe2ca08a1c243b68d87587204f35ee / CI 34860662747
 route catalog     42c44753cd00d679a81bf065f410b7a497cdc000 / CI 34871542047
 ```
 
-PostgreSQL-outage smoke proves already-published inference configuration remains usable.
+## 2026-09-15 — Redis L2 + observability stack
 
-## 2026-09-14 — Retention foundation
-
-Added independent request-metric and audit retention, background batched cleanup and manual audited cleanup. Defaults: request metrics 90 days, audit 365 days.
-
-## 2026-09-15 — Redis L2 synchronization + observability stack
-
-Promoted Redis to shared runtime/coordination L2 while preserving local L1 and PostgreSQL durable authority. Added Redis snapshot/version/event synchronization, reconciliation and bundled OTEL Collector + Tempo + Loki + Prometheus + Grafana.
+Promoted Redis to shared runtime/coordination L2 while preserving local L1 and PostgreSQL durable authority. Added reconciliation plus OTEL Collector, Tempo, Loki, Prometheus and Grafana.
 
 ## 2026-09-15 — Distributed request/capacity coordination — VALIDATED
 
 Added Redis shared request-rate counters, atomic deployment + physical-node capacity leases, fail-closed acquisition and active lease-loss inference cancellation.
-
-Final lease-hardening validation:
 
 ```text
 CI         34961566507 SUCCESS
@@ -75,9 +64,7 @@ Full Stack 34961566463 SUCCESS
 
 ## 2026-09-15 — Transactional runtime-state outbox — VALIDATED
 
-Closed the PostgreSQL-commit -> Redis-publication process-crash window. Runtime Node/Model/Deployment/Credential/RatePolicy mutations now capture an outbox row in the same PostgreSQL transaction. One advisory-lock worker publishes ordered events, retries failures and marks rows processed only after durable Redis acknowledgement.
-
-Fault validation stops Redis, commits a policy, stops the origin gateway, recovers Redis and requires a surviving peer to publish/enforce the change.
+Closed the PostgreSQL-commit -> Redis-publication process-crash window. Runtime Node/Model/Deployment/Credential/RatePolicy changes now write an outbox row in the same PostgreSQL transaction. An advisory-lock worker publishes globally ordered state, retries failures and marks rows processed only after acknowledged Redis persistence/publication.
 
 ```text
 implementation 9c6289ef172bed0502068df112b6e6aec4ee8521
@@ -85,40 +72,23 @@ CI             34968324786 SUCCESS
 Full Stack     34968114492 SUCCESS
 ```
 
-Outbox diagnostics/retention and deployment knobs were then validated:
-
-```text
-97e3b8f6b909156cbd58363d12f2fcbaf0627f5a / cfc742db84223a7bed2f8a80cab3e5680615efad
-79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
-CI         34976465066 SUCCESS
-Full Stack 34976465149 SUCCESS
-```
+Outbox diagnostics/retention were later validated by CI `34976465066` and Full Stack `34976465149`. Pending rows remain non-deletable.
 
 ## 2026-09-15 — Output-token budget V1 — VALIDATED
 
-Added `OutputTokensPerWindow` + `MaxOutputTokensPerRequest` to caller policy. Chat/Responses output caps are injected/capped before inference, capacity is reserved atomically, known output usage refunds unused reservation, no-upstream-attempt paths refund fully, and uncertain post-upstream usage remains conservatively charged.
-
-Redis-enabled token-budget admission is shared and fails closed; quota definitions reuse the transactional outbox + peer L1 path.
+Added `OutputTokensPerWindow` + `MaxOutputTokensPerRequest`. Chat/Responses output caps are injected/capped before inference; output capacity is reserved atomically; known usage refunds unused reservation; no-upstream-attempt paths refund fully; uncertain post-upstream usage remains conservatively charged. Redis mode is shared/fail-closed.
 
 ```text
 implementation ff9af90144a19159d3c8208d8cedd95500b3b984
 runtime proof  887ebfac98389c0115eaf9c102a60133ede745ff
 CI             34987407172 SUCCESS
 Full Stack     34987407169 SUCCESS
-```
-
-React Admin Apply/Clear management was validated at:
-
-```text
-426c545e841865406615998ca50b28a45c40e6f4
-CI 34988084106 SUCCESS
+Admin UI       426c545e841865406615998ca50b28a45c40e6f4 / CI 34988084106 SUCCESS
 ```
 
 ## 2026-09-15 — Credential rotation — VALIDATED
 
-Implemented API-key rotation as an in-place hard cutover on the existing credential identity. The same credential ID/group/policy/history linkage is preserved while prefix/HMAC change. Replacement raw secret is returned once with `Cache-Control: no-store`; revoked credentials cannot rotate; audit never stores secret/HMAC.
-
-Dedicated Full Stack coverage verifies old key before rotation, new-key 200 / old-key 401 after convergence on both replicas, Redis new-HMAC-only state, preserved Usage Group/policy identity and peer restart hydration.
+Implemented in-place hard-cutover rotation on the existing credential identity. Group/policy/history linkage is preserved; replacement secret is returned once with `Cache-Control: no-store`; audit never stores secret/HMAC. Full Stack proves old-key rejection/new-key acceptance across replicas and restart hydration.
 
 ```text
 commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
@@ -126,136 +96,100 @@ CI         34996328467 SUCCESS
 Full Stack 34996328588 SUCCESS
 ```
 
-## 2026-09-15 — PostgreSQL backup/restore foundation — VALIDATED
+## 2026-09-15 — PostgreSQL backup/restore — VALIDATED
 
-Added Bash operators:
+Added Bash and PowerShell operators. Backup uses PostgreSQL custom format + SHA-256 + non-secret metadata. Restore is explicit/destructive; Redis is rebuilt from PostgreSQL. `Authentication__ApiKeyPepper` remains an external recovery dependency.
 
-```text
-docker/scripts/postgres-backup.sh
-docker/scripts/postgres-restore.sh
-```
-
-Backup uses PostgreSQL custom format plus SHA-256 and non-secret metadata. Restore is explicit/destructive, recreates the database and treats Redis as rebuildable runtime state. `Authentication__ApiKeyPepper` and other external secrets are documented as separate recovery dependencies.
-
-The first destructive smoke creates durable governance state, performs inference, backs up, destroys the PostgreSQL volume, proves the new target is clean, restores it, validates the original credential/group/policy/history and inference, then attaches a clean Redis peer and proves runtime snapshots are republished from PostgreSQL.
+The first destructive smoke destroys the source PostgreSQL volume, restores to a clean target and proves credential/group/policy/history/inference plus clean-Redis republish. PowerShell parity is exercised under `pwsh` using binary-safe `docker compose cp`.
 
 ```text
-commit b3cbe1ace209989aef845024259c0e4c6def4039
-CI     34997715107 SUCCESS
+Linux foundation  b3cbe1ace209989aef845024259c0e4c6def4039 / CI 34997715107 SUCCESS
+cross-platform     66d7a809936f0f21f330d84887c1bb6a4e536f97 / CI 35018579785 SUCCESS
 ```
-
-## 2026-09-15 — Cross-platform backup/restore operators — VALIDATED
-
-Added PowerShell equivalents:
-
-```text
-docker/scripts/postgres-backup.ps1
-docker/scripts/postgres-restore.ps1
-```
-
-The PowerShell backup deliberately writes the custom-format archive inside the PostgreSQL container and transfers it with binary-safe `docker compose cp`, avoiding text-pipeline corruption. The restore verifies checksum/archive, recreates the target DB, restores, optionally clears the LlmProxy Redis prefix and restarts the selected gateway.
-
-A new PowerShell smoke creates credential/group/request+token policy state, backs up through `pwsh`, performs a post-backup mutation, restores through `pwsh`, then proves the mutation disappeared while the backed-up credential/group/policy and authenticated inference returned.
-
-The first cross-platform run exposed a nondeterministic test readiness race after destructive volume recreation: `pg_isready` could report accepting before the configured database was actually queryable. The smoke was hardened to require a real `SELECT 1` round-trip before the clean-target assertion.
-
-Final validation:
-
-```text
-implementation/operator commit 66d7a809936f0f21f330d84887c1bb6a4e536f97
-CI                           35018579785 SUCCESS
-```
-
-The same final CI run passes both:
-
-```text
-Backup and clean-target restore smoke suite  SUCCESS
-PowerShell backup and restore smoke suite    SUCCESS
-```
-
-PowerShell semantics are exercised under `pwsh` in GitHub-hosted CI; native customer Windows/Docker Desktop remains deployment-environment acceptance.
 
 ## 2026-09-15 — Safe model/runtime maintenance — VALIDATED
 
-Implemented the model/runtime upgrade guardrail as a distributed maintenance protocol rather than a simple node-state change.
+Implemented distributed maintenance drain/resume:
 
-The gateway now:
-
-- establishes a local/Redis admission pre-block before persisting `Draining`;
-- enforces the Redis marker inside atomic capacity admission, so a stale peer L1 cannot route new work to a draining target;
-- observes globally active capacity leases while existing streams/requests finish;
-- rejects resume until active work reaches zero;
-- validates `/health`, `/v1/models` and a one-token Chat Completions warm-up for each enabled provider model before returning the node to `Healthy`;
-- keeps the node draining on validation failure;
-- supports retry repair when durable health succeeded but clearing the Redis marker was temporarily unavailable;
-- deprecates the historical direct drain endpoint as an unsafe maintenance bypass.
-
-Implementation/test sequence:
+- pre-block admission before `Draining`;
+- Redis maintenance marker checked inside atomic capacity admission;
+- existing requests/streams drain normally;
+- resume requires zero global active work;
+- `/health`, `/v1/models` and one-token model warm-up validation;
+- failed validation keeps node draining;
+- legacy direct drain endpoint deprecated.
 
 ```text
-8220967141b9a3be7d96bbd7500d8958df60dbc1  feat: add safe node maintenance draining
-9fca1e18dca37ab50c421e718f32365771a2032a  test: validate safe node maintenance across replicas
-2e3e8e285267bcf9f1d80dc4e2b494914226c50f  feat: route admin drain through safe maintenance
-```
-
-Validation:
-
-```text
+8220967141b9a3be7d96bbd7500d8958df60dbc1  backend protocol
+9fca1e18dca37ab50c421e718f32365771a2032a  HA smoke
+2e3e8e285267bcf9f1d80dc4e2b494914226c50f  Admin safe routing
 CI         35021524018 SUCCESS
 Full Stack 35021524019 SUCCESS
 ```
 
-The dedicated HA smoke starts with an active stream, drains through one gateway, proves another gateway cannot newly admit the target, rejects premature resume, tests unhealthy-runtime failure, then restores the runtime and requires successful health/models/warm-up before routing resumes.
-
 ## 2026-09-16 — Product SemVer + patch notes in Admin — VALIDATED
 
-Formalized the first product version as:
+Formalized first product baseline `0.1.0-preview.1` with compiled version identity, `/healthz`, `/api/admin/product`, persistent Admin version badge, `/admin/releases`, `CHANGELOG.md`, `docs/versioning.md`, backend tests and Playwright coverage.
 
 ```text
-0.1.0-preview.1
+implementation 4b1f42daf8acb449526658b3a189535d7674c4b3
+final test fix ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
+CI             35063494349 SUCCESS
+Full Stack     35063309417 SUCCESS
 ```
 
-No fake historical versions were created. Existing implemented capabilities are documented as the initial preview baseline.
+From this point every product/operator-visible change must be represented in version metadata and release notes.
+
+## 2026-09-16 — Release/build identity hardening — VALIDATED
 
 Added:
 
-- compiled version identity in root `Directory.Build.props`;
-- `GET /healthz` version exposure;
-- `GET /api/admin/product` product/release object with version, channel, release date, optional build revision/date and versioned notes;
-- persistent Admin version badge;
-- `/admin/releases` patch-note page;
-- root `CHANGELOG.md`;
-- `docs/versioning.md` with SemVer, release categories and release checklist;
-- backend unit coverage for the release catalog;
-- Playwright coverage for version/build/release-note rendering.
-
-The initial product implementation commit is:
+- source SHA + UTC build timestamp into runtime identity;
+- OCI `version`, `revision`, `created` labels;
+- CI verification of image labels/environment values;
+- SemVer/changelog/Admin package consistency validator;
+- negative CI test proving mismatched candidate tag is rejected;
+- container publish rule: main -> `main` + `sha-<7>`; matching Git tag -> exact version + SHA; prerelease never updates stable-looking aliases.
 
 ```text
-4b1f42daf8acb449526658b3a189535d7674c4b3
-feat: add product version and release notes UI
+commit        c37479bb474d44f9e36726bebba74cdf38e5661e
+CI            35064353402 SUCCESS
+Publish GHCR  35064707488 SUCCESS
 ```
 
-The first CI attempt proved backend/unit/benchmark, frontend build/Vitest and the new release-note Playwright test; it failed only because the existing maintenance test used a non-exact `Healthy` locator that matched both the status and the text `last healthy ...`. The maintenance operation itself had already executed successfully. The test was corrected without weakening coverage:
+## 2026-09-16 — Historical usage rollups / 0.2 preview — VALIDATED
+
+Bumped product to `0.2.0-preview.1` and added durable daily PostgreSQL usage rollups so reporting survives raw metric expiry.
+
+Implemented:
+
+- one rollup cube keyed by UTC day + credential + Usage Group + logical model;
+- request/token/error/rate-limit/capacity counts plus duration/TTFT sums and sample counts;
+- independent retention defaults: raw request metrics 90 days, rollups 730 days;
+- complete-day rollup-before-delete compaction;
+- transactional aggregate + delete semantics;
+- PostgreSQL advisory transaction lock to serialize compaction across gateway replicas;
+- idempotent rerun behavior;
+- reporting merge of historical rollups + newer raw metrics without double counting;
+- API provenance fields for raw vs rolled-up request counts;
+- UTC calendar-day reporting semantics;
+- Admin reporting windows through 730 days and visible historical-rollup notice;
+- updated changelog/runtime release catalog preserving `0.1.0-preview.1` as prior release.
+
+The retention smoke inserts old/recent metrics, compacts the expired day, deletes its raw row, proves the 60-day report still contains the old usage from the rollup, runs cleanup again and proves the rollup is not duplicated. Existing audit/outbox/pending-outbox safety checks remain.
+
+Validation:
 
 ```text
-ee9ac0d17a95b68a79a464dc430e5c8427c9ded9
-test: make maintenance status assertions exact
+commit        5d66c7dcdae42955c6e26849aba84bed4787ff00
+version       0.2.0-preview.1
+CI            35075387110 SUCCESS
+Full Stack    35075387186 SUCCESS
+Publish GHCR  35075788954 SUCCESS
 ```
 
-Final validation:
+## Current next increment
 
-```text
-CI         35063494349 SUCCESS
-Full Stack 35063309417 SUCCESS
-```
+Repository hardening is complete through historical usage rollups. The next non-external engineering work should be supply-chain/release hardening only where useful: immutable tagged release workflow, SBOM/provenance/attestation and operator-verifiable image identity. Customer-specific Redis/observability HA/storage and scheduled backup guidance follows when deployment topology is known.
 
-CI proves backend/unit/benchmark, React/Vitest/Playwright including the release page, production image build, ordinary Docker/PostgreSQL smoke suites and both backup/restore operator paths. Full Stack proves the versioned product bits preserve runtime synchronization, transactional outbox recovery, distributed quota, credential rotation and safe maintenance behavior.
-
-From this checkpoint onward, every product/operator-visible change must be represented in product release notes/version metadata according to `docs/versioning.md`; engineering-only implementation history remains here.
-
-## Next increment — release/build automation hardening
-
-The runtime product version and patch-note UI are now established. The next default hardening increment is to mechanically connect image build identity to source SHA/build timestamp and validate Git tag/version consistency before tagged container publication.
-
-Quota expansion remains requirements-driven because input/total/cost budgets need explicit tokenizer/pricing semantics. Long-term rollups and customer-specific HA/storage/backup scheduling remain requirements/deployment driven.
+Quota expansion remains requirements-driven because input/total-token/cost budgets need explicit tokenizer/pricing semantics.

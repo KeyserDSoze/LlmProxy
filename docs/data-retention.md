@@ -1,11 +1,12 @@
-# Data retention
+# Data retention and historical usage rollups
 
-LlmProxy stores metadata-only inference history in `request_metrics`, administrative history in `audit_events`, and delivered runtime publication history in `runtime_state_outbox`. These datasets have independent retention because they serve different purposes.
+LlmProxy stores metadata-only inference history in `request_metrics`, durable historical usage aggregates in `usage_daily_rollups`, administrative history in `audit_events`, and runtime publication history in `runtime_state_outbox`.
 
 ## Defaults
 
 ```text
-request metrics:                 90 days
+raw request metrics:             90 days
+daily usage rollups:            730 days
 audit events:                   365 days
 processed runtime-state outbox:  30 days
 cleanup:                         every 24 hours
@@ -17,58 +18,98 @@ Environment variables:
 ```text
 RETENTION_ENABLED=true
 RETENTION_REQUEST_METRICS_DAYS=90
+RETENTION_USAGE_ROLLUPS_DAYS=730
 RETENTION_AUDIT_EVENTS_DAYS=365
 RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
 RETENTION_INTERVAL_HOURS=24
 RETENTION_BATCH_SIZE=5000
 ```
 
-ASP.NET configuration mapping:
+ASP.NET mapping:
 
 ```text
 Retention:Enabled
 Retention:RequestMetricsDays
+Retention:UsageRollupsDays
 Retention:AuditEventsDays
 Retention:RuntimeStateOutboxDays
 Retention:IntervalHours
 Retention:BatchSize
 ```
 
-Safety bounds:
+Retention days are clamped to safe configured bounds; interval and batch size are bounded as well.
+
+## Raw request metrics -> daily rollups
+
+Before an expired raw request-metric day is deleted, LlmProxy compacts complete UTC calendar days into `usage_daily_rollups`.
+
+Rollup key:
 
 ```text
-retention days: 1..3650
-interval hours: 1..168
-batch size:     100..50000
+UTC day
++ ApiCredentialId (or internal no-credential sentinel)
++ UsageGroupId (or internal ungrouped sentinel)
++ LogicalModel
 ```
 
-## Background cleanup
+The rollup stores counts/sums needed by Usage & Governance reporting, including requests, errors, input/output/total tokens, rate-limited requests, capacity-exhausted requests, duration totals and TTFT sample totals/counts.
 
-`DataRetentionWorker` runs outside the inference path. When enabled it performs cleanup after application startup and repeats on the configured interval.
+No prompt, source code, generated output or raw API secret is stored in rollups.
 
-Deletion is batched: select eligible IDs up to `BatchSize`, delete those IDs, repeat until no eligible rows remain. Cleanup failures are logged/retried later and do not stop inference.
+### Atomicity and HA safety
 
-Cutoffs:
+Compaction is serialized across replicas with a PostgreSQL advisory **transaction** lock. For each retention iteration, rollup creation/update and deletion of corresponding expired raw rows occur inside a database transaction.
+
+Important consequences:
+
+- crash before commit -> neither rollup nor deletion becomes visible;
+- successful commit -> aggregate and raw deletion become visible together;
+- a second gateway cannot concurrently compact the same logical work while the advisory lock is held;
+- rerunning retention is idempotent and does not double-count an already compacted/deleted raw day.
+
+## Reporting semantics
+
+Usage reporting is based on **UTC calendar-day windows**. This makes historical daily rollups deterministic.
+
+For a requested window, the reporting reader combines:
 
 ```text
-request_metrics.StartedAtUtc < now - RequestMetricsDays
-audit_events.OccurredAtUtc  < now - AuditEventsDays
-runtime_state_outbox.ProcessedAtUtc < now - RuntimeStateOutboxDays
+historical rows from usage_daily_rollups
++
+newer/uncompacted rows from request_metrics
 ```
 
-### Critical outbox safety rule
+The two sources are partitioned so one request is not counted twice. The API response exposes:
 
-Outbox retention includes the predicate:
+```text
+rawRequestCount
+rolledUpRequestCount
+historicalRollupsUsed
+rawRetentionDays
+rollupRetentionDays
+```
+
+The Admin Usage & Governance page supports windows up to 730 days and visibly indicates when rollups contributed to the result.
+
+Historical credential/group attribution uses the request-time snapshot captured in the raw metric before compaction. Rollup rows intentionally do not depend on foreign keys to live credential/group entities, so reporting history can outlive operational entity lifecycle changes.
+
+## Other retention rules
+
+Audit and runtime-outbox retention remain independent.
+
+Critical outbox rule:
 
 ```text
 ProcessedAtUtc != null
 ```
 
-A pending outbox row is **never** eligible for retention deletion, even if `OccurredAtUtc` is much older than the retention window or it has failed many delivery attempts. Pending rows represent committed configuration changes that still require distributed publication and must remain durable until processed.
+is required before an outbox row is eligible for deletion. Pending outbox rows are never retention-deleted, regardless of age or retry count.
+
+Expired historical rollups are deleted according to `Retention:UsageRollupsDays`.
 
 ## Admin API
 
-Read active configuration:
+Read active settings:
 
 ```http
 GET /api/admin/retention
@@ -80,39 +121,32 @@ Run cleanup immediately:
 POST /api/admin/retention/run
 ```
 
-The response includes cutoffs and deletion counts for request metrics, audit events and processed runtime-state outbox rows. A successful manual run records `retention.cleanup.run` after cleanup.
+Manual cleanup remains available even when the background retention worker is disabled. With Entra enabled, read requires `AdminRead`; manual run requires `AdminWrite`.
 
-With Entra enabled:
-
-```text
-GET  -> AdminRead
-POST -> AdminWrite
-```
-
-`RETENTION_ENABLED=false` disables only the background timer; manual cleanup remains available.
-
-## Reporting consequence
-
-Deleting raw `request_metrics` limits detailed historical usage reporting to retained history. If year-over-year reporting is later required while keeping raw metadata for only 30–90 days, add aggregate daily/monthly rollups before raw deletion. Never retain prompt/source/output bodies in rollups.
-
-## Audit consequence
-
-Audit has a longer default because administrative/security history often has different governance. Production duration must be confirmed against customer security/compliance requirements. If immutable external audit is required, export it before database retention rather than using the inference database as an indefinite archive.
+The manual cleanup is audited as `retention.cleanup.run` with safe counts/cutoffs only.
 
 ## Validation contract
 
-The Docker retention smoke disables the automatic worker and inserts old/recent request metrics, old/recent audit events, an old processed outbox row and an old pending outbox row. It then runs manual cleanup and verifies:
+The Docker retention smoke proves:
 
-- expired request metric is removed and recent metric remains;
-- expired audit event is removed and recent audit remains;
-- expired **processed** outbox row is removed;
-- old **pending** outbox row remains;
-- cleanup deletion counts are correct;
-- the manual run creates a current audit event.
+- an expired raw metric is compacted into a daily rollup before deletion;
+- a recent raw metric remains raw;
+- a historical usage query still contains the expired request after raw deletion;
+- raw + rolled-up request counts are disclosed correctly;
+- running cleanup a second time does not duplicate the rollup;
+- expired audit is removed and recent audit remains;
+- expired **processed** outbox is removed;
+- expired **pending** outbox remains;
+- manual cleanup produces an audit event.
 
 Canonical validated evidence:
 
 ```text
-commit 79de2dfd7c995b5a6cac7e87fcf89e3e991d9d72
-CI     34976465066 SUCCESS
+version 0.2.0-preview.1
+commit  5d66c7dcdae42955c6e26849aba84bed4787ff00
+CI      35075387110 SUCCESS
 ```
+
+## Production guidance boundary
+
+The 90/730/365/30-day defaults are product defaults, not customer compliance policy. Confirm production durations, backup destination/encryption and any immutable external audit/export requirements with the target environment. If longer analytical retention is needed, extend aggregate retention or export aggregates; do not solve it by persisting prompt/source/output bodies.
