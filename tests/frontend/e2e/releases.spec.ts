@@ -7,12 +7,22 @@ async function json(route: Route, body: unknown, status = 200) {
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
-    version: '0.2.0-preview.3',
+    version: '0.2.0-preview.4',
     channel: 'preview',
     releasedOn: '2026-09-16',
     buildRevision: 'abcdef1234567890',
     builtAtUtc: null,
     releases: [
+      {
+        version: '0.2.0-preview.4',
+        releasedOn: '2026-09-16',
+        title: 'Consolidated Linux production deployment',
+        sections: {
+          Added: ['Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.'],
+          Changed: ['The production deploy script and GitHub Actions deploy workflow now use the Redis-enabled full stack instead of the legacy minimal Compose overlay.'],
+          Security: ['Grafana can bind to loopback independently from the gateway, and public-tunnel guidance requires Entra protection before exposing administrative surfaces.']
+        }
+      },
       {
         version: '0.2.0-preview.3',
         releasedOn: '2026-09-16',
@@ -54,9 +64,10 @@ test('release notes page exposes the current product version and versioned patch
 
   await page.goto('/admin/releases')
   await expect(page.getByRole('heading', { name: 'Release notes' })).toBeVisible()
-  await expect(page.getByText('0.2.0-preview.3', { exact: true })).toBeVisible()
+  await expect(page.getByText('0.2.0-preview.4', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Consolidated Linux production deployment/ })).toBeVisible()
+  await expect(page.getByText('Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Validated tagged releases/ })).toBeVisible()
-  await expect(page.getByText('Exact SemVer tag publication requires evidence that the same source SHA already completed CI successfully from a push to main.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Container SBOM and provenance/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Historical usage rollups/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Initial versioned preview baseline/ })).toBeVisible()

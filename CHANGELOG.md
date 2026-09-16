@@ -8,6 +8,25 @@ The project follows Semantic Versioning from the first formal preview release on
 
 No unreleased product changes are recorded after the current preview baseline yet.
 
+## [0.2.0-preview.4] - 2026-09-16
+
+### Added
+
+- A single Linux production deployment path now installs the validated full stack: LlmProxy, PostgreSQL, Redis and bundled observability.
+- `docker/.env.production.example` provides an operator-oriented production template separate from development/full-stack examples.
+- The production deploy script stages Compose and observability assets under `/opt/llmproxy/runtime`, so running containers do not depend on a transient GitHub Actions workspace.
+- Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is present.
+- A dedicated Linux production guide covers private-LAN bootstrap, DGX connectivity, Entra/public exposure, self-hosted runner setup, backup, update and rollback.
+
+### Changed
+
+- `docker/scripts/deploy.sh` and `.github/workflows/deploy.yml` now deploy the same Redis-enabled full-stack topology used by the supported production documentation instead of the legacy minimal Compose overlay.
+- Production deployment performs Compose validation before pull/up and verifies both `/healthz` and `/readyz` before succeeding.
+
+### Security
+
+- Grafana can bind to loopback independently from the gateway, and the production guide requires Entra configuration before exposing administrative surfaces through a public tunnel.
+
 ## [0.2.0-preview.3] - 2026-09-16
 
 ### Added

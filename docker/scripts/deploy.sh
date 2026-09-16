@@ -1,35 +1,147 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DOCKER_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-ENV_FILE=${LLMPROXY_ENV_FILE:-/opt/llmproxy/.env}
-IMAGE_TAG=${1:-${LLMPROXY_IMAGE_TAG:-main}}
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SOURCE_DOCKER_DIR="$ROOT_DIR/docker"
+DEPLOY_DIR="${LLMPROXY_DEPLOY_DIR:-/opt/llmproxy}"
+ENV_FILE="${LLMPROXY_ENV_FILE:-$DEPLOY_DIR/.env}"
+RUNTIME_DIR="$DEPLOY_DIR/runtime"
+IMAGE_TAG="${1:-${LLMPROXY_IMAGE_TAG:-main}}"
+VALIDATE_ONLY="${LLMPROXY_DEPLOY_VALIDATE_ONLY:-false}"
 
-if [ ! -f "$ENV_FILE" ]; then
-  echo "Environment file not found: $ENV_FILE" >&2
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker Engine is required on the deployment host." >&2
+  exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose v2 is required on the deployment host." >&2
+  exit 1
+fi
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Production environment file not found: $ENV_FILE" >&2
+  echo "Start from docker/.env.production.example and keep the resulting file outside Git." >&2
   exit 1
 fi
 
-export LLMPROXY_IMAGE_TAG="$IMAGE_TAG"
+read_env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1 | tr -d '\r'
+}
 
-COMPOSE="docker compose --env-file $ENV_FILE -f $DOCKER_DIR/docker-compose.yml -f $DOCKER_DIR/docker-compose.prod.yml"
-
-$COMPOSE pull llmproxy cloudflared postgres
-$COMPOSE up -d --no-build --remove-orphans
-
-PORT=$(grep '^LLMPROXY_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2 || true)
-PORT=${PORT:-8080}
-
-attempt=0
-until wget -qO- "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 30 ]; then
-    echo "Deployment health check failed." >&2
-    $COMPOSE ps
-    exit 1
+require_env_value() {
+  local key="$1"
+  local value
+  value="$(read_env_value "$key")"
+  if [[ -z "$value" || "$value" == CHANGE_ME* ]]; then
+    echo "Production setting $key is missing or still uses a CHANGE_ME placeholder in $ENV_FILE." >&2
+    exit 2
   fi
-  sleep 2
+}
+
+for required in \
+  POSTGRES_PASSWORD \
+  REDIS_PASSWORD \
+  LLM_PROXY_API_KEY \
+  LLM_PROXY_API_KEY_PEPPER \
+  GRAFANA_ADMIN_PASSWORD \
+  DGX_NODE_BASE_ADDRESS \
+  PROVIDER_MODEL_NAME; do
+  require_env_value "$required"
 done
 
-echo "LlmProxy deployed successfully with image tag: $IMAGE_TAG"
+ASPNET_ENV="$(read_env_value ASPNETCORE_ENVIRONMENT)"
+if [[ "$ASPNET_ENV" != "Production" ]]; then
+  echo "ASPNETCORE_ENVIRONMENT must be Production for the supported production deployment path." >&2
+  exit 2
+fi
+
+ENTRA_ENABLED_VALUE="$(read_env_value ENTRA_ENABLED | tr '[:upper:]' '[:lower:]')"
+if [[ "$ENTRA_ENABLED_VALUE" == "true" ]]; then
+  require_env_value ENTRA_TENANT_ID
+  require_env_value ENTRA_CLIENT_ID
+  require_env_value ENTRA_CLIENT_SECRET
+fi
+
+CLOUDFLARE_TOKEN="$(read_env_value CLOUDFLARE_TUNNEL_TOKEN)"
+if [[ "$CLOUDFLARE_TOKEN" == CHANGE_ME* ]]; then
+  echo "CLOUDFLARE_TUNNEL_TOKEN still uses a CHANGE_ME placeholder." >&2
+  exit 2
+fi
+if [[ -n "$CLOUDFLARE_TOKEN" && "$ENTRA_ENABLED_VALUE" != "true" ]]; then
+  echo "Refusing public Cloudflare deployment while ENTRA_ENABLED is not true." >&2
+  echo "Validate Entra administration first, then configure CLOUDFLARE_TUNNEL_TOKEN." >&2
+  exit 2
+fi
+
+mkdir -p "$RUNTIME_DIR/observability"
+install -m 0644 "$SOURCE_DOCKER_DIR/docker-compose.full.yml" "$RUNTIME_DIR/docker-compose.full.yml"
+cp -a "$SOURCE_DOCKER_DIR/observability/." "$RUNTIME_DIR/observability/"
+
+export LLMPROXY_IMAGE_TAG="$IMAGE_TAG"
+COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$RUNTIME_DIR/docker-compose.full.yml")
+if [[ -n "$CLOUDFLARE_TOKEN" ]]; then
+  COMPOSE+=(--profile cloudflare)
+fi
+
+# Fail before touching running containers if interpolation, required settings, profiles,
+# bind mounts or Compose syntax are invalid.
+"${COMPOSE[@]}" config >/dev/null
+
+if [[ "$VALIDATE_ONLY" == "true" ]]; then
+  echo "Production deployment configuration validated successfully."
+  echo "Runtime assets staged under: $RUNTIME_DIR"
+  exit 0
+fi
+
+"${COMPOSE[@]}" pull
+"${COMPOSE[@]}" up -d --no-build --remove-orphans
+
+if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
+  # If a previous deployment enabled the profile and the token was deliberately removed,
+  # make sure the public tunnel does not stay running.
+  docker compose --env-file "$ENV_FILE" -f "$RUNTIME_DIR/docker-compose.full.yml" --profile cloudflare rm -sf cloudflared >/dev/null 2>&1 || true
+fi
+
+PORT="$(read_env_value LLMPROXY_PORT)"
+PORT="${PORT:-8080}"
+
+probe() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --silent --show-error --max-time 5 "$url" >/dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- --timeout=5 "$url" >/dev/null
+  else
+    echo "Either curl or wget is required for deployment health checks." >&2
+    return 1
+  fi
+}
+
+wait_for_endpoint() {
+  local name="$1"
+  local url="$2"
+  local attempt=0
+  until probe "$url"; do
+    attempt=$((attempt + 1))
+    if [[ "$attempt" -ge 30 ]]; then
+      echo "$name check failed: $url" >&2
+      "${COMPOSE[@]}" ps >&2 || true
+      "${COMPOSE[@]}" logs --tail=100 llmproxy >&2 || true
+      exit 1
+    fi
+    sleep 2
+  done
+}
+
+wait_for_endpoint "Liveness" "http://127.0.0.1:$PORT/healthz"
+wait_for_endpoint "Readiness" "http://127.0.0.1:$PORT/readyz"
+
+printf 'LlmProxy production deployment succeeded.\n'
+printf 'Image tag: %s\n' "$IMAGE_TAG"
+printf 'Environment: %s\n' "$ENV_FILE"
+printf 'Runtime assets: %s\n' "$RUNTIME_DIR"
+if [[ -n "$CLOUDFLARE_TOKEN" ]]; then
+  printf 'Cloudflare profile: enabled\n'
+else
+  printf 'Cloudflare profile: disabled (private/LAN deployment)\n'
+fi

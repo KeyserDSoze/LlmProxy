@@ -79,7 +79,7 @@ services:
     image: grafana/grafana:13.2.0
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_BIND_ADDRESS:-0.0.0.0}:${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run the full-stack init script or set GRAFANA_ADMIN_PASSWORD}
@@ -98,7 +98,7 @@ services:
     restart: unless-stopped
     pull_policy: ${LLMPROXY_PULL_POLICY:-always}
     ports:
-      - "${LLMPROXY_PORT:-8080}:8080"
+      - "${LLMPROXY_BIND_ADDRESS:-0.0.0.0}:${LLMPROXY_PORT:-8080}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD}
@@ -162,6 +162,15 @@ services:
       redis:
         condition: service_healthy
       otel-collector:
+        condition: service_started
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["cloudflare"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      llmproxy:
         condition: service_started
 
 volumes:

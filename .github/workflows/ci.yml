@@ -152,6 +152,47 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ci-full-grafana
         run: docker compose -f docker/docker-compose.full.yml config >/dev/null
 
+      - name: Validate Linux production deployment path
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n docker/scripts/deploy.sh
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          prepare_env() {
+            local target="$1"
+            sed \
+              -e 's/CHANGE_ME_POSTGRES_PASSWORD/ci-postgres/' \
+              -e 's/CHANGE_ME_REDIS_PASSWORD/ci-redis/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY/ci-api-key/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY_PEPPER/ci-pepper/' \
+              -e 's/CHANGE_ME_GRAFANA_ADMIN_PASSWORD/ci-grafana/' \
+              -e 's/CHANGE_ME_TO_VLLM_MODEL_NAME/ci-provider-model/' \
+              docker/.env.production.example > "$target"
+          }
+
+          prepare_env "$TMP_DIR/private.env"
+          LLMPROXY_DEPLOY_DIR="$TMP_DIR/private-runtime" \
+          LLMPROXY_ENV_FILE="$TMP_DIR/private.env" \
+          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+            bash docker/scripts/deploy.sh sha-ci-private
+          test -f "$TMP_DIR/private-runtime/runtime/docker-compose.full.yml"
+          test -f "$TMP_DIR/private-runtime/runtime/observability/otel-collector.yml"
+
+          prepare_env "$TMP_DIR/public.env"
+          sed -i \
+            -e 's/^ENTRA_ENABLED=false$/ENTRA_ENABLED=true/' \
+            -e 's/^ENTRA_TENANT_ID=$/ENTRA_TENANT_ID=ci-tenant/' \
+            -e 's/^ENTRA_CLIENT_ID=$/ENTRA_CLIENT_ID=ci-client/' \
+            -e 's/^ENTRA_CLIENT_SECRET=$/ENTRA_CLIENT_SECRET=ci-secret/' \
+            -e 's/^CLOUDFLARE_TUNNEL_TOKEN=$/CLOUDFLARE_TUNNEL_TOKEN=ci-tunnel-token/' \
+            "$TMP_DIR/public.env"
+          LLMPROXY_DEPLOY_DIR="$TMP_DIR/public-runtime" \
+          LLMPROXY_ENV_FILE="$TMP_DIR/public.env" \
+          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+            bash docker/scripts/deploy.sh sha-ci-public
+
       - name: Validate production image build and identity
         shell: bash
         run: |

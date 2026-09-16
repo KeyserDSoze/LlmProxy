@@ -1,54 +1,91 @@
 # Deployment
 
-## Target VM
+For Linux production, the canonical runbook is:
 
-The first production topology uses a Linux VM with Docker Engine and Docker Compose v2. The VM must be able to reach the DGX nodes over the private network and reach GitHub/GHCR/Cloudflare over outbound HTTPS.
+```text
+docs/linux-production-deployment.md
+```
 
-Suggested filesystem layout:
+The supported production topology is the Redis-enabled full stack:
+
+```text
+LlmProxy + PostgreSQL + Redis
++ OpenTelemetry Collector
++ Prometheus + Tempo + Loki + Grafana
++ optional Cloudflare Tunnel profile
+```
+
+The smaller quickstart/minimal Compose paths remain for development and local smoke testing. Production deployment and `.github/workflows/deploy.yml` use `docker/docker-compose.full.yml` through `docker/scripts/deploy.sh`.
+
+## Production filesystem contract
 
 ```text
 /opt/llmproxy/
-  .env
-  backups/
+  .env                  secrets and operator configuration
+  runtime/              staged Compose + observability assets
+  backups/              example PostgreSQL backup destination
 ```
 
-Docker owns application/container state while PostgreSQL data lives in a named persistent volume.
+Start from:
 
-## GitHub Actions runner
+```text
+docker/.env.production.example
+```
 
-Install a dedicated self-hosted GitHub Actions runner on the VM and assign the labels used by `.github/workflows/deploy.yml`, initially `self-hosted`, `linux`, `x64`, `llmproxy-prod`.
-
-The deployment workflow is manual until the production VM is ready. Once stabilized it can be triggered automatically after successful container publication.
-
-## Production `.env`
-
-Create `/opt/llmproxy/.env` with production values. Do not store this file in Git. Start from `docker/.env.example`.
-
-The API-key pepper is part of credential validation and must be backed up securely. Losing or changing it invalidates existing stored API-key hashes.
-
-## Database migrations
-
-LlmProxy uses EF Core migrations. On application startup, pending migrations are applied before bootstrap data is evaluated and before the application begins serving traffic.
-
-This makes a normal container replacement sufficient for schema updates. Migration changes must be reviewed carefully: production migrations should remain compatible with the previous application version whenever rollback of the application image is expected.
-
-PostgreSQL backups are mandatory before destructive schema migrations. The initial release only contains additive/bootstrap schema creation.
+`deploy.sh` copies the runtime Compose/configuration assets from the checked-out repository into `/opt/llmproxy/runtime` before running Docker Compose. Running services therefore do not depend on the lifetime of a GitHub Actions runner workspace.
 
 ## Deploy sequence
 
 ```text
-GitHub Actions
-  -> build/test
-  -> build immutable image
-  -> push GHCR
-  -> self-hosted production job
-       -> docker login GHCR
-       -> docker compose pull
-       -> docker compose up -d
-       -> application applies pending EF migrations
-       -> /healthz check
+validated/published image tag
+  -> production preflight
+       -> required settings present
+       -> ASPNETCORE_ENVIRONMENT=Production
+       -> Entra required before public Cloudflare profile
+       -> docker compose config
+  -> stage full-stack runtime assets
+  -> pull image/services
+  -> docker compose up -d
+  -> EF migrations on LlmProxy startup
+  -> /healthz
+  -> /readyz
 ```
 
-## Rollback
+Manual deployment:
 
-Deployments use an explicit image tag. Rollback means redeploying the previous known-good tag. A previous image cannot necessarily reverse a destructive database migration, therefore destructive migrations require an explicit compatibility and restore plan.
+```bash
+LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
+LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
+  bash docker/scripts/deploy.sh sha-abcdef1
+```
+
+`main` is allowed for acceptance, but production changes should prefer an immutable `sha-<7>` alias or an exact SemVer tag when available.
+
+## Cloudflare
+
+Cloudflare is an optional Compose profile. Keep `CLOUDFLARE_TUNNEL_TOKEN` empty for private-LAN bootstrap. When the token is populated, `deploy.sh` enables the profile automatically and requires Entra administration to be enabled/configured first.
+
+The remotely configured tunnel origin should target the Compose service, not the host port:
+
+```text
+http://llmproxy:8080
+```
+
+## GitHub Actions runner
+
+`.github/workflows/deploy.yml` is manually triggered and runs on a dedicated Linux self-hosted runner with labels:
+
+```text
+self-hosted
+linux
+x64
+llmproxy-prod
+```
+
+The workflow uses the same `docker/scripts/deploy.sh` path as manual operation, so production automation does not maintain a second deployment implementation.
+
+## Database migrations and rollback
+
+EF Core applies pending migrations during application startup. Container rollback is performed by redeploying the prior known-good image tag. A prior image cannot reverse a destructive schema migration, so any destructive migration requires a backup and explicit compatibility/restore plan first.
+
+Read `docs/linux-production-deployment.md` for the complete host setup, DGX validation, Entra/Cloudflare enablement, backup, logs, update and rollback procedure.

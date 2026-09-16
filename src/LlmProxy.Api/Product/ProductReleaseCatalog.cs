@@ -40,6 +40,29 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.4",
+            new DateOnly(2026, 9, 16),
+            "Consolidated Linux production deployment",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.",
+                    "A production environment template and end-to-end Linux runbook cover private bootstrap, DGX connectivity, Entra/public exposure, backup, update and rollback.",
+                    "Production deployment stages runtime Compose and observability assets under /opt/llmproxy so containers do not depend on a transient runner workspace.",
+                    "Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is configured."
+                ],
+                ["Changed"] =
+                [
+                    "The production deploy script and GitHub Actions deploy workflow now use the Redis-enabled full stack instead of the legacy minimal Compose overlay.",
+                    "Production deployment validates Compose configuration and requires both liveness and readiness checks before reporting success."
+                ],
+                ["Security"] =
+                [
+                    "Grafana can bind to loopback independently from the gateway, and public-tunnel guidance requires Entra protection before exposing administrative surfaces."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.3",
             new DateOnly(2026, 9, 16),
             "Validated tagged releases",
