@@ -48,6 +48,7 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.",
+                    "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate DGX connectivity and run the canonical full-stack deployment.",
                     "A production environment template and end-to-end Linux runbook cover private bootstrap, DGX connectivity, Entra/public exposure, backup, update and rollback.",
                     "Production deployment stages runtime Compose and observability assets under /opt/llmproxy so containers do not depend on a transient runner workspace.",
                     "Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is configured."
@@ -59,7 +60,7 @@ public static class ProductReleaseCatalog
                 ],
                 ["Security"] =
                 [
-                    "Grafana can bind to loopback independently from the gateway, and public-tunnel guidance requires Entra protection before exposing administrative surfaces."
+                    "Grafana can bind to loopback independently from the gateway, generated installer secrets are not printed, and public-tunnel guidance requires Entra protection before exposing administrative surfaces."
                 ]
             }),
         new ProductRelease(
