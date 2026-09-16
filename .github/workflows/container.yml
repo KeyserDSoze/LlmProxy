@@ -81,16 +81,76 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push with SBOM and provenance
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          sbom: true
+          provenance: mode=max
           build-args: |
             LLMPROXY_VERSION=${{ steps.meta.outputs.version }}
             LLMPROXY_BUILD_SHA=${{ steps.source.outputs.sha }}
             LLMPROXY_BUILD_DATE=${{ steps.meta.outputs.build_date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify pushed digest, SBOM and provenance
+        id: verify
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.build_date }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Build did not return a valid immutable image digest: '$DIGEST'." >&2
+            exit 1
+          }
+
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" >/dev/null
+
+          SBOM="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .SBOM.SPDX}}')"
+          PROVENANCE="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Provenance.SLSA}}')"
+
+          echo "$SBOM" | jq -e 'type == "object" and .SPDXID == "SPDXRef-DOCUMENT" and (.packages | type == "array")' >/dev/null || {
+            echo "Published image does not expose an SPDX SBOM attestation." >&2
+            exit 1
+          }
+
+          echo "$PROVENANCE" | jq -e 'type == "object" and (.buildType | type == "string") and (.metadata | type == "object")' >/dev/null || {
+            echo "Published image does not expose SLSA/BuildKit provenance." >&2
+            exit 1
+          }
+
+          jq -n \
+            --arg image "$IMAGE" \
+            --arg digest "$DIGEST" \
+            --arg version "$VERSION" \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg builtAtUtc "$BUILD_DATE" \
+            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,sbom:"SPDX",provenance:"SLSA/BuildKit"}' \
+            > release-manifest.json
+
+          {
+            echo "### LlmProxy container publication"
+            echo ""
+            echo "- Version: \`$VERSION\`"
+            echo "- Source: \`$SOURCE_SHA\`"
+            echo "- Digest: \`$DIGEST\`"
+            echo "- SBOM: SPDX OCI attestation verified"
+            echo "- Provenance: SLSA/BuildKit OCI attestation verified"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: llmproxy-release-manifest-${{ steps.source.outputs.sha }}
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 30

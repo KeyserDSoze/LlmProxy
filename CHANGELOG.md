@@ -2,11 +2,27 @@
 
 All notable product changes to **LlmProxy** are recorded here.
 
-The project follows [Semantic Versioning](https://semver.org/) from the first formal preview release onward. Because the product is still pre-1.0, incompatible changes may occur between preview/minor releases and must be called out explicitly in release notes.
+The project follows Semantic Versioning from the first formal preview release onward. Because the product is still pre-1.0, incompatible changes may occur between preview/minor releases and must be called out explicitly in release notes.
 
 ## [Unreleased]
 
 No unreleased product changes are recorded after the current preview baseline yet.
+
+## [0.2.0-preview.2] - 2026-09-16
+
+### Added
+
+- GHCR container publication now emits an SPDX software bill of materials (SBOM) as an OCI attestation.
+- Published images now include explicit SLSA/BuildKit provenance metadata alongside the existing source SHA and build timestamp identity.
+- The publish workflow records the immutable registry digest for every pushed image.
+
+### Changed
+
+- Container publication verifies the pushed digest directly in GHCR and reads both SBOM and provenance back from the registry before the workflow can succeed.
+
+### Security
+
+- Release consumers can inspect the image dependency inventory and build provenance without relying only on mutable tags.
 
 ## [0.2.0-preview.1] - 2026-09-16
 

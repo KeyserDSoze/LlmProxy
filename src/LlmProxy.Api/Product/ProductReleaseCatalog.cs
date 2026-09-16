@@ -40,6 +40,27 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.2",
+            new DateOnly(2026, 9, 16),
+            "Container SBOM and provenance",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "GHCR container publication emits an SPDX software bill of materials as an OCI attestation.",
+                    "Published images include explicit SLSA/BuildKit provenance alongside source SHA and build timestamp identity.",
+                    "The publish workflow records the immutable registry digest for every pushed image."
+                ],
+                ["Changed"] =
+                [
+                    "Container publication verifies the pushed digest directly in GHCR and reads both SBOM and provenance back from the registry before succeeding."
+                ],
+                ["Security"] =
+                [
+                    "Release consumers can inspect image dependency inventory and build provenance without relying only on mutable tags."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.1",
             new DateOnly(2026, 9, 16),
             "Historical usage rollups",
