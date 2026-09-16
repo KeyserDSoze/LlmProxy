@@ -298,7 +298,9 @@ jq -n --arg model "$PUBLIC_MODEL" '{model:$model,input:"Reply with exactly OK.",
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:true}' > "$RESP_GATEWAY_STREAM"
 chmod 600 "$TMP_DIR"/*.json
 
-http_probe "dgx-health" GET "$DGX_URL/health" "$DGX_API_KEY" "" "application/json" ""
+# vLLM's canonical /health endpoint intentionally returns an empty Response on
+# success, so acceptance validates its HTTP status only rather than requiring JSON.
+http_probe "dgx-health" GET "$DGX_URL/health" "$DGX_API_KEY" "" "" ""
 http_probe "dgx-models" GET "$DGX_URL/v1/models" "$DGX_API_KEY" "" "application/json" "$PROVIDER_MODEL"
 http_probe "dgx-chat" POST "$DGX_URL/v1/chat/completions" "$DGX_API_KEY" "$CHAT_DGX" "application/json" ""
 http_probe "dgx-chat-stream" POST "$DGX_URL/v1/chat/completions" "$DGX_API_KEY" "$CHAT_DGX_STREAM" "text/event-stream" ""

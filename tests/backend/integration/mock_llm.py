@@ -30,6 +30,11 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         self.wfile.flush()
 
+    def _empty(self, status: int):
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _text(self, status: int, content_type: str, text: str):
         body = text.encode("utf-8")
         self.send_response(status)
@@ -48,11 +53,14 @@ class MockLlmHandler(BaseHTTPRequestHandler):
             return
         if self.path == self._expected("/health"):
             status = self.server.health_status
-            self._json(status, {
-                "status": "ok" if 200 <= status < 300 else "failed",
-                "served_by": self.server.runtime_name,
-                "configured_status": status,
-            })
+            if self.server.empty_health:
+                self._empty(status)
+            else:
+                self._json(status, {
+                    "status": "ok" if 200 <= status < 300 else "failed",
+                    "served_by": self.server.runtime_name,
+                    "configured_status": status,
+                })
             return
         if self.path == self._expected("/v1/models"):
             self._json(200, {
@@ -171,12 +179,14 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--prefix", default="")
     parser.add_argument("--name", required=True)
+    parser.add_argument("--empty-health", action="store_true")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), MockLlmHandler)
     server.prefix = normalize_prefix(args.prefix)
     server.runtime_name = args.name
     server.health_status = 200
+    server.empty_health = args.empty_health
     server.serve_forever()
 
 

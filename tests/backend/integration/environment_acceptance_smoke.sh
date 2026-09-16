@@ -16,7 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 tests/backend/integration/mock_llm.py --port "$PORT" --name acceptance >"$TMP_DIR/mock.log" 2>&1 &
+# vLLM's canonical /health success response is bodyless. Exercise that exact
+# contract so the acceptance harness cannot accidentally require JSON there.
+python3 tests/backend/integration/mock_llm.py --port "$PORT" --name acceptance --empty-health >"$TMP_DIR/mock.log" 2>&1 &
 MOCK_PID=$!
 
 for attempt in {1..30}; do
@@ -52,6 +54,7 @@ LLMPROXY_ACCEPTANCE_API_KEY="$SECRET" \
 test -s "$TMP_DIR/evidence/summary.md"
 test -s "$TMP_DIR/evidence/checks.tsv"
 grep -Fq -- '- Result: PASS' "$TMP_DIR/evidence/summary.md"
+grep -Fq $'PASS\tdgx-health' "$TMP_DIR/evidence/checks.tsv"
 grep -Fq $'PASS\tdgx-chat-stream' "$TMP_DIR/evidence/checks.tsv"
 grep -Fq $'PASS\tdgx-responses-stream' "$TMP_DIR/evidence/checks.tsv"
 grep -Fq $'PASS\tgateway-chat-stream' "$TMP_DIR/evidence/checks.tsv"
