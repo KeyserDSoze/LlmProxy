@@ -66,6 +66,13 @@ jobs:
             exit 1
           fi
 
+      - name: Validate Linux host installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash docker/scripts/install-linux.sh --validate-only
+          bash docker/scripts/install-linux.sh --help >/dev/null
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
@@ -157,6 +164,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n docker/scripts/deploy.sh
+          bash -n docker/scripts/install-linux.sh
           TMP_DIR="$(mktemp -d)"
           trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -168,6 +176,7 @@ jobs:
               -e 's/CHANGE_ME_LLM_PROXY_API_KEY/ci-api-key/' \
               -e 's/CHANGE_ME_LLM_PROXY_API_KEY_PEPPER/ci-pepper/' \
               -e 's/CHANGE_ME_GRAFANA_ADMIN_PASSWORD/ci-grafana/' \
+              -e 's#CHANGE_ME_DGX_NODE_BASE_ADDRESS#http://127.0.0.1:8000#' \
               -e 's/CHANGE_ME_TO_VLLM_MODEL_NAME/ci-provider-model/' \
               docker/.env.production.example > "$target"
           }
