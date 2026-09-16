@@ -106,7 +106,7 @@ test('DGX node controls use safe maintenance drain and validated resume', async 
   expect(state.wasLegacyDrainCalled()).toBe(false)
 
   await row.getByRole('button', { name: 'Enable' }).click()
+  await expect.poll(state.wasResumeCalled).toBe(true)
   await expect(row.getByText('Healthy')).toBeVisible()
-  expect(state.wasResumeCalled()).toBe(true)
   expect(state.wasLegacyDrainCalled()).toBe(false)
 })

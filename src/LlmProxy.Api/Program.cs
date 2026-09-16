@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using LlmProxy.Api.Admin;
 using LlmProxy.Api.Observability;
 using LlmProxy.Api.OpenAi;
+using LlmProxy.Api.Product;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
@@ -160,6 +161,7 @@ app.MapGet("/healthz", (RoutingStrategyState strategyState) => Results.Ok(new
 {
     status = "ok",
     service = "llmproxy",
+    version = ProductReleaseCatalog.GetInfo().Version,
     routingStrategy = strategyState.Current,
     utc = DateTimeOffset.UtcNow
 }));
@@ -183,6 +185,7 @@ app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
 app.MapDataRetentionAdminEndpoints(entraEnabled);
+app.MapProductReleaseAdminEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
