@@ -5,7 +5,7 @@ LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview bas
 ## Current version
 
 ```text
-0.2.0-preview.5
+0.2.0-preview.6
 ```
 
 The product remains pre-1.0 while target-host, real DGX/Copilot/Entra/Cloudflare acceptance remains outside repository CI.
@@ -39,7 +39,7 @@ The runtime/assembly version is authoritative; Admin package version must stay a
 
 ```bash
 bash docker/scripts/validate-release-version.sh
-bash docker/scripts/validate-release-version.sh 0.2.0-preview.5
+bash docker/scripts/validate-release-version.sh 0.2.0-preview.6
 bash docker/scripts/validate-release-main-ci.sh <40-char-source-sha> <workflow-runs.json>
 ```
 
@@ -63,7 +63,10 @@ Formal sequence:
 0.2.0-preview.3  source-validated main/tag container publication
 0.2.0-preview.4  consolidated Linux production deployment + host installer
 0.2.0-preview.5  production environment acceptance evidence
+0.2.0-preview.6  Entra-owned personal API keys + user self-service
 ```
+
+`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Until its implementation CI/publication evidence is recorded, the previous `0.2.0-preview.5` runtime checkpoint below remains the last validated registry baseline.
 
 `0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
 

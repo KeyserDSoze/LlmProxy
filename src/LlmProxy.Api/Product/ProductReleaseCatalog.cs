@@ -40,6 +40,31 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.6",
+            new DateOnly(2026, 9, 21),
+            "Entra-owned personal API keys",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Users with the LlmProxy.User Entra application role can create, list, rotate and revoke multiple personal inference API keys through a self-service /api/me contract.",
+                    "Personal API keys are bound to the creator's stable Entra tenant and object identifiers, while existing administrator-created credentials remain supported as service credentials.",
+                    "Self-service usage reporting attributes request and token metadata to the current user through the existing credential-level telemetry and historical rollups.",
+                    "Administrators can inspect personal-key ownership and user credential summaries through dedicated identity administration endpoints.",
+                    "The React control plane exposes a My API Keys portal for normal Entra users without loading administrative APIs."
+                ],
+                ["Changed"] =
+                [
+                    "The Entra authorization model now distinguishes LlmProxy.User self-service access from LlmProxy.Reader operational read access and LlmProxy.Admin administration.",
+                    "Credential runtime snapshots carry stable owner identity so key-to-user attribution follows normal local and Redis runtime-state publication."
+                ],
+                ["Security"] =
+                [
+                    "Credential ownership authorization uses immutable Entra tid and oid claims rather than mutable usernames or email addresses.",
+                    "Raw personal API keys are returned only once at creation or rotation and continue to be persisted only as HMAC hashes plus non-secret metadata."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.5",
             new DateOnly(2026, 9, 16),
             "Production environment acceptance evidence",

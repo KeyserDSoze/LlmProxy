@@ -36,6 +36,10 @@ Raw API secrets are shown once and never persisted. PostgreSQL stores an HMAC-SH
 
 Credential creation returns a generated secret once. Credential rotation follows the same secret-handling rule.
 
+Credentials may be administrator-created **service credentials** or Entra-owned **personal credentials**. Personal ownership is immutable `(tid, oid)` metadata on the credential; usernames/email are display metadata only. The runtime snapshot carries owner IDs, while durable request telemetry continues to store `ApiCredentialId` so user attribution is resolved without duplicating user PII per request.
+
+Normal users manage their own keys at `/admin/me` or through `/api/me/*`. See `docs/identity-api-keys.md`.
+
 ### In-place credential rotation
 
 ```http
@@ -190,6 +194,21 @@ error.code = token_budget_coordination_unavailable
 
 If settlement itself fails after reservation, the reserved amount remains charged rather than accidentally expanding the budget.
 
+## User self-service API
+
+When Entra is enabled, `LlmProxy.User` and `LlmProxy.Admin` may call:
+
+```http
+GET  /api/me
+GET  /api/me/api-credentials
+POST /api/me/api-credentials
+POST /api/me/api-credentials/{id}/rotate
+POST /api/me/api-credentials/{id}/revoke
+GET  /api/me/usage?days=30
+```
+
+Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from request bodies.
+
 ## Admin API
 
 Current governance endpoints include:
@@ -226,7 +245,7 @@ Administrative mutations are audited. Secrets and prompt/output content are excl
 
 ## React control plane
 
-`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, request-rate policies and output-token budgets.
+`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, request-rate policies and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle and own usage.
 
 Credential rotation UI behavior:
 
@@ -277,3 +296,10 @@ Output-token budget runtime behavior remains validated in the same Full Stack ru
 - optional long-term aggregate usage rollups;
 - optional Copilot usage-metrics ingestion for per-user/adoption analytics;
 - an overlapping/grace credential-rotation model only if a future requirement explicitly prefers overlap over the current hard-cutover security contract.
+
+
+## Per-user and monetary limits
+
+Existing request-rate and output-token budgets are credential/model scoped, so they can be applied to each personal key today. **Aggregated per-user quotas across multiple keys are not yet enforced.** They require an explicit precedence/counter model keyed by Entra `(tid, oid)`.
+
+Currency/spend limits are also not yet enforced. On-prem vLLM usage has no authoritative monetary rate; a pricing/chargeback model (for example per-model token rates or GPU-time allocation) must be defined before currency budgets are implemented.

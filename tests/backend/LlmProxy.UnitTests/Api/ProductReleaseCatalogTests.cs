@@ -10,37 +10,40 @@ public sealed class ProductReleaseCatalogTests
         var product = ProductReleaseCatalog.GetInfo();
 
         Assert.Equal("LlmProxy", product.Product);
-        Assert.StartsWith("0.2.0-preview.5", product.Version);
+        Assert.StartsWith("0.2.0-preview.6", product.Version);
         Assert.Equal("preview", product.Channel);
-        Assert.Equal(6, product.Releases.Count);
+        Assert.Equal(7, product.Releases.Count);
 
         var current = product.Releases[0];
         Assert.Equal(product.Version, current.Version);
         Assert.Contains("Added", current.Sections.Keys);
         Assert.Contains("Changed", current.Sections.Keys);
         Assert.Contains("Security", current.Sections.Keys);
-        Assert.Contains(current.Sections["Added"], item => item.Contains("acceptance", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(current.Sections["Changed"], item => item.Contains("evidence", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(current.Sections["Security"], item => item.Contains("prompts", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(current.Sections["Added"], item => item.Contains("personal", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(current.Sections["Changed"], item => item.Contains("LlmProxy.User", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(current.Sections["Security"], item => item.Contains("tid", StringComparison.OrdinalIgnoreCase));
 
-        var deployment = product.Releases[1];
+        var acceptance = product.Releases[1];
+        Assert.Equal("0.2.0-preview.5", acceptance.Version);
+        Assert.Contains(acceptance.Sections["Added"], item => item.Contains("acceptance", StringComparison.OrdinalIgnoreCase));
+
+        var deployment = product.Releases[2];
         Assert.Equal("0.2.0-preview.4", deployment.Version);
         Assert.Contains(deployment.Sections["Added"], item => item.Contains("full-stack", StringComparison.OrdinalIgnoreCase));
 
-        var releaseGate = product.Releases[2];
+        var releaseGate = product.Releases[3];
         Assert.Equal("0.2.0-preview.3", releaseGate.Version);
         Assert.Contains(releaseGate.Sections["Added"], item => item.Contains("same source SHA", StringComparison.OrdinalIgnoreCase));
 
-        var supplyChain = product.Releases[3];
+        var supplyChain = product.Releases[4];
         Assert.Equal("0.2.0-preview.2", supplyChain.Version);
         Assert.Contains(supplyChain.Sections["Added"], item => item.Contains("software bill of materials", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(supplyChain.Sections["Added"], item => item.Contains("provenance", StringComparison.OrdinalIgnoreCase));
 
-        var rollups = product.Releases[4];
+        var rollups = product.Releases[5];
         Assert.Equal("0.2.0-preview.1", rollups.Version);
         Assert.Contains(rollups.Sections["Added"], item => item.Contains("rollup", StringComparison.OrdinalIgnoreCase));
 
-        var baseline = product.Releases[5];
+        var baseline = product.Releases[6];
         Assert.Equal("0.1.0-preview.1", baseline.Version);
         Assert.Contains("Fixed", baseline.Sections.Keys);
         Assert.Contains(baseline.Sections["Added"], item => item.Contains("Safe node maintenance", StringComparison.OrdinalIgnoreCase));

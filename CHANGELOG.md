@@ -8,6 +8,31 @@ The project follows Semantic Versioning from the first formal preview release on
 
 No unreleased product changes are recorded after the current preview baseline yet.
 
+## [0.2.0-preview.6] - 2026-09-21
+
+### Added
+
+- Microsoft Entra users with the `LlmProxy.User` application role can create and manage multiple personal inference API keys through `/api/me/api-credentials`.
+- Personal API keys are bound to the creator's stable Entra tenant ID (`tid`) and object ID (`oid`), while existing administrator-created credentials remain supported as unowned service credentials.
+- Self-service endpoints expose the current Entra identity, personal key metadata, one-time key creation/rotation, revocation and usage aggregated from the existing credential-level telemetry and historical rollups.
+- Administrators can inspect credential ownership and a user-oriented credential inventory through `/api/admin/identity`.
+- The React control plane exposes `/admin/me` so normal Entra users can create, rotate and revoke personal keys and inspect their own usage without calling administrative APIs.
+
+### Changed
+
+- The Entra role model now distinguishes normal product users (`LlmProxy.User`) from read-only operators (`LlmProxy.Reader`) and administrators (`LlmProxy.Admin`).
+- Credential runtime snapshots carry owner identity so key-to-user attribution survives normal local/Redis runtime-state publication.
+
+### Security
+
+- API-key ownership authorization uses immutable Entra `tid` + `oid`, not mutable usernames or email addresses.
+- Raw personal keys are returned only once at creation/rotation, are never persisted, and continue to use the existing HMAC/pepper hashing model.
+- A user can list, rotate or revoke only credentials owned by the same Entra tenant/object identity; administrative service-key behavior remains separate.
+
+### Known scope
+
+- Existing request/output-token governance remains credential/model scoped. Aggregated per-user quotas and currency/spend enforcement require an explicit pricing/chargeback model and are not inferred from token counts.
+
 ## [0.2.0-preview.5] - 2026-09-16
 
 ### Added

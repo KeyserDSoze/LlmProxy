@@ -8,6 +8,8 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
 {
     public const string ApiCredentialIdItem = "LlmProxy.ApiCredentialId";
     public const string UsageGroupIdItem = "LlmProxy.UsageGroupId";
+    public const string OwnerTenantIdItem = "LlmProxy.OwnerTenantId";
+    public const string OwnerObjectIdItem = "LlmProxy.OwnerObjectId";
 
     public async Task InvokeAsync(
         HttpContext context,
@@ -60,8 +62,17 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             {
                 context.Items[UsageGroupIdItem] = usageGroupId;
             }
+            if (!string.IsNullOrWhiteSpace(credential.OwnerTenantId))
+            {
+                context.Items[OwnerTenantIdItem] = credential.OwnerTenantId;
+            }
+            if (!string.IsNullOrWhiteSpace(credential.OwnerObjectId))
+            {
+                context.Items[OwnerObjectIdItem] = credential.OwnerObjectId;
+            }
 
             activity?.SetTag("llmproxy.auth.result", "allowed");
+            activity?.SetTag("llmproxy.auth.personal", credential.OwnerObjectId is not null);
             LlmProxyActivity.SetGuid(activity, "llmproxy.api_credential.id", credential.Id);
             LlmProxyActivity.SetGuid(activity, "llmproxy.usage_group.id", credential.UsageGroupId);
         }

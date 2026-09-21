@@ -6,7 +6,14 @@ public sealed class ApiCredential
     {
     }
 
-    public ApiCredential(string name, string keyPrefix, string keyHash, DateTimeOffset? expiresAtUtc = null)
+    public ApiCredential(
+        string name,
+        string keyPrefix,
+        string keyHash,
+        DateTimeOffset? expiresAtUtc = null,
+        string? ownerTenantId = null,
+        string? ownerObjectId = null,
+        string? ownerPrincipalName = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -23,10 +30,20 @@ public sealed class ApiCredential
             throw new ArgumentException("Key hash is required.", nameof(keyHash));
         }
 
+        var hasTenant = !string.IsNullOrWhiteSpace(ownerTenantId);
+        var hasObject = !string.IsNullOrWhiteSpace(ownerObjectId);
+        if (hasTenant != hasObject)
+        {
+            throw new ArgumentException("Credential ownership requires both Entra tenant id and object id.");
+        }
+
         Name = name.Trim();
         KeyPrefix = keyPrefix;
         KeyHash = keyHash;
         ExpiresAtUtc = expiresAtUtc;
+        OwnerTenantId = hasTenant ? ownerTenantId!.Trim() : null;
+        OwnerObjectId = hasObject ? ownerObjectId!.Trim() : null;
+        OwnerPrincipalName = string.IsNullOrWhiteSpace(ownerPrincipalName) ? null : ownerPrincipalName.Trim();
     }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -38,9 +55,19 @@ public sealed class ApiCredential
     public DateTimeOffset? ExpiresAtUtc { get; private set; }
     public DateTimeOffset? LastUsedAtUtc { get; private set; }
     public Guid? UsageGroupId { get; private set; }
+    public string? OwnerTenantId { get; private set; }
+    public string? OwnerObjectId { get; private set; }
+    public string? OwnerPrincipalName { get; private set; }
+
+    public bool IsPersonal => OwnerTenantId is not null && OwnerObjectId is not null;
 
     public bool IsUsable(DateTimeOffset nowUtc)
         => Enabled && (ExpiresAtUtc is null || ExpiresAtUtc > nowUtc);
+
+    public bool IsOwnedBy(string tenantId, string objectId)
+        => IsPersonal &&
+           string.Equals(OwnerTenantId, tenantId, StringComparison.OrdinalIgnoreCase) &&
+           string.Equals(OwnerObjectId, objectId, StringComparison.OrdinalIgnoreCase);
 
     public void Revoke() => Enabled = false;
 

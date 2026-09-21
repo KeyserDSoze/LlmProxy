@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current preview line: `0.2.0-preview.5`.
+> Current preview line: `0.2.0-preview.6`.
 
 ## What this product is
 
@@ -39,6 +39,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Health hysteresis and safe drain/resume maintenance.
 - Distributed physical-capacity admission with Redis leases.
 - HMAC-backed bearer credentials with one-time creation/rotation secrets.
+- Entra-owned personal API keys with self-service lifecycle and per-key usage attribution.
 - Usage Groups, request-rate governance and output-token budgets.
 - Historical PostgreSQL usage rollups beyond raw-metric retention.
 - Transactional PostgreSQL -> Redis runtime-state outbox.
@@ -210,8 +211,11 @@ Production administration is designed for Entra ID with roles:
 
 ```text
 LlmProxy.Admin
+LlmProxy.User
 LlmProxy.Reader
 ```
+
+`LlmProxy.User` uses `/admin/me` to create, rotate and revoke personal API keys and inspect own usage. `LlmProxy.Reader` remains an operational read-only role.
 
 Do not expose administrative surfaces publicly before Entra is configured and validated.
 
@@ -304,3 +308,6 @@ Repository automation cannot replace environment validation for:
 ## License
 
 Internal project. Licensing and external distribution terms will be defined before productization.
+
+
+Identity and personal API-key ownership are defined in `docs/identity-api-keys.md`.

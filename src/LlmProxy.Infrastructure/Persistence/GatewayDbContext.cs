@@ -72,9 +72,13 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.Property(x => x.KeyPrefix).HasMaxLength(32).IsRequired();
             entity.Property(x => x.KeyHash).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.OwnerTenantId).HasMaxLength(64);
+            entity.Property(x => x.OwnerObjectId).HasMaxLength(64);
+            entity.Property(x => x.OwnerPrincipalName).HasMaxLength(320);
             entity.HasIndex(x => x.KeyPrefix);
             entity.HasIndex(x => x.KeyHash).IsUnique();
             entity.HasIndex(x => x.UsageGroupId);
+            entity.HasIndex(x => new { x.OwnerTenantId, x.OwnerObjectId });
             entity.HasOne<UsageGroup>().WithMany().HasForeignKey(x => x.UsageGroupId).OnDelete(DeleteBehavior.SetNull);
         });
 

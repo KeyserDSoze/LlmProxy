@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using LlmProxy.Api.Admin;
+using LlmProxy.Api.Identity;
 using LlmProxy.Api.Observability;
 using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Product;
@@ -123,6 +124,7 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminRead", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.Reader"));
     options.AddPolicy("AdminWrite", policy => policy.RequireRole("LlmProxy.Admin"));
+    options.AddPolicy("SelfService", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.User"));
 });
 
 if (entraEnabled)
@@ -172,6 +174,8 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
 app.MapOpenAiEndpoints();
+app.MapIdentitySelfServiceEndpoints(entraEnabled);
+app.MapIdentityAdminEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
@@ -191,6 +195,10 @@ if (entraEnabled)
 {
     app.MapGet("/auth/login", () => Results.Challenge(
         new AuthenticationProperties { RedirectUri = "/admin/" },
+        [OpenIdConnectDefaults.AuthenticationScheme]));
+
+    app.MapGet("/auth/user-login", () => Results.Challenge(
+        new AuthenticationProperties { RedirectUri = "/admin/me" },
         [OpenIdConnectDefaults.AuthenticationScheme]));
 
     app.MapGet("/auth/logout", () => Results.SignOut(

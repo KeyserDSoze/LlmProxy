@@ -650,10 +650,11 @@ https://learn.microsoft.com/entra/identity-platform/how-to-add-redirect-uri
 
 ```text
 LlmProxy.Admin
+LlmProxy.User
 LlmProxy.Reader
 ```
 
-`LlmProxy.Admin` può modificare la configurazione; `LlmProxy.Reader` può leggere il control plane.
+`LlmProxy.Admin` può modificare la configurazione e usare il self-service; `LlmProxy.User` può gestire esclusivamente le proprie API key personali tramite `/admin/me`; `LlmProxy.Reader` può leggere il control plane operativo.
 
 Configura quindi:
 

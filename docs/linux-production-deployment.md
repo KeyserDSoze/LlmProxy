@@ -383,7 +383,7 @@ Redeploy and validate Admin authentication privately:
 bash docker/scripts/deploy.sh <same-or-new-image-tag>
 ```
 
-Supported roles are `LlmProxy.Admin` and `LlmProxy.Reader`.
+Supported roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. `LlmProxy.User` is the normal inference-consumer role and uses `/admin/me` for personal API-key self-service; `LlmProxy.Reader` remains read-only operational access.
 
 The installer can also write these values on first provisioning when they are supplied as environment variables through `sudo -E`.
 

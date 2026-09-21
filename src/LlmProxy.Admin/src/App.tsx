@@ -138,7 +138,7 @@ export default function App() {
           <button className="secondary" onClick={() => void refresh()}>Refresh</button>
         </header>
 
-        {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div>}
+        {authRequired && <div className="notice">Administrator or read-only operator access is required here. <a href="/auth/login">Sign in with Entra ID</a> or, for normal users, open <a href="/admin/me">My API Keys</a>.</div>}
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>

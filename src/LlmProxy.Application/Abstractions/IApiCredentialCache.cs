@@ -7,7 +7,9 @@ public sealed record ApiCredentialSnapshot(
     string KeyHash,
     bool Enabled,
     DateTimeOffset? ExpiresAtUtc,
-    Guid? UsageGroupId)
+    Guid? UsageGroupId,
+    string? OwnerTenantId,
+    string? OwnerObjectId)
 {
     public bool IsUsable(DateTimeOffset nowUtc)
         => Enabled && (ExpiresAtUtc is null || ExpiresAtUtc > nowUtc);
@@ -18,7 +20,9 @@ public sealed record ApiCredentialSnapshot(
             credential.KeyHash,
             credential.Enabled,
             credential.ExpiresAtUtc,
-            credential.UsageGroupId);
+            credential.UsageGroupId,
+            credential.OwnerTenantId,
+            credential.OwnerObjectId);
 }
 
 public interface IApiCredentialCache

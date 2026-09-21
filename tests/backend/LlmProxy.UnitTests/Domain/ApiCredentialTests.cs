@@ -32,9 +32,49 @@ public sealed class ApiCredentialTests
     }
 
     [Fact]
+    public void Personal_credential_is_bound_to_stable_entra_identity()
+    {
+        var credential = new ApiCredential(
+            "Project Alpha",
+            "lp_abc",
+            "HASH",
+            ownerTenantId: "tenant-1",
+            ownerObjectId: "object-1",
+            ownerPrincipalName: "user@example.com");
+
+        Assert.True(credential.IsPersonal);
+        Assert.True(credential.IsOwnedBy("TENANT-1", "OBJECT-1"));
+        Assert.False(credential.IsOwnedBy("tenant-1", "other-object"));
+        Assert.Equal("user@example.com", credential.OwnerPrincipalName);
+    }
+
+    [Fact]
+    public void Personal_credential_requires_tenant_and_object_id_together()
+    {
+        Assert.Throws<ArgumentException>(() => new ApiCredential(
+            "Invalid",
+            "lp_abc",
+            "HASH",
+            ownerTenantId: "tenant-1"));
+
+        Assert.Throws<ArgumentException>(() => new ApiCredential(
+            "Invalid",
+            "lp_abc",
+            "HASH",
+            ownerObjectId: "object-1"));
+    }
+
+    [Fact]
     public void Rotation_replaces_prefix_and_hash_without_changing_identity_or_assignment()
     {
-        var credential = new ApiCredential("Copilot", "lp_old", "OLD_HASH", DateTimeOffset.UtcNow.AddDays(30));
+        var credential = new ApiCredential(
+            "Copilot",
+            "lp_old",
+            "OLD_HASH",
+            DateTimeOffset.UtcNow.AddDays(30),
+            "tenant-1",
+            "object-1",
+            "user@example.com");
         var usageGroupId = Guid.NewGuid();
         credential.AssignUsageGroup(usageGroupId);
         var id = credential.Id;
@@ -47,6 +87,9 @@ public sealed class ApiCredentialTests
         Assert.Equal(createdAtUtc, credential.CreatedAtUtc);
         Assert.Equal(expiresAtUtc, credential.ExpiresAtUtc);
         Assert.Equal(usageGroupId, credential.UsageGroupId);
+        Assert.Equal("tenant-1", credential.OwnerTenantId);
+        Assert.Equal("object-1", credential.OwnerObjectId);
+        Assert.Equal("user@example.com", credential.OwnerPrincipalName);
         Assert.Equal("lp_new", credential.KeyPrefix);
         Assert.Equal("NEW_HASH", credential.KeyHash);
         Assert.True(credential.Enabled);

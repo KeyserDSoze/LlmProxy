@@ -156,11 +156,15 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("KeyPrefix").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
             b.Property<DateTimeOffset?>("LastUsedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("Name").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<string>("OwnerObjectId").HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("OwnerPrincipalName").HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<string>("OwnerTenantId").HasMaxLength(64).HasColumnType("character varying(64)");
             b.Property<Guid?>("UsageGroupId").HasColumnType("uuid");
             b.HasKey("Id");
             b.HasIndex("KeyHash").IsUnique();
             b.HasIndex("KeyPrefix");
             b.HasIndex("UsageGroupId");
+            b.HasIndex("OwnerTenantId", "OwnerObjectId");
             b.ToTable("api_credentials");
         });
 

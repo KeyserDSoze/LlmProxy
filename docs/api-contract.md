@@ -104,8 +104,10 @@ Inference endpoints require:
 Authorization: Bearer <gateway-api-key>
 ```
 
-Credentials are database-backed, hashed, revocable and may have an expiry date. The raw secret is returned only once when an administrator creates a credential.
+Credentials are database-backed, HMAC-hashed, revocable and may have an expiry date. Administrators can create service credentials; authenticated Entra users with `LlmProxy.User` or `LlmProxy.Admin` can create personal credentials through `/api/me/api-credentials`. Personal ownership is the stable Entra `(tid, oid)` pair. Raw secrets are returned only once at creation or rotation.
 
 ## Administration
 
 Administration endpoints live under `/api/admin`. They are not OpenAI-compatible and may evolve independently of `/v1`.
+
+Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity and usage attributable to those credentials.
