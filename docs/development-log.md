@@ -1,5 +1,23 @@
 # Development log
 
+## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — IMPLEMENTED / PENDING VALIDATION
+
+Extended preview.6 personal-key ownership with aggregate request-count governance across every personal API key owned by the same stable Entra `tid + oid`.
+
+Architecture:
+
+- added persisted `UserRateLimitPolicy` with optional logical-model scope;
+- reused the existing transactional RatePolicy outbox channel so PostgreSQL remains authoritative, Redis remains shared L2 and local RAM remains request-path L1;
+- changed request-rate counter acquisition to accept all applicable policies atomically;
+- enforced `user policy AND credential policy` without consuming either counter when one applicable policy rejects;
+- extended Redis fixed-window admission with one Lua transaction spanning the user and credential counters;
+- kept output-token budgets credential/model scoped and left monetary/spend budgets intentionally undefined until a pricing/chargeback model exists;
+- added Admin CRUD/UI for user request limits and read-only `/api/me/rate-limits` + personal-portal visibility;
+- extended PostgreSQL governance smoke for two keys sharing one Entra identity and restart republish;
+- extended the existing two-gateway Redis smoke to prove one shared aggregate user counter across replicas.
+
+Validation evidence is intentionally pending until the implementation commit passes standard CI, Full Stack and container publication.
+
 ## 2026-09-21 — Entra-owned personal API keys / 0.2.0-preview.6 — VALIDATED
 
 Implemented the Entra identity/API-key requirement by extending the existing credential and governance model rather than replacing it.

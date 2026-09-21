@@ -5,7 +5,7 @@ LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview bas
 ## Current version
 
 ```text
-0.2.0-preview.6
+0.2.0-preview.7
 ```
 
 The product remains pre-1.0 while target-host, real DGX/Copilot/Entra/Cloudflare acceptance remains outside repository CI.
@@ -39,7 +39,7 @@ The runtime/assembly version is authoritative; Admin package version must stay a
 
 ```bash
 bash docker/scripts/validate-release-version.sh
-bash docker/scripts/validate-release-version.sh 0.2.0-preview.6
+bash docker/scripts/validate-release-version.sh 0.2.0-preview.7
 bash docker/scripts/validate-release-main-ci.sh <40-char-source-sha> <workflow-runs.json>
 ```
 
@@ -64,9 +64,10 @@ Formal sequence:
 0.2.0-preview.4  consolidated Linux production deployment + host installer
 0.2.0-preview.5  production environment acceptance evidence
 0.2.0-preview.6  Entra-owned personal API keys + user self-service
+0.2.0-preview.7  aggregate Entra user request quotas
 ```
 
-`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Its implementation, full-stack and publication evidence are recorded below.
+`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Its implementation, full-stack and publication evidence are recorded below. `0.2.0-preview.7` adds aggregate Entra-user request quotas; its exact validation/publication evidence must be recorded only after the candidate passes CI and Full Stack.
 
 `0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
 
@@ -127,18 +128,18 @@ sha-<7 chars>
 A Git tag such as:
 
 ```text
-v0.2.0-preview.6
+v0.2.0-preview.7
 ```
 
 must satisfy both conditions before publication:
 
-1. tag version exactly matches compiled version `0.2.0-preview.6`;
+1. tag version exactly matches compiled version `0.2.0-preview.7`;
 2. the tagged source SHA already has successful repository `CI` from a push to `main`.
 
 A matching prerelease tag may publish:
 
 ```text
-0.2.0-preview.6
+0.2.0-preview.7
 sha-<7 chars>
 ```
 
@@ -146,7 +147,7 @@ Prereleases do not update stable-looking aliases. A stable tag may additionally 
 
 The same Actions-API source gate is used for ordinary main and Git-tag publications. For a `workflow_run`-triggered publication, the API-selected CI run ID must equal the triggering CI run ID. The gate runs before GHCR login.
 
-Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.6` tag has been created.
+Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.7` tag has been created.
 
 ## OCI SBOM and provenance contract
 
@@ -182,6 +183,6 @@ For production acceptance/deployment, `sha-7da5682` is the immutable image alias
 
 ## Current release state
 
-Repository-supported release gating is complete for the current MVP. The current validated runtime adds Entra-owned personal API keys and user self-service while retaining service credentials: source validation before GHCR, version/tag consistency, immutable digest capture and post-push SBOM/provenance verification are implemented and validated.
+Repository-supported release gating is complete for the current MVP. `0.2.0-preview.7` is the current candidate line for aggregate Entra-user request quotas; `0.2.0-preview.6` remains the latest validated runtime until preview.7 CI, Full Stack and publication evidence are green.
 
 Creating an actual immutable Git tag/GitHub Release is an explicit product-owner publication decision, not an unfinished engineering prerequisite.

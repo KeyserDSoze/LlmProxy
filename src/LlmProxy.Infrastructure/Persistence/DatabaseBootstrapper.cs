@@ -88,9 +88,11 @@ public sealed class DatabaseBootstrapper(
         routeCatalog.Replace(nodeSnapshots, modelSnapshots, deploymentSnapshots);
         runtimeStateSink.PublishRouteCatalogSnapshot(nodeSnapshots, modelSnapshots, deploymentSnapshots);
 
-        var ratePolicySnapshots = (await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
-            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot)
-            .ToArray();
+        var credentialRatePolicySnapshots = (await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var userRatePolicySnapshots = (await dbContext.UserRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var ratePolicySnapshots = credentialRatePolicySnapshots.Concat(userRatePolicySnapshots).ToArray();
         requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
         runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);
     }

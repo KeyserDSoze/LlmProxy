@@ -99,6 +99,16 @@ call_model() {
     http://127.0.0.1:8080/v1/chat/completions
 }
 
+call_model_with_key() {
+  local api_key="$1"
+  local output="$2"
+  curl --silent --dump-header "${output}.headers" --output "${output}.json" --write-out '%{http_code}' \
+    -H "Authorization: Bearer ${api_key}" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"user quota smoke"}]}' \
+    http://127.0.0.1:8080/v1/chat/completions
+}
+
 call_budget_model() {
   local output="$1"
   curl --silent --dump-header "${output}.headers" --output "${output}.json" --write-out '%{http_code}' \
@@ -148,6 +158,55 @@ restart2="$(call_model /tmp/governance-restart-2)"
 restart3="$(call_model /tmp/governance-restart-3)"
 [[ "$restart1" == "200" && "$restart2" == "200" && "$restart3" == "429" ]] || fail_with_diagnostics "Persisted policy was not republished after restart; got ${restart1}/${restart2}/${restart3}."
 
+# Aggregate user request quota: two personal credentials with the same Entra tid/oid must share one counter.
+user_key_a_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"User quota key A"}' \
+  http://127.0.0.1:8080/api/admin/api-credentials)"
+user_key_b_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"User quota key B"}' \
+  http://127.0.0.1:8080/api/admin/api-credentials)"
+user_key_a_id="$(echo "$user_key_a_json" | jq -r '.id')"
+user_key_b_id="$(echo "$user_key_b_json" | jq -r '.id')"
+user_key_a_secret="$(echo "$user_key_a_json" | jq -r '.secret')"
+user_key_b_secret="$(echo "$user_key_b_json" | jq -r '.secret')"
+
+"${COMPOSE[@]}" exec -T postgres psql \
+  -U "${POSTGRES_USER:-llmproxy}" \
+  -d "${POSTGRES_DB:-llmproxy}" \
+  -v ON_ERROR_STOP=1 \
+  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='user-smoke', \"OwnerPrincipalName\"='smoke@example.com' WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
+
+# Direct SQL is test-only setup; restart rebuilds the credential L1 from PostgreSQL so ownership is present on the inference path.
+"${COMPOSE[@]}" restart llmproxy >/dev/null
+wait_ready
+
+user_policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d '{"ownerTenantId":"tenant-smoke","ownerObjectId":"user-smoke","logicalModel":"agic-code-fast","requestsPerWindow":2,"windowSeconds":60,"enabled":true}' \
+  http://127.0.0.1:8080/api/admin/user-rate-limits)"
+user_policy_id="$(echo "$user_policy_json" | jq -r '.id')"
+echo "$user_policy_json" | jq -e '.requestsPerWindow == 2 and .logicalModel == "agic-code-fast"' >/dev/null
+
+user_limit_list="$(curl --fail --silent http://127.0.0.1:8080/api/admin/user-rate-limits)"
+echo "$user_limit_list" | jq -e --arg policy "$user_policy_id" 'map(select(.id == $policy and .ownerObjectId == "USER-SMOKE" and .requestsPerWindow == 2)) | length == 1' >/dev/null
+
+user_status1="$(call_model_with_key "$user_key_a_secret" /tmp/governance-user-1)"
+user_status2="$(call_model_with_key "$user_key_b_secret" /tmp/governance-user-2)"
+user_status3="$(call_model_with_key "$user_key_a_secret" /tmp/governance-user-3)"
+[[ "$user_status1" == "200" && "$user_status2" == "200" ]] || fail_with_diagnostics "Expected first two cross-key user-quota requests to succeed; got ${user_status1}/${user_status2}."
+[[ "$user_status3" == "429" ]] || fail_with_diagnostics "Expected aggregate user quota to reject third cross-key request; got ${user_status3}."
+jq -e '.error.code == "rate_limit_exceeded"' /tmp/governance-user-3.json >/dev/null
+
+# User policy must survive restart and republish through the normal runtime-state bootstrap.
+"${COMPOSE[@]}" restart llmproxy >/dev/null
+wait_ready
+persisted_user_limits="$(curl --fail --silent http://127.0.0.1:8080/api/admin/user-rate-limits)"
+echo "$persisted_user_limits" | jq -e --arg policy "$user_policy_id" 'map(select(.id == $policy and .enabled == true)) | length == 1' >/dev/null
+user_restart1="$(call_model_with_key "$user_key_a_secret" /tmp/governance-user-restart-1)"
+user_restart2="$(call_model_with_key "$user_key_b_secret" /tmp/governance-user-restart-2)"
+user_restart3="$(call_model_with_key "$user_key_b_secret" /tmp/governance-user-restart-3)"
+[[ "$user_restart1" == "200" && "$user_restart2" == "200" && "$user_restart3" == "429" ]] \
+  || fail_with_diagnostics "Persisted user quota was not republished after restart; got ${user_restart1}/${user_restart2}/${user_restart3}."
+
 # Move request-rate admission out of the way, then configure the output-token budget on the same policy.
 # The mock returns 7 completion tokens. Budget=17 and reservation=10 means the second request succeeds
 # only if the first settlement refunds 3 unused tokens. The third request must then be rejected at 14+10>17.
@@ -196,6 +255,7 @@ audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=1
 echo "$audit_json" | jq -e 'map(.action) | index("usage_group.create") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("credential.usage_group.assign") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("rate_limit.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user_rate_limit.create") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("output_token_budget.update") != null' >/dev/null
 
-echo "Governance smoke suite passed: usage group attribution, request-rate limiting, output-token reservation/refund/exhaustion, and restart republish verified."
+echo "Governance smoke suite passed: usage group attribution, credential + aggregate-user request-rate limiting, output-token reservation/refund/exhaustion, and restart republish verified."

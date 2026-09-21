@@ -7,12 +7,22 @@ async function json(route: Route, body: unknown, status = 200) {
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
-    version: '0.2.0-preview.6',
+    version: '0.2.0-preview.7',
     channel: 'preview',
     releasedOn: '2026-09-21',
     buildRevision: 'abcdef1234567890',
     builtAtUtc: null,
     releases: [
+      {
+        version: '0.2.0-preview.7',
+        releasedOn: '2026-09-21',
+        title: 'Aggregated Entra user request quotas',
+        sections: {
+          Added: ['Administrators can configure request-rate policies for an Entra user across all personal API keys.'],
+          Changed: ['Request admission evaluates applicable user and credential policies together with AND semantics.'],
+          Security: ['Monetary spend limits remain intentionally unsupported until an explicit pricing or chargeback model is configured.']
+        }
+      },
       {
         version: '0.2.0-preview.6',
         releasedOn: '2026-09-21',
@@ -28,9 +38,7 @@ test('release notes page exposes the current product version and versioned patch
         releasedOn: '2026-09-16',
         title: 'Production environment acceptance evidence',
         sections: {
-          Added: ['A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.'],
-          Changed: ['Target-host acceptance is now an executable, repeatable evidence step rather than only a manual checklist.'],
-          Security: ['Acceptance evidence excludes prompts, request and response bodies, generated model output and API secrets.']
+          Added: ['A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.']
         }
       },
       {
@@ -68,9 +76,10 @@ test('release notes page exposes the current product version and versioned patch
 
   await page.goto('/admin/releases')
   await expect(page.getByRole('heading', { name: 'Release notes' })).toBeVisible()
-  await expect(page.getByText('0.2.0-preview.6', { exact: true })).toBeVisible()
+  await expect(page.getByText('0.2.0-preview.7', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Aggregated Entra user request quotas/ })).toBeVisible()
+  await expect(page.getByText('Administrators can configure request-rate policies for an Entra user across all personal API keys.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Entra-owned personal API keys/ })).toBeVisible()
-  await expect(page.getByText('Users with the LlmProxy.User Entra application role can create, list, rotate and revoke multiple personal inference API keys.')).toBeVisible()
   await expect(page.getByRole('heading', { name: /Production environment acceptance evidence/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Consolidated Linux production deployment/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Validated tagged releases/ })).toBeVisible()

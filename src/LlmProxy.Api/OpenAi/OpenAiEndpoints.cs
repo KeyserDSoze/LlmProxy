@@ -96,6 +96,12 @@ public static class OpenAiEndpoints
         var usageGroupId = context.Items.TryGetValue(InferenceApiKeyMiddleware.UsageGroupIdItem, out var groupValue) && groupValue is Guid groupId
             ? groupId
             : (Guid?)null;
+        var ownerTenantId = context.Items.TryGetValue(InferenceApiKeyMiddleware.OwnerTenantIdItem, out var tenantValue)
+            ? tenantValue as string
+            : null;
+        var ownerObjectId = context.Items.TryGetValue(InferenceApiKeyMiddleware.OwnerObjectIdItem, out var ownerValue)
+            ? ownerValue as string
+            : null;
         Guid? finalDeploymentId = null;
         Guid? finalNodeId = null;
         var finalStatusCode = StatusCodes.Status500InternalServerError;
@@ -143,6 +149,8 @@ public static class OpenAiEndpoints
                 var rateLimitDecision = await rateLimiter.TryAcquireAsync(
                     callerCredentialId,
                     publicModelName,
+                    ownerTenantId,
+                    ownerObjectId,
                     DateTimeOffset.UtcNow,
                     context.RequestAborted);
                 if (!rateLimitDecision.Allowed)

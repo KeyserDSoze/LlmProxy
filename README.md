@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current preview line: `0.2.0-preview.6`.
+> Current preview line: `0.2.0-preview.7` (aggregate Entra user request quotas; validation evidence is recorded in `docs/project-status.md`).
 
 ## What this product is
 
@@ -40,7 +40,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Distributed physical-capacity admission with Redis leases.
 - HMAC-backed bearer credentials with one-time creation/rotation secrets.
 - Entra-owned personal API keys with self-service lifecycle and per-key usage attribution.
-- Usage Groups, request-rate governance and output-token budgets.
+- Usage Groups, per-credential request-rate governance, aggregate Entra-user request quotas and output-token budgets.
 - Historical PostgreSQL usage rollups beyond raw-metric retention.
 - Transactional PostgreSQL -> Redis runtime-state outbox.
 - Metadata-only metrics/audit/OTEL; prompts/source/generated content are excluded by default.
@@ -93,7 +93,7 @@ export GHCR_TOKEN='<token-with-package-read-access>'
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
-  --image-tag sha-723c47d
+  --image-tag sha-7da5682
 ```
 
 `docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks DGX `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
@@ -117,7 +117,7 @@ After first host preparation, or when provisioning manually, deploy a published 
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh sha-723c47d
+  bash docker/scripts/deploy.sh sha-7da5682
 ```
 
 For controlled production changes prefer an immutable `sha-<7>` alias or an exact SemVer tag rather than mutable `main`.
@@ -215,7 +215,7 @@ LlmProxy.User
 LlmProxy.Reader
 ```
 
-`LlmProxy.User` uses `/admin/me` to create, rotate and revoke personal API keys and inspect own usage. `LlmProxy.Reader` remains an operational read-only role.
+`LlmProxy.User` uses `/admin/me` to create, rotate and revoke personal API keys, inspect own usage and see read-only aggregate user request limits. Administrators configure aggregate user request quotas from Usage & Governance. `LlmProxy.Reader` remains an operational read-only role.
 
 Do not expose administrative surfaces publicly before Entra is configured and validated.
 
@@ -243,19 +243,22 @@ Pushes/PRs execute backend, frontend, Docker/PostgreSQL and operational smokes. 
 
 Published images include source/version/build identity. The publish workflow records the immutable image digest and verifies registry-native SPDX SBOM and SLSA/BuildKit provenance attestations.
 
-Validated `0.2.0-preview.5` runtime checkpoint:
+Latest validated runtime checkpoint before the `0.2.0-preview.7` candidate:
 
 ```text
-source                 723c47d919a59cf95e447c071ef377ab92a06498
-CI                     35099356925 SUCCESS
-Publish GHCR           35099987458 SUCCESS
-image digest           sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest   sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
-release artifact       10448046779
-artifact digest        sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+version                0.2.0-preview.6
+source                 7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                     35569885810 SUCCESS
+Full Stack             35569885843 SUCCESS
+Publish GHCR           35570238079 SUCCESS
+image alias            sha-7da5682
+image digest           sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest   sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+release artifact       10625781303
+artifact digest        sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
-No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created.
+No immutable `v0.2.0-preview.7` Git tag or GitHub Release has been created.
 
 ## Important production configuration
 

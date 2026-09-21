@@ -17,6 +17,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
     public DbSet<UsageGroup> UsageGroups => Set<UsageGroup>();
     public DbSet<RateLimitPolicy> RateLimitPolicies => Set<RateLimitPolicy>();
+    public DbSet<UserRateLimitPolicy> UserRateLimitPolicies => Set<UserRateLimitPolicy>();
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
@@ -90,6 +91,17 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => x.ApiCredentialId);
             entity.HasIndex(x => new { x.ApiCredentialId, x.LogicalModel }).IsUnique();
             entity.HasOne<ApiCredential>().WithMany().HasForeignKey(x => x.ApiCredentialId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserRateLimitPolicy>(entity =>
+        {
+            entity.ToTable("user_rate_limit_policies");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.OwnerTenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.OwnerObjectId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.LogicalModel).HasMaxLength(160);
+            entity.HasIndex(x => new { x.OwnerTenantId, x.OwnerObjectId });
+            entity.HasIndex(x => new { x.OwnerTenantId, x.OwnerObjectId, x.LogicalModel });
         });
 
         modelBuilder.Entity<RoutingPolicy>(entity =>

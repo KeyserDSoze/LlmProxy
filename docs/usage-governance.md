@@ -9,9 +9,9 @@ Current request governance is:
 ```text
 OpenAI-compatible inference request
   -> bearer/API credential authentication from local L1
-  -> credential + UsageGroup resolution
+  -> credential + Entra owner + UsageGroup resolution
   -> output-token budget reservation when configured
-  -> request-rate admission
+  -> aggregate user + credential request-rate admission
   -> logical-model routing + physical-capacity admission
   -> DGX / vLLM
   -> output-token budget settlement
@@ -108,7 +108,7 @@ CreatedAtUtc
 UpdatedAtUtc
 ```
 
-Policy precedence is:
+Credential policy precedence is:
 
 ```text
 credential + exact logical model
@@ -116,13 +116,17 @@ credential + exact logical model
 credential-wide policy (LogicalModel = null)
 ```
 
+`UserRateLimitPolicy` independently provides an aggregate request-count scope for one Entra `OwnerTenantId + OwnerObjectId`, with the same exact-model then all-model fallback. If both a user policy and credential policy apply, both must permit the request.
+
 An output-token budget is active only when the policy is enabled and both token fields are configured. In V1 the request-rate counter and output-token budget deliberately share the same `WindowSeconds` value and policy scope.
 
 Policy configuration is kept in local L1 and republished through PostgreSQL transactional-outbox -> Redis runtime-state publication. Credential rotation keeps the same `ApiCredentialId`, so policy records are not recreated or rewritten.
 
 ## Request-rate admission
 
-Request-rate admission is fixed-window. Redis-enabled deployments use one shared Redis counter across gateway replicas; Redis-disabled deployments use the local in-memory store.
+Request-rate admission is fixed-window. Redis-enabled deployments use shared Redis counters across gateway replicas; Redis-disabled deployments use the local in-memory store.
+
+For personal credentials, request admission evaluates the applicable Entra-user policy and credential policy together. Counter acquisition is atomic across the applicable policies: a rejection by either scope leaves both counters unchanged. User policies therefore aggregate traffic from every personal credential owned by the same stable `(tid, oid)`.
 
 A rejection returns:
 
@@ -205,6 +209,7 @@ POST /api/me/api-credentials
 POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
+GET  /api/me/rate-limits
 ```
 
 Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from request bodies.
@@ -230,6 +235,11 @@ POST   /api/admin/rate-limits
 PUT    /api/admin/rate-limits/{id}
 DELETE /api/admin/rate-limits/{id}
 
+GET    /api/admin/user-rate-limits
+POST   /api/admin/user-rate-limits
+PUT    /api/admin/user-rate-limits/{id}
+DELETE /api/admin/user-rate-limits/{id}
+
 GET    /api/admin/output-token-budgets
 PUT    /api/admin/rate-limits/{id}/output-token-budget
 DELETE /api/admin/rate-limits/{id}/output-token-budget
@@ -245,7 +255,7 @@ Administrative mutations are audited. Secrets and prompt/output content are excl
 
 ## React control plane
 
-`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, request-rate policies and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle and own usage.
+`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, credential request-rate policies, aggregate Entra-user request limits and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle, own usage and read-only user request-limit visibility.
 
 Credential rotation UI behavior:
 
@@ -300,6 +310,8 @@ Output-token budget runtime behavior remains validated in the same Full Stack ru
 
 ## Per-user and monetary limits
 
-Existing request-rate and output-token budgets are credential/model scoped, so they can be applied to each personal key today. **Aggregated per-user quotas across multiple keys are not yet enforced.** They require an explicit precedence/counter model keyed by Entra `(tid, oid)`.
+Aggregate **request-count** limits across all personal keys are implemented at Entra user/model scope. They compose with per-credential request limits using AND semantics.
 
-Currency/spend limits are also not yet enforced. On-prem vLLM usage has no authoritative monetary rate; a pricing/chargeback model (for example per-model token rates or GPU-time allocation) must be defined before currency budgets are implemented.
+Output-token budgets remain credential/model scoped. An aggregate user token budget would need explicit reservation/settlement precedence semantics before implementation.
+
+Currency/spend limits are not enforced. On-prem vLLM usage has no authoritative monetary rate; a pricing/chargeback model (for example per-model token rates or GPU-time allocation) must be defined before currency budgets are implemented.

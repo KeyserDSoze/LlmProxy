@@ -4,13 +4,15 @@ Last reviewed: **2026-09-21**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
-## Current validated product baseline
+## Current product candidate and validated baseline
 
-Current formal product version:
+Current formal product candidate:
 
 ```text
-0.2.0-preview.6
+0.2.0-preview.7
 ```
+
+Latest validated runtime remains `0.2.0-preview.6` until preview.7 CI, Full Stack and publication evidence are green.
 
 Validated runtime/release checkpoint:
 
@@ -57,9 +59,10 @@ Formal release sequence:
 0.2.0-preview.4  consolidated Linux production deployment + host installer
 0.2.0-preview.5  production environment acceptance evidence
 0.2.0-preview.6  Entra-owned personal API keys + user self-service
+0.2.0-preview.7  aggregate Entra user request quotas
 ```
 
-No immutable `v0.2.0-preview.6` Git tag or GitHub Release has been created. That remains an explicit product-owner publication action.
+No immutable `v0.2.0-preview.7` Git tag or GitHub Release has been created. That remains an explicit product-owner publication action.
 
 ## Linux production deployment — DONE / VALIDATED FOR REPOSITORY PATH
 
@@ -221,9 +224,9 @@ Credentials persist HMAC-SHA256 hashes and safe metadata. Administrator-created 
 
 Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users use `/api/me/*` or `/admin/me` to create/list/rotate/revoke only their own keys and inspect own credential-attributed usage. Admin/Reader identity inventory is available under `/api/admin/identity`.
 
-Caller governance includes shared request-rate counters and output-token budgets with pre-inference reservation, output-cap injection, known-usage refund and conservative uncertain-usage charging. Redis coordination fails closed. Those policies are currently credential/model scoped, including for personal keys.
+Caller governance includes credential/model request-rate counters and output-token budgets with pre-inference reservation, output-cap injection, known-usage refund and conservative uncertain-usage charging. Preview.7 adds aggregate Entra-user request-rate policies across all personal keys, keyed by stable `tid+oid` and optionally logical model. Applicable user and credential request counters are acquired atomically with AND semantics. Redis coordinates the aggregate counters across replicas; the request path remains DB-free.
 
-Aggregated per-user quotas across multiple keys require explicit precedence/counter semantics. Input/total-token quotas and monetary budgets remain requirements-driven; spend enforcement additionally requires an explicit pricing/chargeback model.
+Aggregate user output-token quotas, input/total-token quotas and monetary budgets remain requirements-driven; spend enforcement additionally requires an explicit pricing/chargeback model.
 
 ### Historical reporting / retention
 

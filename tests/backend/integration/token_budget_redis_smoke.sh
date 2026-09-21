@@ -73,6 +73,17 @@ wait_http() {
   return 1
 }
 
+call_model_with_key() {
+  local port="$1"
+  local api_key="$2"
+  local output="$3"
+  curl --silent --dump-header "${output}.headers" --output "${output}.json" --write-out '%{http_code}' \
+    -H "Authorization: Bearer ${api_key}" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"distributed user quota smoke"}]}' \
+    "http://127.0.0.1:${port}/v1/chat/completions"
+}
+
 call_budget_model() {
   local port="$1"
   local output="$2"
@@ -111,6 +122,24 @@ done
 credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governance/credentials)"
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available."
+
+# Prepare two personal credentials with one shared Entra identity. Direct SQL is test-only setup;
+# restarting the primary rebuilds its credential L1 with ownership metadata before the peer starts.
+user_key_a_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"name":"Redis user key A"}' http://127.0.0.1:8080/api/admin/api-credentials)"
+user_key_b_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"name":"Redis user key B"}' http://127.0.0.1:8080/api/admin/api-credentials)"
+user_key_a_id="$(echo "$user_key_a_json" | jq -r '.id')"
+user_key_b_id="$(echo "$user_key_b_json" | jq -r '.id')"
+user_key_a_secret="$(echo "$user_key_a_json" | jq -r '.secret')"
+user_key_b_secret="$(echo "$user_key_b_json" | jq -r '.secret')"
+
+"${COMPOSE[@]}" exec -T postgres psql \
+  -U "$POSTGRES_USER" \
+  -d "$POSTGRES_DB" \
+  -v ON_ERROR_STOP=1 \
+  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-redis', \"OwnerObjectId\"='user-redis', \"OwnerPrincipalName\"='redis-user@example.com' WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
+
+"${COMPOSE[@]}" restart llmproxy >/dev/null
+wait_http http://127.0.0.1:8080/readyz 60 || fail_with_diagnostics "Primary gateway did not become ready after user-ownership test setup."
 
 # Start a peer before the quota policy exists so the test covers live runtime propagation, not only startup loading.
 if ! docker run -d --name "$PEER_NAME" \
@@ -155,6 +184,27 @@ for attempt in {1..40}; do
   sleep 1
 done
 [[ "$peer_healthy" == "true" ]] || fail_with_diagnostics "Token-budget peer did not observe the shared node as Healthy."
+
+user_policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d '{"ownerTenantId":"tenant-redis","ownerObjectId":"user-redis","logicalModel":"agic-code-fast","requestsPerWindow":2,"windowSeconds":60,"enabled":true}' \
+  http://127.0.0.1:8080/api/admin/user-rate-limits)"
+printf '%s\n' "$user_policy_json" > /tmp/token-budget-user-policy.json
+user_policy_id="$(echo "$user_policy_json" | jq -r '.id')"
+[[ "$user_policy_id" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_with_diagnostics "User quota policy was not created."
+
+# Wait until the peer has consumed the live runtime-state policy by making the cross-gateway requests.
+user_first="$(call_model_with_key 8080 "$user_key_a_secret" /tmp/token-budget-user-a)"
+[[ "$user_first" == "200" ]] || fail_with_diagnostics "Expected first user-quota request on primary to succeed; got ${user_first}."
+user_second="$(call_model_with_key 8081 "$user_key_b_secret" /tmp/token-budget-user-b)"
+[[ "$user_second" == "200" ]] || fail_with_diagnostics "Expected second user-quota request on peer to succeed; got ${user_second}."
+user_third="$(call_model_with_key 8080 "$user_key_a_secret" /tmp/token-budget-user-c)"
+[[ "$user_third" == "429" ]] || fail_with_diagnostics "Expected third cross-gateway request to exceed aggregate user quota; got ${user_third}."
+jq -e '.error.code == "rate_limit_exceeded"' /tmp/token-budget-user-c.json >/dev/null
+
+user_policy_field="${user_policy_id//-/}"
+user_rate_key="llmproxy:rate-limit:${user_policy_field}:2:60"
+user_count="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HGET "$user_rate_key" count 2>/dev/null | tr -d '\r')"
+[[ "$user_count" == "2" ]] || fail_with_diagnostics "Expected shared Redis user rate-limit count=2 after rejection; got ${user_count}."
 
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
   -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":100,\"windowSeconds\":60,\"enabled\":true,\"outputTokensPerWindow\":17,\"maxOutputTokensPerRequest\":10}" \
@@ -263,4 +313,4 @@ recovered="$(call_budget_model 8080 /tmp/token-budget-recovered)"
 [[ "$recovered" == "429" ]] || fail_with_diagnostics "Expected persisted shared budget usage to remain exhausted after Redis recovery; got ${recovered}."
 jq -e '.error.code == "token_budget_exceeded"' /tmp/token-budget-recovered.json >/dev/null
 
-echo "Distributed output-token budget smoke passed: live policy propagation, reservation/refund settlement, shared cross-gateway Redis usage, fail-closed outage handling, and recovery verified."
+echo "Distributed governance smoke passed: aggregate user request quota, live policy propagation, output-token reservation/refund settlement, shared cross-gateway Redis usage, fail-closed outage handling, and recovery verified."

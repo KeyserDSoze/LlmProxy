@@ -71,6 +71,18 @@ public sealed class RateLimitPolicyRuntimeStateInterceptor(
             }
         }
 
+        foreach (var entry in dbContext.ChangeTracker.Entries<UserRateLimitPolicy>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                upserts.Add(ToSnapshot(entry.Entity));
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                removes.Add(entry.Entity.Id);
+            }
+        }
+
         _pending.Remove(dbContext);
         if (upserts.Count > 0 || removes.Count > 0)
         {
@@ -109,4 +121,15 @@ public sealed class RateLimitPolicyRuntimeStateInterceptor(
             policy.Enabled,
             policy.OutputTokensPerWindow,
             policy.MaxOutputTokensPerRequest);
+
+    public static RateLimitPolicySnapshot ToSnapshot(UserRateLimitPolicy policy) =>
+        new(
+            policy.Id,
+            Guid.Empty,
+            policy.LogicalModel,
+            policy.RequestsPerWindow,
+            policy.WindowSeconds,
+            policy.Enabled,
+            OwnerTenantId: policy.OwnerTenantId,
+            OwnerObjectId: policy.OwnerObjectId);
 }

@@ -82,7 +82,8 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 
 ## M7 — Caller governance — DONE FOR CURRENT V1
 
-- DONE: request-rate policies and Redis shared counters.
+- DONE: credential/model request-rate policies and Redis shared counters.
+- IMPLEMENTED/PENDING VALIDATION: aggregate Entra-user request-rate policies spanning all personal keys with atomic user+credential admission.
 - DONE: output-token budgets on credential/model scope.
 - DONE: pre-inference reservation and Chat/Responses output-cap injection.
 - DONE: settlement/refund and conservative uncertain-usage charge.
@@ -91,7 +92,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: runtime/outbox policy propagation.
 - DONE: Admin Apply/Clear UI and audit.
 
-Future quota extensions remain requirements-driven: aggregated per-user quotas across multiple keys need explicit precedence/distributed-counter semantics; input/total-token budgets need tokenizer/estimation semantics; monetary budgets need pricing/accounting semantics.
+Future quota extensions remain requirements-driven: aggregate **output-token** user budgets need explicit reservation/settlement precedence; input/total-token budgets need tokenizer/estimation semantics; monetary budgets need pricing/accounting semantics.
 
 ## M8 — Usage Groups and reporting — DONE FOR CURRENT MVP
 
@@ -147,7 +148,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.6
+## M12 — Product/release hardening — PREVIEW.7 CANDIDATE
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -166,6 +167,7 @@ local RAM  = per-replica request-path L1
 - DONE: bodyless canonical vLLM health compatibility fix.
 - DONE: self-hosted manual acceptance workflow on the production runner labels.
 - DONE: Entra-owned personal API keys, `LlmProxy.User` self-service, own-usage view and administrator identity inventory.
+- IMPLEMENTED/PENDING VALIDATION: aggregate Entra-user request quotas + Admin/User UI visibility in `0.2.0-preview.7`.
 - OWNER ACTION: create a real immutable Git tag/GitHub Release only when explicitly requested.
 
 Validated runtime checkpoint:
@@ -190,7 +192,7 @@ CI                35110131158 SUCCESS
 3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
 4. Validate real Entra Admin/User/Reader login + personal-key self-service, then Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
-6. Expand quota semantics only with explicit tokenizer/pricing requirements.
+6. After preview.7 validation, expand remaining quota semantics only with explicit tokenizer/pricing requirements.
 7. Create a Git tag/GitHub Release only when explicitly requested.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.

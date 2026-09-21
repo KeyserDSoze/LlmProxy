@@ -105,6 +105,22 @@ public sealed class RuntimeStateOutboxSaveChangesInterceptor : SaveChangesInterc
             }
         }
 
+        foreach (var entry in gatewayDbContext.ChangeTracker.Entries<UserRateLimitPolicy>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                records.Add(CreateUpsert(
+                    RuntimeStateChangeKinds.RatePolicy,
+                    entry.Entity.Id,
+                    RateLimitPolicyRuntimeStateInterceptor.ToSnapshot(entry.Entity),
+                    occurredAtUtc));
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                records.Add(CreateRemove(RuntimeStateChangeKinds.RatePolicy, entry.Entity.Id, occurredAtUtc));
+            }
+        }
+
         if (records.Count > 0)
         {
             gatewayDbContext.RuntimeStateOutbox.AddRange(records);

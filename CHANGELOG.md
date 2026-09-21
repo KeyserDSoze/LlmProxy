@@ -8,6 +8,32 @@ The project follows Semantic Versioning from the first formal preview release on
 
 No unreleased product changes are recorded after the current preview baseline yet.
 
+## [0.2.0-preview.7] - 2026-09-21
+
+### Added
+
+- Administrators can configure request-rate policies for an Entra user across all personal API keys, optionally scoped to one logical model.
+- User-level rate policies are persisted in PostgreSQL, published through the transactional runtime-state outbox, synchronized through Redis and enforced from local runtime state without database reads on the inference path.
+- `/api/me/rate-limits` and the personal portal expose effective user request-limit metadata in read-only form.
+- Admin Usage & Governance exposes user quota creation, enable/disable and deletion for Entra users that already own personal API keys.
+
+### Changed
+
+- Request admission applies user and credential request-rate policies with **AND** semantics.
+- Applicable counters are acquired atomically: if either the user policy or credential policy rejects the request, neither counter is incremented.
+
+### Security
+
+- User quota scope uses stable Entra tenant ID + object ID rather than username/email.
+- User quotas do not change API-key storage: raw secrets remain one-time values and are never persisted.
+- Currency/spend enforcement remains intentionally disabled until an explicit model pricing or chargeback policy exists.
+
+### Known scope
+
+- Aggregate request-count limits are implemented at user/model scope.
+- Output-token budgets remain credential/model scoped.
+- Monetary spend limits still require a product-defined pricing/accounting model and are not inferred from raw token counts.
+
 ## [0.2.0-preview.6] - 2026-09-21
 
 ### Added
@@ -31,7 +57,7 @@ No unreleased product changes are recorded after the current preview baseline ye
 
 ### Known scope
 
-- Existing request/output-token governance remains credential/model scoped. Aggregated per-user quotas and currency/spend enforcement require an explicit pricing/chargeback model and are not inferred from token counts.
+- Request/output-token governance in this release remains credential/model scoped; aggregate user request quotas are added in `0.2.0-preview.7`. Currency/spend enforcement still requires an explicit pricing/chargeback model and is not inferred from token counts.
 
 ## [0.2.0-preview.5] - 2026-09-16
 

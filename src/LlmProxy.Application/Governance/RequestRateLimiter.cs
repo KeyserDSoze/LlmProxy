@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using LlmProxy.Application.Observability;
 
 namespace LlmProxy.Application.Governance;
@@ -11,9 +10,15 @@ public sealed record RateLimitPolicySnapshot(
     int WindowSeconds,
     bool Enabled,
     int? OutputTokensPerWindow = null,
-    int? MaxOutputTokensPerRequest = null)
+    int? MaxOutputTokensPerRequest = null,
+    string? OwnerTenantId = null,
+    string? OwnerObjectId = null)
 {
     public bool HasOutputTokenBudget => OutputTokensPerWindow.HasValue && MaxOutputTokensPerRequest.HasValue;
+    public bool IsUserScoped =>
+        ApiCredentialId == Guid.Empty &&
+        !string.IsNullOrWhiteSpace(OwnerTenantId) &&
+        !string.IsNullOrWhiteSpace(OwnerObjectId);
 }
 
 public sealed record RateLimitDecision(
@@ -26,74 +31,128 @@ public sealed record RateLimitDecision(
         new(false, Math.Max(1, retryAfterSeconds), policy);
 }
 
+public sealed record RateLimitCounterRequest(
+    Guid PolicyId,
+    int RequestsPerWindow,
+    int WindowSeconds);
+
 public sealed record RateLimitCounterDecision(
     bool Allowed,
     int RetryAfterSeconds,
     int WindowCount,
     string Provider,
-    bool Degraded = false);
+    bool Degraded = false,
+    Guid? RejectedPolicyId = null);
 
 public interface IRateLimitCounterStore
 {
     ValueTask<RateLimitCounterDecision> TryAcquireAsync(
-        Guid policyId,
-        int requestsPerWindow,
-        int windowSeconds,
+        IReadOnlyList<RateLimitCounterRequest> requests,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class InMemoryRateLimitCounterStore : IRateLimitCounterStore
 {
-    private readonly ConcurrentDictionary<CounterKey, WindowCounter> _counters = new();
+    private readonly Dictionary<CounterKey, WindowCounter> _counters = new();
+    private readonly object _gate = new();
 
     public ValueTask<RateLimitCounterDecision> TryAcquireAsync(
-        Guid policyId,
-        int requestsPerWindow,
-        int windowSeconds,
+        IReadOnlyList<RateLimitCounterRequest> requests,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentOutOfRangeException.ThrowIfLessThan(requestsPerWindow, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(windowSeconds, 1);
-
-        var key = new CounterKey(policyId, requestsPerWindow, windowSeconds);
-        var counter = _counters.GetOrAdd(key, _ => new WindowCounter(nowUtc));
-        lock (counter.SyncRoot)
+        if (requests.Count == 0)
         {
-            var window = TimeSpan.FromSeconds(windowSeconds);
-            if (nowUtc < counter.WindowStartUtc || nowUtc - counter.WindowStartUtc >= window)
+            return ValueTask.FromResult(new RateLimitCounterDecision(true, 0, 0, "local"));
+        }
+
+        foreach (var request in requests)
+        {
+            Validate(request);
+        }
+
+        lock (_gate)
+        {
+            var resolved = new List<(RateLimitCounterRequest Request, WindowCounter Counter, CounterKey Key)>(requests.Count);
+            foreach (var request in requests)
             {
-                counter.WindowStartUtc = nowUtc;
-                counter.Count = 0;
+                var key = new CounterKey(request.PolicyId, request.RequestsPerWindow, request.WindowSeconds);
+                if (!_counters.TryGetValue(key, out var counter))
+                {
+                    counter = new WindowCounter(nowUtc);
+                    _counters.Add(key, counter);
+                }
+
+                var window = TimeSpan.FromSeconds(request.WindowSeconds);
+                if (nowUtc < counter.WindowStartUtc || nowUtc - counter.WindowStartUtc >= window)
+                {
+                    counter.WindowStartUtc = nowUtc;
+                    counter.Count = 0;
+                }
+
+                resolved.Add((request, counter, key));
             }
 
-            if (counter.Count >= requestsPerWindow)
+            (RateLimitCounterRequest Request, WindowCounter Counter)? rejected = null;
+            var retryAfterSeconds = 0;
+            foreach (var item in resolved)
             {
-                var remaining = counter.WindowStartUtc.Add(window) - nowUtc;
-                var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                if (item.Counter.Count < item.Request.RequestsPerWindow)
+                {
+                    continue;
+                }
+
+                var remaining = item.Counter.WindowStartUtc.AddSeconds(item.Request.WindowSeconds) - nowUtc;
+                var retry = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                if (rejected is null || retry > retryAfterSeconds)
+                {
+                    rejected = (item.Request, item.Counter);
+                    retryAfterSeconds = retry;
+                }
+            }
+
+            if (rejected is not null)
+            {
                 return ValueTask.FromResult(new RateLimitCounterDecision(
                     false,
                     retryAfterSeconds,
-                    counter.Count,
-                    "local"));
+                    rejected.Value.Counter.Count,
+                    "local",
+                    RejectedPolicyId: rejected.Value.Request.PolicyId));
             }
 
-            counter.Count++;
+            var maxWindowCount = 0;
+            foreach (var item in resolved)
+            {
+                item.Counter.Count++;
+                maxWindowCount = Math.Max(maxWindowCount, item.Counter.Count);
+            }
+
             return ValueTask.FromResult(new RateLimitCounterDecision(
                 true,
                 0,
-                counter.Count,
+                maxWindowCount,
                 "local"));
         }
+    }
+
+    private static void Validate(RateLimitCounterRequest request)
+    {
+        if (request.PolicyId == Guid.Empty)
+        {
+            throw new ArgumentException("Policy id is required.", nameof(request));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(request.RequestsPerWindow, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(request.WindowSeconds, 1);
     }
 
     private readonly record struct CounterKey(Guid PolicyId, int RequestsPerWindow, int WindowSeconds);
 
     private sealed class WindowCounter(DateTimeOffset windowStartUtc)
     {
-        public object SyncRoot { get; } = new();
         public DateTimeOffset WindowStartUtc { get; set; } = windowStartUtc;
         public int Count { get; set; }
     }
@@ -105,37 +164,46 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
     {
     }
 
-    private IReadOnlyDictionary<RateLimitKey, RateLimitPolicySnapshot> _policies =
-        new Dictionary<RateLimitKey, RateLimitPolicySnapshot>();
+    private IReadOnlyDictionary<CredentialRateLimitKey, RateLimitPolicySnapshot> _credentialPolicies =
+        new Dictionary<CredentialRateLimitKey, RateLimitPolicySnapshot>();
+
+    private IReadOnlyDictionary<UserRateLimitKey, RateLimitPolicySnapshot> _userPolicies =
+        new Dictionary<UserRateLimitKey, RateLimitPolicySnapshot>();
 
     public void ReplacePolicies(IEnumerable<RateLimitPolicySnapshot> policies)
     {
         ArgumentNullException.ThrowIfNull(policies);
 
-        var next = policies
-            .Where(policy => policy.Enabled)
-            .ToDictionary(
-                policy => new RateLimitKey(policy.ApiCredentialId, NormalizeModel(policy.LogicalModel)),
-                policy => policy);
+        var credentials = new Dictionary<CredentialRateLimitKey, RateLimitPolicySnapshot>();
+        var users = new Dictionary<UserRateLimitKey, RateLimitPolicySnapshot>();
 
-        Volatile.Write(ref _policies, next);
+        foreach (var policy in policies.Where(policy => policy.Enabled))
+        {
+            AddPolicy(credentials, users, policy);
+        }
+
+        Volatile.Write(ref _credentialPolicies, credentials);
+        Volatile.Write(ref _userPolicies, users);
     }
 
     public void UpsertPolicy(RateLimitPolicySnapshot policy)
     {
         ArgumentNullException.ThrowIfNull(policy);
 
-        var current = Volatile.Read(ref _policies);
-        var next = current
+        var credentialNext = Volatile.Read(ref _credentialPolicies)
+            .Where(item => item.Value.Id != policy.Id)
+            .ToDictionary(item => item.Key, item => item.Value);
+        var userNext = Volatile.Read(ref _userPolicies)
             .Where(item => item.Value.Id != policy.Id)
             .ToDictionary(item => item.Key, item => item.Value);
 
         if (policy.Enabled)
         {
-            next[new RateLimitKey(policy.ApiCredentialId, NormalizeModel(policy.LogicalModel))] = policy;
+            AddPolicy(credentialNext, userNext, policy);
         }
 
-        Volatile.Write(ref _policies, next);
+        Volatile.Write(ref _credentialPolicies, credentialNext);
+        Volatile.Write(ref _userPolicies, userNext);
     }
 
     public void RemovePolicy(Guid policyId)
@@ -145,11 +213,14 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
             return;
         }
 
-        var current = Volatile.Read(ref _policies);
-        var next = current
+        var credentialNext = Volatile.Read(ref _credentialPolicies)
             .Where(item => item.Value.Id != policyId)
             .ToDictionary(item => item.Key, item => item.Value);
-        Volatile.Write(ref _policies, next);
+        var userNext = Volatile.Read(ref _userPolicies)
+            .Where(item => item.Value.Id != policyId)
+            .ToDictionary(item => item.Key, item => item.Value);
+        Volatile.Write(ref _credentialPolicies, credentialNext);
+        Volatile.Write(ref _userPolicies, userNext);
     }
 
     public RateLimitPolicySnapshot? ResolvePolicy(Guid apiCredentialId, string logicalModel)
@@ -159,21 +230,53 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
             return null;
         }
 
-        var policies = Volatile.Read(ref _policies);
+        var policies = Volatile.Read(ref _credentialPolicies);
         var normalizedModel = NormalizeModel(logicalModel);
-        return policies.TryGetValue(new RateLimitKey(apiCredentialId, normalizedModel), out var exact)
+        return policies.TryGetValue(new CredentialRateLimitKey(apiCredentialId, normalizedModel), out var exact)
             ? exact
-            : policies.TryGetValue(new RateLimitKey(apiCredentialId, string.Empty), out var fallback)
+            : policies.TryGetValue(new CredentialRateLimitKey(apiCredentialId, string.Empty), out var fallback)
+                ? fallback
+                : null;
+    }
+
+    public RateLimitPolicySnapshot? ResolveUserPolicy(
+        string? ownerTenantId,
+        string? ownerObjectId,
+        string logicalModel)
+    {
+        if (string.IsNullOrWhiteSpace(ownerTenantId) ||
+            string.IsNullOrWhiteSpace(ownerObjectId) ||
+            string.IsNullOrWhiteSpace(logicalModel))
+        {
+            return null;
+        }
+
+        var policies = Volatile.Read(ref _userPolicies);
+        var normalizedModel = NormalizeModel(logicalModel);
+        var tenant = NormalizeIdentity(ownerTenantId);
+        var subject = NormalizeIdentity(ownerObjectId);
+        return policies.TryGetValue(new UserRateLimitKey(tenant, subject, normalizedModel), out var exact)
+            ? exact
+            : policies.TryGetValue(new UserRateLimitKey(tenant, subject, string.Empty), out var fallback)
                 ? fallback
                 : null;
     }
 
     public RateLimitDecision TryAcquire(Guid apiCredentialId, string logicalModel, DateTimeOffset nowUtc)
-        => TryAcquireAsync(apiCredentialId, logicalModel, nowUtc).AsTask().GetAwaiter().GetResult();
+        => TryAcquireAsync(apiCredentialId, logicalModel, null, null, nowUtc).AsTask().GetAwaiter().GetResult();
+
+    public ValueTask<RateLimitDecision> TryAcquireAsync(
+        Guid apiCredentialId,
+        string logicalModel,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+        => TryAcquireAsync(apiCredentialId, logicalModel, null, null, nowUtc, cancellationToken);
 
     public async ValueTask<RateLimitDecision> TryAcquireAsync(
         Guid apiCredentialId,
         string logicalModel,
+        string? ownerTenantId,
+        string? ownerObjectId,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
@@ -188,21 +291,32 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(logicalModel);
-        var policy = ResolvePolicy(apiCredentialId, logicalModel);
-        if (policy is null)
+        var credentialPolicy = ResolvePolicy(apiCredentialId, logicalModel);
+        var userPolicy = ResolveUserPolicy(ownerTenantId, ownerObjectId, logicalModel);
+        if (credentialPolicy is null && userPolicy is null)
         {
             activity?.SetTag("llmproxy.rate_limit.result", "no_policy");
             return RateLimitDecision.Permit();
         }
 
-        LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.policy_id", policy.Id);
-        activity?.SetTag("llmproxy.rate_limit.requests_per_window", policy.RequestsPerWindow);
-        activity?.SetTag("llmproxy.rate_limit.window_seconds", policy.WindowSeconds);
+        var policies = new List<RateLimitPolicySnapshot>(2);
+        if (userPolicy is not null)
+        {
+            policies.Add(userPolicy);
+            LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.user_policy_id", userPolicy.Id);
+        }
+        if (credentialPolicy is not null)
+        {
+            policies.Add(credentialPolicy);
+            LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.credential_policy_id", credentialPolicy.Id);
+        }
 
+        activity?.SetTag("llmproxy.rate_limit.policy_count", policies.Count);
         var counterDecision = await counterStore.TryAcquireAsync(
-            policy.Id,
-            policy.RequestsPerWindow,
-            policy.WindowSeconds,
+            policies.Select(policy => new RateLimitCounterRequest(
+                policy.Id,
+                policy.RequestsPerWindow,
+                policy.WindowSeconds)).ToArray(),
             nowUtc,
             cancellationToken);
 
@@ -212,14 +326,41 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
 
         if (!counterDecision.Allowed)
         {
+            var rejectedPolicy = policies.FirstOrDefault(policy => policy.Id == counterDecision.RejectedPolicyId)
+                ?? userPolicy
+                ?? credentialPolicy!;
             activity?.SetTag("llmproxy.rate_limit.result", "rejected");
+            activity?.SetTag("llmproxy.rate_limit.scope", rejectedPolicy.IsUserScoped ? "user" : "credential");
             activity?.SetTag("llmproxy.rate_limit.retry_after_seconds", counterDecision.RetryAfterSeconds);
             LlmProxyActivity.MarkError(activity, "rate_limit_exceeded");
-            return RateLimitDecision.Reject(policy, counterDecision.RetryAfterSeconds);
+            return RateLimitDecision.Reject(rejectedPolicy, counterDecision.RetryAfterSeconds);
         }
 
         activity?.SetTag("llmproxy.rate_limit.result", "allowed");
-        return RateLimitDecision.Permit(policy);
+        return RateLimitDecision.Permit(credentialPolicy ?? userPolicy);
+    }
+
+    private static void AddPolicy(
+        IDictionary<CredentialRateLimitKey, RateLimitPolicySnapshot> credentialPolicies,
+        IDictionary<UserRateLimitKey, RateLimitPolicySnapshot> userPolicies,
+        RateLimitPolicySnapshot policy)
+    {
+        var model = NormalizeModel(policy.LogicalModel);
+        if (policy.IsUserScoped)
+        {
+            userPolicies[new UserRateLimitKey(
+                NormalizeIdentity(policy.OwnerTenantId!),
+                NormalizeIdentity(policy.OwnerObjectId!),
+                model)] = policy;
+            return;
+        }
+
+        if (policy.ApiCredentialId == Guid.Empty)
+        {
+            throw new InvalidOperationException($"Rate-limit policy '{policy.Id}' has no valid credential or user scope.");
+        }
+
+        credentialPolicies[new CredentialRateLimitKey(policy.ApiCredentialId, model)] = policy;
     }
 
     private static string NormalizeModel(string? logicalModel) =>
@@ -227,5 +368,8 @@ public sealed class RequestRateLimiter(IRateLimitCounterStore counterStore)
             ? string.Empty
             : logicalModel.Trim().ToUpperInvariant();
 
-    private readonly record struct RateLimitKey(Guid ApiCredentialId, string LogicalModel);
+    private static string NormalizeIdentity(string value) => value.Trim().ToUpperInvariant();
+
+    private readonly record struct CredentialRateLimitKey(Guid ApiCredentialId, string LogicalModel);
+    private readonly record struct UserRateLimitKey(string TenantId, string ObjectId, string LogicalModel);
 }

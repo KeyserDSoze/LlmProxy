@@ -1,6 +1,6 @@
 # Entra identity and API-key ownership
 
-This document defines the identity, authorization and API-key contract introduced in `0.2.0-preview.6`.
+This document defines the identity, authorization, API-key and user-request-quota contract introduced across `0.2.0-preview.6` and `0.2.0-preview.7`.
 
 ## Goals
 
@@ -70,6 +70,7 @@ POST /api/me/api-credentials
 POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
+GET  /api/me/rate-limits
 ```
 
 The server derives ownership exclusively from the authenticated Entra principal. A caller cannot submit another tenant/object ID in a request body.
@@ -104,9 +105,9 @@ For a personal credential, the runtime credential snapshot also contains `OwnerT
 
 This preserves the existing privacy rule: prompts, source code, generated output and raw secrets are not persisted as usage telemetry.
 
-## Usage and limits: what already exists
+## Usage and limits
 
-LlmProxy already enforces credential/model-scoped governance:
+Credential/model-scoped governance remains supported:
 
 ```text
 requests per time window
@@ -114,23 +115,21 @@ output tokens per time window
 maximum output tokens per request
 ```
 
-Redis provides shared counters/reservations across replicas when distributed mode is enabled. Existing reporting aggregates by credential, Usage Group and logical model. `/api/me/usage` filters that reporting to credentials owned by the current Entra user.
+Starting with `0.2.0-preview.7`, administrators may also configure **aggregate user request-rate policies** keyed by stable Entra `(tid, oid)`, optionally scoped to one logical model. These limits span all personal API keys owned by the user.
 
-This means **per-key request/token limits already exist** and can be applied to personal keys by an administrator.
-
-## What is not yet implemented
-
-### Aggregated per-user quota
-
-There is not yet a single policy spanning all keys owned by one Entra user. If a user has three keys, current rate/token policies apply to each key independently.
-
-A future user-level policy needs an explicit precedence model, for example:
+Request admission uses:
 
 ```text
-user limit AND credential limit AND model-specific credential limit
+applicable user request policy
+AND
+applicable credential request policy
 ```
 
-and a distributed counter key based on `(tenantId, objectId, logicalModel, window)`.
+The fixed-window counters are acquired atomically: if either applicable request policy rejects, neither counter is incremented. Redis-enabled deployments coordinate the counters across gateway replicas; Redis-disabled deployments use the local in-memory store.
+
+The personal portal and `GET /api/me/rate-limits` expose user request-limit metadata read-only. Only administrators configure user policies.
+
+Output-token budgets remain credential/model scoped in this increment.
 
 ### Monetary/spend limit
 
@@ -163,7 +162,7 @@ Before extending governance beyond the current increment, decide:
 2. default/maximum personal-key lifetime and mandatory rotation policy;
 3. whether administrators may create a personal key on behalf of a user (currently no);
 4. whether personal keys may be assigned to Usage Groups by users or only administrators;
-5. semantics and precedence of aggregated user-level request/token quotas;
+5. whether aggregate **output-token** budgets should also exist at user scope and how they interact with credential budgets;
 6. the monetary/chargeback model required for spend limits;
 7. whether unattended applications remain on service API keys or move to an Entra workload-identity flow;
 8. whether a disabled/deleted Entra account should trigger automatic key revocation and how directory reconciliation would be performed.

@@ -110,4 +110,4 @@ Credentials are database-backed, HMAC-hashed, revocable and may have an expiry d
 
 Administration endpoints live under `/api/admin`. They are not OpenAI-compatible and may evolve independently of `/v1`.
 
-Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity and usage attributable to those credentials.
+Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity, usage attributable to those credentials and read-only aggregate user request-limit metadata. Administrative user request-limit CRUD lives under `/api/admin/user-rate-limits`; user quota scope is stable Entra `(tid, oid)` with optional logical-model scope.

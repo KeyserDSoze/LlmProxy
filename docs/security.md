@@ -45,7 +45,7 @@ A user self-service request can list, rotate or revoke only a credential whose s
 
 ## Usage governance
 
-Request-rate and output-token budgets are currently enforced on credential/model scope. They therefore work for personal keys, but are not yet aggregated across all keys owned by one Entra user.
+Request-rate policies may be enforced both on credential/model scope and, for personal keys, on aggregate Entra user/model scope. User scope is stable `tid + oid`; all applicable request policies must permit admission and their counters are acquired atomically. Output-token budgets remain credential/model scoped.
 
 Currency/spend limits are not currently enforced. On-prem vLLM does not provide an authoritative monetary cost; a pricing/chargeback model must be defined before monetary budgets can be implemented. Token/request counts must not be presented as currency cost without such a model.
 

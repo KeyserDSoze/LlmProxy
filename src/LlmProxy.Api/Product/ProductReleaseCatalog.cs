@@ -40,6 +40,28 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.7",
+            new DateOnly(2026, 9, 21),
+            "Aggregated Entra user request quotas",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Administrators can configure request-rate policies for an Entra user across all personal API keys, optionally scoped to one logical model.",
+                    "The personal user portal exposes effective aggregate request-limit metadata in read-only form.",
+                    "User-level policies use the existing PostgreSQL transactional outbox, Redis shared runtime state and local L1 configuration path."
+                ],
+                ["Changed"] =
+                [
+                    "Request admission evaluates applicable user and credential policies together with AND semantics and atomically increments their fixed-window counters only when every applicable policy permits the request."
+                ],
+                ["Security"] =
+                [
+                    "User quota scope is keyed by stable Entra tenant and object identifiers; mutable usernames remain display metadata only.",
+                    "Monetary spend limits remain intentionally unsupported until an explicit pricing or chargeback model is configured."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.6",
             new DateOnly(2026, 9, 21),
             "Entra-owned personal API keys",

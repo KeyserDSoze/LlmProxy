@@ -75,4 +75,94 @@ public sealed class RequestRateLimiterTests
         Assert.Equal(8, results.Count(allowed => allowed));
         Assert.Equal(24, results.Count(allowed => !allowed));
     }
+
+    [Fact]
+    public void User_policy_aggregates_requests_across_personal_credentials()
+    {
+        var userPolicyId = Guid.NewGuid();
+        var credentialA = Guid.NewGuid();
+        var credentialB = Guid.NewGuid();
+        var limiter = new RequestRateLimiter();
+        limiter.ReplacePolicies([
+            new RateLimitPolicySnapshot(
+                userPolicyId,
+                Guid.Empty,
+                null,
+                2,
+                60,
+                true,
+                OwnerTenantId: "tenant-1",
+                OwnerObjectId: "user-1")
+        ]);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.True(limiter.TryAcquireAsync(credentialA, "agic-code", "TENANT-1", "USER-1", now).AsTask().GetAwaiter().GetResult().Allowed);
+        Assert.True(limiter.TryAcquireAsync(credentialB, "agic-code", "tenant-1", "user-1", now.AddSeconds(1)).AsTask().GetAwaiter().GetResult().Allowed);
+
+        var rejected = limiter.TryAcquireAsync(
+            credentialA,
+            "agic-code",
+            "tenant-1",
+            "user-1",
+            now.AddSeconds(2)).AsTask().GetAwaiter().GetResult();
+
+        Assert.False(rejected.Allowed);
+        Assert.Equal(userPolicyId, rejected.Policy?.Id);
+    }
+
+    [Fact]
+    public void User_and_credential_policies_are_acquired_atomically()
+    {
+        var userPolicyId = Guid.NewGuid();
+        var credentialPolicyId = Guid.NewGuid();
+        var credentialA = Guid.NewGuid();
+        var credentialB = Guid.NewGuid();
+        var limiter = new RequestRateLimiter();
+        limiter.ReplacePolicies([
+            new RateLimitPolicySnapshot(
+                userPolicyId,
+                Guid.Empty,
+                null,
+                2,
+                60,
+                true,
+                OwnerTenantId: "tenant-1",
+                OwnerObjectId: "user-1"),
+            new RateLimitPolicySnapshot(credentialPolicyId, credentialA, null, 1, 60, true)
+        ]);
+        var now = DateTimeOffset.UtcNow;
+
+        Assert.True(limiter.TryAcquireAsync(
+            credentialA,
+            "agic-code",
+            "tenant-1",
+            "user-1",
+            now).AsTask().GetAwaiter().GetResult().Allowed);
+
+        var credentialRejected = limiter.TryAcquireAsync(
+            credentialA,
+            "agic-code",
+            "tenant-1",
+            "user-1",
+            now.AddSeconds(1)).AsTask().GetAwaiter().GetResult();
+        Assert.False(credentialRejected.Allowed);
+        Assert.Equal(credentialPolicyId, credentialRejected.Policy?.Id);
+
+        Assert.True(limiter.TryAcquireAsync(
+            credentialB,
+            "agic-code",
+            "tenant-1",
+            "user-1",
+            now.AddSeconds(2)).AsTask().GetAwaiter().GetResult().Allowed);
+
+        var userRejected = limiter.TryAcquireAsync(
+            credentialB,
+            "agic-code",
+            "tenant-1",
+            "user-1",
+            now.AddSeconds(3)).AsTask().GetAwaiter().GetResult();
+        Assert.False(userRejected.Allowed);
+        Assert.Equal(userPolicyId, userRejected.Policy?.Id);
+    }
+
 }

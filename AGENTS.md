@@ -55,11 +55,13 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 
 ## Current product version and validated baselines
 
-Current formal version:
+Current formal candidate:
 
 ```text
-0.2.0-preview.6
+0.2.0-preview.7
 ```
+
+Latest validated runtime remains `0.2.0-preview.6` / `sha-7da5682` until preview.7 validation completes.
 
 Validated runtime/release checkpoint:
 
@@ -80,7 +82,7 @@ artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a
 
 This is the validated runtime baseline for deployment and environment acceptance. Later docs-only commits may move mutable `main`; use `sha-7da5682` when the validated `preview.6` product image is required.
 
-No immutable `v0.2.0-preview.6` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
+No immutable `v0.2.0-preview.7` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
 
 Runtime identity is exposed by:
 
@@ -95,7 +97,7 @@ Operators read version/build/patch notes at `/admin/releases`. Keep `CHANGELOG.m
 
 Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership uses stable Entra `tid + oid`; usernames/email are metadata only. `LlmProxy.User` and `LlmProxy.Admin` can manage only their own personal keys through `/api/me/*` and `/admin/me`. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
 
-Request-rate and output-token budgets remain credential/model scoped. Aggregated per-user quotas across multiple keys and monetary/spend budgets are not implemented without explicit precedence and pricing/chargeback semantics.
+`0.2.0-preview.7` adds aggregate **request-count** quotas at Entra user/model scope across all personal keys. User and credential request-rate policies compose with AND semantics and counters must be acquired atomically. Output-token budgets remain credential/model scoped. Monetary/spend budgets are not implemented without explicit pricing/chargeback semantics.
 
 Read `docs/identity-api-keys.md` and `docs/security.md` before changing identity/credential behavior.
 
@@ -133,7 +135,7 @@ Read `docs/operations.md` and `docs/capacity-control.md` before changing mainten
 
 Credentials persist only HMAC hashes and safe metadata. Rotation is an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/hash, one-time replacement secret, `Cache-Control: no-store`, safe audit only.
 
-Request-rate and output-token governance share the persisted credential/model `RateLimitPolicy` scope in V1. Redis-enabled distributed token/capacity admission fails closed when coordination is unavailable.
+Credential request-rate and output-token governance use persisted `RateLimitPolicy`; aggregate Entra-user request quotas use `UserRateLimitPolicy`. Both request scopes publish through the RatePolicy runtime-state channel and must remain DB-free on the ordinary inference path. Redis-enabled distributed token/capacity admission fails closed where the existing contract requires it.
 
 Do not add input/total-token admission without explicit tokenizer/estimation semantics. Do not add monetary budgets without stable pricing/accounting semantics.
 

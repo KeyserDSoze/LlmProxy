@@ -205,6 +205,29 @@ export type CreatedApiCredential = ApiCredential & {
   secret: string
 }
 
+export type IdentityUserSummary = {
+  tenantId: string
+  objectId: string
+  principalName?: string | null
+  credentialCount: number
+  activeCredentialCount: number
+  lastUsedAtUtc?: string | null
+  firstCredentialCreatedAtUtc: string
+}
+
+export type UserRateLimitPolicy = {
+  id: string
+  ownerTenantId: string
+  ownerObjectId: string
+  principalName?: string | null
+  logicalModel?: string | null
+  requestsPerWindow: number
+  windowSeconds: number
+  enabled: boolean
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
 export type UsageGroup = {
   id: string
   name: string

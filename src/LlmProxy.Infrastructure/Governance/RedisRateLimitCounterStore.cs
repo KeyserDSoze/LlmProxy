@@ -13,59 +13,103 @@ public sealed class RedisRateLimitCounterStore(
     private const string AcquireScript = """
         local now_parts = redis.call('TIME')
         local now_seconds = tonumber(now_parts[1])
-        local request_limit = tonumber(ARGV[1])
-        local window_seconds = tonumber(ARGV[2])
-        local window_start = now_seconds - (now_seconds % window_seconds)
-        local stored_start = tonumber(redis.call('HGET', KEYS[1], 'start') or '-1')
+        local rejected_index = 0
+        local rejected_count = 0
+        local max_retry_after = 0
 
-        if stored_start ~= window_start then
-            redis.call('HSET', KEYS[1], 'start', window_start, 'count', 0)
-            redis.call('EXPIRE', KEYS[1], window_seconds * 2)
-        end
+        for i = 1, #KEYS do
+            local request_limit = tonumber(ARGV[((i - 1) * 2) + 1])
+            local window_seconds = tonumber(ARGV[((i - 1) * 2) + 2])
+            local window_start = now_seconds - (now_seconds % window_seconds)
+            local stored_start = tonumber(redis.call('HGET', KEYS[i], 'start') or '-1')
 
-        local current_count = tonumber(redis.call('HGET', KEYS[1], 'count') or '0')
-        if current_count >= request_limit then
-            local retry_after = (window_start + window_seconds) - now_seconds
-            if retry_after < 1 then
-                retry_after = 1
+            if stored_start ~= window_start then
+                redis.call('HSET', KEYS[i], 'start', window_start, 'count', 0)
+                redis.call('EXPIRE', KEYS[i], window_seconds * 2)
             end
-            return {0, retry_after, current_count}
+
+            local current_count = tonumber(redis.call('HGET', KEYS[i], 'count') or '0')
+            if current_count >= request_limit then
+                local retry_after = (window_start + window_seconds) - now_seconds
+                if retry_after < 1 then
+                    retry_after = 1
+                end
+                if rejected_index == 0 or retry_after > max_retry_after then
+                    rejected_index = i
+                    rejected_count = current_count
+                    max_retry_after = retry_after
+                end
+            end
         end
 
-        current_count = redis.call('HINCRBY', KEYS[1], 'count', 1)
-        return {1, 0, current_count}
+        if rejected_index ~= 0 then
+            return {0, max_retry_after, rejected_index, rejected_count}
+        end
+
+        local max_count = 0
+        for i = 1, #KEYS do
+            local current_count = redis.call('HINCRBY', KEYS[i], 'count', 1)
+            if current_count > max_count then
+                max_count = current_count
+            end
+        end
+
+        return {1, 0, 0, max_count}
         """;
 
     public async ValueTask<RateLimitCounterDecision> TryAcquireAsync(
-        Guid policyId,
-        int requestsPerWindow,
-        int windowSeconds,
+        IReadOnlyList<RateLimitCounterRequest> requests,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentOutOfRangeException.ThrowIfLessThan(requestsPerWindow, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(windowSeconds, 1);
+        if (requests.Count == 0)
+        {
+            return new RateLimitCounterDecision(true, 0, 0, "redis");
+        }
+
+        foreach (var request in requests)
+        {
+            if (request.PolicyId == Guid.Empty)
+            {
+                throw new ArgumentException("Policy id is required.", nameof(requests));
+            }
+
+            ArgumentOutOfRangeException.ThrowIfLessThan(request.RequestsPerWindow, 1);
+            ArgumentOutOfRangeException.ThrowIfLessThan(request.WindowSeconds, 1);
+        }
 
         try
         {
             var database = await connection.GetDatabaseAsync(cancellationToken);
-            var redisKey = (RedisKey)connection.Key($"rate-limit:{policyId:N}:{requestsPerWindow}:{windowSeconds}");
-            var result = await database.ScriptEvaluateAsync(
-                AcquireScript,
-                [redisKey],
-                [(RedisValue)requestsPerWindow, (RedisValue)windowSeconds]);
+            var keys = requests
+                .Select(request => (RedisKey)connection.Key(
+                    $"rate-limit:{request.PolicyId:N}:{request.RequestsPerWindow}:{request.WindowSeconds}"))
+                .ToArray();
+            var args = requests
+                .SelectMany(request => new RedisValue[]
+                {
+                    request.RequestsPerWindow,
+                    request.WindowSeconds
+                })
+                .ToArray();
 
+            var result = await database.ScriptEvaluateAsync(AcquireScript, keys, args);
             var values = (RedisResult[])result!;
             var allowed = (long)values[0] == 1;
             var retryAfterSeconds = checked((int)(long)values[1]);
-            var count = checked((int)(long)values[2]);
+            var rejectedIndex = checked((int)(long)values[2]);
+            var count = checked((int)(long)values[3]);
+            Guid? rejectedPolicyId = rejectedIndex > 0 && rejectedIndex <= requests.Count
+                ? requests[rejectedIndex - 1].PolicyId
+                : null;
 
             return new RateLimitCounterDecision(
                 allowed,
                 retryAfterSeconds,
                 count,
-                "redis");
+                "redis",
+                RejectedPolicyId: rejectedPolicyId);
         }
         catch (Exception exception) when (
             !cancellationToken.IsCancellationRequested &&
@@ -73,13 +117,11 @@ public sealed class RedisRateLimitCounterStore(
         {
             logger.LogWarning(
                 exception,
-                "Redis rate-limit coordination failed for policy {PolicyId}; using local degraded enforcement.",
-                policyId);
+                "Redis rate-limit coordination failed for {PolicyCount} policies; using local degraded enforcement.",
+                requests.Count);
 
             var fallback = await localFallback.TryAcquireAsync(
-                policyId,
-                requestsPerWindow,
-                windowSeconds,
+                requests,
                 nowUtc,
                 cancellationToken);
 

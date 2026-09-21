@@ -187,6 +187,35 @@ public static class IdentitySelfServiceEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/rate-limits", async (
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var tenantId = identity.TenantId.ToUpperInvariant();
+            var objectId = identity.ObjectId.ToUpperInvariant();
+            var policies = await dbContext.UserRateLimitPolicies.AsNoTracking()
+                .Where(item => item.OwnerTenantId.ToUpper() == tenantId && item.OwnerObjectId.ToUpper() == objectId)
+                .OrderBy(item => item.LogicalModel)
+                .Select(item => new
+                {
+                    item.Id,
+                    item.LogicalModel,
+                    item.RequestsPerWindow,
+                    item.WindowSeconds,
+                    item.Enabled,
+                    item.UpdatedAtUtc
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(policies);
+        });
+
         group.MapGet("/usage", async (
             int? days,
             GatewayDbContext dbContext,

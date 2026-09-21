@@ -33,6 +33,15 @@ type CredentialUsage = {
   rateLimitedRequests: number
 }
 
+type PersonalRateLimit = {
+  id: string
+  logicalModel?: string | null
+  requestsPerWindow: number
+  windowSeconds: number
+  enabled: boolean
+  updatedAtUtc: string
+}
+
 type PersonalUsage = {
   windowDays: number
   sinceUtc: string
@@ -70,6 +79,7 @@ export default function UserPortal() {
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [credentials, setCredentials] = useState<PersonalCredential[]>([])
   const [usage, setUsage] = useState<PersonalUsage | null>(null)
+  const [rateLimits, setRateLimits] = useState<PersonalRateLimit[]>([])
   const [name, setName] = useState('')
   const [created, setCreated] = useState<CreatedCredential | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,14 +89,16 @@ export default function UserPortal() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextIdentity, nextCredentials, nextUsage] = await Promise.all([
+      const [nextIdentity, nextCredentials, nextUsage, nextRateLimits] = await Promise.all([
         request<Identity>('/api/me'),
         request<PersonalCredential[]>('/api/me/api-credentials'),
-        request<PersonalUsage>('/api/me/usage?days=30')
+        request<PersonalUsage>('/api/me/usage?days=30'),
+        request<PersonalRateLimit[]>('/api/me/rate-limits')
       ])
       setIdentity(nextIdentity)
       setCredentials(nextCredentials)
       setUsage(nextUsage)
+      setRateLimits(nextRateLimits)
       setAuthRequired(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -155,6 +167,14 @@ export default function UserPortal() {
           <Metric label="Rate limited" value={formatNumber(usage.rateLimitedRequests)} />
         </section>}
 
+        <section className="panel">
+          <div className="panelTitle"><h2>My request limits</h2><span>Applied across all of your personal API keys.</span></div>
+          <table><thead><tr><th>Model</th><th>Limit</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+            {rateLimits.map(policy => <tr key={policy.id}><td>{policy.logicalModel ?? 'All models'}</td><td><strong>{formatNumber(policy.requestsPerWindow)}</strong> / {policy.windowSeconds}s</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td>{formatDate(policy.updatedAtUtc)}</td></tr>)}
+            {rateLimits.length === 0 && <tr><td colSpan={4} className="muted">No aggregate user request limit is configured.</td></tr>}
+          </tbody></table>
+        </section>
+
         <div className="gridTwo">
           <section className="panel">
             <div className="panelTitle"><h2>Personal credentials</h2><span>{credentials.length} keys</span></div>
@@ -183,7 +203,7 @@ export default function UserPortal() {
           <table><thead><tr><th>Credential</th><th>Requests</th><th>Errors</th><th>Input tokens</th><th>Output tokens</th><th>Rate limited</th></tr></thead><tbody>
             {usage.credentials.map(item => <tr key={item.apiCredentialId}><td><strong>{item.name}</strong><div className="muted mono">{item.keyPrefix}…</div></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatNumber(item.inputTokens)}</td><td>{formatNumber(item.outputTokens)}</td><td>{formatNumber(item.rateLimitedRequests)}</td></tr>)}
           </tbody></table>
-          <p className="muted">Request/output-token limits currently apply per credential/model. Currency spend limits require an explicit pricing or chargeback model.</p>
+          <p className="muted">User request limits apply across all personal keys; credential/model limits may also apply. Output-token budgets remain credential scoped. Currency spend limits require an explicit pricing or chargeback model.</p>
         </section>}
       </>}
     </main>

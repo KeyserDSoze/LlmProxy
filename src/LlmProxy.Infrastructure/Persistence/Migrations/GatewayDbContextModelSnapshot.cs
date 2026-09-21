@@ -73,6 +73,23 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("rate_limit_policies");
         });
 
+        modelBuilder.Entity("LlmProxy.Domain.Governance.UserRateLimitPolicy", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<bool>("Enabled").HasColumnType("boolean");
+            b.Property<string>("LogicalModel").HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<string>("OwnerObjectId").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("OwnerTenantId").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<int>("RequestsPerWindow").HasColumnType("integer");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<int>("WindowSeconds").HasColumnType("integer");
+            b.HasKey("Id");
+            b.HasIndex("OwnerTenantId", "OwnerObjectId");
+            b.HasIndex("OwnerTenantId", "OwnerObjectId", "LogicalModel");
+            b.ToTable("user_rate_limit_policies");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Governance.UsageGroup", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");

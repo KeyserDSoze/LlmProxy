@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { CreatedApiCredential, GovernanceCredential, Model, RateLimitPolicy, UsageGroup, UsageReport } from './types'
+import type { CreatedApiCredential, GovernanceCredential, IdentityUserSummary, Model, RateLimitPolicy, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
 
 const emptyUsage: UsageReport = {
   windowDays: 30,
@@ -28,6 +28,8 @@ export default function Governance() {
   const [groups, setGroups] = useState<UsageGroup[]>([])
   const [credentials, setCredentials] = useState<GovernanceCredential[]>([])
   const [rateLimits, setRateLimits] = useState<RateLimitPolicy[]>([])
+  const [users, setUsers] = useState<IdentityUserSummary[]>([])
+  const [userRateLimits, setUserRateLimits] = useState<UserRateLimitPolicy[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [usage, setUsage] = useState<UsageReport>(emptyUsage)
   const [groupName, setGroupName] = useState('')
@@ -36,6 +38,10 @@ export default function Governance() {
   const [rateModel, setRateModel] = useState('')
   const [requestsPerWindow, setRequestsPerWindow] = useState(60)
   const [windowSeconds, setWindowSeconds] = useState(60)
+  const [rateUserKey, setRateUserKey] = useState('')
+  const [userRateModel, setUserRateModel] = useState('')
+  const [userRequestsPerWindow, setUserRequestsPerWindow] = useState(300)
+  const [userWindowSeconds, setUserWindowSeconds] = useState(60)
   const [budgetPolicyId, setBudgetPolicyId] = useState('')
   const [outputTokensPerWindow, setOutputTokensPerWindow] = useState(100000)
   const [maxOutputTokensPerRequest, setMaxOutputTokensPerRequest] = useState(4096)
@@ -47,19 +53,24 @@ export default function Governance() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextGroups, nextCredentials, nextRateLimits, nextUsage, nextModels] = await Promise.all([
+      const [nextGroups, nextCredentials, nextRateLimits, nextUsers, nextUserRateLimits, nextUsage, nextModels] = await Promise.all([
         api.usageGroups(),
         api.governanceCredentials(),
         api.rateLimits(),
+        api.identityUsers(),
+        api.userRateLimits(),
         api.usageSummary(days),
         api.models()
       ])
       setGroups(nextGroups)
       setCredentials(nextCredentials)
       setRateLimits(nextRateLimits)
+      setUsers(nextUsers)
+      setUserRateLimits(nextUserRateLimits)
       setUsage(nextUsage)
       setModels(nextModels)
       setRateCredentialId(current => current || nextCredentials[0]?.id || '')
+      setRateUserKey(current => current || (nextUsers[0] ? `${nextUsers[0].tenantId}|${nextUsers[0].objectId}` : ''))
       setBudgetPolicyId(current => current && nextRateLimits.some(policy => policy.id === current) ? current : nextRateLimits[0]?.id || '')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -134,6 +145,43 @@ export default function Governance() {
   async function deleteRateLimit(policy: RateLimitPolicy) {
     await api.deleteRateLimit(policy.id)
     setMessage('Rate-limit policy removed.')
+    await refresh()
+  }
+
+  async function createUserRateLimit(event: FormEvent) {
+    event.preventDefault()
+    if (!rateUserKey) return
+    const separator = rateUserKey.indexOf('|')
+    if (separator < 1) return
+    const ownerTenantId = rateUserKey.slice(0, separator)
+    const ownerObjectId = rateUserKey.slice(separator + 1)
+    setMessage(null)
+    await api.createUserRateLimit({
+      ownerTenantId,
+      ownerObjectId,
+      logicalModel: userRateModel || null,
+      requestsPerWindow: userRequestsPerWindow,
+      windowSeconds: userWindowSeconds,
+      enabled: true
+    })
+    setMessage('User rate-limit policy created and applied live across all personal keys.')
+    await refresh()
+  }
+
+  async function toggleUserRateLimit(policy: UserRateLimitPolicy) {
+    await api.updateUserRateLimit(policy.id, {
+      logicalModel: policy.logicalModel ?? null,
+      requestsPerWindow: policy.requestsPerWindow,
+      windowSeconds: policy.windowSeconds,
+      enabled: !policy.enabled
+    })
+    setMessage(`User rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
+    await refresh()
+  }
+
+  async function deleteUserRateLimit(policy: UserRateLimitPolicy) {
+    await api.deleteUserRateLimit(policy.id)
+    setMessage('User rate-limit policy removed.')
     await refresh()
   }
 
@@ -220,6 +268,28 @@ export default function Governance() {
         <label>Window seconds<input type="number" min="1" value={windowSeconds} onChange={event => setWindowSeconds(Number(event.target.value))} /></label>
         <button className="primary">Add rate limit</button>
       </form></section>
+    </div>
+
+    <div className="gridTwo">
+      <section className="panel">
+        <div className="panelTitle"><h2>User request limits</h2><span>Aggregate across every personal API key owned by the Entra user.</span></div>
+        <table><thead><tr><th>User</th><th>Model</th><th>Request limit</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {userRateLimits.length === 0 ? <tr><td colSpan={5}>No user limits configured.</td></tr> : userRateLimits.map(policy => <tr key={policy.id}>
+            <td><strong>{policy.principalName ?? policy.ownerObjectId}</strong><div className="muted mono">{policy.ownerObjectId}</div></td>
+            <td>{policy.logicalModel ?? 'All models'}</td>
+            <td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+            <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
+            <td className="actions"><button onClick={() => void toggleUserRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteUserRateLimit(policy)}>Delete</button></td>
+          </tr>)}
+        </tbody></table>
+      </section>
+      <section className="panel formPanel"><h2>Add user request limit</h2><form onSubmit={event => void createUserRateLimit(event)}>
+        <label>User<select value={rateUserKey} onChange={event => setRateUserKey(event.target.value)} required><option value="">Select Entra user</option>{users.map(user => <option key={`${user.tenantId}|${user.objectId}`} value={`${user.tenantId}|${user.objectId}`}>{user.principalName ?? user.objectId}</option>)}</select></label>
+        <label>Logical model<select value={userRateModel} onChange={event => setUserRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
+        <label>Requests per window<input type="number" min="1" value={userRequestsPerWindow} onChange={event => setUserRequestsPerWindow(Number(event.target.value))} /></label>
+        <label>Window seconds<input type="number" min="1" value={userWindowSeconds} onChange={event => setUserWindowSeconds(Number(event.target.value))} /></label>
+        <button className="primary" disabled={users.length === 0}>Add user limit</button>
+      </form>{users.length === 0 && <p className="muted">A user appears after creating at least one personal API key.</p>}</section>
     </div>
 
     <section className="panel formPanel">
