@@ -180,9 +180,17 @@ for attempt in {1..40}; do
 done
 [[ "$outbox_drained" == "true" ]] || fail_with_diagnostics "Startup runtime-state outbox did not drain before fault injection."
 
-peer_sync_before="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
-echo "$peer_sync_before" | jq -e '.connected == true and .outbox.pendingCount == 0 and .outbox.failedPendingCount == 0' >/dev/null \
-  || fail_with_diagnostics "Runtime-sync diagnostics did not report a clean outbox before fault injection."
+diagnostics_clean=false
+peer_sync_before=""
+for attempt in {1..40}; do
+  peer_sync_before="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync || true)"
+  if echo "$peer_sync_before" | jq -e '.connected == true and .outbox.pendingCount == 0 and .outbox.failedPendingCount == 0' >/dev/null 2>&1; then
+    diagnostics_clean=true
+    break
+  fi
+  sleep 0.25
+done
+[[ "$diagnostics_clean" == "true" ]] || fail_with_diagnostics "Runtime-sync diagnostics did not report a clean outbox before fault injection."
 peer_published_before="$(echo "$peer_sync_before" | jq -r '.publishedEvents')"
 
 # The control-plane mutation must commit even while Redis is unavailable. The same PostgreSQL commit must

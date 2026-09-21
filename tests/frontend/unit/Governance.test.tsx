@@ -6,6 +6,11 @@ const mockedApi = vi.hoisted(() => ({
   usageGroups: vi.fn(),
   governanceCredentials: vi.fn(),
   rateLimits: vi.fn(),
+  identityUsers: vi.fn(),
+  userRateLimits: vi.fn(),
+  createUserRateLimit: vi.fn(),
+  updateUserRateLimit: vi.fn(),
+  deleteUserRateLimit: vi.fn(),
   usageSummary: vi.fn(),
   models: vi.fn(),
   createUsageGroup: vi.fn(),
@@ -60,6 +65,11 @@ describe('Usage governance', () => {
     mockedApi.usageGroups.mockResolvedValue([group])
     mockedApi.governanceCredentials.mockResolvedValue([credential])
     mockedApi.rateLimits.mockResolvedValue([])
+    mockedApi.identityUsers.mockResolvedValue([{ tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', credentialCount: 1, activeCredentialCount: 1, firstCredentialCreatedAtUtc: '2026-09-17T06:00:00Z' }])
+    mockedApi.userRateLimits.mockResolvedValue([])
+    mockedApi.createUserRateLimit.mockResolvedValue({ id: 'user-rate-1' })
+    mockedApi.updateUserRateLimit.mockResolvedValue({})
+    mockedApi.deleteUserRateLimit.mockResolvedValue(undefined)
     mockedApi.usageSummary.mockResolvedValue(usage)
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'provider', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.createUsageGroup.mockResolvedValue(group)
@@ -102,10 +112,11 @@ describe('Usage governance', () => {
 
     await waitFor(() => expect(mockedApi.createUsageGroup).toHaveBeenCalledWith({ name: 'Platform', description: 'Platform developers' }))
 
-    const requests = screen.getByLabelText('Requests per window')
-    await user.click(requests)
-    await user.keyboard('{Control>}a{/Control}2')
-    const windowSeconds = screen.getByLabelText('Window seconds')
+    const credentialLimitForm = screen.getByRole('heading', { name: 'Add rate limit' }).closest('section')!
+    const requests = credentialLimitForm.querySelector('input[type="number"]') as HTMLInputElement
+    await user.clear(requests)
+    await user.type(requests, '2')
+    const windowSeconds = credentialLimitForm.querySelectorAll('input[type="number"]')[1] as HTMLInputElement
     await user.click(windowSeconds)
     await user.keyboard('{Control>}a{/Control}10')
     await user.click(screen.getByRole('button', { name: 'Add rate limit' }))

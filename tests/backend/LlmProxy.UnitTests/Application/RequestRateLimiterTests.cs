@@ -77,7 +77,7 @@ public sealed class RequestRateLimiterTests
     }
 
     [Fact]
-    public void User_policy_aggregates_requests_across_personal_credentials()
+    public async Task User_policy_aggregates_requests_across_personal_credentials()
     {
         var userPolicyId = Guid.NewGuid();
         var credentialA = Guid.NewGuid();
@@ -96,22 +96,22 @@ public sealed class RequestRateLimiterTests
         ]);
         var now = DateTimeOffset.UtcNow;
 
-        Assert.True(limiter.TryAcquireAsync(credentialA, "agic-code", "TENANT-1", "USER-1", now).AsTask().GetAwaiter().GetResult().Allowed);
-        Assert.True(limiter.TryAcquireAsync(credentialB, "agic-code", "tenant-1", "user-1", now.AddSeconds(1)).AsTask().GetAwaiter().GetResult().Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialA, "agic-code", "TENANT-1", "USER-1", now, TestContext.Current.CancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialB, "agic-code", "tenant-1", "user-1", now.AddSeconds(1), TestContext.Current.CancellationToken)).Allowed);
 
-        var rejected = limiter.TryAcquireAsync(
+        var rejected = await limiter.TryAcquireAsync(
             credentialA,
             "agic-code",
             "tenant-1",
             "user-1",
-            now.AddSeconds(2)).AsTask().GetAwaiter().GetResult();
+            now.AddSeconds(2), TestContext.Current.CancellationToken);
 
         Assert.False(rejected.Allowed);
         Assert.Equal(userPolicyId, rejected.Policy?.Id);
     }
 
     [Fact]
-    public void User_and_credential_policies_are_acquired_atomically()
+    public async Task User_and_credential_policies_are_acquired_atomically()
     {
         var userPolicyId = Guid.NewGuid();
         var credentialPolicyId = Guid.NewGuid();
@@ -132,35 +132,35 @@ public sealed class RequestRateLimiterTests
         ]);
         var now = DateTimeOffset.UtcNow;
 
-        Assert.True(limiter.TryAcquireAsync(
+        Assert.True((await limiter.TryAcquireAsync(
             credentialA,
             "agic-code",
             "tenant-1",
             "user-1",
-            now).AsTask().GetAwaiter().GetResult().Allowed);
+            now, TestContext.Current.CancellationToken)).Allowed);
 
-        var credentialRejected = limiter.TryAcquireAsync(
+        var credentialRejected = await limiter.TryAcquireAsync(
             credentialA,
             "agic-code",
             "tenant-1",
             "user-1",
-            now.AddSeconds(1)).AsTask().GetAwaiter().GetResult();
+            now.AddSeconds(1), TestContext.Current.CancellationToken);
         Assert.False(credentialRejected.Allowed);
         Assert.Equal(credentialPolicyId, credentialRejected.Policy?.Id);
 
-        Assert.True(limiter.TryAcquireAsync(
+        Assert.True((await limiter.TryAcquireAsync(
             credentialB,
             "agic-code",
             "tenant-1",
             "user-1",
-            now.AddSeconds(2)).AsTask().GetAwaiter().GetResult().Allowed);
+            now.AddSeconds(2), TestContext.Current.CancellationToken)).Allowed);
 
-        var userRejected = limiter.TryAcquireAsync(
+        var userRejected = await limiter.TryAcquireAsync(
             credentialB,
             "agic-code",
             "tenant-1",
             "user-1",
-            now.AddSeconds(3)).AsTask().GetAwaiter().GetResult();
+            now.AddSeconds(3), TestContext.Current.CancellationToken);
         Assert.False(userRejected.Allowed);
         Assert.Equal(userPolicyId, userRejected.Policy?.Id);
     }
