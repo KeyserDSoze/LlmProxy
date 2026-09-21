@@ -8,8 +8,8 @@ public sealed record ApiCredentialSnapshot(
     bool Enabled,
     DateTimeOffset? ExpiresAtUtc,
     Guid? UsageGroupId,
-    string? OwnerTenantId,
-    string? OwnerObjectId)
+    string? OwnerTenantId = null,
+    string? OwnerObjectId = null)
 {
     public bool IsUsable(DateTimeOffset nowUtc)
         => Enabled && (ExpiresAtUtc is null || ExpiresAtUtc > nowUtc);
