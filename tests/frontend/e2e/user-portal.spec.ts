@@ -70,7 +70,7 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   await page.goto('/admin/me')
   await expect(page.getByRole('heading', { name: 'My API Keys' })).toBeVisible()
   await expect(page.getByText('Example User')).toBeVisible()
-  await expect(page.getByText('Project Alpha')).toBeVisible()
+  await expect(page.getByText('Project Alpha', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('30d requests').locator('..').getByText('12', { exact: true })).toBeVisible()
 
   await page.getByPlaceholder('Project Alpha / Development').fill('Development')
