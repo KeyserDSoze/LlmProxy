@@ -166,12 +166,25 @@ The environment acceptance command exits successfully only when every enabled ch
 
 The resulting evidence proves connectivity and functional surfaces. It does **not** establish production concurrency. Capacity Profiles must still be calibrated with `docs/benchmarking.md` against the real DGX/model combination and representative workload.
 
+## Entra personal-key acceptance
+
+Personal-key acceptance must prove the real tenant identity path rather than only repository mocks:
+
+1. sign in as an assigned `LlmProxy.User`;
+2. open `/admin/me` without administrative control-plane access;
+3. create a named personal API key and copy the one-time secret;
+4. call the intended `/v1/*` inference surface with that key;
+5. verify the key is attributed to the correct Entra `tid + oid` in administrator identity inventory and own usage;
+6. rotate the key, verify the old secret stops working after runtime propagation, then revoke the replacement and verify it is rejected.
+
+Do not persist the raw acceptance secret in evidence.
+
 ## Follow-on acceptance
 
 After the private-LAN environment acceptance is green, continue with the remaining external work:
 
 1. benchmark intended models and apply evidence-backed Capacity Profiles;
-2. configure and validate real Entra `LlmProxy.Admin` / `LlmProxy.Reader` roles;
+2. configure and validate real Entra `LlmProxy.Admin` / `LlmProxy.User` / `LlmProxy.Reader` roles, including `/admin/me` personal-key create/rotate/revoke and a `/v1/*` call using the personal key;
 3. configure the intended Cloudflare Tunnel/public hostname;
 4. validate GitHub Copilot BYOK through the public gateway;
 5. validate deployment and acceptance through the self-hosted GitHub Actions runner;

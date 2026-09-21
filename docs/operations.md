@@ -3,17 +3,21 @@
 ## Current product baseline
 
 ```text
-version                0.2.0-preview.5
-runtime source         723c47d919a59cf95e447c071ef377ab92a06498
-CI                     35099356925 SUCCESS
-Publish GHCR           35099987458 SUCCESS
-image digest           sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest   sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
-release artifact       10448046779
-artifact digest        sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+version                 0.2.0-preview.6
+implementation          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                      35569885810 SUCCESS
+Full stack              35569885843 SUCCESS
+Publish GHCR            35570238079 SUCCESS
+immutable image alias   sha-7da5682
+image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+release artifact        10625781303
+artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
-For controlled production use, prefer immutable `sha-723c47d` over mutable `main` until an explicit exact SemVer tag/release is created.
+For controlled production use, prefer immutable `sha-7da5682` over mutable `main` until an explicit exact SemVer tag/release is created.
 
 Operators can inspect runtime identity through:
 
@@ -37,7 +41,7 @@ export GHCR_TOKEN='<package-read-token>'
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
-  --image-tag sha-723c47d
+  --image-tag sha-7da5682
 ```
 
 The installer detects `/etc/os-release` and common package managers. Docker's official repository path is implemented for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other hosts may use native `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk` packages and a Compose v2 CLI-plugin fallback. Unknown hosts can preinstall Docker Engine + Compose v2 and rerun with `--skip-docker-install`.
@@ -70,7 +74,7 @@ Example:
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh sha-723c47d
+  bash docker/scripts/deploy.sh sha-7da5682
 ```
 
 The deploy script rejects unresolved production settings, requires `ASPNETCORE_ENVIRONMENT=Production`, requires Entra before public Cloudflare exposure, stages assets under `/opt/llmproxy/runtime`, validates Compose before container changes, starts the Redis-enabled full stack and requires both `/healthz` and `/readyz`.
@@ -85,6 +89,14 @@ llmproxy-prod
 ```
 
 Keep production secrets in `/opt/llmproxy/.env`, not workflow YAML.
+
+## Entra user self-service
+
+Production Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users open `/admin/me`; the self-service API is under `/api/me`. Personal keys are permanently attributed to Entra `tid+oid`; shared/unattended integrations may continue using administrator-created service credentials.
+
+Per-key request/output-token governance remains available. Aggregated per-user and monetary budgets are not enabled until their precedence and pricing semantics are explicitly defined.
+
+See `docs/identity-api-keys.md`.
 
 ## Production environment acceptance
 
@@ -201,22 +213,23 @@ The manual Admin test is diagnostic; production environment acceptance and maint
 
 Production images carry source/version/build identity. Before GHCR login, every publication queries GitHub Actions for successful `CI` from a push to `main` on the exact source SHA. Exact tags must also match compiled version metadata.
 
-Validated `preview.5` registry evidence:
+Validated `preview.6` registry evidence:
 
 ```text
 image                 ghcr.io/keyserdsoze/llmproxy
-version               0.2.0-preview.5
-source                723c47d919a59cf95e447c071ef377ab92a06498
-validating CI         35099356925
-digest                sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
-artifact id           10448046779
-artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+version               0.2.0-preview.6
+source                7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+validating CI         35569885810
+Full Stack            35569885843
+Publish GHCR          35570238079
+image alias           sha-7da5682
+digest                sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest  sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+release artifact      10625781303
+artifact digest       sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
-No exact `v0.2.0-preview.5` Git tag or GitHub Release has been created.
+No exact `v0.2.0-preview.6` Git tag or GitHub Release has been created.
 
 ## Usage retention operational note
 

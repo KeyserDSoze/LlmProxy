@@ -1,6 +1,6 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-09-16**.
+Last reviewed: **2026-09-21**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
@@ -9,34 +9,29 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 Current formal product version:
 
 ```text
-0.2.0-preview.5
+0.2.0-preview.6
 ```
 
 Validated runtime/release checkpoint:
 
 ```text
-implementation          723c47d919a59cf95e447c071ef377ab92a06498
-CI                      35099356925 SUCCESS
-Publish GHCR            35099987458 SUCCESS
-immutable image alias   sha-723c47d
-image digest            sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest    sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+version                 0.2.0-preview.6
+implementation          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                      35569885810 SUCCESS
+Full stack              35569885843 SUCCESS
+Publish GHCR            35570238079 SUCCESS
+immutable image alias   sha-7da5682
+image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
 SBOM predicate          https://spdx.dev/Document
 provenance predicate    https://slsa.dev/provenance/v1
-release artifact        10448046779
-artifact digest         sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+release artifact        10625781303
+artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
-Validated operator-workflow checkpoint:
+CI `35569885810` covers backend/unit/frontend/Playwright plus Docker/PostgreSQL regressives. Full Stack `35569885843` covers Redis/OpenTelemetry bootstrap, transactional outbox recovery, distributed output-token budgets, cross-replica credential rotation and safe maintenance. Publish `35570238079` validates source CI before GHCR login and verifies the pushed OCI digest, SPDX SBOM and SLSA/BuildKit provenance.
 
-```text
-commit                  cdd21d6155de08c6202754560f5b3c9f590071f9
-CI                      35110131158 SUCCESS
-```
-
-The runtime checkpoint is the currently validated product image. The later operator-workflow checkpoint adds self-hosted environment-acceptance automation, README/runbook updates and no runtime implementation changes. Mutable `main` may republish after docs/operator commits; use `sha-723c47d` when the validated `preview.5` runtime image is required.
-
-CI `35099356925` proves the complete `preview.5` implementation including the environment-acceptance harness and the canonical bodyless vLLM `/health` behavior. CI `35110131158` proves the repository with the new self-hosted acceptance workflow and re-runs backend, frontend and all Docker/PostgreSQL regressives, including `Environment acceptance harness smoke`.
+The validated deployment image is `ghcr.io/keyserdsoze/llmproxy:sha-7da5682`. Later documentation-only commits may republish mutable `main` but do not replace this runtime checkpoint.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -61,9 +56,10 @@ Formal release sequence:
 0.2.0-preview.3  source-validated main/tag publication
 0.2.0-preview.4  consolidated Linux production deployment + host installer
 0.2.0-preview.5  production environment acceptance evidence
+0.2.0-preview.6  Entra-owned personal API keys + user self-service
 ```
 
-No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created. That remains an explicit product-owner publication action.
+No immutable `v0.2.0-preview.6` Git tag or GitHub Release has been created. That remains an explicit product-owner publication action.
 
 ## Linux production deployment — DONE / VALIDATED FOR REPOSITORY PATH
 
@@ -161,20 +157,22 @@ Repository CI proves the script and workflow repository path without pretending 
 
 Every publication resolves one exact source SHA, requires successful `CI` push evidence before GHCR login, enforces tag/version match for exact tags, builds with source/version/date identity, emits SPDX + SLSA/BuildKit attestations, verifies the pushed OCI index and uploads `release-manifest.json`.
 
-Validated `preview.5` runtime registry evidence:
+Validated `preview.6` runtime registry evidence:
 
 ```text
 image                 ghcr.io/keyserdsoze/llmproxy
-version               0.2.0-preview.5
-source                723c47d919a59cf95e447c071ef377ab92a06498
-validating CI         35099356925
-Publish GHCR          35099987458
-image digest          sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+version               0.2.0-preview.6
+source                7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+validating CI         35569885810
+Full Stack            35569885843
+Publish GHCR          35570238079
+image alias           sha-7da5682
+image digest          sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest  sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-artifact              10448046779
-artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+artifact              10625781303
+artifact digest       sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
 ## Core runtime scope — DONE FOR CURRENT MVP
@@ -219,11 +217,13 @@ Drain pre-blocks admission. Existing streams finish. Resume requires zero global
 
 ### Credentials and caller governance
 
-Credentials persist HMAC-SHA256 hashes and safe metadata. In-place rotation preserves identity/group/policy/history linkage and returns the replacement secret once.
+Credentials persist HMAC-SHA256 hashes and safe metadata. Administrator-created service credentials remain unowned. Personal credentials store stable Entra `OwnerTenantId + OwnerObjectId` and optional principal-name display metadata; raw secrets are returned once. In-place rotation preserves credential identity, Entra ownership, group/policy/history linkage and returns the replacement secret once.
 
-Caller governance includes shared request-rate counters and output-token budgets with pre-inference reservation, output-cap injection, known-usage refund and conservative uncertain-usage charging. Redis coordination fails closed.
+Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users use `/api/me/*` or `/admin/me` to create/list/rotate/revoke only their own keys and inspect own credential-attributed usage. Admin/Reader identity inventory is available under `/api/admin/identity`.
 
-Input/total-token quotas and monetary budgets remain requirements-driven.
+Caller governance includes shared request-rate counters and output-token budgets with pre-inference reservation, output-cap injection, known-usage refund and conservative uncertain-usage charging. Redis coordination fails closed. Those policies are currently credential/model scoped, including for personal keys.
+
+Aggregated per-user quotas across multiple keys require explicit precedence/counter semantics. Input/total-token quotas and monetary budgets remain requirements-driven; spend enforcement additionally requires an explicit pricing/chargeback model.
 
 ### Historical reporting / retention
 
@@ -252,18 +252,18 @@ Prompts/source/generated output/API secrets remain excluded from persistent tele
 
 The next step is **physical environment acceptance**, not another generic repository feature:
 
-1. install immutable `sha-723c47d` on the actual target Linux distro/version;
+1. install immutable `sha-7da5682` on the actual target Linux distro/version;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
 3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
 4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
-5. validate real Entra roles and Cloudflare/public hostname;
+5. validate real Entra Admin/User/Reader roles, personal-key self-service and Cloudflare/public hostname;
 6. validate GitHub Copilot BYOK end-to-end;
 7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
 8. create an immutable Git tag/GitHub Release only when explicitly requested.
 
 ## Identity limitation
 
-A centrally configured GitHub Copilot BYOK provider may use one shared credential. LlmProxy can attribute traffic to the credential/Usage Group, not reliably to an individual GitHub user. Never infer identity from IP.
+A personal API key is attributable to its Entra owner through stable `tid + oid` plus the credential ID retained in usage telemetry/rollups. A centrally configured GitHub Copilot BYOK provider may still use one shared **service credential**; traffic through that shared key cannot reliably identify an individual GitHub user. Never infer identity from IP.
 
 ## Exact resume point
 
@@ -271,8 +271,8 @@ A new development session should:
 
 1. read `AGENTS.md`, this file, `CHANGELOG.md`, `docs/versioning.md`, latest `docs/development-log.md`, `docs/roadmap.md` and focused docs;
 2. inspect latest `main` and Actions before changing code;
-3. treat `0.2.0-preview.5`, runtime source `723c47d919a59cf95e447c071ef377ab92a06498`, CI `35099356925`, Publish `35099987458`, image alias `sha-723c47d` and digest `sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa` as the validated runtime baseline;
-4. treat operator workflow commit `cdd21d6155de08c6202754560f5b3c9f590071f9` / CI `35110131158` as the validated repository acceptance-automation checkpoint;
+3. treat `0.2.0-preview.6`, runtime source `7da5682f043eeb7e0d0b684eabb0ab6a6b659b35`, CI `35569885810`, Full Stack `35569885843`, Publish `35570238079`, image alias `sha-7da5682` and digest `sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81` as the validated runtime baseline;
+4. preserve the Entra `tid+oid` personal-key ownership contract and service-credential compatibility;
 5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free config lookup, rollup/raw no-double-counting and pre-response-only failover;
 6. preserve metadata-only acceptance evidence and the bodyless vLLM `/health` status-only rule;
 7. preserve the pre-GHCR source-validation gate and post-push SPDX/SLSA registry verification;

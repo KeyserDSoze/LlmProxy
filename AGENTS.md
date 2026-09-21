@@ -58,34 +58,29 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 Current formal version:
 
 ```text
-0.2.0-preview.5
+0.2.0-preview.6
 ```
 
 Validated runtime/release checkpoint:
 
 ```text
-implementation          723c47d919a59cf95e447c071ef377ab92a06498
-CI                      35099356925 SUCCESS
-Publish GHCR            35099987458 SUCCESS
-image alias             sha-723c47d
-image digest            sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest    sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+version                 0.2.0-preview.6
+implementation          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                      35569885810 SUCCESS
+Full stack              35569885843 SUCCESS
+Publish GHCR            35570238079 SUCCESS
+immutable image alias   sha-7da5682
+image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
 SBOM predicate          https://spdx.dev/Document
 provenance predicate    https://slsa.dev/provenance/v1
-release artifact        10448046779
-artifact digest         sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
+release artifact        10625781303
+artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
 ```
 
-Validated environment-acceptance workflow checkpoint:
+This is the validated runtime baseline for deployment and environment acceptance. Later docs-only commits may move mutable `main`; use `sha-7da5682` when the validated `preview.6` product image is required.
 
-```text
-operator workflow       cdd21d6155de08c6202754560f5b3c9f590071f9
-CI                      35110131158 SUCCESS
-```
-
-The second checkpoint adds repository/operator automation and documentation; it does not replace the immutable runtime image checkpoint above. Mutable `main` may move or republish after docs/operator commits. Until an explicit exact SemVer release is created, use `sha-723c47d` when the validated `preview.5` runtime image is required.
-
-No immutable `v0.2.0-preview.5` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
+No immutable `v0.2.0-preview.6` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
 
 Runtime identity is exposed by:
 
@@ -95,6 +90,14 @@ GET /api/admin/product
 ```
 
 Operators read version/build/patch notes at `/admin/releases`. Keep `CHANGELOG.md`, `ProductReleaseCatalog`, Admin package version and compiled version aligned.
+
+## Entra identity and personal API keys
+
+Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership uses stable Entra `tid + oid`; usernames/email are metadata only. `LlmProxy.User` and `LlmProxy.Admin` can manage only their own personal keys through `/api/me/*` and `/admin/me`. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
+
+Request-rate and output-token budgets remain credential/model scoped. Aggregated per-user quotas across multiple keys and monetary/spend budgets are not implemented without explicit precedence and pricing/chargeback semantics.
+
+Read `docs/identity-api-keys.md` and `docs/security.md` before changing identity/credential behavior.
 
 ## Runtime topology
 
@@ -178,7 +181,7 @@ Canonical first-install entry point:
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://<dgx>:8000 \
   --provider-model '<provider-model-id>' \
-  --image-tag sha-723c47d
+  --image-tag sha-7da5682
 ```
 
 The installer supports Docker official repository paths for Debian, Ubuntu, Fedora, CentOS and RHEL plus controlled package-manager fallbacks; preserves working existing Docker/Compose and an existing protected `/opt/llmproxy/.env`; generates initial secrets without printing them; optionally logs into GHCR; checks DGX `/health` + `/v1/models`; and invokes the canonical `docker/scripts/deploy.sh`.
@@ -236,7 +239,7 @@ Read `docs/versioning.md` before release changes.
 
 Repository-supported MVP hardening, Linux bootstrap and executable environment-acceptance tooling are complete for the current preview. Default next order:
 
-1. install `sha-723c47d` on the actual target Linux host;
+1. install `sha-7da5682` on the actual target Linux host;
 2. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
 3. calibrate real DGX capacity with intended models and representative Copilot load;
 4. validate real Entra roles, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;

@@ -28,10 +28,10 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 
 ## M3 — Enterprise administration — DONE FOR MVP / EXTERNAL SETUP REMAINS
 
-- DONE: Entra plumbing and Admin/Reader roles.
-- DONE: React control plane.
-- DONE: HMAC-hashed DB-backed credentials + runtime cache.
-- DONE: one-time credential creation/rotation and audit.
+- DONE: Entra plumbing with Admin/User/Reader roles.
+- DONE: React admin control plane plus `/admin/me` personal-key user portal.
+- DONE: HMAC-hashed DB-backed service and Entra-owned personal credentials + runtime cache.
+- DONE: one-time credential creation/rotation/revocation, stable `tid+oid` ownership and audit.
 - DONE: product version/build and patch-note visibility.
 - EXTERNAL: real Entra app registration/roles.
 
@@ -91,7 +91,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: runtime/outbox policy propagation.
 - DONE: Admin Apply/Clear UI and audit.
 
-Future quota extensions remain requirements-driven: input/total-token budgets need tokenizer/estimation semantics; monetary budgets need pricing/accounting semantics.
+Future quota extensions remain requirements-driven: aggregated per-user quotas across multiple keys need explicit precedence/distributed-counter semantics; input/total-token budgets need tokenizer/estimation semantics; monetary budgets need pricing/accounting semantics.
 
 ## M8 — Usage Groups and reporting — DONE FOR CURRENT MVP
 
@@ -147,7 +147,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.5
+## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.6
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -165,21 +165,19 @@ local RAM  = per-replica request-path L1
 - DONE: production environment-acceptance harness + metadata-only evidence contract.
 - DONE: bodyless canonical vLLM health compatibility fix.
 - DONE: self-hosted manual acceptance workflow on the production runner labels.
+- DONE: Entra-owned personal API keys, `LlmProxy.User` self-service, own-usage view and administrator identity inventory.
 - OWNER ACTION: create a real immutable Git tag/GitHub Release only when explicitly requested.
 
 Validated runtime checkpoint:
 
 ```text
-version           0.2.0-preview.5
-commit            723c47d919a59cf95e447c071ef377ab92a06498
-CI                35099356925 SUCCESS
-Publish GHCR      35099987458 SUCCESS
-image alias       sha-723c47d
-image digest      sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-```
-
-Validated operator-workflow checkpoint:
-
+version           0.2.0-preview.6
+commit            7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                35569885810 SUCCESS
+Full Stack        35569885843 SUCCESS
+Publish GHCR      35570238079 SUCCESS
+image alias       sha-7da5682
+image digest      sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
 ```text
 commit            cdd21d6155de08c6202754560f5b3c9f590071f9
 CI                35110131158 SUCCESS
@@ -187,10 +185,10 @@ CI                35110131158 SUCCESS
 
 ## Current development order
 
-1. Install immutable `sha-723c47d` on the actual target Linux host.
+1. Install immutable `sha-7da5682` on the actual target Linux host.
 2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM.
 3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
-4. Validate real Entra + Cloudflare + GitHub Copilot BYOK end-to-end.
+4. Validate real Entra Admin/User/Reader login + personal-key self-service, then Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
 6. Expand quota semantics only with explicit tokenizer/pricing requirements.
 7. Create a Git tag/GitHub Release only when explicitly requested.

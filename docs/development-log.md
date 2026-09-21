@@ -1,5 +1,46 @@
 # Development log
 
+## 2026-09-21 — Entra-owned personal API keys / 0.2.0-preview.6 — VALIDATED
+
+Implemented the Entra identity/API-key requirement by extending the existing credential and governance model rather than replacing it.
+
+Architecture:
+
+- retained administrator-created **service credentials** for shared/unattended integrations;
+- added **personal credentials** permanently bound to stable Entra `tid + oid`;
+- added `LlmProxy.User` alongside `LlmProxy.Admin` and `LlmProxy.Reader`;
+- added `/api/me` self-service for identity, personal-key list/create/rotate/revoke and own usage;
+- added `/admin/me` React self-service UI that does not call administrative APIs;
+- added administrator identity inventory under `/api/admin/identity`;
+- kept durable request attribution on `ApiCredentialId`, resolving personal-user ownership through the credential instead of duplicating user PII in request rows;
+- carried optional owner identity through the local/Redis runtime credential snapshot while preserving compatibility with existing unowned service credentials;
+- kept raw secrets one-time-only and HMAC/pepper-backed.
+
+Existing request-rate and output-token policies remain credential/model scoped and therefore apply to personal keys. Aggregated per-user quotas across multiple keys are intentionally not claimed yet because they require explicit precedence/distributed-counter semantics. Monetary/spend budgets are also not implemented because an on-prem vLLM deployment has no authoritative currency cost without an explicit pricing/chargeback model.
+
+The first implementation CI caught two compatibility/test issues before promotion: an E2E strict-selector/text regression and required new owner parameters on the credential snapshot. The UI test was stabilized and owner snapshot fields were made optional-null, preserving existing service-key/test/runtime payload compatibility and rolling-upgrade behavior.
+
+Final validation:
+
+```text
+version                 0.2.0-preview.6
+runtime source          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                      35569885810 SUCCESS
+Full Stack              35569885843 SUCCESS
+Publish GHCR            35570238079 SUCCESS
+image alias             sha-7da5682
+image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+release artifact        10625781303
+artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+```
+
+CI includes backend/unit/frontend/Playwright, PostgreSQL migration/integration, governance/rate-limit, outage, retention and restore smokes. Full Stack proves transactional outbox recovery, distributed output-token governance, cross-replica credential rotation and safe maintenance after the credential snapshot extension.
+
+Real Entra tenant acceptance remains external: create/assign Admin/User/Reader app roles, verify browser login, create a personal key through `/admin/me`, call `/v1/*` with it and confirm administrator/own-usage attribution.
+
 Chronological engineering trace for LlmProxy. Canonical current state and resume point live in `docs/project-status.md`; product-visible release history lives in `CHANGELOG.md` and `/admin/releases`.
 
 ## 2026-09-09 — Repository, gateway and multi-DGX foundation
@@ -237,11 +278,11 @@ CI `35110131158` revalidated backend, frontend/Playwright and the full Docker/Po
 
 This workflow commit is an operator/repository checkpoint, not a replacement for the validated runtime image `sha-723c47d`. The first actual run against the target VM + DGX/vLLM remains external.
 
-## Current next increment
+## Historical next increment after preview.5
 
-Repository hardening, Linux bootstrap and executable acceptance automation are complete for the current preview. The next work should be physical/environment acceptance:
+Repository hardening, Linux bootstrap and executable acceptance automation are complete for the current preview. At that checkpoint, the next work was physical/environment acceptance:
 
-1. install immutable `sha-723c47d` on the target Linux host;
+1. install the then-current immutable runtime image on the target Linux host;
 2. install/validate the `llmproxy-prod` self-hosted runner;
 3. run `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence;
 4. benchmark intended models and apply evidence-backed Capacity Profiles;

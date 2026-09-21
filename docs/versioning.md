@@ -66,7 +66,7 @@ Formal sequence:
 0.2.0-preview.6  Entra-owned personal API keys + user self-service
 ```
 
-`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Until its implementation CI/publication evidence is recorded, the previous `0.2.0-preview.5` runtime checkpoint below remains the last validated registry baseline.
+`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Its implementation, full-stack and publication evidence are recorded below.
 
 `0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
 
@@ -127,18 +127,18 @@ sha-<7 chars>
 A Git tag such as:
 
 ```text
-v0.2.0-preview.5
+v0.2.0-preview.6
 ```
 
 must satisfy both conditions before publication:
 
-1. tag version exactly matches compiled version `0.2.0-preview.5`;
+1. tag version exactly matches compiled version `0.2.0-preview.6`;
 2. the tagged source SHA already has successful repository `CI` from a push to `main`.
 
 A matching prerelease tag may publish:
 
 ```text
-0.2.0-preview.5
+0.2.0-preview.6
 sha-<7 chars>
 ```
 
@@ -146,7 +146,7 @@ Prereleases do not update stable-looking aliases. A stable tag may additionally 
 
 The same Actions-API source gate is used for ordinary main and Git-tag publications. For a `workflow_run`-triggered publication, the API-selected CI run ID must equal the triggering CI run ID. The gate runs before GHCR login.
 
-Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.5` tag has been created.
+Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.6` tag has been created.
 
 ## OCI SBOM and provenance contract
 
@@ -161,25 +161,27 @@ provenance: mode=max
 
 The post-push gate requires an immutable digest, reads the pushed OCI index back from GHCR, resolves attestation manifests, verifies in-toto layers, verifies `https://spdx.dev/Document`, verifies an SLSA provenance predicate and uploads `release-manifest.json`.
 
-Validated `0.2.0-preview.5` runtime evidence:
+Validated `0.2.0-preview.6` runtime evidence:
 
 ```text
-commit                723c47d919a59cf95e447c071ef377ab92a06498
-CI                    35099356925 SUCCESS
-Publish GHCR          35099987458 SUCCESS
-image digest          sha256:7b24e16d264c78eb9c6affa8eadf207c756d883799c8e0503b128ef4004ac1fa
-attestation manifest  sha256:b15e45a4024235fd2ba28c6a7711ab64922da4be4003d68b8f7ec0eb78db7712
+commit                7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
+CI                    35569885810 SUCCESS
+Full Stack            35569885843 SUCCESS
+Publish GHCR          35570238079 SUCCESS
+image alias           sha-7da5682
+image digest          sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
+attestation manifest  sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-release artifact      10448046779
-artifact digest       sha256:c90c6ae1db7246afe34f3764543d0ec4a20eed7c6026cf8030e86cc55220562c
-validating CI run     35099356925
+release artifact      10625781303
+artifact digest       sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+validating CI run     35569885810
 ```
 
-For production acceptance/deployment, `sha-723c47d` remains the immutable image alias for this validated runtime checkpoint even if later documentation/operator commits move mutable `main`.
+For production acceptance/deployment, `sha-7da5682` is the immutable image alias for the validated `preview.6` runtime checkpoint even if later documentation/operator commits move mutable `main`.
 
 ## Current release state
 
-Repository-supported release gating is complete for the current MVP: source validation before GHCR, version/tag consistency, immutable digest capture and post-push SBOM/provenance verification are implemented and validated.
+Repository-supported release gating is complete for the current MVP. The current validated runtime adds Entra-owned personal API keys and user self-service while retaining service credentials: source validation before GHCR, version/tag consistency, immutable digest capture and post-push SBOM/provenance verification are implemented and validated.
 
 Creating an actual immutable Git tag/GitHub Release is an explicit product-owner publication decision, not an unfinished engineering prerequisite.
