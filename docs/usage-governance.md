@@ -273,29 +273,28 @@ Usage aggregation is PostgreSQL-side and reports by Usage Group, credential and 
 
 ## Validation
 
-Canonical credential-rotation/product baseline:
+Validated preview.7 runtime baseline:
 
 ```text
-commit     628fbc15dc2c963db802f9f2d9aca4b324225c99
-CI         34996328467 SUCCESS
-Full Stack 34996328588 SUCCESS
+source      df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI          35592623906 SUCCESS
+Full Stack  35592624282 SUCCESS
+Publish     35593081824 SUCCESS
+image       sha-df3ecf7
+digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
 ```
 
-The standard CI proves domain rotation semantics, frontend build/Vitest/Playwright and all existing Docker/PostgreSQL governance/regression suites.
+Standard CI proves credential and user request-limit domain semantics, frontend build/Vitest/Playwright, PostgreSQL migration, governance/restart-republish, retention and restore regressions.
 
-The dedicated Full Stack credential-rotation smoke proves:
+The governance PostgreSQL smoke proves two personal credentials sharing one Entra `tid+oid` consume one aggregate user request quota and that the persisted user policy republishes after gateway restart.
 
-- old key is valid on both gateways before rotation;
-- same credential ID/group are returned after rotation;
-- origin gateway immediately accepts new key and rejects old key after committed save;
-- a peer that existed before rotation converges to new key 200 / old key 401;
-- Redis credential snapshot contains the new HMAC, not the previous HMAC and never the raw secret;
-- transactional credential outbox publication completes;
-- Usage Group and caller-policy linkage remain unchanged;
-- `credential.rotate` audit contains safe prefix transition metadata but no secret/HMAC;
-- peer restart hydrates only the rotated key.
+The Full Stack Redis smoke proves:
 
-Output-token budget runtime behavior remains validated in the same Full Stack run together with outbox and baseline Redis/OTEL behavior.
+- a user request policy created after two gateways are running propagates through the transactional RatePolicy outbox channel;
+- two different personal API keys with the same Entra owner share one Redis fixed-window counter across gateway replicas;
+- the third cross-gateway request is rejected with `429 rate_limit_exceeded`;
+- a rejected request does not increment the shared user counter;
+- existing distributed output-token reservation/refund, credential rotation and safe-maintenance regressions remain green.
 
 ## Remaining governance backlog
 

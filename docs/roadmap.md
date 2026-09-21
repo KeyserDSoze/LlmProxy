@@ -83,7 +83,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 ## M7 — Caller governance — DONE FOR CURRENT V1
 
 - DONE: credential/model request-rate policies and Redis shared counters.
-- IMPLEMENTED/PENDING VALIDATION: aggregate Entra-user request-rate policies spanning all personal keys with atomic user+credential admission.
+- DONE: aggregate Entra-user request-rate policies spanning all personal keys with atomic user+credential admission.
 - DONE: output-token budgets on credential/model scope.
 - DONE: pre-inference reservation and Chat/Responses output-cap injection.
 - DONE: settlement/refund and conservative uncertain-usage charge.
@@ -148,7 +148,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product/release hardening — PREVIEW.7 CANDIDATE
+## M12 — Product/release hardening — DONE THROUGH 0.2.0-preview.7
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -167,32 +167,29 @@ local RAM  = per-replica request-path L1
 - DONE: bodyless canonical vLLM health compatibility fix.
 - DONE: self-hosted manual acceptance workflow on the production runner labels.
 - DONE: Entra-owned personal API keys, `LlmProxy.User` self-service, own-usage view and administrator identity inventory.
-- IMPLEMENTED/PENDING VALIDATION: aggregate Entra-user request quotas + Admin/User UI visibility in `0.2.0-preview.7`.
+- DONE: aggregate Entra-user request quotas + Admin/User UI visibility in `0.2.0-preview.7`.
 - OWNER ACTION: create a real immutable Git tag/GitHub Release only when explicitly requested.
 
 Validated runtime checkpoint:
 
 ```text
-version           0.2.0-preview.6
-commit            7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-CI                35569885810 SUCCESS
-Full Stack        35569885843 SUCCESS
-Publish GHCR      35570238079 SUCCESS
-image alias       sha-7da5682
-image digest      sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-```text
-commit            cdd21d6155de08c6202754560f5b3c9f590071f9
-CI                35110131158 SUCCESS
+version           0.2.0-preview.7
+commit            df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                35592623906 SUCCESS
+Full Stack        35592624282 SUCCESS
+Publish GHCR      35593081824 SUCCESS
+image alias       sha-df3ecf7
+image digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
 ```
 
 ## Current development order
 
-1. Install immutable `sha-7da5682` on the actual target Linux host.
+1. Install immutable `sha-df3ecf7` on the actual target Linux host.
 2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM.
 3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
-4. Validate real Entra Admin/User/Reader login + personal-key self-service, then Cloudflare + GitHub Copilot BYOK end-to-end.
+4. Validate real Entra Admin/User/Reader login + personal-key self-service + aggregate user request quotas, then Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
-6. After preview.7 validation, expand remaining quota semantics only with explicit tokenizer/pricing requirements.
+6. Expand remaining quota semantics only with explicit tokenizer/pricing requirements.
 7. Create a Git tag/GitHub Release only when explicitly requested.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.

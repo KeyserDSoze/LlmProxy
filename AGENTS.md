@@ -55,32 +55,31 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 
 ## Current product version and validated baselines
 
-Current formal candidate:
+Current formal version:
 
 ```text
 0.2.0-preview.7
 ```
 
-Latest validated runtime remains `0.2.0-preview.6` / `sha-7da5682` until preview.7 validation completes.
 
 Validated runtime/release checkpoint:
 
 ```text
-version                 0.2.0-preview.6
-implementation          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-CI                      35569885810 SUCCESS
-Full stack              35569885843 SUCCESS
-Publish GHCR            35570238079 SUCCESS
-immutable image alias   sha-7da5682
-image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+version                 0.2.0-preview.7
+implementation          df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                      35592623906 SUCCESS
+Full stack              35592624282 SUCCESS
+Publish GHCR            35593081824 SUCCESS
+immutable image alias   sha-df3ecf7
+image digest            sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest    sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
 SBOM predicate          https://spdx.dev/Document
 provenance predicate    https://slsa.dev/provenance/v1
-release artifact        10625781303
-artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+release artifact        10635322261
+artifact digest         sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
 ```
 
-This is the validated runtime baseline for deployment and environment acceptance. Later docs-only commits may move mutable `main`; use `sha-7da5682` when the validated `preview.6` product image is required.
+This is the validated runtime baseline for deployment and environment acceptance. Later docs-only commits may move mutable `main`; use `sha-df3ecf7` when the validated `preview.7` product image is required.
 
 No immutable `v0.2.0-preview.7` Git tag or GitHub Release has been created. Creating one remains an explicit product-owner action.
 
@@ -183,7 +182,7 @@ Canonical first-install entry point:
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://<dgx>:8000 \
   --provider-model '<provider-model-id>' \
-  --image-tag sha-7da5682
+  --image-tag sha-df3ecf7
 ```
 
 The installer supports Docker official repository paths for Debian, Ubuntu, Fedora, CentOS and RHEL plus controlled package-manager fallbacks; preserves working existing Docker/Compose and an existing protected `/opt/llmproxy/.env`; generates initial secrets without printing them; optionally logs into GHCR; checks DGX `/health` + `/v1/models`; and invokes the canonical `docker/scripts/deploy.sh`.
@@ -241,10 +240,10 @@ Read `docs/versioning.md` before release changes.
 
 Repository-supported MVP hardening, Linux bootstrap and executable environment-acceptance tooling are complete for the current preview. Default next order:
 
-1. install `sha-7da5682` on the actual target Linux host;
+1. install `sha-df3ecf7` on the actual target Linux host;
 2. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
 3. calibrate real DGX capacity with intended models and representative Copilot load;
-4. validate real Entra roles, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
+4. validate real Entra roles, personal-key self-service + aggregate user request quotas, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
 5. define customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption;
 6. evolve quota semantics only with explicit tokenizer/pricing requirements;
 7. create an immutable Git tag/GitHub Release only when the project owner explicitly wants a distributable release.

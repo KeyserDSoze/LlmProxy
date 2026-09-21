@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current preview line: `0.2.0-preview.7` (aggregate Entra user request quotas; validation evidence is recorded in `docs/project-status.md`).
+> Current validated preview line: `0.2.0-preview.7` (aggregate Entra user request quotas).
 
 ## What this product is
 
@@ -93,7 +93,7 @@ export GHCR_TOKEN='<token-with-package-read-access>'
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
-  --image-tag sha-7da5682
+  --image-tag sha-df3ecf7
 ```
 
 `docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks DGX `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
@@ -117,7 +117,7 @@ After first host preparation, or when provisioning manually, deploy a published 
 ```bash
 LLMPROXY_DEPLOY_DIR=/opt/llmproxy \
 LLMPROXY_ENV_FILE=/opt/llmproxy/.env \
-  bash docker/scripts/deploy.sh sha-7da5682
+  bash docker/scripts/deploy.sh sha-df3ecf7
 ```
 
 For controlled production changes prefer an immutable `sha-<7>` alias or an exact SemVer tag rather than mutable `main`.
@@ -243,19 +243,19 @@ Pushes/PRs execute backend, frontend, Docker/PostgreSQL and operational smokes. 
 
 Published images include source/version/build identity. The publish workflow records the immutable image digest and verifies registry-native SPDX SBOM and SLSA/BuildKit provenance attestations.
 
-Latest validated runtime checkpoint before the `0.2.0-preview.7` candidate:
+Validated `0.2.0-preview.7` runtime checkpoint:
 
 ```text
-version                0.2.0-preview.6
-source                 7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-CI                     35569885810 SUCCESS
-Full Stack             35569885843 SUCCESS
-Publish GHCR           35570238079 SUCCESS
-image alias            sha-7da5682
-image digest           sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-attestation manifest   sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
-release artifact       10625781303
-artifact digest        sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+version                0.2.0-preview.7
+source                 df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                     35592623906 SUCCESS
+Full Stack             35592624282 SUCCESS
+Publish GHCR           35593081824 SUCCESS
+image alias            sha-df3ecf7
+image digest           sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest   sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
+release artifact       10635322261
+artifact digest        sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
 ```
 
 No immutable `v0.2.0-preview.7` Git tag or GitHub Release has been created.

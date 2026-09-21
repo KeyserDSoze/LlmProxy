@@ -1,6 +1,6 @@
 # Development log
 
-## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — IMPLEMENTED / PENDING VALIDATION
+## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — VALIDATED
 
 Extended preview.6 personal-key ownership with aggregate request-count governance across every personal API key owned by the same stable Entra `tid + oid`.
 
@@ -16,7 +16,26 @@ Architecture:
 - extended PostgreSQL governance smoke for two keys sharing one Entra identity and restart republish;
 - extended the existing two-gateway Redis smoke to prove one shared aggregate user counter across replicas.
 
-Validation evidence is intentionally pending until the implementation commit passes standard CI, Full Stack and container publication.
+The first validation attempt caught three test-harness issues before promotion: xUnit analyzer violations in the new async tests, missing Vitest API mocks/ambiguous labels after adding the second quota form, and a transient runtime-sync/outbox convergence race. Those were corrected without changing quota semantics.
+
+Final validation:
+
+```text
+version                 0.2.0-preview.7
+runtime source          df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                      35592623906 SUCCESS
+Full Stack              35592624282 SUCCESS
+Publish GHCR            35593081824 SUCCESS
+image alias             sha-df3ecf7
+image digest            sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest    sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+release artifact        10635322261
+artifact digest         sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
+```
+
+CI proves .NET/unit/frontend/Playwright plus Docker/PostgreSQL governance, restart republish, retention and restore regressives. Full Stack proves transactional outbox recovery and one Redis user request counter shared across two gateway replicas in addition to the existing distributed token-budget, credential-rotation and safe-maintenance proofs.
 
 ## 2026-09-21 — Entra-owned personal API keys / 0.2.0-preview.6 — VALIDATED
 

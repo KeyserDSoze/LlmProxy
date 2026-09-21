@@ -67,7 +67,7 @@ Formal sequence:
 0.2.0-preview.7  aggregate Entra user request quotas
 ```
 
-`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. Its implementation, full-stack and publication evidence are recorded below. `0.2.0-preview.7` adds aggregate Entra-user request quotas; its exact validation/publication evidence must be recorded only after the candidate passes CI and Full Stack.
+`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. `0.2.0-preview.7` adds aggregate Entra-user request quotas and is the current validated runtime baseline.
 
 `0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
 
@@ -162,27 +162,27 @@ provenance: mode=max
 
 The post-push gate requires an immutable digest, reads the pushed OCI index back from GHCR, resolves attestation manifests, verifies in-toto layers, verifies `https://spdx.dev/Document`, verifies an SLSA provenance predicate and uploads `release-manifest.json`.
 
-Validated `0.2.0-preview.6` runtime evidence:
+Validated `0.2.0-preview.7` runtime evidence:
 
 ```text
-commit                7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-CI                    35569885810 SUCCESS
-Full Stack            35569885843 SUCCESS
-Publish GHCR          35570238079 SUCCESS
-image alias           sha-7da5682
-image digest          sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-attestation manifest  sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+commit                df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                    35592623906 SUCCESS
+Full Stack            35592624282 SUCCESS
+Publish GHCR          35593081824 SUCCESS
+image alias           sha-df3ecf7
+image digest          sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest  sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
 SBOM predicate        https://spdx.dev/Document
 provenance predicate  https://slsa.dev/provenance/v1
-release artifact      10625781303
-artifact digest       sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
-validating CI run     35569885810
+release artifact      10635322261
+artifact digest       sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
+validating CI run     35592623906
 ```
 
-For production acceptance/deployment, `sha-7da5682` is the immutable image alias for the validated `preview.6` runtime checkpoint even if later documentation/operator commits move mutable `main`.
+For production acceptance/deployment, `sha-df3ecf7` is the immutable image alias for the validated `preview.7` runtime checkpoint even if later documentation/operator commits move mutable `main`.
 
 ## Current release state
 
-Repository-supported release gating is complete for the current MVP. `0.2.0-preview.7` is the current candidate line for aggregate Entra-user request quotas; `0.2.0-preview.6` remains the latest validated runtime until preview.7 CI, Full Stack and publication evidence are green.
+Repository-supported release gating is complete for the current MVP. `0.2.0-preview.7` is the current validated runtime for aggregate Entra-user request quotas, with green CI, Full Stack and GHCR publication evidence recorded above.
 
 Creating an actual immutable Git tag/GitHub Release is an explicit product-owner publication decision, not an unfinished engineering prerequisite.

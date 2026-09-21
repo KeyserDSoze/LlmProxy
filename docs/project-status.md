@@ -4,36 +4,35 @@ Last reviewed: **2026-09-21**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
-## Current product candidate and validated baseline
+## Current validated product baseline
 
-Current formal product candidate:
+Current formal product version:
 
 ```text
 0.2.0-preview.7
 ```
 
-Latest validated runtime remains `0.2.0-preview.6` until preview.7 CI, Full Stack and publication evidence are green.
 
 Validated runtime/release checkpoint:
 
 ```text
-version                 0.2.0-preview.6
-implementation          7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-CI                      35569885810 SUCCESS
-Full stack              35569885843 SUCCESS
-Publish GHCR            35570238079 SUCCESS
-immutable image alias   sha-7da5682
-image digest            sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-attestation manifest    sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
+version                 0.2.0-preview.7
+implementation          df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+CI                      35592623906 SUCCESS
+Full stack              35592624282 SUCCESS
+Publish GHCR            35593081824 SUCCESS
+immutable image alias   sha-df3ecf7
+image digest            sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest    sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
 SBOM predicate          https://spdx.dev/Document
 provenance predicate    https://slsa.dev/provenance/v1
-release artifact        10625781303
-artifact digest         sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+release artifact        10635322261
+artifact digest         sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
 ```
 
-CI `35569885810` covers backend/unit/frontend/Playwright plus Docker/PostgreSQL regressives. Full Stack `35569885843` covers Redis/OpenTelemetry bootstrap, transactional outbox recovery, distributed output-token budgets, cross-replica credential rotation and safe maintenance. Publish `35570238079` validates source CI before GHCR login and verifies the pushed OCI digest, SPDX SBOM and SLSA/BuildKit provenance.
+CI `35592623906` covers backend/unit/frontend/Playwright plus Docker/PostgreSQL regressives, including aggregate user-quota governance, restart republish, backup/restore and retention. Full Stack `35592624282` proves Redis/OpenTelemetry bootstrap, transactional outbox recovery, aggregate user request quota across two gateway replicas, distributed output-token budgets, cross-replica credential rotation and safe maintenance. Publish `35593081824` validates source CI before GHCR login and verifies the pushed OCI digest, SPDX SBOM and SLSA/BuildKit provenance.
 
-The validated deployment image is `ghcr.io/keyserdsoze/llmproxy:sha-7da5682`. Later documentation-only commits may republish mutable `main` but do not replace this runtime checkpoint.
+The validated deployment image is `ghcr.io/keyserdsoze/llmproxy:sha-df3ecf7`. Later documentation-only commits may republish mutable `main` but do not replace this runtime checkpoint.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -160,22 +159,22 @@ Repository CI proves the script and workflow repository path without pretending 
 
 Every publication resolves one exact source SHA, requires successful `CI` push evidence before GHCR login, enforces tag/version match for exact tags, builds with source/version/date identity, emits SPDX + SLSA/BuildKit attestations, verifies the pushed OCI index and uploads `release-manifest.json`.
 
-Validated `preview.6` runtime registry evidence:
+Validated `preview.7` runtime registry evidence:
 
 ```text
 image                 ghcr.io/keyserdsoze/llmproxy
-version               0.2.0-preview.6
-source                7da5682f043eeb7e0d0b684eabb0ab6a6b659b35
-validating CI         35569885810
-Full Stack            35569885843
-Publish GHCR          35570238079
-image alias           sha-7da5682
-image digest          sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81
-attestation manifest  sha256:1530fd684b90668743974ce3d00f8cdd49ca4116d8126619f9e768648e42642a
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
-artifact              10625781303
-artifact digest       sha256:6ac1a5ebdceaae1e77108a1631f83ac993b997fd01d1fbc6a163f7b4cb7593b7
+version                 0.2.0-preview.7
+source                df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
+validating CI         35592623906 SUCCESS
+Full Stack            35592624282 SUCCESS
+Publish GHCR          35593081824 SUCCESS
+image alias           sha-df3ecf7
+image digest          sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
+attestation manifest    sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
+SBOM predicate          https://spdx.dev/Document
+provenance predicate    https://slsa.dev/provenance/v1
+artifact              10635322261
+artifact digest         sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
 ```
 
 ## Core runtime scope — DONE FOR CURRENT MVP
@@ -193,7 +192,7 @@ Current request path:
 ```text
 OpenAI-compatible client / GitHub Copilot
   -> HMAC bearer credential from local L1
-  -> UsageGroup + caller policy from local L1
+  -> UsageGroup + Entra owner + user/credential caller policy from local L1
   -> output-token reservation when configured
   -> request-rate admission
   -> logical model -> route catalog from local L1
@@ -255,11 +254,11 @@ Prompts/source/generated output/API secrets remain excluded from persistent tele
 
 The next step is **physical environment acceptance**, not another generic repository feature:
 
-1. install immutable `sha-7da5682` on the actual target Linux distro/version;
+1. install immutable `sha-df3ecf7` on the actual target Linux distro/version;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
 3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
 4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
-5. validate real Entra Admin/User/Reader roles, personal-key self-service and Cloudflare/public hostname;
+5. validate real Entra Admin/User/Reader roles, personal-key self-service, aggregate user request quotas and Cloudflare/public hostname;
 6. validate GitHub Copilot BYOK end-to-end;
 7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
 8. create an immutable Git tag/GitHub Release only when explicitly requested.
@@ -274,8 +273,8 @@ A new development session should:
 
 1. read `AGENTS.md`, this file, `CHANGELOG.md`, `docs/versioning.md`, latest `docs/development-log.md`, `docs/roadmap.md` and focused docs;
 2. inspect latest `main` and Actions before changing code;
-3. treat `0.2.0-preview.6`, runtime source `7da5682f043eeb7e0d0b684eabb0ab6a6b659b35`, CI `35569885810`, Full Stack `35569885843`, Publish `35570238079`, image alias `sha-7da5682` and digest `sha256:c28c60e004496ae0d3949f616b36cf4ba67ed523f8567218e904bd80730f5a81` as the validated runtime baseline;
-4. preserve the Entra `tid+oid` personal-key ownership contract and service-credential compatibility;
+3. treat `0.2.0-preview.7`, runtime source `df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38`, CI `35592623906`, Full Stack `35592624282`, Publish `35593081824`, image alias `sha-df3ecf7` and digest `sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99` as the validated runtime baseline;
+4. preserve the Entra `tid+oid` personal-key ownership contract, service-credential compatibility and atomic user+credential request-rate admission;
 5. preserve transactional-outbox ordering, Redis fail-closed token/capacity semantics, safe maintenance admission, DB-free config lookup, rollup/raw no-double-counting and pre-response-only failover;
 6. preserve metadata-only acceptance evidence and the bodyless vLLM `/health` status-only rule;
 7. preserve the pre-GHCR source-validation gate and post-push SPDX/SLSA registry verification;
