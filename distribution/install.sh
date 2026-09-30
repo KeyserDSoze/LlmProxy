@@ -30,12 +30,17 @@ for arg in "$@"; do
 done
 
 VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+release_log() {
+  printf '%s [llmproxy-release] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
 if [[ -z "$VERSION" ]]; then
   echo "Release bundle VERSION is empty." >&2
   exit 3
 fi
 
 RELEASE_DIR="$INSTALL_DIR/releases/$VERSION"
+release_log "Installing immutable operator bundle $VERSION"
+release_log "Release directory: $RELEASE_DIR"
 mkdir -p "$INSTALL_DIR/releases"
 rm -rf "$RELEASE_DIR.tmp"
 mkdir -p "$RELEASE_DIR.tmp"
@@ -45,11 +50,13 @@ mv "$RELEASE_DIR.tmp" "$RELEASE_DIR"
 
 # The existing installer owns host preparation, secret generation, DGX checks and deployment.
 # Pin the application image to the exact release version represented by this bundle.
+release_log "Starting host preparation and deployment"
 LLMPROXY_INSTALL_DIR="$INSTALL_DIR" \
   bash "$RELEASE_DIR/docker/scripts/install-linux.sh" \
     --image-tag "$VERSION" \
     "$@"
 
+release_log "Activating release $VERSION"
 ln -sfn "$RELEASE_DIR" "$INSTALL_DIR/current"
 install -m 0755 "$RELEASE_DIR/distribution/llmproxyctl" /usr/local/bin/llmproxyctl
 install -d -m 0755 /usr/local/lib/llmproxy
@@ -59,3 +66,4 @@ printf '\nLlmProxy %s installed successfully.\n' "$VERSION"
 printf 'Control command: llmproxyctl\n'
 printf 'Persistent configuration: %s/.env\n' "$INSTALL_DIR"
 printf 'Installed release: %s\n' "$RELEASE_DIR"
+printf 'Install log: /var/log/llmproxy/latest-install.log\n'

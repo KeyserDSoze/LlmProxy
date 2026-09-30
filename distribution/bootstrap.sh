@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 REPOSITORY="${LLMPROXY_GITHUB_REPOSITORY:-KeyserDSoze/LlmProxy}"
 VERSION=""
@@ -11,8 +11,8 @@ usage() {
 Usage: bootstrap.sh --version VERSION [installer options]
 
 Downloads the immutable LlmProxy Linux release bundle, verifies its SHA-256,
-and runs its installer. For the private repository authenticate with GitHub CLI
-(`gh auth login`) or export a GitHub token with repository-read and package-read access.
+and runs its installer. Public GitHub Releases require no authentication.
+For private repository/package access, authenticate with GitHub CLI or export the required credentials.
 
 Examples:
   bootstrap.sh --version 0.0.1 --dgx-url http://10.0.0.21:8000 --provider-model Qwen/model
@@ -75,18 +75,56 @@ TAG="v$VERSION"
 ASSET="llmproxy-$VERSION-linux.tar.gz"
 CHECKSUM="$ASSET.sha256"
 TMP_DIR="$(mktemp -d)"
-cleanup() {
+BOOTSTRAP_LOG="$TMP_DIR/bootstrap.log"
+CURRENT_STAGE="initialization"
+
+if command -v tee >/dev/null 2>&1; then
+  exec > >(tee -a "$BOOTSTRAP_LOG") 2>&1
+else
+  exec >>"$BOOTSTRAP_LOG" 2>&1
+fi
+
+bootstrap_log() {
+  printf '%s [llmproxy-bootstrap] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+bootstrap_stage() {
+  CURRENT_STAGE="$1"
+  printf '\n%s [llmproxy-bootstrap] ==> %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$CURRENT_STAGE"
+}
+
+bootstrap_exit() {
+  local rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    KEEP_TEMP=true
+    {
+      printf '\n============================================================\n'
+      printf 'LlmProxy bootstrap FAILED\n'
+      printf 'Stage: %s\n' "$CURRENT_STAGE"
+      printf 'Exit code: %s\n' "$rc"
+      printf 'Bootstrap log: %s\n' "$BOOTSTRAP_LOG"
+      printf 'Temporary files: %s\n' "$TMP_DIR"
+      printf '============================================================\n'
+    } >&2
+  fi
+
   if [[ "$KEEP_TEMP" != true ]]; then
     rm -rf "$TMP_DIR"
   else
-    echo "Temporary release files kept at: $TMP_DIR"
+    printf 'Temporary release files kept at: %s\n' "$TMP_DIR"
   fi
 }
-trap cleanup EXIT
+trap bootstrap_exit EXIT
+
+bootstrap_log "Repository: $REPOSITORY"
+bootstrap_log "Requested release: $VERSION"
 
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
-if command -v gh >/dev/null 2>&1; then
+bootstrap_stage "Downloading immutable release assets"
+
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  bootstrap_log "Using authenticated GitHub CLI download"
   gh release download "$TAG" \
     --repo "$REPOSITORY" \
     --pattern "$ASSET" \
@@ -100,6 +138,7 @@ if command -v gh >/dev/null 2>&1; then
     export GHCR_USER="$(gh api user --jq .login 2>/dev/null || true)"
   fi
 elif [[ -n "$TOKEN" ]]; then
+  bootstrap_log "Using authenticated GitHub API download"
   RELEASE_JSON="$TMP_DIR/release.json"
   curl --fail --silent --show-error \
     -H "Accept: application/vnd.github+json" \
@@ -157,22 +196,27 @@ PYASSET
     fi
   fi
 else
+  bootstrap_log "Using public GitHub Release download (no GitHub token required)"
   BASE_URL="https://github.com/$REPOSITORY/releases/download/$TAG"
   curl --fail --silent --show-error --location "$BASE_URL/$ASSET" -o "$TMP_DIR/$ASSET"
   curl --fail --silent --show-error --location "$BASE_URL/$CHECKSUM" -o "$TMP_DIR/$CHECKSUM"
 fi
 
+bootstrap_stage "Verifying release checksum"
 (
   cd "$TMP_DIR"
   sha256sum -c "$CHECKSUM"
 )
+bootstrap_log "SHA-256 verification: OK"
 
+bootstrap_stage "Extracting release bundle"
 tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 BUNDLE_DIR="$TMP_DIR/llmproxy-$VERSION"
 if [[ ! -x "$BUNDLE_DIR/distribution/install.sh" ]]; then
   chmod +x "$BUNDLE_DIR/distribution/install.sh" 2>/dev/null || true
 fi
 
+bootstrap_stage "Running privileged LlmProxy installer"
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
   bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
 else
@@ -183,3 +227,7 @@ else
   fi
   sudo -E bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
 fi
+
+
+bootstrap_log "Bootstrap completed successfully."
+bootstrap_log "Persistent installer log: /var/log/llmproxy/latest-install.log"
