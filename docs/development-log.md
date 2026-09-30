@@ -413,3 +413,16 @@ New contract:
 - each release publishes amd64 + arm64, verifies SPDX/SLSA evidence and attaches the checksummed Linux bundle/bootstrap.
 
 The historical `0.2.0-preview.*` line remains source/product-history metadata. The installation/update release train is now independent and begins at `0.0.1`.
+
+
+## 2026-09-30 — Automatic release credential boundary
+
+Live validation of the first automatic tag allocation exposed GitHub's workflow-file protection: the built-in Actions `GITHUB_TOKEN` is a GitHub App installation token and cannot be granted Workflows write permission, so GitHub rejected tagging a source commit that changed `.github/workflows/container.yml`.
+
+Hardened the release train:
+
+- added repository secret contract `RELEASE_TOKEN` using a repository-scoped fine-grained PAT with Contents read/write + Workflows read/write;
+- use that credential only for immutable Git tag and GitHub Release operations;
+- continue using the short-lived `GITHUB_TOKEN` for CI source validation and GHCR publication;
+- added `distribution/AUTOMATIC_RELEASE_SERIES` so migration commits before the final automation setup are intentionally skipped and cannot consume `0.0.1`;
+- the first eligible green commit therefore remains the intended `v0.0.1` start of the automatic distribution series.

@@ -28,6 +28,27 @@ If and only if that entire CI run succeeds, `.github/workflows/release.yml` auto
 
 There is no manual **Run workflow** step and no bot commit that edits version files.
 
+### One-time repository credential
+
+GitHub's built-in `GITHUB_TOKEN` cannot be granted the repository **Workflows: write** permission. GitHub rejects creation of a tag/release that targets a commit which adds or changes workflow files when that permission is absent.
+
+Configure one repository Actions secret once:
+
+```text
+RELEASE_TOKEN
+```
+
+Recommended credential: a fine-grained PAT restricted to this repository with:
+
+```text
+Contents   Read and write
+Workflows  Read and write
+```
+
+The token is used only for immutable Git tag / GitHub Release operations. GHCR publication continues to use the short-lived `GITHUB_TOKEN` with package permissions.
+
+The file `distribution/AUTOMATIC_RELEASE_SERIES` marks the first commit eligible for the generated release train. Commits before that marker are migration history and are skipped, so the first eligible green commit is `v0.0.1`.
+
 Default increment:
 
 ```text

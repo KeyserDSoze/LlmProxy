@@ -66,6 +66,8 @@ override markers -> release:minor / release:major
 
 The historical `0.2.0-preview.*` line remains source/product-history metadata. Do not manually bump source files merely to create a distribution release.
 
+Automatic tag/release creation requires repository secret `RELEASE_TOKEN`, scoped to this repository with Contents read/write + Workflows read/write. The built-in `GITHUB_TOKEN` remains the package/CI credential and must not be treated as a substitute for workflow-ref creation.
+
 
 Validated runtime/release checkpoint:
 

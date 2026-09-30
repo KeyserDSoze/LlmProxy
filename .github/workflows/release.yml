@@ -70,9 +70,30 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
+
+          # Commits before the automatic-release series marker are migration history,
+          # not distribution releases. This makes the first eligible commit v0.0.1.
+          if [[ ! -f distribution/AUTOMATIC_RELEASE_SERIES ]]; then
+            {
+              echo "source_sha=$SOURCE_SHA"
+              echo "version="
+              echo "tag="
+              echo "publish=false"
+            } >> "$GITHUB_OUTPUT"
+            echo "Source $SOURCE_SHA predates the automatic release series; skipping publication." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ -z "$RELEASE_TOKEN" ]]; then
+            echo "Repository secret RELEASE_TOKEN is required for immutable tag creation." >&2
+            echo "Use a fine-grained token with Contents: read/write and Workflows: read/write for this repository." >&2
+            exit 6
+          fi
+
           git fetch --tags --force origin
 
           EXISTING_TAG="$(
@@ -130,7 +151,8 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$TAG" "$SOURCE_SHA" -m "LlmProxy $VERSION"
 
-            if git push origin "refs/tags/$TAG"; then
+            PUSH_URL="https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            if git push "$PUSH_URL" "refs/tags/$TAG"; then
               CREATED=true
               break
             fi

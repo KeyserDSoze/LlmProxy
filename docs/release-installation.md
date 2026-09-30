@@ -179,7 +179,11 @@ Rollback switches the configured image tag and deploy tooling to that already-in
 
 ## Creating a release
 
-Release creation is automatic.
+Release creation is automatic after one repository setup step.
+
+In **Settings → Secrets and variables → Actions**, create `RELEASE_TOKEN` using a repository-scoped fine-grained PAT with **Contents: read/write** and **Workflows: read/write**. This permission is required by GitHub when an immutable tag/release points at a commit that modifies workflow files; the built-in `GITHUB_TOKEN` cannot receive that permission.
+
+After that one-time setup, release creation is automatic.
 
 1. Push a commit to `main`.
 2. The complete **CI** workflow runs, including the distributed full-stack gate.
