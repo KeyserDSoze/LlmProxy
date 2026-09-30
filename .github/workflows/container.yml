@@ -25,6 +25,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout validated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
       - name: Validate release inputs
         id: meta
         shell: bash
@@ -60,12 +66,6 @@ jobs:
             echo "$IMAGE:sha-${SOURCE_SHA:0:7}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Checkout validated source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 0
 
       - name: Verify immutable tag points to source
         shell: bash
@@ -115,6 +115,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Refuse an existing exact container tag
         shell: bash
         env:
@@ -125,12 +131,6 @@ jobs:
             echo "Container tag $IMAGE:$VERSION already exists; immutable release tags are never overwritten." >&2
             exit 4
           fi
-
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Build and push amd64 + arm64 with SBOM and provenance
         id: build
