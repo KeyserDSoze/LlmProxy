@@ -91,6 +91,11 @@ jobs:
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
           grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check' distribution/llmproxyctl >/dev/null
           bash -n distribution/build-release-bundle.sh
+          grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'Using public GitHub Release download' distribution/bootstrap.sh >/dev/null
+          grep -F '[1/8]' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'bootstrap FAILED' distribution/bootstrap.sh >/dev/null
 
           VERSION="$(bash docker/scripts/validate-release-version.sh)"
           RELEASE_DIR="$(mktemp -d)"

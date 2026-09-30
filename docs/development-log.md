@@ -426,3 +426,16 @@ Hardened the release train:
 - continue using the short-lived `GITHUB_TOKEN` for CI source validation and GHCR publication;
 - added `distribution/AUTOMATIC_RELEASE_SERIES` so migration commits before the final automation setup are intentionally skipped and cannot consume `0.0.1`;
 - the first eligible green commit therefore remains the intended `v0.0.1` start of the automatic distribution series.
+
+
+## 2026-09-30 — Installer progress and persistent diagnostics
+
+Hardened Linux installation as an operator-facing product surface:
+
+- privileged installs emit eight explicit progress stages from host inspection through finalization;
+- output is timestamped and persisted under `/var/log/llmproxy/install-<timestamp>.log`, with `latest-install.log` pointing to the newest attempt;
+- failure summaries report active stage, exit code, persistent log path and Docker container snapshot without printing secret values;
+- deployment reports Compose validation, image pull/start, and liveness/readiness wait progress; readiness timeout retains Compose status + gateway log tail;
+- bootstrap failures before privileged installation preserve their temp directory and `bootstrap.log`;
+- public release downloads use unauthenticated `curl` when GitHub CLI is absent or not authenticated;
+- release docs now document progress, log paths, failure evidence and public download behavior.

@@ -30,26 +30,20 @@ PostgreSQL, Redis and observability data remain in Docker volumes and are not de
 
 The production runtime is Docker-based and must work on clean Linux servers. Requiring Node.js only to install the product would add a dependency that the runtime itself does not need. The primary installer is therefore POSIX/Linux shell plus Docker. Node remains an implementation detail of the bundled Admin UI build.
 
-## Private repository authentication
+## Public release downloads and optional registry authentication
 
-The repository and GHCR package are currently private. An operator therefore needs GitHub authorization for release downloads and container pulls.
+The GitHub repository and GitHub Release assets are public. The bootstrap therefore downloads release bundles and checksum files without a GitHub token when no authenticated GitHub CLI/token is available.
 
-Recommended options:
-
-```bash
-gh auth login
-```
-
-or export a token only for the installation/update command:
+For example, the bootstrap itself can be downloaded with ordinary `curl`:
 
 ```bash
-export GH_TOKEN='<token-with-repository-read-and-package-read-access>'
-# Optional: set GHCR_USER/GHCR_TOKEN explicitly; otherwise bootstrap derives them when possible.
+curl -fL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/llmproxy-bootstrap.sh -o llmproxy-bootstrap.sh
+curl -fL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/llmproxy-bootstrap.sh.sha256 -o llmproxy-bootstrap.sh.sha256
+sha256sum -c llmproxy-bootstrap.sh.sha256
+chmod +x llmproxy-bootstrap.sh
 ```
 
-The bootstrap can reuse authenticated GitHub CLI credentials or `GH_TOKEN` for the private release and GHCR login when the token also has package-read access. The application environment file never stores GitHub/GHCR download credentials.
-
-If the distribution becomes public later, the same bootstrap script can be downloaded with ordinary unauthenticated `curl`.
+GHCR package visibility is a separate GitHub setting. If the container package requires authentication, export `GHCR_USER` and `GHCR_TOKEN` only for installation/update. Those download credentials are never written into the LlmProxy application environment.
 
 ## First installation from a release
 
@@ -127,6 +121,59 @@ For `host.docker.internal`, the installer resolves Docker's bridge gateway and p
 
 During first bootstrap the bearer is encrypted into the node record, then the installer redeploys LlmProxy without `DGX_UPSTREAM_BEARER_TOKEN` so the plaintext is not retained in the long-lived container environment. Keep the inference port restricted to the Docker bridge/trusted network.
 
+## Installer progress, logs and failure diagnostics
+
+The installer is intentionally verbose about **progress and decisions**, but it never enables shell `set -x` and does not print API keys, bearer tokens, Entra client secrets, database passwords or generated encryption keys.
+
+A normal installation reports eight high-level phases:
+
+```text
+[1/8] Inspecting Linux host
+[2/8] Installing host prerequisites
+[3/8] Checking Docker Engine and Compose
+[4/8] Preparing persistent configuration
+[5/8] Checking container registry access
+[6/8] Checking inference runtime connectivity
+[7/8] Deploying LlmProxy containers
+[8/8] Finalizing installation
+```
+
+Deployment output also reports Compose validation, image pull/start and liveness/readiness progress.
+
+Every privileged install/update writes a persistent log:
+
+```text
+/var/log/llmproxy/install-YYYYMMDDTHHMMSSZ.log
+/var/log/llmproxy/latest-install.log -> latest attempt
+```
+
+Follow the current log from another terminal with:
+
+```bash
+sudo tail -f /var/log/llmproxy/latest-install.log
+```
+
+If installation fails, the terminal prints:
+
+- the stage that failed;
+- the exit code;
+- the exact persistent log path;
+- a Docker container snapshot when Docker is available.
+
+A readiness timeout also prints `docker compose ps` and the last 100 LlmProxy container log lines.
+
+Failures **before** privileged installation — GitHub download, SHA-256 validation or bundle extraction — preserve the bootstrap temporary directory automatically. The failure summary prints the exact `bootstrap.log` path and directory containing the downloaded files instead of deleting diagnostic evidence.
+
+Useful commands after installation:
+
+```bash
+llmproxyctl doctor
+llmproxyctl status
+llmproxyctl health
+llmproxyctl logs
+sudo tail -n 200 /var/log/llmproxy/latest-install.log
+```
+
 ## Operator command
 
 After installation:
@@ -155,13 +202,7 @@ An update is always explicit and versioned:
 sudo -E llmproxyctl update 0.0.2
 ```
 
-For a private repository, make release-download credentials available to the command when required:
-
-``bash
-export GH_TOKEN='<repo-read-token>'
-sudo -E llmproxyctl update 0.0.2
-unset GH_TOKEN
-```
+Public GitHub Release assets need no release-download token. If GHCR requires authentication, provide `GHCR_USER` / `GHCR_TOKEN` to the update command environment.`
 
 The update path downloads and verifies the new operator bundle, preserves `/opt/llmproxy/.env`, refreshes runtime assets, pulls the exact application image and requires `/healthz` plus `/readyz` before the new bundle becomes `current`.
 

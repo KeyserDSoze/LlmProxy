@@ -25,8 +25,9 @@ Commands:
   config-path                Print the protected environment file path
   help                       Show this help
 
-Updates preserve /opt/llmproxy/.env and Docker volumes. For a private GitHub
-repository, provide GH_TOKEN/GITHUB_TOKEN or authenticate `gh` before update.
+Updates preserve /opt/llmproxy/.env and Docker volumes. Public GitHub Release
+assets download without authentication. Provide GitHub/GHCR credentials only
+when repository or container-package access requires them.
 USAGE
 }
 
