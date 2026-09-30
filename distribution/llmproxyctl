@@ -4,7 +4,7 @@ set -euo pipefail
 INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
 ENV_FILE="${LLMPROXY_ENV_FILE:-$INSTALL_DIR/.env}"
 RUNTIME_COMPOSE="$INSTALL_DIR/runtime/docker-compose.full.yml"
-CURRENT_LINK="$INSTAL_DIR/current"
+CURRENT_LINK="$INSTALL_DIR/current"
 BOOTSTRAP="/usr/local/lib/llmproxy/bootstrap.sh"
 
 usage() {
@@ -152,7 +152,10 @@ case "$cmd" in
       echo "Bootstrap helper is missing: $BOOTSTRAP" >&2
       exit 2
     fi
-    exec "$BOOTSTRAP" --version "$version" --skip-docker-install
+    # Existing protected-node provider credentials are intentionally not recoverable from
+    # host configuration. First install validates the runtime directly; updates reuse the
+    # persisted encrypted node credential and rely on post-deploy readiness.
+    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check
     ;;
   rollback)
     require_root

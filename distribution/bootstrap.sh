@@ -16,11 +16,12 @@ and runs its installer. For the private repository authenticate with GitHub CLI
 
 Examples:
   bootstrap.sh --version 0.2.0-preview.8 --dgx-url http://10.0.0.21:8000 --provider-model Qwen/model
-  bootstrap.sh --version 0.2.0-preview.8 --skip-docker-install --skip-dgx-check --dgx-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
+  DGX_UPSTREAM_BEARER_TOKEN=llama-local bootstrap.sh --version 0.2.0-preview.8 --skip-docker-install --dgx-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
 
 Environment:
   GH_TOKEN / GITHUB_TOKEN          GitHub token for private release downloads
   GHCR_USER / GHCR_TOKEN           Optional explicit GHCR credentials; defaults can be derived from GitHub auth
+  DGX_UPSTREAM_BEARER_TOKEN        Optional one-time upstream llama.cpp/vLLM bearer for first install
   LLMPROXY_GITHUB_REPOSITORY       Repository override (default KeyserDSoze/LlmProxy)
 USAGE
 }

@@ -151,6 +151,8 @@ unset GH_TOKEN
 
 The update path downloads and verifies the new operator bundle, preserves `/opt/llmproxy/.env`, refreshes runtime assets, pulls the exact application image and requires `/healthz` plus `/readyz` before the new bundle becomes `current`.
 
+The initial install performs direct authenticated inference-runtime preflight. Later `llmproxyctl update` operations intentionally skip that direct provider precheck because a protected node's bearer is write-only and no longer exists in host plaintext configuration. The update reuses the encrypted credential already persisted with the node and treats the gateway's post-deploy readiness as the acceptance gate.
+
 ## Rollback
 
 Previously installed release bundles remain under `/opt/llmproxy/releases`.

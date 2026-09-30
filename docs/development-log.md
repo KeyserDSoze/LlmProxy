@@ -372,3 +372,12 @@ Closed the two blockers for a protected llama.cpp/vLLM runtime on the same GB10 
 - aligned deployment validation with the existing runtime rule that Production requires Entra.
 
 The inference runtime/model weights remain externally managed; the gateway now owns the secure connectivity/authentication boundary to that runtime.
+
+
+## 2026-09-30 — Release operator update hardening
+
+Release-candidate review found and fixed two operator-path issues before publication:
+
+- `llmproxyctl` used a misspelled `INSTAL_DIR` variable for the `current` symlink; CI now executes `config-path` rather than relying only on `bash -n`, catching unbound-variable startup failures.
+- protected upstream bearers are write-only after first bootstrap, so release updates cannot repeat a plaintext-authenticated direct provider precheck. First install still performs that check; `llmproxyctl update` skips only the direct DGX check and relies on the persisted encrypted node credential plus post-deploy gateway readiness.
+- the release bootstrap help no longer recommends `--skip-dgx-check` for the same-host GB10 first-install path and documents the one-time `DGX_UPSTREAM_BEARER_TOKEN` input.

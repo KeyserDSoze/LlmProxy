@@ -77,6 +77,8 @@ jobs:
           bash -n distribution/install.sh
           bash -n distribution/bootstrap.sh
           bash -n distribution/llmproxyctl
+          test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
+          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check' distribution/llmproxyctl >/dev/null
           bash -n distribution/build-release-bundle.sh
 
           VERSION="$(bash docker/scripts/validate-release-version.sh)"
