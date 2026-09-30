@@ -386,3 +386,8 @@ Release-candidate review found and fixed two operator-path issues before publica
 ## 2026-09-30 — Root-safe release bootstrap
 
 Hardened the immutable release bootstrap for operator updates: when already running as root (including `sudo -E llmproxyctl update ...`) it now invokes the bundled installer directly instead of requiring a nested `sudo`. Non-root first installs still use `sudo -E`, with a clear error when sudo is unavailable.
+
+
+## 2026-09-30 — Maintenance smoke L1 convergence hardening
+
+The final preview.8 Full Stack run exposed a test-only race after validated node resume: the peer's Admin node list reads PostgreSQL and can show `Healthy` before that peer has consumed the route-node event into its local inference L1. The maintenance smoke now waits for an actual peer inference request to succeed, proving cross-replica re-entry on the real request path rather than treating DB visibility as L1 convergence. Product maintenance semantics were unchanged.

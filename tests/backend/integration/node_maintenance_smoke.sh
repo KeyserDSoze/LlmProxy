@@ -235,20 +235,22 @@ jq -e '.status.nodeStatus == "Healthy" and .status.admissionBlocked == false and
 redis_block_after="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HEXISTS "${REDIS_KEY_PREFIX}:maintenance:nodes" "$node_field" 2>/dev/null | tr -d '\r')"
 [[ "$redis_block_after" == "0" ]] || fail_with_diagnostics "Redis maintenance marker remained after validated resume."
 
+# The peer's admin node list is database-backed and can show Healthy before the runtime
+# route event has reached that peer's local L1. Prove re-entry on the actual inference path.
+primary_ok="$(call_model 8080 /tmp/maintenance-primary-after.json)"
+[[ "$primary_ok" == "200" ]] || fail_with_diagnostics "Primary inference did not recover after maintenance resume."
+
 peer_resumed=false
-for attempt in {1..40}; do
-  peer_nodes="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
-  if echo "$peer_nodes" | jq -e --arg id "$node_id" 'map(select(.id == $id and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+peer_ok=""
+for attempt in {1..60}; do
+  peer_ok="$(call_model 8081 /tmp/maintenance-peer-after.json)"
+  if [[ "$peer_ok" == "200" ]]; then
     peer_resumed=true
     break
   fi
-  sleep 0.5
+  sleep 0.25
 done
-[[ "$peer_resumed" == "true" ]] || fail_with_diagnostics "Peer did not observe validated node resume."
-
-primary_ok="$(call_model 8080 /tmp/maintenance-primary-after.json)"
-peer_ok="$(call_model 8081 /tmp/maintenance-peer-after.json)"
-[[ "$primary_ok" == "200" && "$peer_ok" == "200" ]] || fail_with_diagnostics "Inference did not recover on both gateways after maintenance resume."
+[[ "$peer_resumed" == "true" ]] || fail_with_diagnostics "Peer inference path did not observe validated node resume; last status ${peer_ok}."
 
 audit_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/audit?take=100')"
 echo "$audit_json" | jq -e --arg id "$node_id" 'map(select(.entityId == $id and .action == "node.maintenance.drain")) | length >= 1' >/dev/null
