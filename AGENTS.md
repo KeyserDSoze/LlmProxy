@@ -55,11 +55,13 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 
 ## Current product version and validated baselines
 
-Current formal version:
+Current formal source candidate:
 
 ```text
-0.2.0-preview.7
+0.2.0-preview.8
 ```
+
+The last fully validated runtime/release checkpoint remains `0.2.0-preview.7` until the candidate passes CI, Full Stack, multi-architecture publication and target-host acceptance.
 
 
 Validated runtime/release checkpoint:
@@ -176,7 +178,9 @@ LlmProxy + PostgreSQL + Redis
 
 Development/minimal Compose paths are not the production deployment contract.
 
-Canonical first-install entry point:
+Candidate `0.2.0-preview.8` adds an immutable GitHub Release bundle and stable operator command. The release-oriented entry point is documented in `docs/release-installation.md`; it wraps the same validated installer/deployer rather than replacing their host contract.
+
+Canonical repository-checkout first-install entry point:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
@@ -238,15 +242,16 @@ Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Repository-supported MVP hardening, Linux bootstrap and executable environment-acceptance tooling are complete for the current preview. Default next order:
+Release-distribution candidate `0.2.0-preview.8` is implemented in source and requires validation before it replaces the `0.2.0-preview.7` baseline. Default next order:
 
-1. install `sha-df3ecf7` on the actual target Linux host;
-2. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
-3. calibrate real DGX capacity with intended models and representative Copilot load;
-4. validate real Entra roles, personal-key self-service + aggregate user request quotas, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
-5. define customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption;
-6. evolve quota semantics only with explicit tokenizer/pricing requirements;
-7. create an immutable Git tag/GitHub Release only when the project owner explicitly wants a distributable release.
+1. obtain green CI + Full Stack for the `0.2.0-preview.8` source, validate the multi-architecture/tagged GitHub Release path, then install it on the actual ARM64 GB10 target;
+2. if candidate validation fails, continue using immutable `sha-df3ecf7` as the runtime baseline;
+3. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
+4. calibrate real DGX capacity with intended models and representative Copilot load;
+5. validate real Entra roles, personal-key self-service + aggregate user request quotas, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
+6. define customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption;
+7. evolve quota semantics only with explicit tokenizer/pricing requirements;
+8. create immutable tags/releases only through the owner-triggered release workflow after validation.
 
 Do not invent per-user identity from a shared GitHub Copilot BYOK credential or from IP addresses.
 

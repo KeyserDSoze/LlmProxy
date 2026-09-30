@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
+ENV_FILE="${LLMPROXY_ENV_FILE:-$INSTALL_DIR/.env}"
+RUNTIME_COMPOSE="$INSTALL_DIR/runtime/docker-compose.full.yml"
+CURRENT_LINK="$INSTAL_DIR/current"
+BOOTSTRAP="/usr/local/lib/llmproxy/bootstrap.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: llmproxyctl COMMAND [args]
+
+Commands:
+  status                     Show containers and gateway health
+  health                     Probe /healthz and /readyz
+  logs [service]            Follow logs (default: llmproxy)
+  start                      Start the installed stack
+  stop                       Stop running containers without deleting data
+  restart                    Restart the installed stack
+  doctor                     Validate Docker, Compose, config and gateway health
+  version                    Show installed bundle and configured image version
+  update VERSION             Install/update to an immutable GitHub Release version
+  rollback VERSION            Redeploy a previously installed local release bundle
+  config-path                Print the protected environment file path
+  help                       Show this help
+
+Updates preserve /opt/llmproxy/.env and Docker volumes. For a private GitHub
+repository, provide GH_TOKEN/GITHUB_TOKEN or authenticate `gh` before update.
+USAGE
+}
+
+require_env() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "LlmProxy environment not found: $ENV_FILE" >&2
+    exit 2
+  fi
+}
+
+read_env() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1 | tr -d '\\r'
+}
+
+compose() {
+  require_env
+  if [[ ! -f "$RUNTIME_COMPOSE" ]]; then
+    echo "Runtime compose file not found: $RUNTIME_COMPOSE" >&2
+    exit 2
+  fi
+  local args=(docker compose --env-file "$ENV_FILE" -f "$RUNTIME_COMPOSE")
+  if [[ -n "$(read_env CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
+    args+=(--profile cloudflare)
+  fi
+  "${args[@]}" "$@"
+}
+
+port() {
+  local value
+  value="$(read_env LLMPROXY_PORT)"
+  printf '%s\n' "${value:-8080}"
+}
+
+health() {
+  require_env
+  local p
+  p="$(port)"
+  curl --fail --silent --show-error "http://127.0.0.1:$p/healthz"
+  printf '\n'
+  curl --fail --silent --show-error "http://127.0.0.1:$p/readyz"
+  printf '\n'
+}
+
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    echo "This command changes the installation. Re-run with sudo -E." >&2
+    exit 2
+  fi
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local tmp
+  tmp="$(mktemp)"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { found = 0 }
+    index($0, key "=") == 1 { print key "=" value; found = 1; next }
+    { print }
+    END { if (!found) print key "=" value }
+  ' "$ENV_FILE" > "$tmp"
+  cat "$tmp" > "$ENV_FILE"
+  rm -f "$tmp"
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  status)
+    compose ps
+    printf '\nGateway health:\n'
+    health || true
+    ;;
+  health)
+    health
+    ;;
+  logs)
+    service="${1:-llmproxy}"
+    compose logs -f "$service"
+    ;;
+  start)
+    require_root
+    compose up -d --no-build --remove-orphans
+    ;;
+  stop)
+    require_root
+    compose stop
+    ;;
+  restart)
+    require_root
+    compose restart
+    ;;
+  doctor)
+    printf 'Architecture: %s\n' "$(uname -m)"
+    printf 'Install dir: %s\n' "$INSTALL_DIR"
+    command -v docker >/dev/null || { echo 'Docker: MISSING'; exit 1; }
+    docker version --format 'Docker: {{.Server.Version}}'
+    docker compose version
+    require_env
+    printf 'Environment: %s\n' "$ENV_FILE"
+    printf 'Configured image tag: %s\n' "$(read_env LLMPROXY_IMAGE_TAG)"
+    [[ -L "$CURRENT_LINK" ]] && printf 'Current release: %s\n' "$(readlink -f "$CURRENT_LINK")" || true
+    compose config >/dev/null
+    printf 'Compose config: OK\n'
+    health
+    ;;
+  version)
+    require_env
+    configured="$(read_env LLMPROXY_IMAGE_TAG)"
+    installed="unknown"
+    if [[ -L "$CURRENT_LINK" && -f "$CURRENT_LINK/VERSION" ]]; then
+      installed="$(tr -d '[:space:]' < "$CURRENT_LINK/VERSION")"
+    fi
+    printf 'Installed bundle: %s\n' "$installed"
+    printf 'Configured image: %s\n' "$configured"
+    ;;
+  update)
+    require_root
+    version="${1:?Usage: sudo -E llmproxyctl update VERSION}"
+    if [[ ! -x "$BOOTSTRAP" ]]; then
+      echo "Bootstrap helper is missing: $BOOTSTRAP" >&2
+      exit 2
+    fi
+    exec "$BOOTSTRAP" --version "$version" --skip-docker-install
+    ;;
+  rollback)
+    require_root
+    version="${1:?Usage: sudo llmproxyctl rollback VERSION}"
+    release_dir="$INSTALL_DIR/releases/$version"
+    if [[ ! -f "$release_dir/docker/scripts/deploy.sh" ]]; then
+      echo "Release $version is not installed locally under $INSTALL_DIR/releases." >&2
+      exit 2
+    fi
+    require_env
+    set_env_value LLMPROXY_IMAGE_TAG "$version"
+    LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
+    LLMPROXY_ENV_FILE="$ENV_FILE" \
+      bash "$release_dir/docker/scripts/deploy.sh" "$version"
+    ln -sfn "$release_dir" "$CURRENT_LINK"
+    install -m 0755 "$release_dir/distribution/llmproxyctl" /usr/local/bin/llmproxyctl
+    install -m 0755 "$release_dir/distribution/bootstrap.sh" "$BOOTSTRAP"
+    ;;
+  config-path)
+    printf '%s\n' "$ENV_FILE"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

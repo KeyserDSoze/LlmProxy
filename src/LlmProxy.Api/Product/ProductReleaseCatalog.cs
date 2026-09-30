@@ -40,6 +40,30 @@ public static class ProductReleaseCatalog
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [
         new ProductRelease(
+            "0.2.0-preview.8",
+            new DateOnly(2026, 9, 30),
+            "Release-based Linux distribution and ARM64 publication",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Added"] =
+                [
+                    "Immutable GitHub Releases can carry a checksummed Linux operator bundle with the production Compose assets, observability configuration and versioned installer tooling.",
+                    "The llmproxyctl command provides status, health, logs, lifecycle, doctor, explicit update and local rollback operations while preserving host-owned configuration and Docker volumes.",
+                    "An owner-triggered GitHub Actions workflow creates an immutable version tag only after the exact main SHA has successful CI and Full stack smoke evidence.",
+                    "Tagged container publication targets both linux/amd64 and linux/arm64 so the same release can run on conventional Linux hosts and NVIDIA DGX Spark-class ARM64 systems."
+                ],
+                ["Changed"] =
+                [
+                    "A tagged publication can create the matching GitHub Release and attach the Linux bundle, bootstrap script, SHA-256 checksums and existing release-manifest evidence.",
+                    "Release installation no longer requires a long-lived Git checkout; the existing Linux installer remains the privileged host/deployment implementation inside each immutable bundle."
+                ],
+                ["Security"] =
+                [
+                    "Release bundles are SHA-256 verified before privileged installation and exact release image tags cannot be overridden by installer arguments.",
+                    "Private-repository download credentials remain external to the LlmProxy application environment and exact release tags are refused when they already exist."
+                ]
+            }),
+        new ProductRelease(
             "0.2.0-preview.7",
             new DateOnly(2026, 9, 21),
             "Aggregated Entra user request quotas",

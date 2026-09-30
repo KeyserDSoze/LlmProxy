@@ -6,7 +6,33 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ## [Unreleased]
 
-No unreleased product changes are recorded after the current preview baseline yet.
+No unreleased product changes are recorded after the current preview candidate yet.
+
+## [0.2.0-preview.8] - 2026-09-30
+
+### Added
+
+- Immutable GitHub Releases can distribute a checksummed Linux operator bundle containing the production Compose stack, observability configuration, operator scripts and the new `llmproxyctl` command.
+- `llmproxyctl` provides status, health, logs, lifecycle, diagnostics, explicit versioned update and local rollback operations while preserving `/opt/llmproxy/.env` and Docker data volumes.
+- A manual **Create immutable release tag** workflow validates the exact `main` SHA against successful CI and Full Stack evidence before creating the version tag.
+- Tagged container publication targets both `linux/amd64` and `linux/arm64`, enabling the same product release on x86_64 Linux and DGX Spark / GB10-class ARM64 hosts.
+- Tagged publication packages the Linux release bundle/bootstrap/checksums and creates the matching GitHub Release after container SBOM/provenance verification.
+
+### Changed
+
+- The existing production Linux installer is reused as a versioned release primitive instead of requiring a long-lived repository checkout for normal installation and updates.
+- Release installs pin the application image to the exact bundle version and keep installed operator bundles under `/opt/llmproxy/releases/<version>`.
+
+### Security
+
+- Linux release bundles are SHA-256 verified before privileged installation.
+- Installer callers cannot override the exact release image tag, and the release-tag workflow refuses existing tags rather than moving/reusing them.
+- GitHub repository/package download credentials remain outside the LlmProxy application environment.
+
+### Known scope
+
+- The release installer deploys LlmProxy and its control-plane dependencies; it does not install llama.cpp/vLLM or model weights.
+- Upstream inference bearer credentials are not yet modeled per node/provider. A protected inference runtime requiring its own bearer token still needs a trusted-network/no-upstream-auth configuration or a future provider-credential feature.
 
 ## [0.2.0-preview.7] - 2026-09-21
 

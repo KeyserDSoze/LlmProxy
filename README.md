@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current validated preview line: `0.2.0-preview.7` (aggregate Entra user request quotas).
+> Current source candidate: `0.2.0-preview.8` (release-based Linux distribution + multi-architecture publication). The last fully validated runtime baseline remains `0.2.0-preview.7` until the candidate gates pass.
 
 ## What this product is
 
@@ -73,6 +73,12 @@ docker compose --env-file docker/.env.full -f docker/docker-compose.full.yml up 
 The generic full-stack example is intended for development/demo/acceptance setup. Production has a separate operator-owned environment file and deployment path.
 
 ## Linux production deployment
+
+For immutable GitHub Release installation/update and the `llmproxyctl` operator command, start with:
+
+```text
+docs/release-installation.md
+```
 
 The canonical production runbook is:
 
@@ -283,6 +289,7 @@ Use `docker/.env.production.example` as the manual production template; the Linu
 
 Start with:
 
+- `docs/release-installation.md` — immutable GitHub Release bundle, bootstrap, `llmproxyctl`, update and rollback.
 - `docs/linux-production-deployment.md` — canonical zero-to-running Linux production runbook.
 - `docs/environment-acceptance.md` — production host/DGX/gateway acceptance and evidence rules.
 - `docs/deployment.md` — deployment contract and automation summary.

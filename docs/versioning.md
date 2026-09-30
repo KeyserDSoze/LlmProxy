@@ -5,8 +5,10 @@ LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview bas
 ## Current version
 
 ```text
-0.2.0-preview.7
+0.2.0-preview.8
 ```
+
+This is the current source candidate. The last fully validated runtime/release checkpoint remains `0.2.0-preview.7` until candidate validation completes.
 
 The product remains pre-1.0 while target-host, real DGX/Copilot/Entra/Cloudflare acceptance remains outside repository CI.
 
@@ -39,7 +41,7 @@ The runtime/assembly version is authoritative; Admin package version must stay a
 
 ```bash
 bash docker/scripts/validate-release-version.sh
-bash docker/scripts/validate-release-version.sh 0.2.0-preview.7
+bash docker/scripts/validate-release-version.sh 0.2.0-preview.8
 bash docker/scripts/validate-release-main-ci.sh <40-char-source-sha> <workflow-runs.json>
 ```
 
@@ -65,6 +67,7 @@ Formal sequence:
 0.2.0-preview.5  production environment acceptance evidence
 0.2.0-preview.6  Entra-owned personal API keys + user self-service
 0.2.0-preview.7  aggregate Entra user request quotas
+0.2.0-preview.8  release-based Linux distribution + linux/amd64 and linux/arm64 publication
 ```
 
 `0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. `0.2.0-preview.7` adds aggregate Entra-user request quotas and is the current validated runtime baseline.
@@ -100,7 +103,8 @@ For each product version:
 9. require post-push digest/SBOM/provenance verification;
 10. record exact green source/run/digest evidence only after validation;
 11. update canonical handover docs;
-12. create a matching Git tag/GitHub Release only when the project owner explicitly wants an immutable distributable release.
+12. for a distributable Linux release, build and checksum the operator bundle and require multi-architecture `linux/amd64` + `linux/arm64` publication;
+13. create a matching immutable Git tag/GitHub Release only through the owner-triggered release workflow after the exact main SHA has green CI and Full Stack evidence.
 
 ## Build identity
 
@@ -116,6 +120,8 @@ org.opencontainers.image.created
 
 `/api/admin/product` exposes build revision/date, so operators can identify the exact running build without changing SemVer.
 
+Tagged distributable releases publish one OCI image index containing runnable `linux/amd64` and `linux/arm64` manifests. Repository CI remains primarily amd64; a successful Buildx multi-architecture publication proves the ARM64 image can be built, while real DGX Spark runtime acceptance remains target-environment evidence.
+
 ## Container tag and source-validation rules
 
 A validated `main` SHA publishes:
@@ -128,18 +134,18 @@ sha-<7 chars>
 A Git tag such as:
 
 ```text
-v0.2.0-preview.7
+v0.2.0-preview.8
 ```
 
 must satisfy both conditions before publication:
 
-1. tag version exactly matches compiled version `0.2.0-preview.7`;
+1. tag version exactly matches compiled version `0.2.0-preview.8`;
 2. the tagged source SHA already has successful repository `CI` from a push to `main`.
 
 A matching prerelease tag may publish:
 
 ```text
-0.2.0-preview.7
+0.2.0-preview.8
 sha-<7 chars>
 ```
 
@@ -147,7 +153,7 @@ Prereleases do not update stable-looking aliases. A stable tag may additionally 
 
 The same Actions-API source gate is used for ordinary main and Git-tag publications. For a `workflow_run`-triggered publication, the API-selected CI run ID must equal the triggering CI run ID. The gate runs before GHCR login.
 
-Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. No exact `v0.2.0-preview.7` tag has been created.
+Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. Exact distributable tags are created only by the owner-triggered release workflow after exact-SHA CI and Full Stack validation.
 
 ## OCI SBOM and provenance contract
 
@@ -183,6 +189,6 @@ For production acceptance/deployment, `sha-df3ecf7` is the immutable image alias
 
 ## Current release state
 
-Repository-supported release gating is complete for the current MVP. `0.2.0-preview.7` is the current validated runtime for aggregate Entra-user request quotas, with green CI, Full Stack and GHCR publication evidence recorded above.
+`0.2.0-preview.8` is the current source candidate for release-based Linux distribution, `llmproxyctl`, checksummed GitHub Release bundles and multi-architecture container publication. It is not yet a validated immutable release.
 
-Creating an actual immutable Git tag/GitHub Release is an explicit product-owner publication decision, not an unfinished engineering prerequisite.
+`0.2.0-preview.7` remains the validated runtime baseline with the green CI, Full Stack and GHCR evidence recorded above. The `0.2.0-preview.8` tag/GitHub Release must be created only after the candidate source has successful exact-SHA CI and Full Stack evidence and the owner explicitly runs the release-tag workflow.

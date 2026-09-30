@@ -74,6 +74,22 @@ jobs:
           bash docker/scripts/install-linux.sh --help >/dev/null
           bash docker/scripts/environment-acceptance.sh --validate-only
           bash docker/scripts/environment-acceptance.sh --help >/dev/null
+          bash -n distribution/install.sh
+          bash -n distribution/bootstrap.sh
+          bash -n distribution/llmproxyctl
+          bash -n distribution/build-release-bundle.sh
+
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          RELEASE_DIR="$(mktemp -d)"
+          bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
+          (
+            cd "$RELEASE_DIR"
+            sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
+            sha256sum -c llmproxy-bootstrap.sh.sha256
+          )
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
+          rm -rf "$RELEASE_DIR"
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4

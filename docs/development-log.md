@@ -327,3 +327,23 @@ Repository hardening, Linux bootstrap and executable acceptance automation are c
 6. finalize customer-specific HA/storage/backup topology.
 
 Quota expansion remains requirements-driven. Creating a real immutable Git tag/GitHub Release remains an explicit product-owner publication decision.
+
+
+## 2026-09-30 — Release-based Linux distribution / 0.2.0-preview.8 — IMPLEMENTED IN SOURCE / VALIDATION PENDING
+
+Prepared the next product candidate around immutable operator distribution instead of requiring a Git checkout on each server.
+
+Implemented source changes:
+
+- Linux release bundle builder with SHA-256 checksums;
+- release bootstrap that downloads/verifies one exact GitHub Release version;
+- `llmproxyctl` for status/health/logs/lifecycle/doctor/version/update/local rollback;
+- installed immutable operator bundles under `/opt/llmproxy/releases/<version>` while preserving host-owned `.env` and Docker volumes;
+- owner-triggered `Create immutable release tag` workflow requiring exact-SHA CI and Full Stack success;
+- tagged publication target expanded to `linux/amd64,linux/arm64`;
+- tagged publication prepared to create GitHub Release assets after existing SBOM/provenance verification;
+- focused `docs/release-installation.md` runbook.
+
+The existing `install-linux.sh` + `deploy.sh` remain the single host/deployment implementation inside the release bundle.
+
+Validation is intentionally not claimed yet. Required evidence: green candidate CI/Full Stack, multi-arch publication, immutable tag/GitHub Release, then real install/update/rollback on the ARM64 GB10 target.

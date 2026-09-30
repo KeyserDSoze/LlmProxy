@@ -1,16 +1,18 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-09-21**.
+Last reviewed: **2026-09-30**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
 ## Current validated product baseline
 
-Current formal product version:
+Current formal source candidate:
 
 ```text
-0.2.0-preview.7
+0.2.0-preview.8
 ```
+
+The fully validated runtime/release checkpoint remains `0.2.0-preview.7` below until the candidate passes repository and target-host validation.
 
 
 Validated runtime/release checkpoint:
@@ -33,6 +35,33 @@ artifact digest         sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89
 CI `35592623906` covers backend/unit/frontend/Playwright plus Docker/PostgreSQL regressives, including aggregate user-quota governance, restart republish, backup/restore and retention. Full Stack `35592624282` proves Redis/OpenTelemetry bootstrap, transactional outbox recovery, aggregate user request quota across two gateway replicas, distributed output-token budgets, cross-replica credential rotation and safe maintenance. Publish `35593081824` validates source CI before GHCR login and verifies the pushed OCI digest, SPDX SBOM and SLSA/BuildKit provenance.
 
 The validated deployment image is `ghcr.io/keyserdsoze/llmproxy:sha-df3ecf7`. Later documentation-only commits may republish mutable `main` but do not replace this runtime checkpoint.
+
+## Release-based distribution / 0.2.0-preview.8 — IMPLEMENTED IN SOURCE / VALIDATION PENDING
+
+The current source candidate adds an immutable Linux distribution layer over the existing production installer/deployer:
+
+```text
+GitHub owner-triggered release tag
+  -> exact-SHA CI + Full Stack evidence gate
+  -> tagged multi-arch GHCR image (linux/amd64 + linux/arm64)
+  -> SPDX/SLSA verification
+  -> checksummed Linux operator bundle
+  -> GitHub Release
+  -> bootstrap.sh
+  -> /opt/llmproxy/releases/<version>
+  -> llmproxyctl install/update/status/logs/doctor/rollback
+```
+
+Host-owned `/opt/llmproxy/.env` and Docker volumes remain outside versioned bundles. The release installer reuses `docker/scripts/install-linux.sh` and `deploy.sh`; it does not fork a second deployment implementation.
+
+The inference-runtime boundary is unchanged: the distribution installs LlmProxy/control-plane dependencies, not llama.cpp/vLLM/model weights. Upstream provider bearer credentials remain a separate future feature.
+
+Validation still required before promotion:
+
+- green CI and Full Stack on the exact candidate SHA;
+- successful Buildx publication for both amd64 and arm64 plus existing SBOM/provenance verification;
+- owner-triggered immutable tag and GitHub Release asset creation;
+- first real install/update/rollback exercise on the GB10 ARM64 host.
 
 ## Product/versioning — DONE / VALIDATED
 
@@ -252,9 +281,10 @@ Prompts/source/generated output/API secrets remain excluded from persistent tele
 
 ## Current development focus
 
-The next step is **physical environment acceptance**, not another generic repository feature:
+The immediate step is validating the new release-distribution candidate before physical product acceptance continues:
 
-1. install immutable `sha-df3ecf7` on the actual target Linux distro/version;
+1. get green CI + Full Stack on the exact `0.2.0-preview.8` source and validate tagged multi-architecture publication/release assets;
+2. install/update/rollback the candidate on the actual ARM64 GB10 host;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
 3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
 4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
