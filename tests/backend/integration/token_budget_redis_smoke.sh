@@ -226,12 +226,12 @@ user_count="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HGET 
 [[ "$user_count" == "2" ]] || fail_with_diagnostics "Expected shared Redis user rate-limit count=2 after rejection; got ${user_count}."
 
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
-  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":100,\"windowSeconds\":60,\"enabled\":true,\"outputTokensPerWindow\":17,\"maxOutputTokensPerRequest\":10}" \
+  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":100,\"windowSeconds\":300,\"enabled\":true,\"outputTokensPerWindow\":17,\"maxOutputTokensPerRequest\":10}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
 printf '%s\n' "$policy_json" > /tmp/token-budget-policy.json
 policy_id="$(echo "$policy_json" | jq -r '.id')"
 [[ "$policy_id" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_with_diagnostics "Output-token budget policy was not created."
-echo "$policy_json" | jq -e '.requestsPerWindow == 100 and .outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10' >/dev/null
+echo "$policy_json" | jq -e '.requestsPerWindow == 100 and .windowSeconds == 300 and .outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10' >/dev/null
 
 # A max_tokens=0 request is accepted by the mock runtime but must be rejected by quota middleware.
 # Polling this on the peer proves the new policy reached the peer's local L1 through runtime-state propagation.
@@ -251,7 +251,7 @@ done
 [[ "$peer_policy_applied" == "true" ]] || fail_with_diagnostics "Peer did not apply output-token budget policy to local L1."
 
 policy_field="${policy_id//-/}"
-budget_key="llmproxy:output-token-budget:${policy_field}:17:60"
+budget_key="llmproxy:output-token-budget:${policy_field}:17:300"
 
 first="$(call_budget_model 8080 /tmp/token-budget-a)"
 [[ "$first" == "200" ]] || fail_with_diagnostics "Expected first budgeted request on primary to succeed; got ${first}."

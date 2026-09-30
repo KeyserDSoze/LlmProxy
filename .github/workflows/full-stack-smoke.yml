@@ -10,6 +10,7 @@ on:
       - distribution/**
       - Directory.Build.props
       - src/LlmProxy.Api/Product/**
+      - tests/backend/integration/**
       - docker/docker-compose.full.yml
       - docker/.env.full.example
       - docker/observability/**

@@ -170,7 +170,7 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await expect(page.getByText('dgx-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
   await page.getByRole('button', { name: 'DGX Nodes' }).click()
   await page.getByLabel('Name').fill('dgx-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
-  await expect(page.getByText('dgx-02')).toBeVisible(); const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
 })
 
 test('DGX hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
