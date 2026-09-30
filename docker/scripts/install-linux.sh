@@ -8,6 +8,12 @@ IMAGE_TAG="${LLMPROXY_IMAGE_TAG:-main}"
 GHCR_OWNER_VALUE="${GHCR_OWNER:-keyserdsoze}"
 DGX_URL_VALUE="${DGX_NODE_BASE_ADDRESS:-}"
 PROVIDER_MODEL_VALUE="${PROVIDER_MODEL_NAME:-}"
+SUPER_ADMINS_VALUE=""
+SUPER_ADMINS_PROVIDED=false
+if [[ "${ENTRA_SUPER_ADMINS+x}" == "x" ]]; then
+  SUPER_ADMINS_VALUE="${ENTRA_SUPER_ADMINS}"
+  SUPER_ADMINS_PROVIDED=true
+fi
 COMPOSE_VERSION="${DOCKER_COMPOSE_VERSION:-v5.5.0}"
 PREPARE_ONLY=false
 SKIP_DGX_CHECK=false
@@ -28,6 +34,7 @@ Options:
   --ghcr-owner OWNER      GHCR owner (default: keyserdsoze)
   --dgx-url URL           Initial DGX/vLLM service root
   --provider-model MODEL  Exact provider model id exposed by vLLM
+  --super-admins USERS    Comma/semicolon-separated Entra principals granted LlmProxy.Admin
   --prepare-only          Install host prerequisites and create config, but do not deploy
   --skip-dgx-check        Skip /health and /v1/models checks against the initial DGX
   --skip-docker-install   Require Docker + Compose to already be installed
@@ -38,6 +45,7 @@ Options:
 Optional environment variables:
   GHCR_USER / GHCR_TOKEN            Login to a private GHCR package without storing the token
   ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
+  ENTRA_SUPER_ADMINS                  Optional admin principals; same semantics as --super-admins
   DGX_UPSTREAM_BEARER_TOKEN        Optional one-time llama.cpp/vLLM bearer; never written to .env by the installer
   CLOUDFLARE_TUNNEL_TOKEN           Enables the Cloudflare profile only when Entra is enabled
   DOCKER_COMPOSE_VERSION            Manual Compose fallback version (default: v5.5.0)
@@ -69,6 +77,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --provider-model)
       PROVIDER_MODEL_VALUE="${2:?--provider-model requires a value}"
+      shift 2
+      ;;
+    --super-admins)
+      if [[ $# -lt 2 ]]; then
+        echo "--super-admins requires a value (use an empty quoted value to clear the list)." >&2
+        exit 2
+      fi
+      SUPER_ADMINS_VALUE="$2"
+      SUPER_ADMINS_PROVIDED=true
       shift 2
       ;;
     --prepare-only)
@@ -540,10 +557,17 @@ prepare_environment() {
   if [[ -n "${ENTRA_TENANT_ID:-}" ]]; then set_env_value ENTRA_TENANT_ID "$ENTRA_TENANT_ID"; fi
   if [[ -n "${ENTRA_CLIENT_ID:-}" ]]; then set_env_value ENTRA_CLIENT_ID "$ENTRA_CLIENT_ID"; fi
   if [[ -n "${ENTRA_CLIENT_SECRET:-}" ]]; then set_env_value ENTRA_CLIENT_SECRET "$ENTRA_CLIENT_SECRET"; fi
+  if [[ "$SUPER_ADMINS_PROVIDED" == "true" ]]; then
+    set_env_value ENTRA_SUPER_ADMINS "$SUPER_ADMINS_VALUE"
+    log "Updated configured Entra super-administrator principals without logging their identities."
+  fi
   if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then set_env_value CLOUDFLARE_TUNNEL_TOKEN "$CLOUDFLARE_TUNNEL_TOKEN"; fi
 
   if [[ -n "$(read_env_value CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
     set_env_value REVERSE_PROXY_ENABLED true
+    if is_missing_env_value CLOUDFLARED_PROTOCOL; then
+      set_env_value CLOUDFLARED_PROTOCOL http2
+    fi
     log "Cloudflare Tunnel configured; enabling one-hop forwarded-header processing for external HTTPS/OIDC."
   fi
 

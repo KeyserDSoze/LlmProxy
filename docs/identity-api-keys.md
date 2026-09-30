@@ -25,6 +25,22 @@ LlmProxy.Reader  read-only operational/admin visibility; retained for operators
 
 `LlmProxy.User` is intentionally different from `LlmProxy.Reader`: a Reader is an operator with read access to the administrative control plane, while a User is a consumer of the inference service.
 
+### Installer-configured super administrators
+
+A production host may keep an explicit local allow-list of Entra identities that receive the internal `LlmProxy.Admin` role after Entra has authenticated them successfully:
+
+```env
+ENTRA_SUPER_ADMINS=admin1@example.com;admin2@example.com
+```
+
+This is an authorization elevation only; it does not bypass Entra authentication or tenant validation. Plain values match `preferred_username`, email or UPN. For durable production identity, prefer stable Entra object IDs:
+
+```env
+ENTRA_SUPER_ADMINS=oid:<object-id-1>;oid:<object-id-2>
+```
+
+The list is host-local configuration in `/opt/llmproxy/.env`, not source-controlled product configuration. An omitted value during update preserves the current list; explicitly passing a new list replaces it.
+
 ## Stable ownership identity
 
 Personal-key ownership is identified by the pair:

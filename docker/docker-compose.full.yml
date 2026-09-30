@@ -146,6 +146,7 @@ services:
       EntraId__ClientId: ${ENTRA_CLIENT_ID:-}
       EntraId__ClientSecret: ${ENTRA_CLIENT_SECRET:-}
       EntraId__CallbackPath: /signin-oidc
+      EntraId__SuperAdmins: ${ENTRA_SUPER_ADMINS:-}
       ReverseProxy__Enabled: ${REVERSE_PROXY_ENABLED:-false}
 
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
@@ -171,7 +172,7 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: ["cloudflare"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate --protocol ${CLOUDFLARED_PROTOCOL:-http2} run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       llmproxy:
         condition: service_started

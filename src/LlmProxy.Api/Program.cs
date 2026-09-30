@@ -152,6 +152,7 @@ if (reverseProxyEnabled)
 
 if (entraEnabled)
 {
+    builder.Services.AddTransient<IClaimsTransformation, ConfiguredSuperAdminClaimsTransformation>();
     builder.Services
         .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
         .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("EntraId"));

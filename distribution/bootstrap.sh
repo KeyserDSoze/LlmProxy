@@ -23,6 +23,7 @@ Environment:
   GHCR_USER / GHCR_TOKEN           Optional explicit GHCR credentials; defaults can be derived from GitHub auth
   ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
                                       Required for ASPNETCORE_ENVIRONMENT=Production
+  ENTRA_SUPER_ADMINS                 Optional comma/semicolon-separated full administrators
   DGX_UPSTREAM_BEARER_TOKEN        Optional one-time upstream llama.cpp/vLLM bearer for first install
   LLMPROXY_GITHUB_REPOSITORY       Repository override (default KeyserDSoze/LlmProxy)
 USAGE
@@ -51,7 +52,7 @@ while [[ $# -gt 0 ]]; do
       shift
       if [[ ${#INSTALL_ARGS[@]} -gt 0 ]]; then
         case "${INSTALL_ARGS[-1]}" in
-          --ghcr-owner|--dgx-url|--provider-model)
+          --ghcr-owner|--dgx-url|--provider-model|--super-admins)
             if [[ $# -eq 0 ]]; then
               echo "${INSTALL_ARGS[-1]} requires a value" >&2
               exit 2

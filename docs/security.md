@@ -18,6 +18,8 @@ Production control-plane and user self-service authentication use Microsoft Entr
 
 Production startup fails when Entra authentication is not enabled rather than silently exposing administration endpoints.
 
+An installation may additionally configure a host-local `EntraId:SuperAdmins` allow-list. Matching occurs only after successful Entra authentication in the configured tenant and grants the internal `LlmProxy.Admin` role. Plain UPN/email matching is supported for operator convenience, while `oid:<object-id>` entries are preferred because Entra object IDs are stable and user principal names can change.
+
 Personal-key ownership is based on the stable Entra `tid` + `oid` claims. Username, email and display name may be retained as non-authoritative metadata but must not be used to authorize key ownership.
 
 See `docs/identity-api-keys.md` for the complete role, ownership and lifecycle contract.

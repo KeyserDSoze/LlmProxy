@@ -54,6 +54,8 @@ export ENTRA_ENABLED=true
 export ENTRA_TENANT_ID='<tenant-id>'
 export ENTRA_CLIENT_ID='<client-id>'
 export ENTRA_CLIENT_SECRET='<client-secret>'
+# Optional full administrators; stable oid:<object-id> entries are preferred.
+export ENTRA_SUPER_ADMINS='admin1@example.com;admin2@example.com'
 ```
 
 If Entra is not available yet, use the Development/full-stack acceptance path for private validation; do not label a no-Entra deployment as Production.
@@ -202,6 +204,19 @@ An update is always explicit and versioned:
 sudo -E llmproxyctl update 0.0.2
 ```
 
+The existing super-administrator list is preserved when omitted. To replace it as part of an update:
+
+```bash
+sudo -E llmproxyctl update 0.0.3 \
+  --super-admins 'admin1@example.com;admin2@example.com'
+```
+
+An explicitly empty value clears the local elevation list:
+
+```bash
+sudo -E llmproxyctl update 0.0.3 --super-admins ''
+```
+
 Public GitHub Release assets need no release-download token. If GHCR requires authentication, provide `GHCR_USER` / `GHCR_TOKEN` to the update command environment.`
 
 The update path downloads and verifies the new operator bundle, preserves `/opt/llmproxy/.env`, refreshes runtime assets, pulls the exact application image and requires `/healthz` plus `/readyz` before the new bundle becomes `current`.
@@ -263,10 +278,11 @@ Keep the host listener loopback-only:
 LLMPROXY_BIND_ADDRESS=127.0.0.1
 LLMPROXY_PORT=8081
 CLOUDFLARE_TUNNEL_TOKEN=<tunnel-token>
+CLOUDFLARED_PROTOCOL=http2
 REVERSE_PROXY_ENABLED=true
 ```
 
-The Linux installer automatically sets `REVERSE_PROXY_ENABLED=true` whenever a persisted Cloudflare tunnel token is present. In that mode LlmProxy accepts one direct `X-Forwarded-*` proxy hop so OpenID Connect sees the original public HTTPS scheme/host.
+The Linux installer automatically sets `REVERSE_PROXY_ENABLED=true` whenever a persisted Cloudflare tunnel token is present. The bundled tunnel defaults to HTTP/2 over TCP/7844 for compatibility with networks where QUIC/UDP 7844 is unstable; set `CLOUDFLARED_PROTOCOL=auto` or `quic` only when desired. In that mode LlmProxy accepts one direct `X-Forwarded-*` proxy hop so OpenID Connect sees the original public HTTPS scheme/host.
 
 For a public hostname such as:
 

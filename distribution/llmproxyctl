@@ -20,7 +20,7 @@ Commands:
   restart                    Restart the installed stack
   doctor                     Validate Docker, Compose, config and gateway health
   version                    Show installed bundle and configured image version
-  update VERSION             Install/update to an immutable GitHub Release version
+  update VERSION [options]   Install/update; supports --super-admins USERS
   rollback VERSION            Redeploy a previously installed local release bundle
   config-path                Print the protected environment file path
   help                       Show this help
@@ -148,7 +148,26 @@ case "$cmd" in
     ;;
   update)
     require_root
-    version="${1:?Usage: sudo -E llmproxyctl update VERSION}"
+    version="${1:?Usage: sudo -E llmproxyctl update VERSION [--super-admins USERS]}"
+    shift
+    update_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --super-admins)
+          if [[ $# -lt 2 ]]; then
+            echo "--super-admins requires a value (use an empty quoted value to clear the list)." >&2
+            exit 2
+          fi
+          update_args+=("$1" "$2")
+          shift 2
+          ;;
+        *)
+          echo "Unsupported update option: $1" >&2
+          echo "Supported: --super-admins USERS" >&2
+          exit 2
+          ;;
+      esac
+    done
     if [[ ! -x "$BOOTSTRAP" ]]; then
       echo "Bootstrap helper is missing: $BOOTSTRAP" >&2
       exit 2
@@ -156,7 +175,7 @@ case "$cmd" in
     # Existing protected-node provider credentials are intentionally not recoverable from
     # host configuration. First install validates the runtime directly; updates reuse the
     # persisted encrypted node credential and rely on post-deploy readiness.
-    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check
+    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check "${update_args[@]}"
     ;;
   rollback)
     require_root

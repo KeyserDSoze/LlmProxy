@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using LlmProxy.Api.Identity;
+using Microsoft.Extensions.Configuration;
 
 namespace LlmProxy.UnitTests.Api;
 
@@ -38,5 +39,69 @@ public sealed class EntraUserIdentityResolverTests
         ], authenticationType: "test"));
 
         Assert.False(EntraUserIdentityResolver.TryResolve(principal, out _));
+    }
+
+
+    [Fact]
+    public async Task Configured_super_admin_email_receives_admin_role()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EntraId:SuperAdmins"] = "first@example.com; Admin@Example.com "
+            })
+            .Build();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("preferred_username", "admin@example.com"),
+            new Claim("oid", "object-1")
+        ], authenticationType: "test"));
+
+        var transformed = await new ConfiguredSuperAdminClaimsTransformation(configuration)
+            .TransformAsync(principal);
+
+        Assert.True(transformed.IsInRole("LlmProxy.Admin"));
+    }
+
+    [Fact]
+    public async Task Configured_super_admin_object_id_receives_admin_role()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EntraId:SuperAdmins"] = "oid:object-42"
+            })
+            .Build();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("preferred_username", "renamed@example.com"),
+            new Claim("oid", "object-42")
+        ], authenticationType: "test"));
+
+        var transformed = await new ConfiguredSuperAdminClaimsTransformation(configuration)
+            .TransformAsync(principal);
+
+        Assert.True(transformed.IsInRole("LlmProxy.Admin"));
+    }
+
+    [Fact]
+    public async Task Non_matching_super_admin_configuration_does_not_grant_admin_role()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EntraId:SuperAdmins"] = "admin@example.com"
+            })
+            .Build();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("preferred_username", "other@example.com"),
+            new Claim("oid", "object-other")
+        ], authenticationType: "test"));
+
+        var transformed = await new ConfiguredSuperAdminClaimsTransformation(configuration)
+            .TransformAsync(principal);
+
+        Assert.False(transformed.IsInRole("LlmProxy.Admin"));
     }
 }
