@@ -38,6 +38,7 @@ Options:
 Optional environment variables:
   GHCR_USER / GHCR_TOKEN            Login to a private GHCR package without storing the token
   ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
+  DGX_UPSTREAM_BEARER_TOKEN        Optional one-time llama.cpp/vLLM bearer; never written to .env by the installer
   CLOUDFLARE_TUNNEL_TOKEN           Enables the Cloudflare profile only when Entra is enabled
   DOCKER_COMPOSE_VERSION            Manual Compose fallback version (default: v5.5.0)
 
@@ -459,6 +460,7 @@ prepare_environment() {
     set_env_value REDIS_PASSWORD "$(hex_secret 24)"
     set_env_value LLM_PROXY_API_KEY "llmp_$(hex_secret 24)"
     set_env_value LLM_PROXY_API_KEY_PEPPER "$(hex_secret 32)"
+    set_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY "$(hex_secret 32)"
     set_env_value GRAFANA_ADMIN_PASSWORD "$(hex_secret 20)"
   else
     log "Preserving existing production environment: $ENV_FILE"
@@ -515,10 +517,19 @@ login_ghcr_if_configured() {
 
 probe_url() {
   local url="$1"
+  local bearer="${DGX_UPSTREAM_BEARER_TOKEN:-}"
   if have curl; then
-    curl --fail --silent --show-error --max-time 8 "$url" >/dev/null
+    local args=(--fail --silent --show-error --max-time 8)
+    if [[ -n "$bearer" ]]; then
+      args+=(-H "Authorization: Bearer $bearer")
+    fi
+    curl "${args[@]}" "$url" >/dev/null
   elif have wget; then
-    wget -qO- --timeout=8 "$url" >/dev/null
+    local args=(-qO- --timeout=8)
+    if [[ -n "$bearer" ]]; then
+      args+=(--header="Authorization: Bearer $bearer")
+    fi
+    wget "${args[@]}" "$url" >/dev/null
   else
     return 1
   fi
@@ -529,12 +540,38 @@ check_dgx() {
     warn "Skipping initial DGX/vLLM reachability check by request."
     return 0
   fi
-  local root
+  local root probe_root gateway
   root="$(read_env_value DGX_NODE_BASE_ADDRESS)"
   root="${root%/}"
-  log "Checking DGX/vLLM connectivity at $root"
-  probe_url "$root/health"
-  probe_url "$root/v1/models"
+  probe_root="$root"
+
+  if [[ "$root" == http://host.docker.internal:* || "$root" == http://host.docker.internal/* || "$root" == https://host.docker.internal:* || "$root" == https://host.docker.internal/* ]]; then
+    gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
+    if [[ -z "$gateway" ]]; then
+      echo "Could not resolve Docker's host-gateway address for same-host inference validation." >&2
+      exit 11
+    fi
+    probe_root="${root/host.docker.internal/$gateway}"
+    log "Checking same-host inference through Docker host gateway $gateway (configured root remains $root)"
+  else
+    log "Checking DGX/vLLM connectivity at $root"
+  fi
+
+  if ! probe_url "$probe_root/health" || ! probe_url "$probe_root/v1/models"; then
+    if [[ "$root" == *"host.docker.internal"* ]]; then
+      cat >&2 <<EOF
+Same-host inference is not reachable through Docker's host gateway.
+A llama-server bound only to 127.0.0.1 cannot be reached by LlmProxy's bridge container.
+
+Bind llama-server to the Docker bridge gateway (currently $gateway), for example:
+  llama-server --host $gateway --port 8080 --api-key '<secret>' ...
+
+Keep LlmProxy configured with:
+  DGX_NODE_BASE_ADDRESS=http://host.docker.internal:8080
+EOF
+    fi
+    exit 11
+  fi
 }
 
 install_prerequisites
@@ -563,6 +600,14 @@ LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
 LLMPROXY_ENV_FILE="$ENV_FILE" \
   bash "$ROOT_DIR/docker/scripts/deploy.sh" "$IMAGE_TAG"
 
+if [[ -n "${DGX_UPSTREAM_BEARER_TOKEN:-}" ]]; then
+  log "Removing the one-time upstream bearer from the long-lived container environment after encrypted bootstrap."
+  unset DGX_UPSTREAM_BEARER_TOKEN
+  LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
+  LLMPROXY_ENV_FILE="$ENV_FILE" \
+    bash "$ROOT_DIR/docker/scripts/deploy.sh" "$IMAGE_TAG"
+fi
+
 if [[ "$CALLER_USER" != "root" ]]; then
   chown -R "$CALLER_USER:$CALLER_GROUP" "$INSTALL_DIR/runtime" "$INSTALL_DIR/backups"
 fi
@@ -584,6 +629,6 @@ Environment file: $ENV_FILE
 Runtime assets:   $INSTALL_DIR/runtime
 Backups:          $INSTALL_DIR/backups
 
-The generated inference credential and HMAC pepper are stored only in the protected environment file.
-Back up LLM_PROXY_API_KEY_PEPPER separately before treating this host as production.
+The generated client inference credential, HMAC pepper and upstream-credential master key are stored only in the protected environment file.
+Back up LLM_PROXY_API_KEY_PEPPER and LLMPROXY_UPSTREAM_CREDENTIAL_KEY separately before treating this host as production.
 EOF

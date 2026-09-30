@@ -174,6 +174,7 @@ jobs:
           REDIS_PASSWORD: ci-full-redis
           LLM_PROXY_API_KEY: ci-full-api-key
           LLM_PROXY_API_KEY_PEPPER: ci-full-pepper
+          LLMPROXY_UPSTREAM_CREDENTIAL_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
           GRAFANA_ADMIN_PASSWORD: ci-full-grafana
         run: docker compose -f docker/docker-compose.full.yml config >/dev/null
 
@@ -194,6 +195,7 @@ jobs:
               -e 's/CHANGE_ME_REDIS_PASSWORD/ci-redis/' \
               -e 's/CHANGE_ME_LLM_PROXY_API_KEY/ci-api-key/' \
               -e 's/CHANGE_ME_LLM_PROXY_API_KEY_PEPPER/ci-pepper/' \
+              -e 's/CHANGE_ME_UPSTREAM_CREDENTIAL_KEY/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/' \
               -e 's/CHANGE_ME_GRAFANA_ADMIN_PASSWORD/ci-grafana/' \
               -e 's#CHANGE_ME_DGX_NODE_BASE_ADDRESS#http://127.0.0.1:8000#' \
               -e 's/CHANGE_ME_TO_VLLM_MODEL_NAME/ci-provider-model/' \
@@ -201,12 +203,14 @@ jobs:
           }
 
           prepare_env "$TMP_DIR/private.env"
-          LLMPROXY_DEPLOY_DIR="$TMP_DIR/private-runtime" \
-          LLMPROXY_ENV_FILE="$TMP_DIR/private.env" \
-          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
-            bash docker/scripts/deploy.sh sha-ci-private
-          test -f "$TMP_DIR/private-runtime/runtime/docker-compose.full.yml"
-          test -f "$TMP_DIR/private-runtime/runtime/observability/otel-collector.yml"
+          if LLMPROXY_DEPLOY_DIR="$TMP_DIR/private-runtime" \
+             LLMPROXY_ENV_FILE="$TMP_DIR/private.env" \
+             LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+               bash docker/scripts/deploy.sh sha-ci-private >"$TMP_DIR/private.out" 2>&1; then
+            echo "Production without Entra unexpectedly passed deployment validation." >&2
+            exit 1
+          fi
+          grep -F "Production requires ENTRA_ENABLED=true" "$TMP_DIR/private.out" >/dev/null
 
           prepare_env "$TMP_DIR/public.env"
           sed -i \
@@ -253,6 +257,9 @@ jobs:
 
       - name: Usage governance and rate-limit smoke suite
         run: bash tests/backend/integration/governance_smoke.sh
+
+      - name: Upstream bearer credential smoke suite
+        run: bash tests/backend/integration/upstream_auth_smoke.sh
 
       - name: Route catalog PostgreSQL outage smoke suite
         run: bash tests/backend/integration/route_catalog_smoke.sh

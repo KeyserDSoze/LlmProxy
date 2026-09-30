@@ -43,6 +43,7 @@ for required in \
   REDIS_PASSWORD \
   LLM_PROXY_API_KEY \
   LLM_PROXY_API_KEY_PEPPER \
+  LLMPROXY_UPSTREAM_CREDENTIAL_KEY \
   GRAFANA_ADMIN_PASSWORD \
   DGX_NODE_BASE_ADDRESS \
   PROVIDER_MODEL_NAME; do
@@ -56,6 +57,10 @@ if [[ "$ASPNET_ENV" != "Production" ]]; then
 fi
 
 ENTRA_ENABLED_VALUE="$(read_env_value ENTRA_ENABLED | tr '[:upper:]' '[:lower:]')"
+if [[ "$ASPNET_ENV" == "Production" && "$ENTRA_ENABLED_VALUE" != "true" ]]; then
+  echo "Production requires ENTRA_ENABLED=true. Use the Development full-stack profile for private bootstrap/acceptance without Entra." >&2
+  exit 2
+fi
 if [[ "$ENTRA_ENABLED_VALUE" == "true" ]]; then
   require_env_value ENTRA_TENANT_ID
   require_env_value ENTRA_CLIENT_ID

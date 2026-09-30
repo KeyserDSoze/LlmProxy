@@ -104,6 +104,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD}
       Authentication__ApiKey: ${LLM_PROXY_API_KEY:?Run the full-stack init script or set LLM_PROXY_API_KEY}
       Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:?Run the full-stack init script or set LLM_PROXY_API_KEY_PEPPER}
+      Security__UpstreamCredentialEncryptionKey: ${LLMPROXY_UPSTREAM_CREDENTIAL_KEY:-}
 
       Redis__Enabled: "true"
       Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
@@ -149,6 +150,7 @@ services:
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
       Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}
       Bootstrap__NodeBaseAddress: ${DGX_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}
+      Bootstrap__NodeBearerToken: ${DGX_UPSTREAM_BEARER_TOKEN:-}
       Bootstrap__HardwareMetricsBaseAddress: ${DGX_HARDWARE_METRICS_BASE_ADDRESS:-}
       Bootstrap__NodeWeight: ${DGX_NODE_WEIGHT:-1}
       Bootstrap__NodeMaxConcurrency: ${DGX_NODE_MAX_CONCURRENCY:-4}

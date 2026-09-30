@@ -49,6 +49,7 @@ replace_once CHANGE_ME_POSTGRES_PASSWORD "$(hex_secret 24)"
 replace_once CHANGE_ME_REDIS_PASSWORD "$(hex_secret 24)"
 replace_once CHANGE_ME_LLM_PROXY_API_KEY "llmp_$(hex_secret 24)"
 replace_once CHANGE_ME_LLM_PROXY_API_KEY_PEPPER "$(hex_secret 32)"
+replace_once CHANGE_ME_UPSTREAM_CREDENTIAL_KEY "$(hex_secret 32)"
 replace_once CHANGE_ME_GRAFANA_ADMIN_PASSWORD "$(hex_secret 20)"
 
 chmod 600 "$ENV_FILE" 2>/dev/null || true

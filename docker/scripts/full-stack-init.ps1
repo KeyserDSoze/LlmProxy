@@ -30,6 +30,7 @@ $content = $content.Replace("CHANGE_ME_POSTGRES_PASSWORD", (New-HexSecret 24))
 $content = $content.Replace("CHANGE_ME_REDIS_PASSWORD", (New-HexSecret 24))
 $content = $content.Replace("CHANGE_ME_LLM_PROXY_API_KEY", ("llmp_" + (New-HexSecret 24)))
 $content = $content.Replace("CHANGE_ME_LLM_PROXY_API_KEY_PEPPER", (New-HexSecret 32))
+$content = $content.Replace("CHANGE_ME_UPSTREAM_CREDENTIAL_KEY", (New-HexSecret 32))
 $content = $content.Replace("CHANGE_ME_GRAFANA_ADMIN_PASSWORD", (New-HexSecret 20))
 Set-Content -Path $EnvFile -Value $content -NoNewline
 

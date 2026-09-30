@@ -21,6 +21,15 @@ class MockLlmHandler(BaseHTTPRequestHandler):
     def _expected(self, suffix: str) -> str:
         return f"{self.server.prefix}{suffix}"
 
+    def _authorized(self) -> bool:
+        if not self.server.api_key:
+            return True
+        expected = f"Bearer {self.server.api_key}"
+        if self.headers.get("Authorization") == expected:
+            return True
+        self._json(401, {"error": "unauthorized"})
+        return False
+
     def _json(self, status: int, payload: dict):
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
@@ -45,6 +54,8 @@ class MockLlmHandler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self):
+        if not self._authorized():
+            return
         if self.path in {self._expected("/healthz"), self._expected("/readyz")}:
             self._json(200, {
                 "status": "ok",
@@ -107,6 +118,9 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
             self._expected("/v1/responses"),
         }:
             self._json(404, {"error": "not_found", "path": self.path})
+            return
+
+        if not self._authorized():
             return
 
         length = int(self.headers.get("Content-Length", "0"))
@@ -180,6 +194,7 @@ def main():
     parser.add_argument("--prefix", default="")
     parser.add_argument("--name", required=True)
     parser.add_argument("--empty-health", action="store_true")
+    parser.add_argument("--api-key", default="")
     args = parser.parse_args()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), MockLlmHandler)
@@ -187,6 +202,7 @@ def main():
     server.runtime_name = args.name
     server.health_status = 200
     server.empty_health = args.empty_health
+    server.api_key = args.api_key
     server.serve_forever()
 
 
