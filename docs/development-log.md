@@ -439,3 +439,17 @@ Hardened Linux installation as an operator-facing product surface:
 - bootstrap failures before privileged installation preserve their temp directory and `bootstrap.log`;
 - public release downloads use unauthenticated `curl` when GitHub CLI is absent or not authenticated;
 - release docs now document progress, log paths, failure evidence and public download behavior.
+
+
+## 2026-09-30 — Cloudflare reverse-proxy + Entra browser flow
+
+Physical external acceptance through `llmproxy.opencode.zone` exposed two coupled issues: the Admin SPA loaded through Cloudflare but protected XHR calls were challenged directly to Microsoft, which browsers surface as a cross-origin `Failed to fetch`; and the gateway did not process the tunnel's forwarded HTTPS scheme/host before OIDC.
+
+Fixed the public browser path:
+
+- added explicit one-hop forwarded-header processing behind an opt-in `ReverseProxy:Enabled` setting;
+- Cloudflare-enabled Linux installs automatically persist `REVERSE_PROXY_ENABLED=true`;
+- protected `/admin` navigation now challenges Entra at the top-level browser request;
+- authorization middleware returns plain 401/403 for `/api/*` instead of issuing an OIDC redirect inside fetch;
+- frontend differentiates unauthenticated 401 from authenticated-but-forbidden 403;
+- documented `http://llmproxy:8080` as the Cloudflare origin and `https://<host>/signin-oidc` as the Entra Web redirect URI.

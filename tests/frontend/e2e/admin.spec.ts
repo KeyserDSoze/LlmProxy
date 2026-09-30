@@ -218,3 +218,7 @@ test('audit trail is visible to administrators', async ({ page }) => {
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
   await page.route('**/api/admin/**', route => route.fulfill({ status: 401, body: '' })); await page.goto('/'); await expect(page.getByText('Authentication is required.')).toBeVisible(); await expect(page.getByRole('link', { name: 'Sign in with Entra ID' })).toHaveAttribute('href', '/auth/login')
 })
+
+test('authorization failures do not invite an authentication loop', async ({ page }) => {
+  await page.route('**/api/admin/**', route => route.fulfill({ status: 403, body: '' })); await page.goto('/'); await expect(page.getByText(/Access denied/)).toBeVisible(); await expect(page.getByRole('link', { name: 'Sign in with Entra ID' })).toHaveCount(0)
+})

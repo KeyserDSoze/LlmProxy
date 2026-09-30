@@ -146,6 +146,7 @@ services:
       EntraId__ClientId: ${ENTRA_CLIENT_ID:-}
       EntraId__ClientSecret: ${ENTRA_CLIENT_SECRET:-}
       EntraId__CallbackPath: /signin-oidc
+      ReverseProxy__Enabled: ${REVERSE_PROXY_ENABLED:-false}
 
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
       Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}

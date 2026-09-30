@@ -20,11 +20,14 @@ using LlmProxy.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
+var reverseProxyEnabled = builder.Configuration.GetValue<bool>("ReverseProxy:Enabled");
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled");
 var configuredRoutingStrategy = ParseRoutingStrategy(builder.Configuration["Routing:Strategy"]);
 
@@ -127,6 +130,24 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminWrite", policy => policy.RequireRole("LlmProxy.Admin"));
     options.AddPolicy("SelfService", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.User"));
 });
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationMiddlewareResultHandler>();
+
+if (reverseProxyEnabled)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor |
+            ForwardedHeaders.XForwardedProto |
+            ForwardedHeaders.XForwardedHost;
+        options.ForwardLimit = 1;
+
+        // The production listener is loopback-only when Cloudflare Tunnel is enabled.
+        // cloudflared has a dynamic container address, so trust exactly one direct proxy hop.
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
 
 if (entraEnabled)
 {
@@ -146,6 +167,11 @@ using (var scope = app.Services.CreateScope())
 {
     var bootstrapper = scope.ServiceProvider.GetRequiredService<DatabaseBootstrapper>();
     await bootstrapper.InitializeAsync();
+}
+
+if (reverseProxyEnabled)
+{
+    app.UseForwardedHeaders();
 }
 
 app.UseStaticFiles();
@@ -209,7 +235,19 @@ if (entraEnabled)
 }
 
 app.MapGet("/", () => Results.Redirect("/admin/"));
-app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
+
+if (entraEnabled)
+{
+    // Make authentication a top-level browser navigation instead of an XHR/OIDC redirect.
+    // The latter is blocked by browsers as a cross-origin fetch and surfaces as "Failed to fetch".
+    app.MapFallbackToFile("/admin/me", "admin/index.html").RequireAuthorization("SelfService");
+    app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html").RequireAuthorization("AdminRead");
+}
+else
+{
+    app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
+}
+
 app.Run();
 
 static RoutingStrategy ParseRoutingStrategy(string? value)

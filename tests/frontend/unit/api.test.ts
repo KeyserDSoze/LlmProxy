@@ -107,10 +107,14 @@ describe('admin api client', () => {
     expect(fetch).toHaveBeenNthCalledWith(2, '/api/admin/nodes/node-1/upstream-credential', expect.objectContaining({ method: 'DELETE' }))
   })
 
-  it.each([401, 403])('maps HTTP %s to AUTH_REQUIRED', async status => {
-    vi.mocked(fetch).mockResolvedValue(new Response('', { status }))
-
+  it('maps HTTP 401 to AUTH_REQUIRED', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('', { status: 401 }))
     await expect(api.overview()).rejects.toThrow('AUTH_REQUIRED')
+  })
+
+  it('maps HTTP 403 to FORBIDDEN', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('', { status: 403 }))
+    await expect(api.overview()).rejects.toThrow('FORBIDDEN')
   })
 
   it('propagates the server error body for non-success responses', async () => {

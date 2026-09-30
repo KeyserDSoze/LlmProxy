@@ -95,6 +95,7 @@ export default function App() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (message === 'AUTH_REQUIRED') setAuthRequired(true)
+      else if (message === 'FORBIDDEN') setError('Access denied. Your Entra account is signed in but does not have an LlmProxy.Admin or LlmProxy.Reader role.')
       else setError(message)
     } finally {
       setLoading(false)

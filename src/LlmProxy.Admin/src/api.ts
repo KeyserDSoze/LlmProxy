@@ -7,8 +7,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init
   })
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     throw new Error('AUTH_REQUIRED')
+  }
+
+  if (response.status === 403) {
+    throw new Error('FORBIDDEN')
   }
 
   if (!response.ok) {

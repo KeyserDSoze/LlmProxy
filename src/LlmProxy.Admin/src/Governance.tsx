@@ -73,7 +73,10 @@ export default function Governance() {
       setRateUserKey(current => current || (nextUsers[0] ? `${nextUsers[0].tenantId}|${nextUsers[0].objectId}` : ''))
       setBudgetPolicyId(current => current && nextRateLimits.some(policy => policy.id === current) ? current : nextRateLimits[0]?.id || '')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      if (message === 'AUTH_REQUIRED') window.location.assign('/auth/login')
+      else if (message === 'FORBIDDEN') setError('Access denied. Your Entra account does not have the required LlmProxy administrative role.')
+      else setError(message)
     } finally {
       setLoading(false)
     }

@@ -24,7 +24,8 @@ export default function ReleaseNotesPage() {
   useEffect(() => {
     fetch('/api/admin/product', { credentials: 'same-origin' })
       .then(async response => {
-        if (response.status === 401 || response.status === 403) throw new Error('AUTH_REQUIRED')
+        if (response.status === 401) throw new Error('AUTH_REQUIRED')
+        if (response.status === 403) throw new Error('FORBIDDEN')
         if (!response.ok) throw new Error(await response.text() || `${response.status} ${response.statusText}`)
         return response.json() as Promise<ProductReleaseInfo>
       })
@@ -34,6 +35,10 @@ export default function ReleaseNotesPage() {
 
   if (error === 'AUTH_REQUIRED') {
     return <div className="releasePage"><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
+  }
+
+  if (error === 'FORBIDDEN') {
+    return <div className="releasePage"><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
   }
 
   if (error) return <div className="releasePage"><div className="error">{error}</div></div>

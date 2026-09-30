@@ -542,6 +542,11 @@ prepare_environment() {
   if [[ -n "${ENTRA_CLIENT_SECRET:-}" ]]; then set_env_value ENTRA_CLIENT_SECRET "$ENTRA_CLIENT_SECRET"; fi
   if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then set_env_value CLOUDFLARE_TUNNEL_TOKEN "$CLOUDFLARE_TUNNEL_TOKEN"; fi
 
+  if [[ -n "$(read_env_value CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
+    set_env_value REVERSE_PROXY_ENABLED true
+    log "Cloudflare Tunnel configured; enabling one-hop forwarded-header processing for external HTTPS/OIDC."
+  fi
+
   if [[ "$PREPARE_ONLY" != "true" ]]; then
     prompt_required_value DGX_NODE_BASE_ADDRESS "DGX/vLLM service root (for example http://10.0.0.21:8000)" || true
     prompt_required_value PROVIDER_MODEL_NAME "Exact provider model id exposed by vLLM" || true

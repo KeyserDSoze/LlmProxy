@@ -61,7 +61,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: init?.body ? { 'Content-Type': 'application/json', ...(init.headers ?? {}) } : init?.headers,
     ...init
   })
-  if (response.status === 401 || response.status === 403) throw new Error('AUTH_REQUIRED')
+  if (response.status === 401) throw new Error('AUTH_REQUIRED')
+  if (response.status === 403) throw new Error('FORBIDDEN')
   if (!response.ok) throw new Error((await response.text()) || `${response.status} ${response.statusText}`)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -103,6 +104,7 @@ export default function UserPortal() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (message === 'AUTH_REQUIRED') setAuthRequired(true)
+      else if (message === 'FORBIDDEN') setError('Access denied. Your Entra account needs the LlmProxy.User or LlmProxy.Admin role.')
       else setError(message)
     } finally {
       setLoading(false)

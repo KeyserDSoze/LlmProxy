@@ -249,6 +249,39 @@ This makes the same exact release consumable by conventional x86_64 Linux hosts 
 
 Repository CI still runs primarily on GitHub-hosted amd64 runners. A successful multi-architecture Buildx publication proves the ARM64 image builds, while real DGX Spark installation/runtime acceptance remains a target-environment acceptance step.
 
+## Cloudflare Tunnel and Entra ID
+
+When the bundled `cloudflared` service is used, publish exactly one Cloudflare origin:
+
+```text
+HTTP -> llmproxy:8080
+```
+
+Keep the host listener loopback-only:
+
+```env
+LLMPROXY_BIND_ADDRESS=127.0.0.1
+LLMPROXY_PORT=8081
+CLOUDFLARE_TUNNEL_TOKEN=<tunnel-token>
+REVERSE_PROXY_ENABLED=true
+```
+
+The Linux installer automatically sets `REVERSE_PROXY_ENABLED=true` whenever a persisted Cloudflare tunnel token is present. In that mode LlmProxy accepts one direct `X-Forwarded-*` proxy hop so OpenID Connect sees the original public HTTPS scheme/host.
+
+For a public hostname such as:
+
+```text
+https://llmproxy.example.com
+```
+
+register this exact **Web** redirect URI in the Microsoft Entra application:
+
+```text
+https://llmproxy.example.com/signin-oidc
+```
+
+The Admin SPA itself is protected at top-level navigation when Entra is enabled. Unauthenticated browser navigation therefore challenges Entra before the SPA loads. Protected API calls return a plain `401` rather than redirecting an XHR to Microsoft; this avoids the browser surfacing an opaque CORS `Failed to fetch`. A signed-in user without the required application role receives `403` instead of being sent through another login loop.
+
 ## Inference runtime boundary
 
 The installer deploys **LlmProxy and its control-plane dependencies**. It does not currently install or own llama.cpp/vLLM/model weights. The configured inference runtime must already expose the OpenAI-compatible service-root contract documented in `docs/dgx-vllm.md`.
