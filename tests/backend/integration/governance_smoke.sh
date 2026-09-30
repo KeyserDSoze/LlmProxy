@@ -211,13 +211,13 @@ user_restart3="$(call_model_with_key "$user_key_b_secret" /tmp/governance-user-r
 # The mock returns 7 completion tokens. Budget=17 and reservation=10 means the second request succeeds
 # only if the first settlement refunds 3 unused tokens. The third request must then be rejected at 14+10>17.
 curl --fail --silent -X PUT -H 'Content-Type: application/json' \
-  -d '{"logicalModel":"agic-code-fast","requestsPerWindow":100,"windowSeconds":60,"enabled":true}' \
+  -d '{"logicalModel":"agic-code-fast","requestsPerWindow":100,"windowSeconds":300,"enabled":true}' \
   "http://127.0.0.1:8080/api/admin/rate-limits/${policy_id}" >/dev/null
 
 budget_json="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
   -d '{"outputTokensPerWindow":17,"maxOutputTokensPerRequest":10}' \
   "http://127.0.0.1:8080/api/admin/rate-limits/${policy_id}/output-token-budget")"
-echo "$budget_json" | jq -e '.outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10 and .windowSeconds == 60' >/dev/null
+echo "$budget_json" | jq -e '.outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10 and .windowSeconds == 300' >/dev/null
 
 budget_list="$(curl --fail --silent http://127.0.0.1:8080/api/admin/output-token-budgets)"
 echo "$budget_list" | jq -e --arg policy "$policy_id" 'map(select(.id == $policy and .outputTokensPerWindow == 17 and .maxOutputTokensPerRequest == 10)) | length == 1' >/dev/null
@@ -239,6 +239,8 @@ invalid_budget_status="$(curl --silent --output /tmp/governance-budget-invalid.j
 jq -e '.error.code == "invalid_output_token_limit"' /tmp/governance-budget-invalid.json >/dev/null
 
 # The policy is durable even though local counters intentionally reset on restart.
+# Use a five-minute window here so runner/image/restart latency cannot accidentally roll the
+# fixed window between the pre-restart and post-restart assertions.
 "${COMPOSE[@]}" restart llmproxy >/dev/null
 wait_ready
 persisted_budget="$(curl --fail --silent http://127.0.0.1:8080/api/admin/output-token-budgets)"
