@@ -11,7 +11,8 @@ public sealed record RouteNodeSnapshot(
     bool Enabled,
     NodeStatus Status,
     int Weight,
-    int MaxConcurrency)
+    int MaxConcurrency,
+    string? UpstreamBearerTokenCiphertext = null)
 {
     public static RouteNodeSnapshot From(InferenceNode node)
         => new(
@@ -21,7 +22,8 @@ public sealed record RouteNodeSnapshot(
             node.Enabled,
             node.Status,
             node.Weight,
-            node.MaxConcurrency);
+            node.MaxConcurrency,
+            node.UpstreamBearerTokenCiphertext);
 }
 
 public sealed record RouteModelSnapshot(

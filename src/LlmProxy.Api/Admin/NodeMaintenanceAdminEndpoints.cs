@@ -6,6 +6,7 @@ using LlmProxy.Application.Abstractions;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Persistence;
+using LlmProxy.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.Admin;
@@ -91,6 +92,7 @@ public static class NodeMaintenanceAdminEndpoints
             GatewayDbContext dbContext,
             INodeMaintenanceCoordinator coordinator,
             IHttpClientFactory httpClientFactory,
+            UpstreamCredentialProtector upstreamCredentialProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -161,8 +163,8 @@ public static class NodeMaintenanceAdminEndpoints
 
             var client = httpClientFactory.CreateClient("maintenance");
             var serviceRoot = InferenceEndpoint.NormalizeBaseAddress(node.BaseAddress);
-            var health = await ProbeGetAsync(client, InferenceEndpoint.Combine(serviceRoot, "/health"), cancellationToken);
-            var models = await ProbeGetAsync(client, InferenceEndpoint.Combine(serviceRoot, "/v1/models"), cancellationToken);
+            var health = await ProbeGetAsync(client, InferenceEndpoint.Combine(serviceRoot, "/health"), node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
+            var models = await ProbeGetAsync(client, InferenceEndpoint.Combine(serviceRoot, "/v1/models"), node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
 
             var providerModels = await (
                 from deployment in dbContext.Deployments.AsNoTracking()
@@ -178,7 +180,7 @@ public static class NodeMaintenanceAdminEndpoints
             {
                 foreach (var providerModel in providerModels)
                 {
-                    warmups.Add(await WarmupAsync(client, serviceRoot, providerModel, cancellationToken));
+                    warmups.Add(await WarmupAsync(client, serviceRoot, providerModel, node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken));
                     if (!warmups[^1].Success)
                     {
                         break;
@@ -259,12 +261,13 @@ public static class NodeMaintenanceAdminEndpoints
         drained = node.Status == NodeStatus.Draining && coordination.Drained
     };
 
-    private static async Task<MaintenanceProbe> ProbeGetAsync(HttpClient client, Uri url, CancellationToken cancellationToken)
+    private static async Task<MaintenanceProbe> ProbeGetAsync(HttpClient client, Uri url, string? upstreamBearerTokenCiphertext, UpstreamCredentialProtector upstreamCredentialProtector, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            upstreamCredentialProtector.ApplyBearer(request, upstreamBearerTokenCiphertext);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             return new MaintenanceProbe(
                 url.ToString(),
@@ -287,6 +290,8 @@ public static class NodeMaintenanceAdminEndpoints
         HttpClient client,
         string serviceRoot,
         string providerModelName,
+        string? upstreamBearerTokenCiphertext,
+        UpstreamCredentialProtector upstreamCredentialProtector,
         CancellationToken cancellationToken)
     {
         var url = InferenceEndpoint.Combine(serviceRoot, "/v1/chat/completions");
@@ -303,6 +308,7 @@ public static class NodeMaintenanceAdminEndpoints
                     messages = new[] { new { role = "user", content = "ping" } }
                 })
             };
+            upstreamCredentialProtector.ApplyBearer(request, upstreamBearerTokenCiphertext);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             return new MaintenanceProbe(
                 url.ToString(),

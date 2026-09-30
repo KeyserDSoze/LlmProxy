@@ -85,15 +85,27 @@ public static class AdminEndpoints
         });
 
         group.MapGet("/nodes", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
-            Results.Ok(await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken)));
+        {
+            var nodes = await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken);
+            return Results.Ok(nodes.Select(ToNodeResponse));
+        });
 
         var createNode = group.MapPost("/nodes", async (
             CreateNodeRequest request,
             GatewayDbContext dbContext,
+            UpstreamCredentialProtector upstreamCredentialProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var node = new InferenceNode(request.Name, request.BaseAddress, request.Weight, request.MaxConcurrency);
+            if (!string.IsNullOrWhiteSpace(request.UpstreamBearerToken))
+            {
+                if (!upstreamCredentialProtector.IsConfigured)
+                {
+                    return Results.Problem("Security:UpstreamCredentialEncryptionKey must be configured before storing an upstream credential.", statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+                node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(request.UpstreamBearerToken));
+            }
             dbContext.Nodes.Add(node);
             AddAudit(dbContext, httpContext, "node.create", "node", node.Id.ToString(), new
             {
@@ -103,7 +115,7 @@ public static class AdminEndpoints
                 node.MaxConcurrency
             });
             await dbContext.SaveChangesAsync(cancellationToken);
-            return Results.Created($"/api/admin/nodes/{node.Id}", node);
+            return Results.Created($"/api/admin/nodes/{node.Id}", ToNodeResponse(node));
         });
 
         var updateNode = group.MapPut("/nodes/{id:guid}", async (
@@ -123,13 +135,49 @@ public static class AdminEndpoints
                 after = new { node.Name, node.BaseAddress, node.Weight, node.MaxConcurrency }
             });
             await dbContext.SaveChangesAsync(cancellationToken);
-            return Results.Ok(node);
+            return Results.Ok(ToNodeResponse(node));
+        });
+
+        var setUpstreamCredential = group.MapPut("/nodes/{id:guid}/upstream-credential", async (
+            Guid id,
+            SetNodeUpstreamCredentialRequest request,
+            GatewayDbContext dbContext,
+            UpstreamCredentialProtector upstreamCredentialProtector,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.BearerToken)) return Results.BadRequest(new { error = "BearerToken is required." });
+            if (!upstreamCredentialProtector.IsConfigured)
+            {
+                return Results.Problem("Security:UpstreamCredentialEncryptionKey must be configured before storing an upstream credential.", statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
+            if (node is null) return Results.NotFound();
+            node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(request.BearerToken));
+            AddAudit(dbContext, httpContext, "node.upstream_credential.set", "node", node.Id.ToString(), new { node.Name, configured = true });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(new { node.Id, hasUpstreamCredential = true });
+        });
+
+        var clearUpstreamCredential = group.MapDelete("/nodes/{id:guid}/upstream-credential", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
+            if (node is null) return Results.NotFound();
+            node.SetUpstreamBearerTokenCiphertext(null);
+            AddAudit(dbContext, httpContext, "node.upstream_credential.clear", "node", node.Id.ToString(), new { node.Name, configured = false });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.NoContent();
         });
 
         var testNodeConnection = group.MapPost("/nodes/{id:guid}/test-connection", async (
             Guid id,
             GatewayDbContext dbContext,
             IHttpClientFactory httpClientFactory,
+            UpstreamCredentialProtector upstreamCredentialProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -143,8 +191,8 @@ public static class AdminEndpoints
             var responsesUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/responses");
             var client = httpClientFactory.CreateClient("probe");
 
-            var health = await ProbeAsync(client, healthUrl, cancellationToken);
-            var openAi = await ProbeAsync(client, modelsUrl, cancellationToken);
+            var health = await ProbeAsync(client, healthUrl, node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
+            var openAi = await ProbeAsync(client, modelsUrl, node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
             var success = health.Success && openAi.Success;
 
             AddAudit(dbContext, httpContext, "node.test_connection", "node", node.Id.ToString(), new
@@ -365,6 +413,8 @@ public static class AdminEndpoints
                 updateRouting,
                 createNode,
                 updateNode,
+                setUpstreamCredential,
+                clearUpstreamCredential,
                 testNodeConnection,
                 drainNode,
                 enableNode,
@@ -411,12 +461,22 @@ public static class AdminEndpoints
             ?? "authenticated-admin";
     }
 
-    private static async Task<EndpointProbe> ProbeAsync(HttpClient client, Uri url, CancellationToken cancellationToken)
+    private static object ToNodeResponse(InferenceNode node) => new
+    {
+        node.Id, node.Name, node.BaseAddress, node.HardwareMetricsBaseAddress,
+        hasUpstreamCredential = !string.IsNullOrWhiteSpace(node.UpstreamBearerTokenCiphertext),
+        node.Enabled, node.Status, node.Weight, node.MaxConcurrency,
+        node.LastHealthCheckUtc, node.LastHealthyAtUtc, node.LastHealthLatencyMilliseconds,
+        node.LastHealthError, node.ConsecutiveHealthSuccesses, node.ConsecutiveHealthFailures
+    };
+
+    private static async Task<EndpointProbe> ProbeAsync(HttpClient client, Uri url, string? upstreamBearerTokenCiphertext, UpstreamCredentialProtector upstreamCredentialProtector, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            upstreamCredentialProtector.ApplyBearer(request, upstreamBearerTokenCiphertext);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             return new EndpointProbe(
                 url.ToString(),
@@ -435,7 +495,8 @@ public static class AdminEndpoints
         }
     }
 
-    public sealed record CreateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
+    public sealed record CreateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4, string? UpstreamBearerToken = null);
+    public sealed record SetNodeUpstreamCredentialRequest(string BearerToken);
     public sealed record UpdateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
     public sealed record UpdateRoutingRequest(RoutingStrategy Strategy);
     public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true);

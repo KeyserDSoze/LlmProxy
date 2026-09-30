@@ -7,6 +7,7 @@ using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Infrastructure.Security;
 using Microsoft.AspNetCore.Http.Features;
 
 namespace LlmProxy.Api.OpenAi;
@@ -45,7 +46,8 @@ public static class OpenAiEndpoints
         IDeploymentPerformanceTracker performanceTracker,
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
-        IHttpClientFactory httpClientFactory) =>
+        IHttpClientFactory httpClientFactory,
+        UpstreamCredentialProtector upstreamCredentialProtector) =>
         ForwardInferenceAsync(
             context,
             routingService,
@@ -54,6 +56,7 @@ public static class OpenAiEndpoints
             rateLimiter,
             metricsSink,
             httpClientFactory,
+            upstreamCredentialProtector,
             "/v1/chat/completions");
 
     private static Task ForwardResponsesAsync(
@@ -63,7 +66,8 @@ public static class OpenAiEndpoints
         IDeploymentPerformanceTracker performanceTracker,
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
-        IHttpClientFactory httpClientFactory) =>
+        IHttpClientFactory httpClientFactory,
+        UpstreamCredentialProtector upstreamCredentialProtector) =>
         ForwardInferenceAsync(
             context,
             routingService,
@@ -72,6 +76,7 @@ public static class OpenAiEndpoints
             rateLimiter,
             metricsSink,
             httpClientFactory,
+            upstreamCredentialProtector,
             "/v1/responses");
 
     private static async Task ForwardInferenceAsync(
@@ -82,6 +87,7 @@ public static class OpenAiEndpoints
         RequestRateLimiter rateLimiter,
         IRequestMetricsSink metricsSink,
         IHttpClientFactory httpClientFactory,
+        UpstreamCredentialProtector upstreamCredentialProtector,
         string upstreamPath)
     {
         var requestId = Guid.NewGuid();
@@ -213,7 +219,7 @@ public static class OpenAiEndpoints
                 finalNodeId = route.NodeId;
                 OpenAiRequestPayload.RewriteModel(requestObject, route.ProviderModelName);
 
-                using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath, requestId);
+                using var outbound = CreateOutboundRequest(context.Request, requestObject, route, upstreamPath, requestId, upstreamCredentialProtector);
                 HttpResponseMessage upstream;
                 var attemptStartedMilliseconds = stopwatch.ElapsedMilliseconds;
                 var upstreamStopwatch = Stopwatch.StartNew();
@@ -492,7 +498,8 @@ public static class OpenAiEndpoints
         JsonObject requestObject,
         RouteSelection route,
         string upstreamPath,
-        Guid requestId)
+        Guid requestId,
+        UpstreamCredentialProtector upstreamCredentialProtector)
     {
         var destination = new HttpRequestMessage(
             HttpMethod.Post,
@@ -502,6 +509,7 @@ public static class OpenAiEndpoints
         };
 
         CopyRequestHeaders(source, destination);
+        upstreamCredentialProtector.ApplyBearer(destination, route.UpstreamBearerTokenCiphertext);
         destination.Headers.Remove("X-LlmProxy-Request-Id");
         destination.Headers.TryAddWithoutValidation("X-LlmProxy-Request-Id", requestId.ToString());
         return destination;

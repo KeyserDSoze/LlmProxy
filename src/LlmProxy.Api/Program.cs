@@ -88,6 +88,7 @@ builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
 });
 
 builder.Services.AddSingleton<ApiKeyHasher>();
+builder.Services.AddSingleton<UpstreamCredentialProtector>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<DataRetentionService>();
 builder.Services.AddHostedService<DataRetentionWorker>();

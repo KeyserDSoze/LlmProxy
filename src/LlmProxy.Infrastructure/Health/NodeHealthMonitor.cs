@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Persistence;
+using LlmProxy.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,7 @@ namespace LlmProxy.Infrastructure.Health;
 public sealed class NodeHealthMonitor(
     IServiceScopeFactory scopeFactory,
     IHttpClientFactory httpClientFactory,
+    UpstreamCredentialProtector upstreamCredentialProtector,
     IConfiguration configuration,
     ILogger<NodeHealthMonitor> logger) : BackgroundService
 {
@@ -79,7 +81,9 @@ public sealed class NodeHealthMonitor(
 
         try
         {
-            using var response = await client.GetAsync(healthUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, healthUri);
+            upstreamCredentialProtector.ApplyBearer(request, node.UpstreamBearerTokenCiphertext);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 return new HealthCheckResult(true, stopwatch.ElapsedMilliseconds, null);

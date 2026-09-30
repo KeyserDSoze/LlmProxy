@@ -13,7 +13,8 @@ public sealed record DeploymentCandidate(
     int Weight,
     int MaxConcurrency,
     NodeStatus NodeStatus,
-    int NodeMaxConcurrency = int.MaxValue);
+    int NodeMaxConcurrency = int.MaxValue,
+    string? UpstreamBearerTokenCiphertext = null);
 
 public sealed record PublicModel(
     Guid Id,
@@ -29,7 +30,8 @@ public sealed record RouteSelection(
     string PublicModelName,
     string ProviderModelName,
     int MaxConcurrency,
-    int NodeMaxConcurrency = int.MaxValue);
+    int NodeMaxConcurrency = int.MaxValue,
+    string? UpstreamBearerTokenCiphertext = null);
 
 public enum RoutingSelectionFailure
 {

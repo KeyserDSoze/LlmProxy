@@ -20,6 +20,7 @@ public sealed class DatabaseBootstrapper(
     IApiCredentialCache credentialCache,
     IRouteCatalog routeCatalog,
     IRuntimeStateEventSink runtimeStateSink,
+    UpstreamCredentialProtector upstreamCredentialProtector,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -53,6 +54,11 @@ public sealed class DatabaseBootstrapper(
                 configuration.GetValue("Bootstrap:NodeWeight", 1),
                 configuration.GetValue("Bootstrap:NodeMaxConcurrency", 4));
             node.SetHardwareMetricsBaseAddress(configuration["Bootstrap:HardwareMetricsBaseAddress"]);
+            var upstreamBearerToken = configuration["Bootstrap:NodeBearerToken"];
+            if (!string.IsNullOrWhiteSpace(upstreamBearerToken))
+            {
+                node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(upstreamBearerToken));
+            }
 
             var model = new ModelDefinition(
                 configuration["Bootstrap:PublicModelName"] ?? "agic-code-fast",

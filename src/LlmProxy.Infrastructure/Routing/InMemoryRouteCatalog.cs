@@ -60,7 +60,8 @@ public sealed class InMemoryRouteCatalog : IRouteCatalog
                 EffectiveWeight(node.Weight, deployment.Weight),
                 deployment.MaxConcurrency ?? node.MaxConcurrency,
                 node.Status,
-                node.MaxConcurrency));
+                node.MaxConcurrency,
+                node.UpstreamBearerTokenCiphertext));
         }
 
         return Task.FromResult<IReadOnlyList<DeploymentCandidate>>(candidates);

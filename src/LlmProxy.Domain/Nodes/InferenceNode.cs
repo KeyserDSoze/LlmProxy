@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LlmProxy.Domain.Nodes;
 
 public sealed class InferenceNode
@@ -16,6 +18,8 @@ public sealed class InferenceNode
     public Guid Id { get; private set; } = Guid.NewGuid();
     public string Name { get; private set; } = string.Empty;
     public string BaseAddress { get; private set; } = string.Empty;
+    [JsonIgnore]
+    public string? UpstreamBearerTokenCiphertext { get; private set; }
     public string? HardwareMetricsBaseAddress { get; private set; }
     public bool Enabled { get; private set; } = true;
     public NodeStatus Status { get; private set; } = NodeStatus.Unknown;
@@ -33,6 +37,11 @@ public sealed class InferenceNode
         Rename(name);
         SetBaseAddress(baseAddress);
         SetCapacity(weight, maxConcurrency);
+    }
+
+    public void SetUpstreamBearerTokenCiphertext(string? ciphertext)
+    {
+        UpstreamBearerTokenCiphertext = string.IsNullOrWhiteSpace(ciphertext) ? null : ciphertext;
     }
 
     public void SetHardwareMetricsBaseAddress(string? baseAddress)

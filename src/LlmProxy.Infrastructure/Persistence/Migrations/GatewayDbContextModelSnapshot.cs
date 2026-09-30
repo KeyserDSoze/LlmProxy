@@ -130,6 +130,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("MaxConcurrency").HasColumnType("integer");
             b.Property<string>("Name").IsRequired().HasMaxLength(120).HasColumnType("character varying(120)");
             b.Property<int>("Status").HasColumnType("integer");
+            b.Property<string>("UpstreamBearerTokenCiphertext").HasMaxLength(4096).HasColumnType("character varying(4096)");
             b.Property<int>("Weight").HasColumnType("integer");
             b.HasKey("Id");
             b.HasIndex("Name").IsUnique();
