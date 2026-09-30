@@ -69,8 +69,12 @@ export const api = {
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>(`/api/admin/audit?take=${take}`),
-  createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
+  createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number; upstreamBearerToken?: string | null }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
+  setNodeUpstreamCredential: (id: string, bearerToken: string) =>
+    request<{ id: string; hasUpstreamCredential: boolean }>(`/api/admin/nodes/${id}/upstream-credential`, { method: 'PUT', body: JSON.stringify({ bearerToken }) }),
+  clearNodeUpstreamCredential: (id: string) =>
+    request<void>(`/api/admin/nodes/${id}/upstream-credential`, { method: 'DELETE' }),
   updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>(`/api/admin/nodes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   updateNodeHardwareMetrics: (id: string, baseAddress: string | null) =>

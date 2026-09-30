@@ -20,6 +20,8 @@ const mockedApi = vi.hoisted(() => ({
   audit: vi.fn(),
   createNode: vi.fn(),
   updateNode: vi.fn(),
+  setNodeUpstreamCredential: vi.fn(),
+  clearNodeUpstreamCredential: vi.fn(),
   updateNodeHardwareMetrics: vi.fn(),
   testNodeConnection: vi.fn(),
   drainNode: vi.fn(),
@@ -79,10 +81,12 @@ describe('admin application', () => {
     mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
       id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
-      weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+      hasUpstreamCredential: true, weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
       lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 12,
       lastHealthError: null, consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
     }])
+    mockedApi.setNodeUpstreamCredential.mockResolvedValue({ id: 'node-1', hasUpstreamCredential: true })
+    mockedApi.clearNodeUpstreamCredential.mockResolvedValue(undefined)
     mockedApi.updateNodeHardwareMetrics.mockResolvedValue({ id: 'node-1', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm' })
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
@@ -126,6 +130,7 @@ describe('admin application', () => {
     await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
+    expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
   })
 
   it('shows DGX hardware telemetry and can update the separate DCGM root', async () => {

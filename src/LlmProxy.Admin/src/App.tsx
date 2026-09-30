@@ -191,13 +191,31 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
   const [baseAddress, setBaseAddress] = useState('http://')
   const [weight, setWeight] = useState(1)
   const [maxConcurrency, setMaxConcurrency] = useState(4)
+  const [upstreamBearerToken, setUpstreamBearerToken] = useState('')
+  const [credentialNodeId, setCredentialNodeId] = useState('')
+  const [credentialSecret, setCredentialSecret] = useState('')
   const [connectionTests, setConnectionTests] = useState<Record<string, NodeConnectionTest>>({})
   const [testingNode, setTestingNode] = useState<string | null>(null)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    await api.createNode({ name, baseAddress, weight, maxConcurrency })
-    setName(''); setBaseAddress('http://'); setWeight(1); await refresh()
+    await api.createNode({ name, baseAddress, weight, maxConcurrency, upstreamBearerToken: upstreamBearerToken || null })
+    setName(''); setBaseAddress('http://'); setWeight(1); setUpstreamBearerToken(''); await refresh()
+  }
+
+  async function setCredential(event: FormEvent) {
+    event.preventDefault()
+    if (!credentialNodeId || !credentialSecret) return
+    await api.setNodeUpstreamCredential(credentialNodeId, credentialSecret)
+    setCredentialSecret('')
+    await refresh()
+  }
+
+  async function clearCredential() {
+    if (!credentialNodeId) return
+    await api.clearNodeUpstreamCredential(credentialNodeId)
+    setCredentialSecret('')
+    await refresh()
   }
 
   async function testConnection(node: Node) {
@@ -215,7 +233,7 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
     <section className="panel"><div className="panelTitle"><h2>Nodes</h2><span>{nodes.length} registered</span></div>
       <table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
         {nodes.map(node => <tr key={node.id}>
-          <td><strong>{node.name}</strong><div className="muted">weight {node.weight}</div></td>
+          <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
           <td><Status value={node.status} /></td>
           <td className="mono">{node.baseAddress}</td>
           <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
@@ -237,7 +255,15 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
       <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
       <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
       <label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={e => setMaxConcurrency(Number(e.target.value))} /></label>
+      <label>Upstream bearer token (optional)<input type="password" autoComplete="new-password" value={upstreamBearerToken} onChange={e => setUpstreamBearerToken(e.target.value)} placeholder="llama-local" /></label>
+      <p className="muted">The token is write-only: LlmProxy encrypts it and never returns it from the API.</p>
       <button className="primary">Add node</button>
+    </form>
+    <h2>Upstream authentication</h2>
+    <form onSubmit={setCredential}>
+      <label>Node<select value={credentialNodeId} onChange={e => setCredentialNodeId(e.target.value)} required><option value="">Select node</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name} · {node.hasUpstreamCredential ? 'configured' : 'none'}</option>)}</select></label>
+      <label>New bearer token<input type="password" autoComplete="new-password" value={credentialSecret} onChange={e => setCredentialSecret(e.target.value)} placeholder="write-only secret" /></label>
+      <div className="actions"><button className="primary" disabled={!credentialNodeId || !credentialSecret}>Set / rotate bearer</button><button type="button" className="secondary" disabled={!credentialNodeId} onClick={() => void clearCredential()}>Clear bearer</button></div>
     </form></section>
   </div>
 }

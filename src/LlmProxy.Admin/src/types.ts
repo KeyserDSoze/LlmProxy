@@ -112,6 +112,7 @@ export type Node = {
   name: string
   baseAddress: string
   hardwareMetricsBaseAddress?: string | null
+  hasUpstreamCredential?: boolean
   enabled: boolean
   status: string
   weight: number

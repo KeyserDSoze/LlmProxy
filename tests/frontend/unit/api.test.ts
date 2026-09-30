@@ -92,6 +92,21 @@ describe('admin api client', () => {
     }))
   })
 
+  it('writes and clears a node upstream bearer without a read endpoint', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'node-1', hasUpstreamCredential: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    await api.setNodeUpstreamCredential('node-1', 'llama-local')
+    await api.clearNodeUpstreamCredential('node-1')
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/admin/nodes/node-1/upstream-credential', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ bearerToken: 'llama-local' })
+    }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/admin/nodes/node-1/upstream-credential', expect.objectContaining({ method: 'DELETE' }))
+  })
+
   it.each([401, 403])('maps HTTP %s to AUTH_REQUIRED', async status => {
     vi.mocked(fetch).mockResolvedValue(new Response('', { status }))
 
