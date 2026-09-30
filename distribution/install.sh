@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION_FILE="$ROOT_DIR/VERSION"
-INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
+INSTALL_DIR="/opt/llmproxy"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "LlmProxy installation requires root privileges." >&2
@@ -17,10 +17,16 @@ if [[ ! -f "$VERSION_FILE" ]]; then
 fi
 
 for arg in "$@"; do
-  if [[ "$arg" == "--image-tag" ]]; then
-    echo "--image-tag is controlled by the immutable release bundle and cannot be overridden." >&2
-    exit 2
-  fi
+  case "$arg" in
+    --image-tag)
+      echo "--image-tag is controlled by the immutable release bundle and cannot be overridden." >&2
+      exit 2
+      ;;
+    --install-dir)
+      echo "Release installations use the canonical /opt/llmproxy layout; --install-dir is not supported." >&2
+      exit 2
+      ;;
+  esac
 done
 
 VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"

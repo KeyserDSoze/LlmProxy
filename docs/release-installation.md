@@ -43,12 +43,11 @@ gh auth login
 or export a token only for the installation/update command:
 
 ```bash
-export GH_TOKEN='<token-with-repository/read access>'
-export GHCR_USER='<github-user>'
-export GHCR_TOKEN='<token-with-read:packages>'
+export GH_TOKEN='<token-with-repository-read-and-package-read-access>'
+# Optional: set GHCR_USER/GHCR_TOKEN explicitly; otherwise bootstrap derives them when possible.
 ```
 
-The application environment file never stores `GH_TOKEN` or `GHCR_TOKEN`.
+The bootstrap can reuse authenticated GitHub CLI credentials or `GH_TOKEN` for the private release and GHCR login when the token also has package-read access. The application environment file never stores GitHub/GHCR download credentials.
 
 If the distribution becomes public later, the same bootstrap script can be downloaded with ordinary unauthenticated `curl`.
 
@@ -82,7 +81,20 @@ On a host where Docker is already installed:
   --provider-model '<exact-provider-model-id>'
 ```
 
-The bootstrap downloads the immutable bundle and checksum, verifies SHA-256, extracts it into a temporary directory and delegates privileged host work to the versioned installer.
+The bootstrap downloads the immutable bundle and checksum, verifies SHA-256, extracts it into a temporary directory and delegates privileged host work to the versioned installer. Release installations intentionally use the canonical `/opt/llmproxy` layout so `llmproxyctl`, updates and rollback always agree on one host-owned state root.
+
+For a DGX Spark/GB10 where the inference runtime runs on the **same Linux host** as Docker, configure the node from the container perspective and skip the host-side DGX precheck:
+
+```bash
+./llmproxy-bootstrap.sh \
+  --version 0.2.0-preview.8 \
+  --skip-docker-install \
+  --skip-dgx-check \
+  --dgx-url http://host.docker.internal:8080 \
+  --provider-model qwen3-next-80b-1m
+```
+
+The inference server must listen on an interface reachable from Docker; a process bound only to `127.0.0.1` is not reachable through `host.docker.internal`. Keep the inference port firewalled/trusted-network only.
 
 ## Operator command
 
