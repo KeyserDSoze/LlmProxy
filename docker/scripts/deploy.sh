@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_DOCKER_DIR="$ROOT_DIR/docker"
@@ -8,6 +8,12 @@ ENV_FILE="${LLMPROXY_ENV_FILE:-$DEPLOY_DIR/.env}"
 RUNTIME_DIR="$DEPLOY_DIR/runtime"
 IMAGE_TAG="${1:-${LLMPROXY_IMAGE_TAG:-main}}"
 VALIDATE_ONLY="${LLMPROXY_DEPLOY_VALIDATE_ONLY:-false}"
+
+deploy_log() {
+  printf '%s [llmproxy-deploy] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+deploy_log "Validating deployment prerequisites for image tag $IMAGE_TAG"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker Engine is required on the deployment host." >&2
@@ -90,7 +96,9 @@ fi
 
 # Fail before touching running containers if interpolation, required settings, profiles,
 # bind mounts or Compose syntax are invalid.
+deploy_log "Validating Docker Compose configuration"
 "${COMPOSE[@]}" config >/dev/null
+deploy_log "Docker Compose configuration: OK"
 
 if [[ "$VALIDATE_ONLY" == "true" ]]; then
   echo "Production deployment configuration validated successfully."
@@ -98,8 +106,12 @@ if [[ "$VALIDATE_ONLY" == "true" ]]; then
   exit 0
 fi
 
+deploy_log "Pulling immutable container image(s)"
 "${COMPOSE[@]}" pull
+
+deploy_log "Starting/updating containers"
 "${COMPOSE[@]}" up -d --no-build --remove-orphans
+deploy_log "Containers started; waiting for gateway health"
 
 if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
   # If a previous deployment enabled the profile and the token was deliberately removed,
@@ -128,6 +140,9 @@ wait_for_endpoint() {
   local attempt=0
   until probe "$url"; do
     attempt=$((attempt + 1))
+    if (( attempt == 1 || attempt % 5 == 0 )); then
+      deploy_log "Waiting for $name ($attempt/30): $url"
+    fi
     if [[ "$attempt" -ge 30 ]]; then
       echo "$name check failed: $url" >&2
       "${COMPOSE[@]}" ps >&2 || true
@@ -139,7 +154,9 @@ wait_for_endpoint() {
 }
 
 wait_for_endpoint "Liveness" "http://127.0.0.1:$PORT/healthz"
+deploy_log "Liveness: OK"
 wait_for_endpoint "Readiness" "http://127.0.0.1:$PORT/readyz"
+deploy_log "Readiness: OK"
 
 printf 'LlmProxy production deployment succeeded.\n'
 printf 'Image tag: %s\n' "$IMAGE_TAG"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
@@ -153,13 +153,67 @@ fi
 CALLER_USER="${SUDO_USER:-root}"
 CALLER_GROUP="$(id -gn "$CALLER_USER" 2>/dev/null || printf 'root')"
 
+LOG_DIR="${LLMPROXY_LOG_DIR:-/var/log/llmproxy}"
+INSTALL_STARTED_AT="$(date -u +%Y%m%dT%H%M%SZ)"
+INSTALL_LOG="$LOG_DIR/install-$INSTALL_STARTED_AT.log"
+CURRENT_STAGE="initialization"
+
+install -d -m 0750 "$LOG_DIR"
+touch "$INSTALL_LOG"
+chmod 0640 "$INSTALL_LOG"
+ln -sfn "$INSTALL_LOG" "$LOG_DIR/latest-install.log"
+
+if command -v tee >/dev/null 2>&1; then
+  exec > >(tee -a "$INSTALL_LOG") 2>&1
+else
+  exec >>"$INSTALL_LOG" 2>&1
+fi
+
+timestamp() {
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
 log() {
-  printf '[llmproxy-install] %s\n' "$*"
+  printf '%s [llmproxy-install] %s\n' "$(timestamp)" "$*"
 }
 
 warn() {
-  printf '[llmproxy-install] WARNING: %s\n' "$*" >&2
+  printf '%s [llmproxy-install] WARNING: %s\n' "$(timestamp)" "$*" >&2
 }
+
+stage() {
+  local number="$1"
+  local title="$2"
+  CURRENT_STAGE="$title"
+  printf '\n%s [llmproxy-install] ==> [%s/8] %s\n' "$(timestamp)" "$number" "$title"
+}
+
+installation_exit() {
+  local rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    return 0
+  fi
+
+  {
+    printf '\n============================================================\n'
+    printf 'LlmProxy installation FAILED\n'
+    printf 'Stage: %s\n' "$CURRENT_STAGE"
+    printf 'Exit code: %s\n' "$rc"
+    printf 'Persistent log: %s\n' "$INSTALL_LOG"
+    printf 'Latest log link: %s/latest-install.log\n' "$LOG_DIR"
+    printf '============================================================\n'
+  } >&2
+
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    printf '\nDocker container snapshot at failure:\n' >&2
+    docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' >&2 || true
+  fi
+}
+trap installation_exit EXIT
+
+log "Installation log: $INSTALL_LOG"
+log "Target directory: $INSTALL_DIR"
+log "Requested image tag: $IMAGE_TAG"
 
 have() {
   command -v "$1" >/dev/null 2>&1
@@ -579,7 +633,15 @@ EOF
   fi
 }
 
+stage 1 "Inspecting Linux host"
+log "Distribution: $DISTRO_NAME"
+log "Architecture: $ARCH"
+log "Caller: $CALLER_USER"
+
+stage 2 "Installing host prerequisites"
 install_prerequisites
+
+stage 3 "Checking Docker Engine and Compose"
 ensure_docker
 
 if getent group docker >/dev/null 2>&1 && [[ "$CALLER_USER" != "root" ]]; then
@@ -589,7 +651,10 @@ if getent group docker >/dev/null 2>&1 && [[ "$CALLER_USER" != "root" ]]; then
   fi
 fi
 
+stage 4 "Preparing persistent configuration"
 prepare_environment
+
+stage 5 "Checking container registry access"
 login_ghcr_if_configured
 
 if [[ "$PREPARE_ONLY" == "true" ]]; then
@@ -598,8 +663,10 @@ if [[ "$PREPARE_ONLY" == "true" ]]; then
   exit 0
 fi
 
+stage 6 "Checking inference runtime connectivity"
 check_dgx
 
+stage 7 "Deploying LlmProxy containers"
 log "Deploying LlmProxy full stack with image tag $IMAGE_TAG"
 LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
 LLMPROXY_ENV_FILE="$ENV_FILE" \
@@ -613,6 +680,7 @@ if [[ -n "${DGX_UPSTREAM_BEARER_TOKEN:-}" ]]; then
     bash "$ROOT_DIR/docker/scripts/deploy.sh" "$IMAGE_TAG"
 fi
 
+stage 8 "Finalizing installation"
 if [[ "$CALLER_USER" != "root" ]]; then
   chown -R "$CALLER_USER:$CALLER_GROUP" "$INSTALL_DIR/runtime" "$INSTALL_DIR/backups"
 fi
@@ -633,6 +701,8 @@ Grafana (default loopback bind): http://127.0.0.1:$GRAFANA_PORT_VALUE
 Environment file: $ENV_FILE
 Runtime assets:   $INSTALL_DIR/runtime
 Backups:          $INSTALL_DIR/backups
+Install log:       $INSTALL_LOG
+Latest log:        $LOG_DIR/latest-install.log
 
 The generated client inference credential, HMAC pepper and upstream-credential master key are stored only in the protected environment file.
 Back up LLM_PROXY_API_KEY_PEPPER and LLMPROXY_UPSTREAM_CREDENTIAL_KEY separately before treating this host as production.
