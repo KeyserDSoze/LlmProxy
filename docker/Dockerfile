@@ -6,6 +6,7 @@ COPY src/LlmProxy.Admin/ ./
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
+ARG LLMPROXY_VERSION=0.0.0-dev
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/LlmProxy.Domain/LlmProxy.Domain.csproj src/LlmProxy.Domain/
@@ -14,7 +15,7 @@ COPY src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj src/LlmProxy.Inf
 COPY src/LlmProxy.Api/LlmProxy.Api.csproj src/LlmProxy.Api/
 RUN dotnet restore src/LlmProxy.Api/LlmProxy.Api.csproj
 COPY src/ src/
-RUN dotnet publish src/LlmProxy.Api/LlmProxy.Api.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish src/LlmProxy.Api/LlmProxy.Api.csproj -c Release -o /app/publish --no-restore -p:Version="$LLMPROXY_VERSION" -p:InformationalVersion="$LLMPROXY_VERSION"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 ARG LLMPROXY_VERSION=dev

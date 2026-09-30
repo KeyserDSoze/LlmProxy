@@ -24,8 +24,12 @@ public static class ProductReleaseCatalog
             ? parsedBuildDate
             : (DateTimeOffset?)null;
 
-        var releases = BuildReleases();
-        var currentRelease = releases.FirstOrDefault(release => release.Version == version) ?? releases[0];
+        var historicalReleases = BuildReleases();
+        var matchingRelease = historicalReleases.FirstOrDefault(release => release.Version == version);
+        var currentRelease = matchingRelease ?? BuildAutomatedRelease(version, builtAtUtc);
+        IReadOnlyList<ProductRelease> releases = matchingRelease is null
+            ? new[] { currentRelease }.Concat(historicalReleases).ToArray()
+            : historicalReleases;
 
         return new ProductReleaseInfo(
             "LlmProxy",
@@ -36,6 +40,23 @@ public static class ProductReleaseCatalog
             builtAtUtc,
             releases);
     }
+
+    private static ProductRelease BuildAutomatedRelease(string version, DateTimeOffset? builtAtUtc) =>
+        new(
+            version,
+            DateOnly.FromDateTime((builtAtUtc ?? DateTimeOffset.UtcNow).UtcDateTime),
+            "Automated immutable main release",
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Changed"] =
+                [
+                    "This immutable distribution release was generated automatically from a validated main commit."
+                ],
+                ["Security"] =
+                [
+                    "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite."
+                ]
+            });
 
     private static IReadOnlyList<ProductRelease> BuildReleases() =>
     [

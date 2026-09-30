@@ -6,8 +6,8 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -20,15 +20,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate product version metadata
+      - name: Validate source and automatic release versioning
         shell: bash
         run: |
-          VERSION="$(bash docker/scripts/validate-release-version.sh)"
-          bash docker/scripts/validate-release-version.sh "$VERSION" >/dev/null
-          if bash docker/scripts/validate-release-version.sh "0.0.0-ci-mismatch" >/dev/null 2>&1; then
-            echo "Version validator accepted an intentionally mismatched release tag." >&2
+          set -euo pipefail
+          SOURCE_VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          test "$(bash docker/scripts/validate-release-version.sh "$SOURCE_VERSION")" = "$SOURCE_VERSION"
+          test "$(bash docker/scripts/validate-release-version.sh "0.0.1")" = "0.0.1"
+          if bash docker/scripts/validate-release-version.sh "not-semver" >/dev/null 2>&1; then
+            echo "Version validator accepted an invalid release version." >&2
             exit 1
           fi
+
+          EMPTY_TAGS="$(mktemp)"
+          TAGS="$(mktemp)"
+          trap 'rm -f "$EMPTY_TAGS" "$TAGS"' EXIT
+          test "$(bash docker/scripts/next-release-version.sh patch "$EMPTY_TAGS")" = "0.0.1"
+          printf '%s\n' v0.0.1 v0.0.9 v0.1.2 v0.1.3-rc.1 junk > "$TAGS"
+          test "$(bash docker/scripts/next-release-version.sh patch "$TAGS")" = "0.1.3"
+          test "$(bash docker/scripts/next-release-version.sh minor "$TAGS")" = "0.2.0"
+          test "$(bash docker/scripts/next-release-version.sh major "$TAGS")" = "1.0.0"
 
       - name: Validate tagged-release source gate
         shell: bash
@@ -274,3 +285,51 @@ jobs:
 
       - name: PowerShell backup and restore smoke suite
         run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
+
+
+  full_stack:
+    name: Redis + OpenTelemetry + Grafana full-stack gate
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run full-stack smoke
+        run: bash tests/backend/integration/full_stack_smoke.sh
+
+      - name: Run transactional outbox recovery smoke
+        run: bash tests/backend/integration/runtime_outbox_smoke.sh
+
+      - name: Run distributed output-token budget smoke
+        run: bash tests/backend/integration/token_budget_redis_smoke.sh
+
+      - name: Run cross-replica credential rotation smoke
+        run: bash tests/backend/integration/credential_rotation_smoke.sh
+
+      - name: Run safe node maintenance smoke
+        run: bash tests/backend/integration/node_maintenance_smoke.sh
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-stack-diagnostics
+          path: |
+            /tmp/full-stack-headers.txt
+            /tmp/full-stack-chat.json
+            /tmp/full-stack-trace.json
+            /tmp/full-stack-rate-*.*
+            /tmp/full-stack-capacity-*
+            /tmp/runtime-outbox-*.*
+            /tmp/token-budget-*.*
+            /tmp/credential-rotation-*.*
+            /tmp/maintenance-*.*
+            /tmp/llmproxy-full-stack-mock.log
+            /tmp/llmproxy-outbox-mock.log
+            /tmp/llmproxy-token-budget-mock.log
+            /tmp/llmproxy-rotation-mock.log
+            /tmp/llmproxy-maintenance-mock.log
+          if-no-files-found: ignore
+          retention-days: 7
