@@ -64,6 +64,28 @@ public sealed class EntraUserIdentityResolverTests
     }
 
     [Fact]
+    public async Task Configured_super_admin_matches_mapped_dotnet_name_claim()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EntraId:SuperAdmins"] = "admin@example.com"
+            })
+            .Build();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "admin@example.com"),
+            new Claim("oid", "object-1")
+        ], authenticationType: "test"));
+
+        var transformed = await new ConfiguredSuperAdminClaimsTransformation(configuration)
+            .TransformAsync(principal);
+
+        Assert.Equal("admin@example.com", principal.Identity!.Name);
+        Assert.True(transformed.IsInRole("LlmProxy.Admin"));
+    }
+
+    [Fact]
     public async Task Configured_super_admin_object_id_receives_admin_role()
     {
         var configuration = new ConfigurationBuilder()

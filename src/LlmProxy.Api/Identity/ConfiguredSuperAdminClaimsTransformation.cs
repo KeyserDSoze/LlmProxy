@@ -33,13 +33,20 @@ public sealed class ConfiguredSuperAdminClaimsTransformation(IConfiguration conf
             .Where(claim => claim.Type is
                 "preferred_username" or
                 "email" or
-                "upn" ||
+                "upn" or
+                "unique_name" ||
                 claim.Type == ClaimTypes.Email ||
-                claim.Type == ClaimTypes.Upn)
+                claim.Type == ClaimTypes.Upn ||
+                claim.Type == ClaimTypes.Name)
             .Select(claim => claim.Value?.Trim())
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Cast<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(principal.Identity?.Name))
+        {
+            principalNames.Add(principal.Identity.Name.Trim());
+        }
 
         var matched = configured.Any(entry =>
             entry.StartsWith("oid:", StringComparison.OrdinalIgnoreCase)
