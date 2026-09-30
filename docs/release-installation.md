@@ -42,7 +42,7 @@ gh auth login
 
 or export a token only for the installation/update command:
 
-````bash
+```bash
 export GH_TOKEN='<token-with-repository-read-and-package-read-access>'
 # Optional: set GHCR_USER/GHCR_TOKEN explicitly; otherwise bootstrap derives them when possible.
 ```
@@ -52,6 +52,17 @@ The bootstrap can reuse authenticated GitHub CLI credentials or `GH_TOKEN` for t
 If the distribution becomes public later, the same bootstrap script can be downloaded with ordinary unauthenticated `curl`.
 
 ## First installation from a release
+
+Production startup requires Entra. Before the first production deployment, provide the tenant application values through the installer environment (the installer writes them to the protected host configuration):
+
+```bash
+export ENTRA_ENABLED=true
+export ENTRA_TENANT_ID='<tenant-id>'
+export ENTRA_CLIENT_ID='<client-id>'
+export ENTRA_CLIENT_SECRET='<client-secret>'
+```
+
+If Entra is not available yet, use the Development/full-stack acceptance path for private validation; do not label a no-Entra deployment as Production.
 
 Download the bootstrap asset from the GitHub Release, or when GitHub CLI is authenticated:
 

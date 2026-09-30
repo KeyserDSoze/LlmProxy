@@ -95,6 +95,10 @@ From a repository checkout on a new Linux host:
 ```bash
 export GHCR_USER='<github-user>'
 export GHCR_TOKEN='<token-with-package-read-access>'
+export ENTRA_ENABLED=true
+export ENTRA_TENANT_ID='<tenant-id>'
+export ENTRA_CLIENT_ID='<client-id>'
+export ENTRA_CLIENT_SECRET='<client-secret>'
 
 sudo -E bash docker/scripts/install-linux.sh \
   --dgx-url http://10.0.0.21:8000 \
@@ -114,7 +118,7 @@ Generated passwords/API credential/pepper are not printed. The protected operato
 /opt/llmproxy/.env
 ```
 
-Back up `LLM_PROXY_API_KEY_PEPPER` separately before treating the host as production.
+Back up both `LLM_PROXY_API_KEY_PEPPER` and `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` separately before treating the host as production.
 
 ### Manual/redeployment path
 
