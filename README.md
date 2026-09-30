@@ -2,7 +2,7 @@
 
 Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
 
-> Current source candidate: `0.2.0-preview.8` (release-based Linux distribution + multi-architecture publication). The last fully validated runtime baseline remains `0.2.0-preview.7` until the candidate gates pass.
+> Immutable distribution releases are generated automatically from validated `main` pushes, starting at `v0.0.1`. The legacy `0.2.0-preview.*` values remain source-history metadata, not the automatic GitHub Release counter.
 
 ## What this product is
 
@@ -45,7 +45,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Transactional PostgreSQL -> Redis runtime-state outbox.
 - Metadata-only metrics/audit/OTEL; prompts/source/generated content are excluded by default.
 - PostgreSQL backup/restore operators.
-- SemVer/build identity, release notes, GHCR digest evidence, SPDX SBOM and SLSA provenance.
+- Automatic immutable SemVer releases from every green `main` push, with build identity, GitHub release notes, multi-arch GHCR digest evidence, SPDX SBOM and SLSA provenance.
 - Executable production environment acceptance for Linux host, direct DGX/vLLM and gateway Chat/Responses/SSE surfaces.
 
 ## Repository structure

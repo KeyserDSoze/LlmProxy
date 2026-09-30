@@ -6,7 +6,17 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ## [Unreleased]
 
-No unreleased product changes are recorded after the current preview candidate yet.
+### Added
+
+- Every successful push to `main` now creates one immutable distribution release automatically, starting at `v0.0.1`.
+- Automatic release numbering defaults to patch increments and supports intentional `release:minor` / `release:major` commit-message markers.
+- The release publication workflow is reusable and is invoked directly after tag allocation, avoiding reliance on workflow recursion from a `GITHUB_TOKEN`-created tag.
+
+### Changed
+
+- Distributed Full Stack acceptance is now a required job inside the main CI workflow, so the single successful CI result is the complete release gate.
+- Distribution SemVer is injected into the packaged .NET assembly and OCI metadata instead of requiring a bot commit that rewrites source version files.
+- Exact version, `latest`, `main`, `sha-<7>` and major/minor GHCR aliases are published from the same validated multi-architecture build.
 
 ## [0.2.0-preview.8] - 2026-09-30
 
@@ -14,7 +24,7 @@ No unreleased product changes are recorded after the current preview candidate y
 
 - Immutable GitHub Releases can distribute a checksummed Linux operator bundle containing the production Compose stack, observability configuration, operator scripts and the new `llmproxyctl` command.
 - `llmproxyctl` provides status, health, logs, lifecycle, diagnostics, explicit versioned update and local rollback operations while preserving `/opt/llmproxy/.env` and Docker data volumes.
-- A manual **Create immutable release tag** workflow validates the exact `main` SHA against successful CI and Full Stack evidence before creating the version tag.
+- An immutable release workflow validates the exact `main` SHA before publication; the later automatic release train removes the manual dispatch step.
 - Tagged container publication targets both `linux/amd64` and `linux/arm64`, enabling the same product release on x86_64 Linux and DGX Spark / GB10-class ARM64 hosts.
 - Tagged publication packages the Linux release bundle/bootstrap/checksums and creates the matching GitHub Release after container SBOM/provenance verification.
 - Per-node write-only upstream bearer credentials support protected llama.cpp/vLLM runtimes across health, model discovery, runtime metrics, maintenance warm-up and inference.

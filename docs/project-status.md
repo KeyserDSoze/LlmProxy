@@ -6,13 +6,16 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 
 ## Current validated product baseline
 
-Current formal source candidate:
+Current distribution release contract:
 
 ```text
-0.2.0-preview.8
+green main push -> automatic immutable release
+initial version  -> v0.0.1
+default bump     -> patch
+explicit bump    -> release:minor / release:major
 ```
 
-The fully validated runtime/release checkpoint remains `0.2.0-preview.7` below until the candidate passes repository and target-host validation.
+The older `0.2.0-preview.*` values remain source-history checkpoints rather than the generated distribution counter.
 
 
 Validated runtime/release checkpoint:
@@ -36,13 +39,14 @@ CI `35592623906` covers backend/unit/frontend/Playwright plus Docker/PostgreSQL 
 
 The validated deployment image is `ghcr.io/keyserdsoze/llmproxy:sha-df3ecf7`. Later documentation-only commits may republish mutable `main` but do not replace this runtime checkpoint.
 
-## Release-based distribution / 0.2.0-preview.8 — IMPLEMENTED IN SOURCE / VALIDATION PENDING
+## Automatic immutable distribution — IMPLEMENTED / LIVE VALIDATION
 
-The current source candidate adds an immutable Linux distribution layer over the existing production installer/deployer:
+The release layer now automatically turns each green `main` CI run into an immutable Linux distribution:
 
 ```text
-GitHub owner-triggered release tag
-  -> exact-SHA CI + Full Stack evidence gate
+main push
+  -> CI (including Full Stack gate)
+  -> automatic exact-SHA release tag
   -> tagged multi-arch GHCR image (linux/amd64 + linux/arm64)
   -> SPDX/SLSA verification
   -> checksummed Linux operator bundle
@@ -281,7 +285,7 @@ Prompts/source/generated output/API secrets remain excluded from persistent tele
 
 ## Current development focus
 
-The immediate step is validating the new release-distribution candidate before physical product acceptance continues:
+The immediate step is validating the first automatically generated `v0.0.x` releases and then continuing physical product acceptance:
 
 1. get green CI + Full Stack on the exact `0.2.0-preview.8` source and validate tagged multi-architecture publication/release assets;
 2. install/update/rollback the candidate on the actual ARM64 GB10 host;

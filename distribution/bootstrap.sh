@@ -15,8 +15,8 @@ and runs its installer. For the private repository authenticate with GitHub CLI
 (`gh auth login`) or export a GitHub token with repository-read and package-read access.
 
 Examples:
-  bootstrap.sh --version 0.2.0-preview.8 --dgx-url http://10.0.0.21:8000 --provider-model Qwen/model
-  DGX_UPSTREAM_BEARER_TOKEN=llama-local bootstrap.sh --version 0.2.0-preview.8 --skip-docker-install --dgx-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
+  bootstrap.sh --version 0.0.1 --dgx-url http://10.0.0.21:8000 --provider-model Qwen/model
+  DGX_UPSTREAM_BEARER_TOKEN=llama-local bootstrap.sh --version 0.0.1 --skip-docker-install --dgx-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
 
 Environment:
   GH_TOKEN / GITHUB_TOKEN          GitHub token for private release downloads

@@ -148,7 +148,7 @@ local RAM  = per-replica request-path L1
 - DONE: retention compaction serialized across replicas via PostgreSQL advisory transaction lock.
 - PLANNED/EXTERNAL: customer-specific Redis HA/redundancy design.
 
-## M12 — Product/release hardening — 0.2.0-preview.8 CANDIDATE / 0.2.0-preview.7 VALIDATED
+## M12 — Product/release hardening — AUTOMATIC IMMUTABLE RELEASE TRAIN
 
 - DONE: output-token quota V1.
 - DONE: credential rotation.
@@ -168,10 +168,11 @@ local RAM  = per-replica request-path L1
 - DONE: self-hosted manual acceptance workflow on the production runner labels.
 - DONE: Entra-owned personal API keys, `LlmProxy.User` self-service, own-usage view and administrator identity inventory.
 - DONE: aggregate Entra-user request quotas + Admin/User UI visibility in `0.2.0-preview.7`.
-- IMPLEMENTED / VALIDATION PENDING: checksummed Linux release bundle + bootstrap + `llmproxyctl` install/update/rollback path for `0.2.0-preview.8`.
-- IMPLEMENTED / VALIDATION PENDING: tagged GHCR publication for `linux/amd64` + `linux/arm64` and GitHub Release asset creation.
-- IMPLEMENTED / VALIDATION PENDING: owner-triggered immutable-tag workflow requiring exact-SHA CI + Full Stack evidence.
-- OWNER ACTION: after candidate validation, create real immutable releases only through the release workflow.
+- DONE: checksummed Linux release bundle + bootstrap + `llmproxyctl` install/update/rollback path.
+- DONE: multi-architecture `linux/amd64` + `linux/arm64` GHCR publication and GitHub Release assets.
+- DONE: every successful `main` CI run automatically allocates one immutable stable SemVer tag, starting at `v0.0.1`.
+- DONE: full-stack distributed acceptance is a required job inside CI, so no release can be minted without it.
+- DONE: patch is the default increment; commit markers `release:minor` / `release:major` intentionally advance larger components.
 
 Validated runtime checkpoint:
 
@@ -187,13 +188,13 @@ image digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53
 
 ## Current development order
 
-1. Validate `0.2.0-preview.8` CI/Full Stack, multi-architecture tagged publication and GitHub Release assets.
-2. Install/update/rollback `0.2.0-preview.8` on the ARM64 GB10 target; keep `sha-df3ecf7` as fallback until that evidence is green.
+1. Validate the first automatically generated `v0.0.x` GitHub Releases, including multi-architecture assets.
+2. Install/update/rollback the latest exact `0.0.x` release on the ARM64 GB10 target; keep `sha-7e1534c` as the pre-autorelease fallback checkpoint until target-host acceptance is green.
 2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM.
 3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
 4. Validate real Entra Admin/User/Reader login + personal-key self-service + aggregate user request quotas, then Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
 6. Expand remaining quota semantics only with explicit tokenizer/pricing requirements.
-7. Create a Git tag/GitHub Release only when explicitly requested.
+7. Preserve the automatic immutable release train; use `release:minor` / `release:major` only for intentional SemVer line changes.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.

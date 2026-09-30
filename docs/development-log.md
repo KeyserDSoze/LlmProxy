@@ -391,3 +391,25 @@ Hardened the immutable release bootstrap for operator updates: when already runn
 ## 2026-09-30 — Maintenance smoke L1 convergence hardening
 
 The final preview.8 Full Stack run exposed a test-only race after validated node resume: the peer's Admin node list reads PostgreSQL and can show `Healthy` before that peer has consumed the route-node event into its local inference L1. The maintenance smoke now waits for an actual peer inference request to succeed, proving cross-replica re-entry on the real request path rather than treating DB visibility as L1 convergence. Product maintenance semantics were unchanged.
+
+
+## 2026-09-30 — Automatic immutable release train — IMPLEMENTED / LIVE VALIDATION
+
+Replaced owner-triggered version publication with release-on-green-main automation.
+
+New contract:
+
+- every push to `main` receives a complete CI run and older main pushes are no longer cancelled by newer pushes;
+- distributed Full Stack acceptance is a required CI job rather than a separate release prerequisite workflow;
+- one successful CI run triggers automatic immutable tag allocation;
+- the first generated release is `v0.0.1`; normal successful pushes increment patch;
+- final commit messages can request `release:minor` or `release:major`;
+- source-history version files are not rewritten by bots;
+- distribution SemVer is injected into the packaged .NET assembly and OCI labels;
+- concurrent tag allocation retries against remote tags rather than reusing an existing version;
+- one source SHA receives at most one stable release tag;
+- tag allocation calls the reusable publication workflow directly, avoiding GitHub's `GITHUB_TOKEN` recursive-workflow suppression;
+- exact-version GHCR tags and GitHub Releases are refused if already present;
+- each release publishes amd64 + arm64, verifies SPDX/SLSA evidence and attaches the checksummed Linux bundle/bootstrap.
+
+The historical `0.2.0-preview.*` line remains source/product-history metadata. The installation/update release train is now independent and begins at `0.0.1`.

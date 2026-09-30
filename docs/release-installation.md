@@ -64,20 +64,23 @@ export ENTRA_CLIENT_SECRET='<client-secret>'
 
 If Entra is not available yet, use the Development/full-stack acceptance path for private validation; do not label a no-Entra deployment as Production.
 
-Download the bootstrap asset from the GitHub Release, or when GitHub CLI is authenticated:
+Resolve the latest validated immutable release and download its bootstrap asset:
 
 ```bash
-gh release download v0.2.0-preview.8 \
+LATEST_TAG="$(gh release view --repo KeyserDSoze/LlmProxy --json tagName --jq .tagName)"
+VERSION="${LATEST_TAG#v}"
+
+gh release download "$LATEST_TAG" \
   --repo KeyserDSoze/LlmProxy \
   --pattern llmproxy-bootstrap.sh
 chmod +x llmproxy-bootstrap.sh
 ```
 
-Then install an exact version:
+Then install that exact version:
 
 ```bash
 ./llmproxy-bootstrap.sh \
-  --version 0.2.0-preview.8 \
+  --version "$VERSION" \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-provider-model-id>'
 ```
@@ -86,7 +89,7 @@ On a host where Docker is already installed:
 
 ```bash
 ./llmproxy-bootstrap.sh \
-  --version 0.2.0-preview.8 \
+  --version "$VERSION" \
   --skip-docker-install \
   --dgx-url http://10.0.0.21:8000 \
   --provider-model '<exact-provider-model-id>'
@@ -112,7 +115,7 @@ Then provide the runtime bearer only to the installation command and configure t
 export DGX_UPSTREAM_BEARER_TOKEN='llama-local'
 
 ./llmproxy-bootstrap.sh \
-  --version 0.2.0-preview.8 \
+  --version "$VERSION" \
   --skip-docker-install \
   --dgx-url http://host.docker.internal:8080 \
   --provider-model qwen3-next-80b-1m
@@ -149,14 +152,14 @@ sudo llmproxyctl restart
 An update is always explicit and versioned:
 
 ```bash
-sudo -E llmproxyctl update 0.2.0-preview.9
+sudo -E llmproxyctl update 0.0.2
 ```
 
 For a private repository, make release-download credentials available to the command when required:
 
 ``bash
 export GH_TOKEN='<repo-read-token>'
-sudo -E llmproxyctl update 0.2.0-preview.9
+sudo -E llmproxyctl update 0.0.2
 unset GH_TOKEN
 ```
 
@@ -169,24 +172,24 @@ The initial install performs direct authenticated inference-runtime preflight. L
 Previously installed release bundles remain under `/opt/llmproxy/releases`.
 
 ```bash
-sudo llmproxyctl rollback 0.2.0-preview.8
+sudo llmproxyctl rollback 0.0.1
 ```
 
 Rollback switches the configured image tag and deploy tooling to that already-installed version. It does not roll back database schema/data automatically; a release that introduces a non-backward-compatible migration must document its database rollback requirements explicitly.
 
 ## Creating a release
 
-Releases are deliberately owner-triggered rather than automatic on every green `main` build.
+Release creation is automatic.
 
-1. Update the SemVer in all product sources and release notes.
-2. Push to `main`.
-3. Wait for **CI** and **Full stack smoke** to succeed on that exact SHA.
-4. In GitHub Actions run **Create immutable release tag**.
-5. Enter the exact version and confirmation `RELEASE`.
-6. The workflow creates `v<version>` only if the tag does not already exist and the exact main SHA has green CI/full-stack evidence.
-7. The existing **Publish container** workflow reacts to the tag, builds `linux/amd64` + `linux/arm64`, verifies SBOM/provenance, packages the Linux installer bundle and creates the GitHub Release.
+1. Push a commit to `main`.
+2. The complete **CI** workflow runs, including the distributed full-stack gate.
+3. If CI fails, no release is created.
+4. If CI succeeds, **Create immutable release tag** runs automatically for that exact SHA.
+5. The default version increment is patch. Put `release:minor` or `release:major` in the final commit message when that push should advance a larger SemVer component.
+6. The workflow creates the next unused stable `vMAJOR.MINOR.PATCH` tag, starting from `v0.0.1`.
+7. It directly calls the reusable **Publish container** workflow, which builds `linux/amd64` + `linux/arm64`, verifies SBOM/provenance, packages the Linux bundle and creates the GitHub Release.
 
-Exact release tags are immutable and must never be moved or reused for different bits.
+Every successful `main` push therefore produces at most one immutable release. Exact release tags and exact container tags are never moved or overwritten.
 
 ## ARM64 / DGX Spark
 

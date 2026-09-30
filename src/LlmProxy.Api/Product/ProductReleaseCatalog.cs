@@ -70,7 +70,7 @@ public static class ProductReleaseCatalog
                 [
                     "Immutable GitHub Releases can carry a checksummed Linux operator bundle with the production Compose assets, observability configuration and versioned installer tooling.",
                     "The llmproxyctl command provides status, health, logs, lifecycle, doctor, explicit update and local rollback operations while preserving host-owned configuration and Docker volumes.",
-                    "An owner-triggered GitHub Actions workflow creates an immutable version tag only after the exact main SHA has successful CI and Full stack smoke evidence.",
+                    "GitHub Actions can create immutable version tags only from an exact main SHA that has passed the repository release gates; the automatic release train later makes that publication step default for every green main push.",
                     "Tagged container publication targets both linux/amd64 and linux/arm64 so the same release can run on conventional Linux hosts and NVIDIA DGX Spark-class ARM64 systems.",
                     "Inference nodes can store a write-only upstream bearer credential encrypted with AES-GCM; health, model discovery, metrics, maintenance warm-up and inference use that credential without forwarding the client-facing LlmProxy API key.",
                     "Same-host llama.cpp/vLLM installation validates host.docker.internal through Docker's bridge gateway so a loopback-only runtime fails before deployment with an actionable bind-address error."

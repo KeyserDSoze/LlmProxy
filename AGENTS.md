@@ -55,13 +55,16 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 
 ## Current product version and validated baselines
 
-Current formal source candidate:
+Current distribution release model:
 
 ```text
-0.2.0-preview.8
+green main push -> automatic immutable vMAJOR.MINOR.PATCH
+first generated version -> v0.0.1
+default bump -> patch
+override markers -> release:minor / release:major
 ```
 
-The last fully validated runtime/release checkpoint remains `0.2.0-preview.7` until the candidate passes CI, Full Stack, multi-architecture publication and target-host acceptance.
+The historical `0.2.0-preview.*` line remains source/product-history metadata. Do not manually bump source files merely to create a distribution release.
 
 
 Validated runtime/release checkpoint:
@@ -92,7 +95,7 @@ GET /healthz
 GET /api/admin/product
 ```
 
-Operators read version/build/patch notes at `/admin/releases`. Keep `CHANGELOG.md`, `ProductReleaseCatalog`, Admin package version and compiled version aligned.
+Operators read version/build/patch notes at `/admin/releases`. Keep the legacy source-history metadata internally aligned, but do not use it as the automatic distribution counter; packaged release versions are injected by the release pipeline.
 
 ## Entra identity and personal API keys
 
@@ -244,7 +247,7 @@ Read `docs/versioning.md` before release changes.
 
 ## Current development focus / resume point
 
-Release-distribution candidate `0.2.0-preview.8` is implemented in source and requires validation before it replaces the `0.2.0-preview.7` baseline. Default next order:
+Automatic immutable distribution is now the release contract. Every successful `main` CI run, including the distributed full-stack gate, receives one immutable SemVer release. Default next order:
 
 1. obtain green CI + Full Stack for the `0.2.0-preview.8` source, validate the multi-architecture/tagged GitHub Release path, then install it on the actual ARM64 GB10 target;
 2. if candidate validation fails, continue using immutable `sha-df3ecf7` as the runtime baseline;

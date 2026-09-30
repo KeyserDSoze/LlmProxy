@@ -1,114 +1,188 @@
-# Product versioning and release notes
+# Product versioning and immutable release train
 
-LlmProxy uses **Semantic Versioning (SemVer)** from the first formal preview baseline onward.
+LlmProxy has two related version identities:
 
-## Current version
+1. **source-history version** — the legacy/manual feature-history value in `Directory.Build.props`, the Admin package and `CHANGELOG.md`;
+2. **distribution release version** — the immutable SemVer assigned automatically to every validated push on `main`.
+
+The distribution train starts at:
 
 ```text
+0.0.1
+```
+
+and is the version operators install, update, roll back and see in packaged runtime build identity.
+
+## Automatic release rule
+
+Every push to `main` runs the complete `CI` workflow. That workflow contains:
+
+- backend/unit/benchmark tests;
+- frontend build, Vitest and Playwright;
+- Docker/PostgreSQL integration suites;
+- protected-upstream credential smoke;
+- backup/restore validation;
+- the distributed Redis/OpenTelemetry/full-stack gate.
+
+If and only if that entire CI run succeeds, `.github/workflows/release.yml` automatically allocates one immutable release tag for that exact source SHA.
+
+There is no manual **Run workflow** step and no bot commit that edits version files.
+
+Default increment:
+
+```text
+v0.0.1
+v0.0.2
+v0.0.3
+...
+```
+
+The allocator reads existing stable `vMAJOR.MINOR.PATCH` tags and chooses the next unused version. Concurrent successful pushes race safely: tag creation is atomic and a loser refetches tags and retries with the next version.
+
+## Choosing patch, minor or major
+
+A validated `main` commit defaults to a **patch** increment.
+
+To intentionally change the release line, include exactly one marker anywhere in the final commit message:
+
+```text
+release:patch
+release:minor
+release:major
+```
+
+Examples:
+
+```text
+feat: add provider pools release:minor
+feat!: redesign public API release:major
+fix: handle empty stream release:patch
+```
+
+If no marker is present, patch is used. More than one marker is rejected.
+
+## No release on a red commit
+
+A failed CI run creates:
+
+- no version tag;
+- no exact-version GHCR image;
+- no GitHub Release.
+
+Fix the problem and push a new commit to `main`; that successful push receives the next immutable version.
+
+## One release per source SHA
+
+Before allocating a version, the release workflow checks whether the source SHA already has a stable `vX.Y.Z` tag.
+
+If it does, the workflow reuses that version instead of creating another version for the same bits. This makes workflow reruns idempotent at the Git tag layer.
+
+Exact version tags are never moved or reused.
+
+## Build/version injection
+
+Source-history metadata is still mechanically checked by:
+
+```bash
+bash docker/scripts/validate-release-version.sh
+```
+
+A generated distribution version is validated with:
+
+```bash
+bash docker/scripts/validate-release-version.sh 0.0.1
+```
+
+The generated version does **not** need to equal the source-history version. During the production Docker build it is injected into the .NET assembly with `Version` / `InformationalVersion`, and into OCI labels.
+
+Therefore a packaged `v0.0.7` runtime reports `0.0.7` through the product API even when the source-history baseline remains on the earlier preview-history line.
+
+## Publication flow
+
+```text
+push main
+   |
+   v
+CI (all gates, including distributed full stack)
+   |
+   | success
+   v
+automatic release workflow
+   |
+   +--> choose next SemVer
+   +--> create immutable vX.Y.Z tag
+   |
+   v
+reusable publication workflow
+   |
+   +--> verify exact source CI
+   +--> verify tag -> source SHA
+   +--> refuse existing exact GitHub Release/image tag
+   +--> build linux/amd64 + linux/arm64
+   +--> publish exact, major.minor, latest, main and sha-* aliases
+   +--> verify OCI digest
+   +--> verify SPDX SBOM
+   +--> verify SLSA/BuildKit provenance
+   +--> build checksummed Linux operator bundle
+   +--> create immutable GitHub Release
+```
+
+The release workflow calls the publication workflow directly. It does not rely on a tag push made with `GITHUB_TOKEN` to trigger another workflow.
+
+## Published container aliases
+
+For release `0.0.7` from source `abcdef1...`:
+
+```text
+ghcr.io/keyserdsoze/llmproxy:0.0.7    exact immutable release
+ghcr.io/keyserdsoze/llmproxy:0.0      moving major/minor alias
+ghcr.io/keyserdsoze/llmproxy:latest   latest validated release
+ghcr.io/keyserdsoze/llmproxy:main     latest validated main release
+ghcr.io/keyserdsoze/llmproxy:sha-abcdef1
+```
+
+Deployment/update automation should prefer the exact version. The moving aliases are convenience/discovery aliases.
+
+## Release assets
+
+Every immutable GitHub Release contains:
+
+- `llmproxy-<version>-linux.tar.gz`;
+- SHA-256 checksum for the bundle;
+- `llmproxy-bootstrap.sh`;
+- SHA-256 checksum for the bootstrap;
+- `release-manifest.json` with image/source/digest/SBOM/provenance evidence.
+
+The application image index contains both:
+
+```text
+linux/amd64
+linux/arm64
+```
+
+## Source-history line
+
+The repository has historical feature baselines such as:
+
+```text
+0.1.0-preview.1
+0.2.0-preview.1
+...
 0.2.0-preview.8
 ```
 
-This is the current source candidate. The last fully validated runtime/release checkpoint remains `0.2.0-preview.7` until candidate validation completes.
+Those entries remain in `CHANGELOG.md` and the built-in release history because they document how the product evolved before automatic distribution releases were introduced. They are no longer the counter used to mint new GitHub Releases.
 
-The product remains pre-1.0 while target-host, real DGX/Copilot/Entra/Cloudflare acceptance remains outside repository CI.
+## Runtime identity
 
-Runtime identity is exposed by:
+Runtime identity is exposed through:
 
 ```http
 GET /api/admin/product
 GET /healthz
 ```
 
-The React Admin UI reads version data from the backend and links to `/admin/releases`.
-
-## Sources of truth
-
-```text
-Directory.Build.props                  compiled product version
-src/LlmProxy.Admin/package.json        bundled Admin version
-src/LlmProxy.Api/Product/              runtime release catalog
-CHANGELOG.md                            product changelog
-/admin/releases                        operator-visible release history
-docker/scripts/validate-release-version.sh
-                                        mechanical version consistency check
-docker/scripts/validate-release-main-ci.sh
-                                        publication-source CI guard
-```
-
-The runtime/assembly version is authoritative; Admin package version must stay aligned.
-
-## Mechanical checks
-
-```bash
-bash docker/scripts/validate-release-version.sh
-bash docker/scripts/validate-release-version.sh 0.2.0-preview.8
-bash docker/scripts/validate-release-main-ci.sh <40-char-source-sha> <workflow-runs.json>
-```
-
-The version validator requires valid SemVer in `Directory.Build.props`, the same Admin package version and a matching `CHANGELOG.md` section. CI also exercises an intentionally invalid candidate.
-
-The publication-source guard accepts only a `CI` run whose event is `push`, branch is `main`, `head_sha` matches exactly and conclusion is `success`.
-
-## Version rules while pre-1.0
-
-- meaningful new capability or intentional public/operator contract change -> new preview/minor line;
-- compatible hardening/fix on the same preview line -> advance prerelease/patch sequence;
-- incompatible behavior must be explicit under `Changed` or `Breaking`;
-- never silently reuse a **tagged/published exact version** for different product bits.
-
-Formal sequence:
-
-```text
-0.1.0-preview.1  initial versioned product baseline
-0.2.0-preview.1  historical usage rollups + long-window reporting
-0.2.0-preview.2  GHCR SBOM/provenance + immutable digest verification
-0.2.0-preview.3  source-validated main/tag container publication
-0.2.0-preview.4  consolidated Linux production deployment + host installer
-0.2.0-preview.5  production environment acceptance evidence
-0.2.0-preview.6  Entra-owned personal API keys + user self-service
-0.2.0-preview.7  aggregate Entra user request quotas
-0.2.0-preview.8  release-based Linux distribution + linux/amd64 and linux/arm64 publication
-```
-
-`0.2.0-preview.6` adds the Entra user role and personal API-key ownership/self-service contract. `0.2.0-preview.7` adds aggregate Entra-user request quotas and is the current validated runtime baseline.
-
-`0.2.0-preview.5` owns the environment-acceptance operator contract: target-host/DGX/gateway probes, metadata-only evidence, canonical bodyless vLLM `/health` handling and repository-supported acceptance automation. Subsequent handover/documentation wiring on this preview line does not create an immutable exact release and does not change inference semantics.
-
-## Release-note categories
-
-```text
-Added
-Changed
-Fixed
-Security
-Deprecated
-Removed
-Breaking
-```
-
-Release notes describe product/operator-visible behavior. Engineering detail and exact evidence belong in `docs/development-log.md` and `docs/project-status.md`.
-
-## Release checklist
-
-For each product version:
-
-1. choose the new SemVer;
-2. update `Directory.Build.props`;
-3. align `src/LlmProxy.Admin/package.json`;
-4. update `CHANGELOG.md`;
-5. update `ProductReleaseCatalog` and release UI/tests;
-6. run the mechanical version validator;
-7. run standard CI and affected Full Stack smokes;
-8. for any container publication, require successful Actions-API source-CI validation before GHCR login;
-9. require post-push digest/SBOM/provenance verification;
-10. record exact green source/run/digest evidence only after validation;
-11. update canonical handover docs;
-12. for a distributable Linux release, build and checksum the operator bundle and require multi-architecture `linux/amd64` + `linux/arm64` publication;
-13. create a matching immutable Git tag/GitHub Release only through the owner-triggered release workflow after the exact main SHA has green CI and Full Stack evidence.
-
-## Build identity
-
-Production images receive:
+Production images also carry:
 
 ```text
 LLMPROXY_BUILD_SHA
@@ -118,77 +192,4 @@ org.opencontainers.image.revision
 org.opencontainers.image.created
 ```
 
-`/api/admin/product` exposes build revision/date, so operators can identify the exact running build without changing SemVer.
-
-Tagged distributable releases publish one OCI image index containing runnable `linux/amd64` and `linux/arm64` manifests. Repository CI remains primarily amd64; a successful Buildx multi-architecture publication proves the ARM64 image can be built, while real DGX Spark runtime acceptance remains target-environment evidence.
-
-## Container tag and source-validation rules
-
-A validated `main` SHA publishes:
-
-```text
-main
-sha-<7 chars>
-```
-
-A Git tag such as:
-
-```text
-v0.2.0-preview.8
-```
-
-must satisfy both conditions before publication:
-
-1. tag version exactly matches compiled version `0.2.0-preview.8`;
-2. the tagged source SHA already has successful repository `CI` from a push to `main`.
-
-A matching prerelease tag may publish:
-
-```text
-0.2.0-preview.8
-sha-<7 chars>
-```
-
-Prereleases do not update stable-looking aliases. A stable tag may additionally publish a major/minor alias.
-
-The same Actions-API source gate is used for ordinary main and Git-tag publications. For a `workflow_run`-triggered publication, the API-selected CI run ID must equal the triggering CI run ID. The gate runs before GHCR login.
-
-Docs/operator-only commits on `main` may republish mutable `main` and a new `sha-<7>` alias, but cannot overwrite an exact SemVer image because exact version tags are emitted only from matching Git tag events. Exact distributable tags are created only by the owner-triggered release workflow after exact-SHA CI and Full Stack validation.
-
-## OCI SBOM and provenance contract
-
-Every publication produced by `.github/workflows/container.yml` includes registry-native supply-chain evidence.
-
-Buildx:
-
-```text
-sbom: true
-provenance: mode=max
-```
-
-The post-push gate requires an immutable digest, reads the pushed OCI index back from GHCR, resolves attestation manifests, verifies in-toto layers, verifies `https://spdx.dev/Document`, verifies an SLSA provenance predicate and uploads `release-manifest.json`.
-
-Validated `0.2.0-preview.7` runtime evidence:
-
-```text
-commit                df3ecf7cb4ab6a6ff99fa6ea21b1169c44f15a38
-CI                    35592623906 SUCCESS
-Full Stack            35592624282 SUCCESS
-Publish GHCR          35593081824 SUCCESS
-image alias           sha-df3ecf7
-image digest          sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53ac2ae4d99
-attestation manifest  sha256:0da97b9a569aa974e9d77b5dd18d62082cde063fbf87221a908dc70d84fe60b8
-SBOM predicate        https://spdx.dev/Document
-provenance predicate  https://slsa.dev/provenance/v1
-release artifact      10635322261
-artifact digest       sha256:d0884b5f48e2ecf00f55a0e52d153131b827f880f41306b89b9a31e8cd93e51b
-validating CI run     35592623906
-```
-
-For production acceptance/deployment, `sha-df3ecf7` is the immutable image alias for the validated `preview.7` runtime checkpoint even if later documentation/operator commits move mutable `main`.
-
-## Current release state
-
-`0.2.0-preview.8` is the current source candidate for release-based Linux distribution, `llmproxyctl`, checksummed GitHub Release bundles and multi-architecture container publication. It is not yet a validated immutable release.
-
-`0.2.0-preview.7` remains the validated runtime baseline with the green CI, Full Stack and GHCR evidence recorded above. The `0.2.0-preview.8` tag/GitHub Release must be created only after the candidate source has successful exact-SHA CI and Full Stack evidence and the owner explicitly runs the release-tag workflow.
+For generated distribution versions that do not exist in the legacy source-history catalog, the product API synthesizes an `Automated immutable main release` entry while retaining the older feature-history entries.
