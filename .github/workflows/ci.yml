@@ -94,7 +94,7 @@ jobs:
           grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
           grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
           grep -F 'Using public GitHub Release download' distribution/bootstrap.sh >/dev/null
-          grep -F '[1/8]' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'stage 1 "Inspecting Linux host"' docker/scripts/install-linux.sh >/dev/null
           grep -F 'bootstrap FAILED' distribution/bootstrap.sh >/dev/null
 
           VERSION="$(bash docker/scripts/validate-release-version.sh)"
