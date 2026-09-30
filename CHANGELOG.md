@@ -17,6 +17,8 @@ No unreleased product changes are recorded after the current preview candidate y
 - A manual **Create immutable release tag** workflow validates the exact `main` SHA against successful CI and Full Stack evidence before creating the version tag.
 - Tagged container publication targets both `linux/amd64` and `linux/arm64`, enabling the same product release on x86_64 Linux and DGX Spark / GB10-class ARM64 hosts.
 - Tagged publication packages the Linux release bundle/bootstrap/checksums and creates the matching GitHub Release after container SBOM/provenance verification.
+- Per-node write-only upstream bearer credentials support protected llama.cpp/vLLM runtimes across health, model discovery, runtime metrics, maintenance warm-up and inference.
+- Same-host inference bootstrap validates `host.docker.internal` through Docker's bridge gateway and reports a concrete bind-address fix when the runtime is loopback-only.
 
 ### Changed
 
@@ -28,11 +30,12 @@ No unreleased product changes are recorded after the current preview candidate y
 - Linux release bundles are SHA-256 verified before privileged installation.
 - Installer callers cannot override the exact release image tag, and the release-tag workflow refuses existing tags rather than moving/reusing them.
 - GitHub repository/package download credentials remain outside the LlmProxy application environment.
+- Upstream provider bearer plaintext is never returned by Admin APIs or stored in PostgreSQL/Redis; AES-GCM ciphertext uses a stable deployment master key that must be backed up separately.
+- A bootstrap provider bearer may be supplied as a one-time installer environment variable and is removed from the long-lived container environment after encrypted bootstrap.
 
 ### Known scope
 
 - The release installer deploys LlmProxy and its control-plane dependencies; it does not install llama.cpp/vLLM or model weights.
-- Upstream inference bearer credentials are not yet modeled per node/provider. A protected inference runtime requiring its own bearer token still needs a trusted-network/no-upstream-auth configuration or a future provider-credential feature.
 
 ## [0.2.0-preview.7] - 2026-09-21
 

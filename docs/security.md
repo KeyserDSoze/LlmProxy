@@ -39,6 +39,16 @@ LlmProxy persists only a cryptographic HMAC hash plus safe metadata such as key 
 
 Raw keys are shown exactly once at creation or rotation. Responses containing the one-time secret use `Cache-Control: no-store`. Raw API keys must never be persisted in PostgreSQL, audit, request metrics, logs or runtime-state payloads.
 
+## Upstream inference credentials
+
+A protected llama.cpp/vLLM node may have its own bearer credential. This credential is **not** a client LlmProxy API key and the incoming client `Authorization` header is never forwarded upstream.
+
+Node upstream bearers are write-only. LlmProxy encrypts them with AES-GCM before persistence; PostgreSQL and Redis runtime snapshots carry ciphertext only. Admin node responses expose only `hasUpstreamCredential`, and audit records configuration state without secret material.
+
+The stable encryption key is supplied as `Security__UpstreamCredentialEncryptionKey` / `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` and must remain outside PostgreSQL. Every replica that may route to protected nodes needs the same key. Losing or changing it makes the stored node credentials undecryptable.
+
+For first installation, `DGX_UPSTREAM_BEARER_TOKEN` is a one-time bootstrap input. The Linux installer uses it for authenticated connectivity checks and initial node creation, then removes it from the long-lived container environment after encrypted bootstrap.
+
 Revocation disables the existing key. Rotation changes the prefix/hash in place so credential identity, ownership, Usage Group, rate policies and usage history remain associated with the same credential record.
 
 A user self-service request can list, rotate or revoke only a credential whose stored `(OwnerTenantId, OwnerObjectId)` matches the current Entra `(tid, oid)` pair.

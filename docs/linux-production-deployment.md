@@ -268,22 +268,26 @@ REDIS_PASSWORD=...
 LLM_PROXY_API_KEY=...
 LLM_PROXY_API_KEY_PEPPER=...
 GRAFANA_ADMIN_PASSWORD=...
+LLMPROXY_UPSTREAM_CREDENTIAL_KEY=<stable-32-byte-hex-key>
 DGX_NODE_BASE_ADDRESS=http://10.0.0.21:8000
 PROVIDER_MODEL_NAME=<exact-vllm-model-id>
 ```
 
 `DGX_NODE_BASE_ADDRESS` is deliberately a `CHANGE_ME` placeholder in the production template. This prevents a copied template from accidentally passing deployment validation against an example IP.
 
-The default production template keeps:
+The production template is intentionally incomplete until identity is configured. The application itself refuses `Production` startup without Entra, and `deploy.sh` now rejects that state before touching containers. Set:
 
 ```env
 ASPNETCORE_ENVIRONMENT=Production
-ENTRA_ENABLED=false
+ENTRA_ENABLED=true
+ENTRA_TENANT_ID=<tenant-id>
+ENTRA_CLIENT_ID=<client-id>
+ENTRA_CLIENT_SECRET=<client-secret>
 CLOUDFLARE_TUNNEL_TOKEN=
 GRAFANA_BIND_ADDRESS=127.0.0.1
 ```
 
-This is intentional for first private-LAN acceptance. Do not enable public Cloudflare exposure while Entra administration is disabled; the deploy script refuses that combination.
+For private no-Entra acceptance before the real tenant is available, use the Development/full-stack acceptance path rather than representing that host as production.
 
 ## 7. DGX/vLLM connectivity
 
@@ -301,6 +305,17 @@ http://10.0.0.21:8000/vllm
 ```
 
 LlmProxy derives `/health`, `/v1/models`, `/v1/chat/completions` and `/v1/responses` from that complete root.
+
+### Same-host llama.cpp / DGX Spark
+
+When llama.cpp runs on the same Linux host as Docker, do not leave it bound only to `127.0.0.1`. Bind it to the Docker bridge gateway so the LlmProxy container can reach it without exposing the runtime on all LAN interfaces:
+
+```bash
+DOCKER_HOST_GATEWAY="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+llama-server --host "$DOCKER_HOST_GATEWAY" --port 8080 --api-key llama-local ...
+```
+
+Configure `DGX_NODE_BASE_ADDRESS=http://host.docker.internal:8080`. For first installation, pass `DGX_UPSTREAM_BEARER_TOKEN=llama-local` in the installer environment; it is encrypted into the node and removed from the long-lived container environment after bootstrap.
 
 ## 8. Manual private-LAN deployment / later updates
 
@@ -471,6 +486,7 @@ Preserve together:
 
 - PostgreSQL dump + checksum + metadata;
 - `LLM_PROXY_API_KEY_PEPPER`;
+- `LLMPROXY_UPSTREAM_CREDENTIAL_KEY`;
 - Entra/Cloudflare/deployment secrets in the external secret manager.
 
 Read `docs/backup-restore.md` before restore.

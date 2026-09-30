@@ -42,7 +42,7 @@ gh auth login
 
 or export a token only for the installation/update command:
 
-```bash
+````bash
 export GH_TOKEN='<token-with-repository-read-and-package-read-access>'
 # Optional: set GHCR_USER/GHCR_TOKEN explicitly; otherwise bootstrap derives them when possible.
 ```
@@ -83,18 +83,35 @@ On a host where Docker is already installed:
 
 The bootstrap downloads the immutable bundle and checksum, verifies SHA-256, extracts it into a temporary directory and delegates privileged host work to the versioned installer. Release installations intentionally use the canonical `/opt/llmproxy` layout so `llmproxyctl`, updates and rollback always agree on one host-owned state root.
 
-For a DGX Spark/GB10 where the inference runtime runs on the **same Linux host** as Docker, configure the node from the container perspective and skip the host-side DGX precheck:
+For a DGX Spark/GB10 where the inference runtime runs on the **same Linux host** as Docker, bind the runtime to Docker's bridge-gateway address instead of loopback. This keeps it reachable from LlmProxy without publishing it on every LAN interface:
 
 ```bash
+DOCKER_HOST_GATEWAY="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+
+llama-server \
+  --host "$DOCKER_HOST_GATEWAY" \
+  --port 8080 \
+  --api-key llama-local \
+  ...your existing model/context arguments...
+```
+
+Then provide the runtime bearer only to the installation command and configure the node from the container perspective:
+
+```bash
+export DGX_UPSTREAM_BEARER_TOKEN='llama-local'
+
 ./llmproxy-bootstrap.sh \
   --version 0.2.0-preview.8 \
   --skip-docker-install \
-  --skip-dgx-check \
   --dgx-url http://host.docker.internal:8080 \
   --provider-model qwen3-next-80b-1m
+
+unset DGX_UPSTREAM_BEARER_TOKEN
 ```
 
-The inference server must listen on an interface reachable from Docker; a process bound only to `127.0.0.1` is not reachable through `host.docker.internal`. Keep the inference port firewalled/trusted-network only.
+For `host.docker.internal`, the installer resolves Docker's bridge gateway and performs authenticated `/health` + `/v1/models` preflight checks against that address. A runtime still bound only to `127.0.0.1` therefore fails before LlmProxy deployment with the gateway address to use.
+
+During first bootstrap the bearer is encrypted into the node record, then the installer redeploys LlmProxy without `DGX_UPSTREAM_BEARER_TOKEN` so the plaintext is not retained in the long-lived container environment. Keep the inference port restricted to the Docker bridge/trusted network.
 
 ## Operator command
 
@@ -103,7 +120,7 @@ After installation:
 ```bash
 llmproxyctl status
 llmproxyctl health
-lmproxyctl version
+llmproxyctl version
 llmproxyctl doctor
 llmproxyctl logs
 ```
@@ -136,7 +153,7 @@ The update path downloads and verifies the new operator bundle, preserves `/opt/
 
 ## Rollback
 
-Previously installed release bundles remain under `/home/llmproxy/releases`.
+Previously installed release bundles remain under `/opt/llmproxy/releases`.
 
 ```bash
 sudo llmproxyctl rollback 0.2.0-preview.8
@@ -175,4 +192,6 @@ Repository CI still runs primarily on GitHub-hosted amd64 runners. A successful 
 
 The installer deploys **LlmProxy and its control-plane dependencies**. It does not currently install or own llama.cpp/vLLM/model weights. The configured inference runtime must already expose the OpenAI-compatible service-root contract documented in `docs/dgx-vllm.md`.
 
-For the current code line, upstream inference bearer credentials are not yet a node setting. An inference runtime that requires its own bearer token needs either a trusted-network/no-upstream-auth configuration or a future LlmProxy provider-credential feature. Do not confuse the client-facing LlmProxy API key with an upstream provider credential.
+Protected inference runtimes may use a per-node upstream bearer credential. The Admin API/UI treats it as write-only, persists only AES-GCM ciphertext, and applies it to health/model probes, runtime metrics, maintenance warm-up and inference. The deployment master key `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` is an external recovery dependency.
+
+The client-facing LlmProxy API key and the upstream provider credential are deliberately different trust boundaries: the former authenticates a client to LlmProxy and is never forwarded; the latter authenticates LlmProxy to the selected inference node.

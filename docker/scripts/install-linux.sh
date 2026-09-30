@@ -467,6 +467,11 @@ prepare_environment() {
     chmod 0600 "$ENV_FILE"
   fi
 
+  if is_missing_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY; then
+    log "Generating upstream-credential encryption key for this installation."
+    set_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY "$(hex_secret 32)"
+  fi
+
   set_env_value GHCR_OWNER "$GHCR_OWNER_VALUE"
   set_env_value LLMPROXY_IMAGE_TAG "$IMAGE_TAG"
 

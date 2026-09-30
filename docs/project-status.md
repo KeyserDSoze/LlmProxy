@@ -54,14 +54,14 @@ GitHub owner-triggered release tag
 
 Host-owned `/opt/llmproxy/.env` and Docker volumes remain outside versioned bundles. The release installer reuses `docker/scripts/install-linux.sh` and `deploy.sh`; it does not fork a second deployment implementation.
 
-The inference-runtime boundary is unchanged: the distribution installs LlmProxy/control-plane dependencies, not llama.cpp/vLLM/model weights. Upstream provider bearer credentials remain a separate future feature.
+The distribution still installs LlmProxy/control-plane dependencies rather than llama.cpp/vLLM/model weights. Protected inference runtimes are now supported: nodes can carry an AES-GCM-encrypted write-only upstream bearer, and same-host llama.cpp is validated through Docker's bridge gateway instead of relying on a skipped precheck.
 
 Validation still required before promotion:
 
 - green CI and Full Stack on the exact candidate SHA;
 - successful Buildx publication for both amd64 and arm64 plus existing SBOM/provenance verification;
 - owner-triggered immutable tag and GitHub Release asset creation;
-- first real install/update/rollback exercise on the GB10 ARM64 host.
+- first real install/update/rollback exercise on the GB10 ARM64 host, including bridge-bound llama.cpp and its upstream bearer credential.
 
 ## Product/versioning — DONE / VALIDATED
 

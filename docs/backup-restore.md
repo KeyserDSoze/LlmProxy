@@ -36,13 +36,16 @@ The database archive is **not sufficient by itself** to recover authentication. 
 
 ```text
 Authentication__ApiKeyPepper
+Security__UpstreamCredentialEncryptionKey / LLMPROXY_UPSTREAM_CREDENTIAL_KEY
 PostgreSQL credentials
 Redis credentials
 Entra client secret, if used
 TLS/tunnel/domain secrets and configuration
 ```
 
-`Authentication__ApiKeyPepper` is critical. Stored credentials are HMACs; restoring the database with a different pepper makes existing client secrets fail authentication even though the credential rows are intact.
+`Authentication__ApiKeyPepper` is critical. Stored client credentials are HMACs; restoring the database with a different pepper makes existing client secrets fail authentication even though the credential rows are intact.
+
+`LLMPROXY_UPSTREAM_CREDENTIAL_KEY` is independently critical for protected inference nodes. Their provider bearers are stored as AES-GCM ciphertext in PostgreSQL; restoring the database without the matching master key preserves the rows but makes those upstream credentials undecryptable. Neither the raw provider bearer nor the encryption key belongs in the database backup metadata.
 
 Do not put these secrets into the database dump metadata file or Git.
 
@@ -171,6 +174,7 @@ A successful `pg_restore` command is not enough. Verify at minimum:
 1. `/readyz` becomes healthy;
 2. expected node/model/deployment catalog exists;
 3. a pre-backup API credential still authenticates using the **same pepper**;
+4. protected inference-node credentials still work using the **same upstream encryption master key**;
 4. Usage Group membership is preserved;
 5. request-rate and output-token policy definitions are preserved;
 6. audit/history row counts are plausible for the selected backup point;

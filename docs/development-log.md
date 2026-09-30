@@ -354,3 +354,21 @@ Validation is intentionally not claimed yet. Required evidence: green candidate 
 The first `0.2.0-preview.8` validation run exposed a timing race in the existing two-gateway aggregate-user-quota smoke: the first peer request could arrive before the newly-created policy reached that peer's local L1, so it returned 200 without incrementing the shared user counter.
 
 The smoke now proves peer policy application explicitly by probing until the peer enforces the quota, resets only the isolated Redis test counter used by that convergence probe, and then runs the actual primary/peer/primary 200/200/429 assertion from a deterministic empty window. Product quota semantics were not changed.
+
+
+## 2026-09-30 — Protected local inference + same-host Docker reachability — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Closed the two blockers for a protected llama.cpp/vLLM runtime on the same GB10 host:
+
+- added per-node write-only upstream bearer credentials;
+- encrypt provider bearers with AES-GCM before PostgreSQL persistence and Redis/L1 runtime propagation;
+- keep the stable encryption master key outside PostgreSQL as `LLMPROXY_UPSTREAM_CREDENTIAL_KEY`;
+- apply the node credential to health, model discovery, vLLM metrics, maintenance warm-up and inference while never forwarding the client-facing LlmProxy API key;
+- added Admin API/UI set/rotate/clear flows that expose only credential presence;
+- added optional one-time `DGX_UPSTREAM_BEARER_TOKEN` bootstrap and remove it from the long-lived container environment after encrypted bootstrap;
+- changed same-host Linux preflight to resolve Docker's bridge gateway for `host.docker.internal`, so a llama-server still bound only to loopback fails with an actionable bind-address message;
+- added a focused protected-upstream integration smoke;
+- made upgrades from earlier installs generate the new stable upstream-credential encryption key when absent;
+- aligned deployment validation with the existing runtime rule that Production requires Entra.
+
+The inference runtime/model weights remain externally managed; the gateway now owns the secure connectivity/authentication boundary to that runtime.

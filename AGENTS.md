@@ -136,6 +136,8 @@ Read `docs/operations.md` and `docs/capacity-control.md` before changing mainten
 
 Credentials persist only HMAC hashes and safe metadata. Rotation is an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/hash, one-time replacement secret, `Cache-Control: no-store`, safe audit only.
 
+Inference-node provider credentials are a separate trust boundary from client API keys. A node bearer is write-only and persisted/replicated only as AES-GCM ciphertext; `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` is the external recovery key shared by gateway replicas. The client Authorization header must never be forwarded to an inference provider.
+
 Credential request-rate and output-token governance use persisted `RateLimitPolicy`; aggregate Entra-user request quotas use `UserRateLimitPolicy`. Both request scopes publish through the RatePolicy runtime-state channel and must remain DB-free on the ordinary inference path. Redis-enabled distributed token/capacity admission fails closed where the existing contract requires it.
 
 Do not add input/total-token admission without explicit tokenizer/estimation semantics. Do not add monetary budgets without stable pricing/accounting semantics.
