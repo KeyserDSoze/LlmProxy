@@ -173,4 +173,13 @@ if [[ ! -x "$BUNDLE_DIR/distribution/install.sh" ]]; then
   chmod +x "$BUNDLE_DIR/distribution/install.sh" 2>/dev/null || true
 fi
 
-sudo -E bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+  bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
+else
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Root privileges are required to install LlmProxy and sudo is not available." >&2
+    echo "Re-run the bootstrap as root." >&2
+    exit 4
+  fi
+  sudo -E bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
+fi

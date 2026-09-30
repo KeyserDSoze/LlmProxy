@@ -381,3 +381,8 @@ Release-candidate review found and fixed two operator-path issues before publica
 - `llmproxyctl` used a misspelled `INSTAL_DIR` variable for the `current` symlink; CI now executes `config-path` rather than relying only on `bash -n`, catching unbound-variable startup failures.
 - protected upstream bearers are write-only after first bootstrap, so release updates cannot repeat a plaintext-authenticated direct provider precheck. First install still performs that check; `llmproxyctl update` skips only the direct DGX check and relies on the persisted encrypted node credential plus post-deploy gateway readiness.
 - the release bootstrap help no longer recommends `--skip-dgx-check` for the same-host GB10 first-install path and documents the one-time `DGX_UPSTREAM_BEARER_TOKEN` input.
+
+
+## 2026-09-30 — Root-safe release bootstrap
+
+Hardened the immutable release bootstrap for operator updates: when already running as root (including `sudo -E llmproxyctl update ...`) it now invokes the bundled installer directly instead of requiring a nested `sudo`. Non-root first installs still use `sudo -E`, with a clear error when sudo is unavailable.
