@@ -347,3 +347,10 @@ Implemented source changes:
 The existing `install-linux.sh` + `deploy.sh` remain the single host/deployment implementation inside the release bundle.
 
 Validation is intentionally not claimed yet. Required evidence: green candidate CI/Full Stack, multi-arch publication, immutable tag/GitHub Release, then real install/update/rollback on the ARM64 GB10 target.
+
+
+## 2026-09-30 — Full-stack aggregate user quota smoke convergence hardening
+
+The first `0.2.0-preview.8` validation run exposed a timing race in the existing two-gateway aggregate-user-quota smoke: the first peer request could arrive before the newly-created policy reached that peer's local L1, so it returned 200 without incrementing the shared user counter.
+
+The smoke now proves peer policy application explicitly by probing until the peer enforces the quota, resets only the isolated Redis test counter used by that convergence probe, and then runs the actual primary/peer/primary 200/200/429 assertion from a deterministic empty window. Product quota semantics were not changed.

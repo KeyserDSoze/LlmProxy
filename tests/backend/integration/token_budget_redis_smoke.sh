@@ -192,7 +192,28 @@ printf '%s\n' "$user_policy_json" > /tmp/token-budget-user-policy.json
 user_policy_id="$(echo "$user_policy_json" | jq -r '.id')"
 [[ "$user_policy_id" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_with_diagnostics "User quota policy was not created."
 
-# Wait until the peer has consumed the live runtime-state policy by making the cross-gateway requests.
+# Prove the peer has applied the live user-policy event before starting the shared-counter assertion.
+# The previous smoke assumed propagation had completed by the first peer request, which made this
+# test timing-sensitive: an early 200 could bypass the peer's L1 policy and leave the shared count at 1.
+user_policy_field="${user_policy_id//-/}"
+user_rate_key="llmproxy:rate-limit:${user_policy_field}:2:60"
+peer_user_policy_applied=false
+for attempt in {1..30}; do
+  peer_probe_status="$(call_model_with_key 8081 "$user_key_b_secret" /tmp/token-budget-user-probe)"
+  if [[ "$peer_probe_status" == "429" ]]; then
+    jq -e '.error.code == "rate_limit_exceeded"' /tmp/token-budget-user-probe.json >/dev/null
+    peer_user_policy_applied=true
+    break
+  fi
+  [[ "$peer_probe_status" == "200" ]] || fail_with_diagnostics "Unexpected peer user-policy probe status: ${peer_probe_status}."
+  sleep 0.2
+done
+[[ "$peer_user_policy_applied" == "true" ]] || fail_with_diagnostics "Peer did not apply the live aggregate user quota policy."
+
+# The convergence probe intentionally consumes the test policy after it becomes active. Reset only this
+# isolated Redis test counter so the real two-gateway assertion begins from a deterministic empty window.
+"${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" DEL "$user_rate_key" >/dev/null 2>&1
+
 user_first="$(call_model_with_key 8080 "$user_key_a_secret" /tmp/token-budget-user-a)"
 [[ "$user_first" == "200" ]] || fail_with_diagnostics "Expected first user-quota request on primary to succeed; got ${user_first}."
 user_second="$(call_model_with_key 8081 "$user_key_b_secret" /tmp/token-budget-user-b)"
@@ -201,8 +222,6 @@ user_third="$(call_model_with_key 8080 "$user_key_a_secret" /tmp/token-budget-us
 [[ "$user_third" == "429" ]] || fail_with_diagnostics "Expected third cross-gateway request to exceed aggregate user quota; got ${user_third}."
 jq -e '.error.code == "rate_limit_exceeded"' /tmp/token-budget-user-c.json >/dev/null
 
-user_policy_field="${user_policy_id//-/}"
-user_rate_key="llmproxy:rate-limit:${user_policy_field}:2:60"
 user_count="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HGET "$user_rate_key" count 2>/dev/null | tr -d '\r')"
 [[ "$user_count" == "2" ]] || fail_with_diagnostics "Expected shared Redis user rate-limit count=2 after rejection; got ${user_count}."
 
