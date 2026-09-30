@@ -21,6 +21,8 @@ Examples:
 Environment:
   GH_TOKEN / GITHUB_TOKEN          GitHub token for private release downloads
   GHCR_USER / GHCR_TOKEN           Optional explicit GHCR credentials; defaults can be derived from GitHub auth
+  ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
+                                      Required for ASPNETCORE_ENVIRONMENT=Production
   DGX_UPSTREAM_BEARER_TOKEN        Optional one-time upstream llama.cpp/vLLM bearer for first install
   LLMPROXY_GITHUB_REPOSITORY       Repository override (default KeyserDSoze/LlmProxy)
 USAGE
