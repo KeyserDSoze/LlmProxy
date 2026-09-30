@@ -283,11 +283,11 @@ jobs:
           {
             echo "### Immutable release published"
             echo ""
-            echo "- Version: `$VERSION`"
-            echo "- Tag: `$RELEASE_TAG`"
-            echo "- Source: `${{ inputs.source_sha }}`"
-            echo "- Digest: `${{ steps.build.outputs.digest }}`"
-            echo "- Architectures: `linux/amd64`, `linux/arm64`"
+            printf '%s\n' '- Version: `'"$VERSION"'`'
+            printf '%s\n' '- Tag: `'"$RELEASE_TAG"'`'
+            printf '%s\n' '- Source: `${{ inputs.source_sha }}`'
+            printf '%s\n' '- Digest: `${{ steps.build.outputs.digest }}`'
+            printf '%s\n' '- Architectures: `linux/amd64`, `linux/arm64`'
             echo "- SBOM: SPDX OCI attestation verified"
             echo "- Provenance: SLSA/BuildKit OCI attestation verified"
           } >> "$GITHUB_STEP_SUMMARY"

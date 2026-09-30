@@ -176,10 +176,10 @@ jobs:
           {
             echo "### Automatic immutable release"
             echo ""
-            echo "- Source: `$SOURCE_SHA`"
-            echo "- Bump: `$BUMP`"
-            echo "- Version: `$VERSION`"
-            echo "- Tag: `$TAG`"
+            printf '%s\n' '- Source: `'"$SOURCE_SHA"'`'
+            printf '%s\n' '- Bump: `'"$BUMP"'`'
+            printf '%s\n' '- Version: `'"$VERSION"'`'
+            printf '%s\n' '- Tag: `'"$TAG"'`'
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
