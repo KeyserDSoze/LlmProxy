@@ -1,132 +1,172 @@
 name: Create immutable release tag
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Exact SemVer from Directory.Build.props (without leading v)
-        required: true
-        type: string
-      confirmation:
-        description: Type RELEASE to create and push the immutable tag
-        required: true
-        type: string
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
 
 permissions:
   contents: write
   actions: read
+  packages: write
 
 jobs:
   tag:
-    name: Validate main and create tag
-    if: github.ref_name == 'main'
+    name: Allocate immutable version and create tag
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.result.outputs.source_sha }}
+      version: ${{ steps.result.outputs.version }}
+      tag: ${{ steps.result.outputs.tag }}
+      publish: ${{ steps.result.outputs.publish }}
     steps:
-      - name: Checkout selected main commit
+      - name: Checkout validated main source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Validate requested release version
-        id: version
+      - name: Validate triggering CI identity
         shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.confirmation }}" != "RELEASE" ]]; then
-            echo "confirmation must be exactly RELEASE" >&2
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TRIGGER_EVENT" == "push" ]] || {
+            echo "Automatic releases are created only from CI push runs." >&2
             exit 2
-          fi
-          VERSION="$(bash docker/scripts/validate-release-version.sh "${{ inputs.version }}")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          }
+          [[ "$TRIGGER_BRANCH" == "main" ]] || {
+            echo "Automatic releases are created only from main." >&2
+            exit 2
+          }
 
-      - name: Require green CI and Full stack on this exact main SHA
+      - name: Confirm exact source CI through Actions API
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGERING_CI_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           RUNS_FILE="$(mktemp)"
           trap 'rm -f "$RUNS_FILE"' EXIT
-          curl --fail --silent --show-error \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100" \
-            > "$RUNS_FILE"
 
-          bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE" >/dev/null
-          jq -e --arg sha "$SOURCE_SHA" '
-            [.workflow_runs[]
-             | select(.name == "Full stack smoke")
-             | select(.event == "push")
-             | select(.head_branch == "main")
-             | select(.head_sha == $sha)
-             | select(.conclusion == "success")]
-            | length > 0
-          ' "$RUNS_FILE" >/dev/null || {
-            echo "No successful Full stack smoke push run validates main SHA $SOURCE_SHA." >&2
+          curl --fail --silent --show-error             -H "Accept: application/vnd.github+json"             -H "Authorization: Bearer $GH_TOKEN"             -H "X-GitHub-Api-Version: 2022-11-28"             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100"             > "$RUNS_FILE"
+
+          CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"
+          [[ "$CI_RUN_ID" == "$TRIGGERING_CI_RUN_ID" ]] || {
+            echo "The successful source CI run ($CI_RUN_ID) does not match the triggering CI run ($TRIGGERING_CI_RUN_ID)." >&2
             exit 3
           }
 
-      - name: Refuse an existing immutable tag
+      - name: Resolve existing or next immutable release tag
+        id: result
         shell: bash
         env:
-          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists. Exact release tags are immutable." >&2
+          git fetch --tags --force origin
+
+          EXISTING_TAG="$(
+            git tag --points-at "$SOURCE_SHA"               | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$'               | sort -V               | tail -n 1               || true
+          )"
+
+          if [[ -n "$EXISTING_TAG" ]]; then
+            VERSION="${EXISTING_TAG#v}"
+            if gh release view "$EXISTING_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              PUBLISH=false
+            else
+              PUBLISH=true
+            fi
+            {
+              echo "source_sha=$SOURCE_SHA"
+              echo "version=$VERSION"
+              echo "tag=$EXISTING_TAG"
+              echo "publish=$PUBLISH"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          MESSAGE="$(git log -1 --pretty=%B "$SOURCE_SHA")"
+          BUMP=patch
+          MARKERS=0
+          if grep -Eiq '(^|[^a-z])release:major([^a-z]|$)' <<< "$MESSAGE"; then
+            BUMP=major
+            MARKERS=$((MARKERS + 1))
+          fi
+          if grep -Eiq '(^|[^a-z])release:minor([^a-z]|$)' <<< "$MESSAGE"; then
+            BUMP=minor
+            MARKERS=$((MARKERS + 1))
+          fi
+          if grep -Eiq '(^|[^a-z])release:patch([^a-z]|$)' <<< "$MESSAGE"; then
+            BUMP=patch
+            MARKERS=$((MARKERS + 1))
+          fi
+          if (( MARKERS > 1 )); then
+            echo "Commit message contains more than one release bump marker." >&2
             exit 4
           fi
 
-      - name: Setup QEMU for ARM64 preflight
-        uses: docker/setup-qemu-action@v3
+          CREATED=false
+          for attempt in {1..20}; do
+            git fetch --tags --force origin
+            VERSION="$(bash docker/scripts/next-release-version.sh "$BUMP")"
+            TAG="v$VERSION"
 
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              sleep 1
+              continue
+            fi
 
-      - name: Validate ARM64 production image build before tagging
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          docker buildx build \
-            --platform linux/arm64 \
-            --file docker/Dockerfile \
-            --build-arg "LLMPROXY_VERSION=$VERSION" \
-            --build-arg "LLMPROXY_BUILD_SHA=$GITHUB_SHA" \
-            --build-arg "LLMPROXY_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --progress plain \
-            .
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" "$SOURCE_SHA" -m "LlmProxy $VERSION"
 
-      - name: Validate Linux release bundle before tagging
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          OUT="$(mktemp -d)"
-          trap 'rm -rf "$OUT"' EXIT
-          bash distribution/build-release-bundle.sh "$VERSION" "$OUT"
-          (
-            cd "$OUT"
-            sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
-            sha256sum -c llmproxy-bootstrap.sh.sha256
-          )
+            if git push origin "refs/tags/$TAG"; then
+              CREATED=true
+              break
+            fi
 
-      - name: Create and push release tag
-        shell: bash
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "LlmProxy $VERSION"
-          git push origin "$TAG"
-          echo "Created $TAG. Publish container will build the multi-architecture image and GitHub Release assets." >> "$GITHUB_STEP_SUMMARY"
+            git tag -d "$TAG" >/dev/null 2>&1 || true
+            sleep 1
+          done
+
+          [[ "$CREATED" == "true" ]] || {
+            echo "Could not allocate a unique immutable release tag after 20 attempts." >&2
+            exit 5
+          }
+
+          {
+            echo "source_sha=$SOURCE_SHA"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "publish=true"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Automatic immutable release"
+            echo ""
+            echo "- Source: `$SOURCE_SHA`"
+            echo "- Bump: `$BUMP`"
+            echo "- Version: `$VERSION`"
+            echo "- Tag: `$TAG`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish immutable release
+    needs: tag
+    if: needs.tag.outputs.publish == 'true'
+    uses: ./.github/workflows/container.yml
+    with:
+      source_sha: ${{ needs.tag.outputs.source_sha }}
+      release_version: ${{ needs.tag.outputs.version }}
+      release_tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit

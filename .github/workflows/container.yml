@@ -1,12 +1,20 @@
 name: Publish container
 
 on:
-  workflow_run:
-    workflows: [CI]
-    branches: [main]
-    types: [completed]
-  push:
-    tags: ['v*.*.*']
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact validated main commit SHA
+        required: true
+        type: string
+      release_version:
+        description: Immutable SemVer without leading v
+        required: true
+        type: string
+      release_tag:
+        description: Immutable Git tag
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,104 +23,89 @@ permissions:
 
 jobs:
   publish:
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve source commit
-        id: source
-        shell: bash
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
-            SHA="${{ github.event.workflow_run.head_sha }}"
-          else
-            SHA="$GITHUB_SHA"
-          fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout validated source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.source.outputs.sha }}
-
-      - name: Validate version and resolve image metadata
+      - name: Validate release inputs
         id: meta
         shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          REQUESTED_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/llmproxy"
-          EXPECTED_VERSION=""
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" ]]; then
-            EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
-          fi
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid source SHA: $SOURCE_SHA" >&2
+            exit 2
+          }
+          VERSION="$(bash docker/scripts/validate-release-version.sh "$REQUESTED_VERSION")"
+          [[ "$RELEASE_TAG" == "v$VERSION" ]] || {
+            echo "Release tag/version mismatch: $RELEASE_TAG != v$VERSION" >&2
+            exit 2
+          }
 
-          VERSION="$(bash docker/scripts/validate-release-version.sh "$EXPECTED_VERSION")"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/llmproxy"
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          SHA="${{ steps.source.outputs.sha }}"
+          MAJOR_MINOR="$(echo "$VERSION" | cut -d. -f1-2)"
 
           {
             echo "image=$IMAGE"
             echo "version=$VERSION"
             echo "build_date=$BUILD_DATE"
             echo "tags<<EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" ]]; then
-            echo "$IMAGE:$VERSION" >> "$GITHUB_OUTPUT"
-            if [[ "$VERSION" != *-* ]]; then
-              MAJOR_MINOR="$(echo "$VERSION" | cut -d. -f1-2)"
-              echo "$IMAGE:$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "$IMAGE:main" >> "$GITHUB_OUTPUT"
-          fi
-
-          {
-            echo "$IMAGE:sha-${SHA:0:7}"
+            echo "$IMAGE:$VERSION"
+            echo "$IMAGE:$MAJOR_MINOR"
+            echo "$IMAGE:latest"
+            echo "$IMAGE:main"
+            echo "$IMAGE:sha-${SOURCE_SHA:0:7}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout validated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable tag points to source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          TAG_SHA="$(git rev-list -n 1 "$RELEASE_TAG")"
+          [[ "$TAG_SHA" == "$SOURCE_SHA" ]] || {
+            echo "Tag $RELEASE_TAG points to $TAG_SHA, expected $SOURCE_SHA." >&2
+            exit 3
+          }
 
       - name: Validate publication source CI through Actions API
         id: validation
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
+          set -euo pipefail
           RUNS_FILE="$(mktemp)"
           trap 'rm -f "$RUNS_FILE"' EXIT
 
-          curl --fail --silent --show-error \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100" \
-            > "$RUNS_FILE"
+          curl --fail --silent --show-error             -H "Accept: application/vnd.github+json"             -H "Authorization: Bearer $GH_TOKEN"             -H "X-GitHub-Api-Version: 2022-11-28"             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&status=success&per_page=100"             > "$RUNS_FILE"
 
-          if ! CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"; then
-            echo "Publication source $SOURCE_SHA has no successful CI push run on main. Refusing container publication." >&2
-            exit 1
-          fi
-
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
-            TRIGGERING_CI_RUN_ID="${{ github.event.workflow_run.id }}"
-            if [[ "$CI_RUN_ID" != "$TRIGGERING_CI_RUN_ID" ]]; then
-              echo "Actions API selected CI run $CI_RUN_ID but this publication was triggered by run $TRIGGERING_CI_RUN_ID." >&2
-              exit 1
-            fi
-          fi
-
+          CI_RUN_ID="$(bash docker/scripts/validate-release-main-ci.sh "$SOURCE_SHA" "$RUNS_FILE")"
           echo "ci_run_id=$CI_RUN_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Refuse an existing GitHub Release for this tag
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+      - name: Refuse an existing GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "GitHub Release $GITHUB_REF_NAME already exists; exact releases are immutable." >&2
-            exit 1
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; immutable releases are never overwritten." >&2
+            exit 4
           fi
 
       - name: Login to GHCR
@@ -122,42 +115,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup QEMU for tagged multi-architecture builds
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+      - name: Refuse an existing exact container tag
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "Container tag $IMAGE:$VERSION already exists; immutable release tags are never overwritten." >&2
+            exit 4
+          fi
+
+      - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push with SBOM and provenance
+      - name: Build and push amd64 + arm64 with SBOM and provenance
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          platforms: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           sbom: true
           provenance: mode=max
           build-args: |
             LLMPROXY_VERSION=${{ steps.meta.outputs.version }}
-            LLMPROXY_BUILD_SHA=${{ steps.source.outputs.sha }}
+            LLMPROXY_BUILD_SHA=${{ inputs.source_sha }}
             LLMPROXY_BUILD_DATE=${{ steps.meta.outputs.build_date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Verify pushed digest, SBOM and provenance
+      - name: Verify pushed digest, architectures, SBOM and provenance
         id: verify
         shell: bash
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
           VERSION: ${{ steps.meta.outputs.version }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           BUILD_DATE: ${{ steps.meta.outputs.build_date }}
           VALIDATING_CI_RUN_ID: ${{ steps.validation.outputs.ci_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          set -euo pipefail
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "Build did not return a valid immutable image digest: '$DIGEST'." >&2
             exit 1
@@ -167,10 +172,19 @@ jobs:
           echo "$ROOT_INDEX" | jq -e '
             .mediaType == "application/vnd.oci.image.index.v1+json" and
             (.manifests | type == "array" and length > 0)
-          ' >/dev/null || {
-            echo "Published digest does not resolve to an OCI image index." >&2
-            exit 1
-          }
+          ' >/dev/null
+
+          for REQUIRED_ARCH in amd64 arm64; do
+            echo "$ROOT_INDEX" | jq -e --arg arch "$REQUIRED_ARCH" '
+              [.manifests[]
+               | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
+               | select(.platform.os == "linux" and .platform.architecture == $arch)]
+              | length > 0
+            ' >/dev/null || {
+              echo "Published OCI index is missing linux/$REQUIRED_ARCH." >&2
+              exit 1
+            }
+          done
 
           mapfile -t IMAGE_MANIFEST_DIGESTS < <(
             echo "$ROOT_INDEX" | jq -r '
@@ -187,28 +201,8 @@ jobs:
             '
           )
 
-          if (( ${#IMAGE_MANIFEST_DIGESTS[@]} == 0 )); then
-            echo "Published OCI index does not contain a runnable image manifest." >&2
-            exit 1
-          fi
-          if (( ${#ATTESTATION_DIGESTS[@]} == 0 )); then
-            echo "Published OCI index does not contain any attestation manifest." >&2
-            exit 1
-          fi
-
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" ]]; then
-            for REQUIRED_ARCH in amd64 arm64; do
-              echo "$ROOT_INDEX" | jq -e --arg arch "$REQUIRED_ARCH" '
-                [.manifests[]
-                 | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")
-                 | select(.platform.os == "linux" and .platform.architecture == $arch)]
-                | length > 0
-              ' >/dev/null || {
-                echo "Published OCI index is missing linux/$REQUIRED_ARCH." >&2
-                exit 1
-              }
-            done
-          fi
+          (( ${#IMAGE_MANIFEST_DIGESTS[@]} > 0 ))
+          (( ${#ATTESTATION_DIGESTS[@]} > 0 ))
 
           FOUND_SBOM=false
           FOUND_PROVENANCE=false
@@ -216,46 +210,30 @@ jobs:
 
           for ATTESTATION_DIGEST in "${ATTESTATION_DIGESTS[@]}"; do
             ATTESTATION_MANIFEST="$(docker buildx imagetools inspect "$IMAGE@$ATTESTATION_DIGEST" --raw)"
-
             echo "$ATTESTATION_MANIFEST" | jq -e '
               .mediaType == "application/vnd.oci.image.manifest.v1+json" and
               (.layers | type == "array" and length > 0) and
               ([.layers[] | select(.mediaType == "application/vnd.in-toto+json")] | length > 0)
-            ' >/dev/null || {
-              echo "Attestation descriptor $ATTESTATION_DIGEST is not a valid in-toto OCI attestation manifest." >&2
-              exit 1
-            }
+            ' >/dev/null
 
             SUBJECT_DIGEST="$(echo "$ATTESTATION_MANIFEST" | jq -r '.subject.digest // empty')"
             if [[ -n "$SUBJECT_DIGEST" ]]; then
-              MATCHED_SUBJECT=false
+              MATCHED=false
               for IMAGE_MANIFEST_DIGEST in "${IMAGE_MANIFEST_DIGESTS[@]}"; do
-                if [[ "$SUBJECT_DIGEST" == "$IMAGE_MANIFEST_DIGEST" ]]; then
-                  MATCHED_SUBJECT=true
-                  break
-                fi
+                [[ "$SUBJECT_DIGEST" == "$IMAGE_MANIFEST_DIGEST" ]] && MATCHED=true
               done
-              if [[ "$MATCHED_SUBJECT" != true ]]; then
-                echo "Attestation $ATTESTATION_DIGEST refers to unknown subject $SUBJECT_DIGEST." >&2
+              [[ "$MATCHED" == true ]] || {
+                echo "Attestation refers to unknown subject $SUBJECT_DIGEST." >&2
                 exit 1
-              fi
+              }
             fi
 
             while IFS= read -r PREDICATE_TYPE; do
               [[ -n "$PREDICATE_TYPE" ]] || continue
-
-              if [[ "$PREDICATE_TYPE" == "https://spdx.dev/Document" ]]; then
-                FOUND_SBOM=true
-              elif [[ "$PREDICATE_TYPE" == https://slsa.dev/provenance/* ]]; then
-                FOUND_PROVENANCE=true
-              fi
-
+              [[ "$PREDICATE_TYPE" == "https://spdx.dev/Document" ]] && FOUND_SBOM=true
+              [[ "$PREDICATE_TYPE" == https://slsa.dev/provenance/* ]] && FOUND_PROVENANCE=true
               VERIFIED_ATTESTATIONS="$(
-                jq -c \
-                  --arg manifestDigest "$ATTESTATION_DIGEST" \
-                  --arg predicateType "$PREDICATE_TYPE" \
-                  '. + [{manifestDigest:$manifestDigest,predicateType:$predicateType}]' \
-                  <<< "$VERIFIED_ATTESTATIONS"
+                jq -c                   --arg manifestDigest "$ATTESTATION_DIGEST"                   --arg predicateType "$PREDICATE_TYPE"                   '. + [{manifestDigest:$manifestDigest,predicateType:$predicateType}]'                   <<< "$VERIFIED_ATTESTATIONS"
               )"
             done < <(
               echo "$ATTESTATION_MANIFEST" | jq -r '
@@ -266,49 +244,20 @@ jobs:
             )
           done
 
-          if [[ "$FOUND_SBOM" != true ]]; then
-            echo "Published image does not expose an SPDX SBOM OCI attestation." >&2
-            exit 1
-          fi
-          if [[ "$FOUND_PROVENANCE" != true ]]; then
-            echo "Published image does not expose an SLSA/BuildKit provenance OCI attestation." >&2
-            exit 1
-          fi
+          [[ "$FOUND_SBOM" == true ]] || { echo "SPDX SBOM attestation missing." >&2; exit 1; }
+          [[ "$FOUND_PROVENANCE" == true ]] || { echo "SLSA provenance attestation missing." >&2; exit 1; }
 
-          jq -n \
-            --arg image "$IMAGE" \
-            --arg digest "$DIGEST" \
-            --arg version "$VERSION" \
-            --arg sourceSha "$SOURCE_SHA" \
-            --arg builtAtUtc "$BUILD_DATE" \
-            --arg validatingCiRunId "$VALIDATING_CI_RUN_ID" \
-            --argjson attestations "$VERIFIED_ATTESTATIONS" \
-            '{image:$image,digest:$digest,version:$version,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,validatingCiRunId:$validatingCiRunId,sbom:"SPDX",provenance:"SLSA/BuildKit",attestations:$attestations}' \
-            > release-manifest.json
-
-          {
-            echo "### LlmProxy container publication"
-            echo ""
-            echo "- Version: \`$VERSION\`"
-            echo "- Source: \`$SOURCE_SHA\`"
-            echo "- Validating CI run: \`$VALIDATING_CI_RUN_ID\`"
-            echo "- Digest: \`$DIGEST\`"
-            echo "- SBOM: SPDX OCI attestation verified"
-            echo "- Provenance: SLSA/BuildKit OCI attestation verified"
-            echo "- Attestation manifests: ${#ATTESTATION_DIGESTS[@]}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          jq -n             --arg image "$IMAGE"             --arg digest "$DIGEST"             --arg version "$VERSION"             --arg tag "$RELEASE_TAG"             --arg sourceSha "$SOURCE_SHA"             --arg builtAtUtc "$BUILD_DATE"             --arg validatingCiRunId "$VALIDATING_CI_RUN_ID"             --argjson attestations "$VERIFIED_ATTESTATIONS"             '{image:$image,digest:$digest,version:$version,tag:$tag,sourceSha:$sourceSha,builtAtUtc:$builtAtUtc,validatingCiRunId:$validatingCiRunId,sbom:"SPDX",provenance:"SLSA/BuildKit",attestations:$attestations}'             > release-manifest.json
 
       - name: Upload release manifest
         uses: actions/upload-artifact@v4
         with:
-          name: llmproxy-release-manifest-${{ steps.source.outputs.sha }}
+          name: llmproxy-release-manifest-${{ inputs.source_sha }}
           path: release-manifest.json
           if-no-files-found: error
-          retention-days: 30
-
+          retention-days: 90
 
       - name: Build Linux release assets
-        if: github.event_name == 'push' && github.ref_type == 'tag'
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -322,21 +271,23 @@ jobs:
           )
 
       - name: Create immutable GitHub Release
-        if: github.event_name == 'push' && github.ref_type == 'tag'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          args=(
-            release create "$GITHUB_REF_NAME"
-            --repo "$GITHUB_REPOSITORY"
-            --verify-tag
-            --title "LlmProxy $VERSION"
-            --generate-notes
-          )
-          if [[ "$VERSION" == *-* ]]; then
-            args+=(--prerelease)
-          fi
-          gh "${args[@]}"             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             release-manifest.json
+          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             release-manifest.json
+
+          {
+            echo "### Immutable release published"
+            echo ""
+            echo "- Version: `$VERSION`"
+            echo "- Tag: `$RELEASE_TAG`"
+            echo "- Source: `${{ inputs.source_sha }}`"
+            echo "- Digest: `${{ steps.build.outputs.digest }}`"
+            echo "- Architectures: `linux/amd64`, `linux/arm64`"
+            echo "- SBOM: SPDX OCI attestation verified"
+            echo "- Provenance: SLSA/BuildKit OCI attestation verified"
+          } >> "$GITHUB_STEP_SUMMARY"
