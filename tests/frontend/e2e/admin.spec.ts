@@ -233,7 +233,7 @@ test('admin playground tests models and System One and full-body logs are inspec
   await expect(page.getByRole('heading', { name: 'Live request / response log' })).toBeVisible()
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
-  await expect(page.getByText(/agic-code-fast/)).toBeVisible()
+  await expect(page.getByText('agic-code-fast', { exact: true }).nth(1)).toBeVisible()
   await expect(page.getByText(/automatic every 4h/)).toBeVisible()
 })
 
