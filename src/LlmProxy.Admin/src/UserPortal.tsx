@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
+import PageDocumentation from './PageDocumentation'
 
 type Identity = {
   tenantId: string
@@ -152,6 +153,8 @@ export default function UserPortal() {
         <div><h1>My API Keys</h1><p>Create personal credentials for scripts, applications and OpenAI-compatible clients.</p></div>
         <div className="actions"><button className="secondary" onClick={() => void refresh()}>Refresh</button><a href="/auth/logout">Sign out</a></div>
       </header>
+
+      <PageDocumentation page="me" />
 
       {authRequired && <div className="notice">Authentication is required. <a href="/auth/user-login">Sign in with Entra ID</a>.</div>}
       {error && <div className="error">{error}</div>}
