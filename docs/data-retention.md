@@ -150,3 +150,38 @@ CI      35075387110 SUCCESS
 ## Production guidance boundary
 
 The 90/730/365/30-day defaults are product defaults, not customer compliance policy. Confirm production durations, backup destination/encryption and any immutable external audit/export requirements with the target environment. If longer analytical retention is needed, extend aggregate retention or export aggregates; do not solve it by persisting prompt/source/output bodies.
+
+## Full-body inference content logs
+
+Full request/response payload logging is intentionally separate from `request_metrics` and daily usage rollups.
+
+Defaults and bounds:
+
+```text
+default retention      30 days
+minimum retention      10 days
+maximum retention     180 days
+cleanup cadence         4 hours
+storage                 PostgreSQL, application-encrypted ciphertext
+read authorization      LlmProxy.Admin only
+```
+
+Administrator endpoints:
+
+```http
+GET  /api/admin/content-logs
+GET  /api/admin/content-logs/{id}
+GET  /api/admin/content-logs/settings
+PUT  /api/admin/content-logs/settings
+POST /api/admin/content-logs/retention/run
+```
+
+`PUT /api/admin/content-logs/settings` accepts:
+
+```json
+{ "retentionDays": 30 }
+```
+
+Values below 10 or above 180 are rejected. The hosted cleanup worker runs at startup and then every four hours, deleting rows whose `StartedAtUtc` is older than the active retention window.
+
+This retention does not change request-metric/rollup/audit/outbox retention. Full-body content is excluded from telemetry rollups and OTEL export.
