@@ -119,6 +119,7 @@ public static class IdentitySelfServiceEndpoints
             Guid id,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
