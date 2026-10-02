@@ -48,13 +48,21 @@ public static class ProductReleaseCatalog
             "Automated immutable main release",
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
             {
+                ["Added"] =
+                [
+                    "The Admin control plane includes live encrypted full-body request/response inspection, model and System One classifier diagnostics, endpoint examples and contextual page documentation.",
+                    "Administrators can reveal and copy application-encrypted recovery copies of newly created or rotated client API keys.",
+                    "Full-body content-log retention is independently configurable from 10 through 180 days and is cleaned automatically every four hours."
+                ],
                 ["Changed"] =
                 [
-                    "This immutable distribution release was generated automatically from a validated main commit."
+                    "This immutable distribution release was generated automatically from a validated main commit.",
+                    "Operational metrics, audit and OTEL remain metadata-only while exact inference payloads are isolated in the administrator-only encrypted content-log store."
                 ],
                 ["Security"] =
                 [
-                    "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite."
+                    "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite.",
+                    "API-key reveal and decrypted payload inspection require LlmProxy.Admin; secret-bearing responses are no-store and reveal/retention actions are audited without secret content."
                 ]
             });
 
