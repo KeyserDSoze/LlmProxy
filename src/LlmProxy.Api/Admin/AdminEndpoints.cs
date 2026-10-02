@@ -25,6 +25,17 @@ public static class AdminEndpoints
             group.RequireAuthorization("AdminRead");
         }
 
+        group.MapGet("/session", (HttpContext httpContext) => Results.Ok(new
+        {
+            canWrite = !entraEnabled || httpContext.User.IsInRole("LlmProxy.Admin"),
+            roles = httpContext.User.Claims
+                .Where(claim => claim.Type == ClaimTypes.Role || claim.Type == "roles")
+                .Select(claim => claim.Value)
+                .Distinct()
+                .OrderBy(value => value)
+                .ToArray()
+        }));
+
         group.MapGet("/overview", async (GatewayDbContext dbContext, IRequestLoadTracker tracker, CancellationToken cancellationToken) =>
         {
             var nodes = await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken);
