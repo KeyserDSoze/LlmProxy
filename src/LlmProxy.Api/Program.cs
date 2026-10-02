@@ -95,9 +95,12 @@ builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddSingleton<UpstreamCredentialProtector>();
+builder.Services.AddSingleton<SensitiveDataProtector>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<DataRetentionService>();
 builder.Services.AddHostedService<DataRetentionWorker>();
+builder.Services.AddScoped<ContentLogRetentionService>();
+builder.Services.AddHostedService<ContentLogRetentionWorker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
 builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();
@@ -112,6 +115,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<BufferedRequestMetricsSink>();
 builder.Services.AddSingleton<IRequestMetricsSink, HttpContextRequestMetricsSink>();
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedRequestMetricsSink>());
+
+builder.Services.AddSingleton<BufferedInferenceContentLogSink>();
+builder.Services.AddSingleton<IInferenceContentLogSink>(services => services.GetRequiredService<BufferedInferenceContentLogSink>());
+builder.Services.AddHostedService(services => services.GetRequiredService<BufferedInferenceContentLogSink>());
 
 builder.Services.AddSingleton<BufferedCredentialUsageSink>();
 builder.Services.AddSingleton<ICredentialUsageSink>(services => services.GetRequiredService<BufferedCredentialUsageSink>());
@@ -189,6 +196,7 @@ if (entraEnabled)
 
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
+app.UseMiddleware<InferenceContentLoggingMiddleware>();
 app.UseMiddleware<OutputTokenBudgetMiddleware>();
 
 app.MapGet("/healthz", (RoutingStrategyState strategyState) => Results.Ok(new
