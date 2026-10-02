@@ -21,6 +21,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
+    public DbSet<InferenceContentLogRecord> InferenceContentLogs => Set<InferenceContentLogRecord>();
+    public DbSet<ContentLogSettingsRecord> ContentLogSettings => Set<ContentLogSettingsRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<RuntimeStateOutboxRecord> RuntimeStateOutbox => Set<RuntimeStateOutboxRecord>();
@@ -74,6 +76,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.Property(x => x.KeyPrefix).HasMaxLength(32).IsRequired();
             entity.Property(x => x.KeyHash).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.SecretCiphertext).HasMaxLength(4096);
             entity.Property(x => x.OwnerTenantId).HasMaxLength(64);
             entity.Property(x => x.OwnerObjectId).HasMaxLength(64);
             entity.Property(x => x.OwnerPrincipalName).HasMaxLength(320);
@@ -133,6 +136,30 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => new { x.UsageGroupId, x.StartedAtUtc });
             entity.HasIndex(x => new { x.LogicalModel, x.StartedAtUtc });
             entity.HasIndex(x => new { x.NodeId, x.StartedAtUtc });
+        });
+
+        modelBuilder.Entity<InferenceContentLogRecord>(entity =>
+        {
+            entity.ToTable("inference_content_logs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Surface).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Method).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.Path).HasMaxLength(300).IsRequired();
+            entity.Property(x => x.LogicalModel).HasMaxLength(160);
+            entity.Property(x => x.RequestContentType).HasMaxLength(200);
+            entity.Property(x => x.ResponseContentType).HasMaxLength(200);
+            entity.Property(x => x.RequestBodyCiphertext).HasColumnType("text").IsRequired();
+            entity.Property(x => x.ResponseBodyCiphertext).HasColumnType("text").IsRequired();
+            entity.HasIndex(x => x.RequestId).IsUnique();
+            entity.HasIndex(x => x.StartedAtUtc);
+            entity.HasIndex(x => new { x.Surface, x.StartedAtUtc });
+        });
+
+        modelBuilder.Entity<ContentLogSettingsRecord>(entity =>
+        {
+            entity.ToTable("content_log_settings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<DailyUsageRollupRecord>(entity =>
