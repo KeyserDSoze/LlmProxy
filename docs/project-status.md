@@ -1,8 +1,42 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-09-30**.
+Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
+
+## Administrator observability / testing candidate — IMPLEMENTED, VALIDATION IN PROGRESS
+
+Branch / review:
+
+```text
+branch   feature/admin-observability-docs
+PR       #1
+state    draft until all CI/full-stack gates are green
+```
+
+The candidate adds:
+
+- administrator-recoverable encrypted copies for newly created/rotated client API keys, with audited reveal and no-store responses;
+- application-encrypted full request/response content logs for Chat Completions, Responses and System One;
+- administrator-only live content-log UI with 2-second refresh, exact body inspection and copy controls;
+- configurable full-body log retention from 10 through 180 days, default 30 days, with automatic cleanup every four hours and manual audited cleanup;
+- an Admin Playground that tests enabled logical models through real routing/capacity admission and tests the configured System One classifier using an editable JSON body;
+- a Help & Endpoints page with copy-ready client examples and platform flow documentation;
+- a collapsed-by-default contextual documentation accordion on all principal Admin, Governance, Releases and User Portal screens;
+- focused documentation in `docs/admin-observability.md`, plus API/security/retention/identity/governance contract updates.
+
+Security boundary:
+
+```text
+request metrics / OTEL / audit      metadata-only
+full prompt + response payloads     dedicated encrypted content-log store only
+content-log readers                 LlmProxy.Admin / configured super admins only
+API-key authentication              HMAC only
+API-key recovery copy               encrypted at rest, admin reveal only
+headers / bearer secrets            never copied into content logs
+```
+
+The feature branch must not be promoted or released until the exact head has green backend, frontend/Playwright, PostgreSQL/Docker and Full Stack CI evidence. The first feature-branch CI exposed a frontend mock gap after adding `/api/admin/session`; backend build/unit tests were green, and the frontend mock has since been corrected. Final evidence must replace this paragraph before promotion.
 
 ## Current validated product baseline
 
