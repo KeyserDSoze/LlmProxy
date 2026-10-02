@@ -28,7 +28,8 @@ start_mock() {
   local port="$1"
   local prefix="$2"
   local name="$3"
-  python3 tests/backend/integration/mock_llm.py --port "$port" --prefix "$prefix" --name "$name" >"/tmp/llmproxy-mock-${name}.log" 2>&1 &
+  local api_key="${4:-}"
+  python3 tests/backend/integration/mock_llm.py --port "$port" --prefix "$prefix" --name "$name" --api-key "$api_key" >"/tmp/llmproxy-mock-${name}.log" 2>&1 &
   MOCK_PIDS+=("$!")
 }
 
@@ -62,6 +63,7 @@ wait_node_status() {
 
 start_mock 3450 /primopath primary
 start_mock 3451 /altropath alternate
+start_mock 3452 /classifier classifier laya-upstream
 sleep 1
 
 export LLM_PROXY_API_KEY="dev-change-me"
@@ -78,6 +80,10 @@ export HEALTH_HEALTHY_AFTER_SUCCESSES="2"
 export HEALTH_UNHEALTHY_AFTER_FAILURES="3"
 export RUNTIME_METRICS_ENABLED="true"
 export RUNTIME_METRICS_INTERVAL_SECONDS="1"
+export SYSTEM_ONE_ENABLED="true"
+export SYSTEM_ONE_BASE_ADDRESS="http://host.docker.internal:3452/classifier"
+export SYSTEM_ONE_API_KEY="laya-upstream"
+export SYSTEM_ONE_TIMEOUT_SECONDS="5"
 
 if ! "${COMPOSE[@]}" up -d --build; then
   fail_with_diagnostics "Docker Compose stack failed to start."
@@ -103,6 +109,14 @@ unauthorized_responses_status="$(curl --silent --output /dev/null --write-out '%
 if [[ "$unauthorized_responses_status" != "401" ]]; then
   fail_with_diagnostics "Expected /v1/responses without bearer token to return 401, got ${unauthorized_responses_status}."
 fi
+
+unauthorized_systemone_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"state":{"document":"duplicate charge"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}' http://127.0.0.1:8080/v1/systemone)"
+if [[ "$unauthorized_systemone_status" != "401" ]]; then
+  fail_with_diagnostics "Expected /v1/systemone without bearer token to return 401, got ${unauthorized_systemone_status}."
+fi
+
+systemone_response="$(curl --fail --silent -H 'Authorization: Bearer dev-change-me' -H 'Content-Type: application/json' -d '{"state":{"document":"duplicate charge"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}' http://127.0.0.1:8080/v1/systemone)"
+echo "$systemone_response" | jq -e '.served_by == "classifier" and .answers.billing.noul == 0.91 and .state.document == "duplicate charge"' >/dev/null
 
 curl --fail --silent -H 'Authorization: Bearer dev-change-me' http://127.0.0.1:8080/v1/models | grep --quiet 'agic-code-fast'
 
@@ -209,4 +223,4 @@ echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/nu
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, live tuning, vLLM runtime telemetry, observability, health hysteresis and audit verified."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, System One proxy, live tuning, vLLM runtime telemetry, observability, health hysteresis and audit verified."

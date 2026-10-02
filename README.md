@@ -33,6 +33,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 ## Core capabilities
 
 - OpenAI-compatible `/v1/models`, Chat Completions and Responses APIs.
+- Optional authenticated `/v1/systemone` proxy for Jev-compatible decision/classification runtimes such as Laya.
 - Incremental SSE streaming and cancellation.
 - Logical public model aliases with internal DGX/provider model identifiers.
 - Weighted least loaded, round robin and weighted round robin routing.
@@ -207,11 +208,12 @@ LlmProxy derives:
 GET  /v1/models
 POST /v1/chat/completions
 POST /v1/responses
+POST /v1/systemone      # optional Jev-compatible classifier proxy
 GET  /healthz
 GET  /readyz
 ```
 
-Inference uses bearer credentials. Raw credential secrets are returned only at creation/rotation time and are not stored in PostgreSQL.
+All `/v1` surfaces use bearer credentials. `/v1/systemone` is a Jev-compatible classifier contract, not an OpenAI generative endpoint, and is enabled only when a private System One upstream is configured. Raw credential secrets are returned only at creation/rotation time and are not stored in PostgreSQL.
 
 ## Administration
 
@@ -284,6 +286,7 @@ ENTRA_TENANT_ID
 ENTRA_CLIENT_ID
 ENTRA_CLIENT_SECRET
 CLOUDFLARE_TUNNEL_TOKEN
+SYSTEM_ONE_API_KEY
 LLMPROXY_ACCEPTANCE_DGX_API_KEY
 ```
 

@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Optional public `POST /v1/systemone` gateway surface for Jev-compatible System One classifiers such as Laya, protected by the existing LlmProxy API-key middleware while keeping the classifier upstream private.
+- Configurable System One upstream base address, bearer credential and timeout; client Authorization is never forwarded to the classifier.
 - Every successful push to `main` now creates one immutable distribution release automatically, starting at `v0.0.1`.
 - Automatic release numbering defaults to patch increments and supports intentional `release:minor` / `release:major` commit-message markers.
 - The release publication workflow is reusable and is invoked directly after tag allocation, avoiding reliance on workflow recursion from a `GITHUB_TOKEN`-created tag.

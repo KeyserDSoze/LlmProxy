@@ -149,6 +149,11 @@ services:
       EntraId__SuperAdmins: ${ENTRA_SUPER_ADMINS:-}
       ReverseProxy__Enabled: ${REVERSE_PROXY_ENABLED:-false}
 
+      SystemOne__Enabled: ${SYSTEM_ONE_ENABLED:-false}
+      SystemOne__BaseAddress: ${SYSTEM_ONE_BASE_ADDRESS:-}
+      SystemOne__ApiKey: ${SYSTEM_ONE_API_KEY:-}
+      SystemOne__TimeoutSeconds: ${SYSTEM_ONE_TIMEOUT_SECONDS:-30}
+
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
       Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}
       Bootstrap__NodeBaseAddress: ${DGX_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}

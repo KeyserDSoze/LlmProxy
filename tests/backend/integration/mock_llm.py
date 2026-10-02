@@ -116,6 +116,7 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
         if self.path not in {
             self._expected("/v1/chat/completions"),
             self._expected("/v1/responses"),
+            self._expected("/v1/systemone"),
         }:
             self._json(404, {"error": "not_found", "path": self.path})
             return
@@ -126,6 +127,18 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length else b"{}"
         payload = json.loads(raw.decode("utf-8"))
+
+        if self.path.endswith("/v1/systemone"):
+            self._json(200, {
+                "answers": {
+                    "billing": {
+                        "noul": 0.91
+                    }
+                },
+                "served_by": self.server.runtime_name,
+                "state": payload.get("state"),
+            })
+            return
 
         if payload.get("stream"):
             self._stream(payload)

@@ -5,6 +5,7 @@ using LlmProxy.Api.Observability;
 using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Product;
 using LlmProxy.Api.Security;
+using LlmProxy.Api.SystemOne;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
@@ -31,6 +32,7 @@ var entraEnabled = builder.Configuration.GetValue<bool>("EntraId:Enabled");
 var reverseProxyEnabled = builder.Configuration.GetValue<bool>("ReverseProxy:Enabled");
 var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled");
 var configuredRoutingStrategy = ParseRoutingStrategy(builder.Configuration["Routing:Strategy"]);
+var systemOneTimeoutSeconds = Math.Clamp(builder.Configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300);
 
 builder.AddLlmProxyOpenTelemetry();
 
@@ -121,6 +123,7 @@ builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.From
 builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
 builder.Services.AddHostedService<NodeHardwareMetricsCollector>();
@@ -203,6 +206,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
 app.MapOpenAiEndpoints();
+app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);

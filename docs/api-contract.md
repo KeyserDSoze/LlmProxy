@@ -56,6 +56,41 @@ Example request:
 
 Responses API fields such as structured `input`, tools, metadata and future compatible properties are passed through to the inference runtime. As with Chat Completions, the public logical model is replaced only for the upstream call.
 
+## `POST /v1/systemone`
+
+LlmProxy can optionally expose a Jev-compatible System One decision/classification surface backed by a private classifier such as Laya. This endpoint is intentionally separate from the OpenAI-compatible model surfaces because System One returns typed decisions rather than generated text.
+
+When `SystemOne:Enabled=true`, the gateway forwards the request body transparently to `<SystemOne:BaseAddress>/v1/systemone`, replaces the client Authorization header with the configured upstream bearer, and returns the upstream status, content type and response body unchanged.
+
+Example request:
+
+```json
+{
+  "state": {
+    "document": "I was charged twice. Please fix this ASAP."
+  },
+  "questions": {
+    "billing": {
+      "type": "noul",
+      "instructions": "Is this ticket about billing?"
+    }
+  }
+}
+```
+
+The endpoint uses the same LlmProxy bearer API credentials as the other `/v1` surfaces. It does not advertise the classifier through `GET /v1/models`, and it does not treat the classifier as an OpenAI chat model.
+
+Configuration:
+
+```text
+SystemOne__Enabled=true
+SystemOne__BaseAddress=http://host.docker.internal:8090
+SystemOne__ApiKey=<private-classifier-bearer>
+SystemOne__TimeoutSeconds=30
+```
+
+Request-rate/model-token governance remains specific to the generative model surfaces in this release; `/v1/systemone` receives the common API-key authentication and credential-usage tracking provided for `/v1` requests.
+
 ## Payload preservation
 
 The gateway deliberately does not deserialize inference requests into restrictive endpoint-specific DTOs. It validates only the logical `model`, preserves unknown compatible JSON fields and rewrites that one property before forwarding.
