@@ -74,15 +74,26 @@ public sealed class DatabaseBootstrapper(
         }
 
         var bootstrapApiKey = configuration["Authentication:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(bootstrapApiKey) && !await dbContext.ApiCredentials.AnyAsync(cancellationToken))
+        if (!string.IsNullOrWhiteSpace(bootstrapApiKey))
         {
-            var bootstrapCredential = new ApiCredential(
-                "Bootstrap / GitHub Copilot",
-                ApiKeyHasher.GetPrefix(bootstrapApiKey),
-                apiKeyHasher.Hash(bootstrapApiKey));
-            bootstrapCredential.SetSecretCiphertext(
-                sensitiveDataProtector.Protect(bootstrapApiKey, $"api-credential:{bootstrapCredential.Id}"));
-            dbContext.ApiCredentials.Add(bootstrapCredential);
+            var bootstrapHash = apiKeyHasher.Hash(bootstrapApiKey);
+            var bootstrapCredential = await dbContext.ApiCredentials
+                .SingleOrDefaultAsync(item => item.KeyHash == bootstrapHash, cancellationToken);
+
+            if (bootstrapCredential is null && !await dbContext.ApiCredentials.AnyAsync(cancellationToken))
+            {
+                bootstrapCredential = new ApiCredential(
+                    "Bootstrap / GitHub Copilot",
+                    ApiKeyHasher.GetPrefix(bootstrapApiKey),
+                    bootstrapHash);
+                dbContext.ApiCredentials.Add(bootstrapCredential);
+            }
+
+            if (bootstrapCredential is not null && string.IsNullOrWhiteSpace(bootstrapCredential.SecretCiphertext))
+            {
+                bootstrapCredential.SetSecretCiphertext(
+                    sensitiveDataProtector.Protect(bootstrapApiKey, $"api-credential:{bootstrapCredential.Id}"));
+            }
         }
 
         if (!await dbContext.ContentLogSettings.AnyAsync(cancellationToken))
