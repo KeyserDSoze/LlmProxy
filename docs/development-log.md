@@ -1,5 +1,43 @@
 # Development log
 
+## 2026-10-03 — Administrator observability, testing and in-app documentation — CANDIDATE
+
+Implemented the operator-facing visibility requested for the current LlmProxy control plane on `feature/admin-observability-docs` / PR #1.
+
+Product behavior:
+
+- newly created/rotated client API keys retain their HMAC authentication material and additionally store a purpose-bound AES-GCM recovery copy derived from the deployment API-key pepper;
+- `LlmProxy.Admin` and configured super admins can reveal/copy recoverable keys later; reveal responses are no-store and each reveal writes safe audit metadata without the secret;
+- pre-feature keys remain cryptographically non-recoverable from HMAC and show **Rotate once**; the configured bootstrap key can be backfilled when its original secret is still supplied at startup;
+- Chat Completions, Responses and System One requests are captured at the gateway boundary and persisted only as encrypted request/response ciphertext;
+- content-log APIs require `AdminWrite`, excluding `LlmProxy.Reader`;
+- full-body retention defaults to 30 days, is configurable from 10 through 180 days, and cleanup runs at startup then every four hours;
+- Admin Content Logs polls every two seconds and exposes exact request/response bodies plus correlated routing/TTFT/token metadata where request metrics exist;
+- Admin Playground can execute a real logical-model chat through production routing/capacity admission and send editable JSON directly to the configured System One classifier;
+- Help & Endpoints documents Models, Chat Completions, Responses and System One usage plus authentication/routing/capacity/rate-limit/observability semantics;
+- every principal UI screen now has a closed-by-default contextual documentation accordion.
+
+Security decision:
+
+- ordinary request metrics, audit and OTEL remain metadata-only;
+- full prompt/source/output persistence is allowed only inside the dedicated encrypted administrator content-log store under bounded retention;
+- request headers, client API keys and upstream bearer tokens are never copied into content logs;
+- the API-key pepper is now also a decryption/recovery dependency and must remain backed up outside PostgreSQL.
+
+Validation history so far:
+
+```text
+PR #1 first CI 37071893189
+Backend unit tests             SUCCESS
+Admin frontend build           SUCCESS
+Vitest                         FAILED: missing api.adminSession mock
+follow-up                      frontend unit/E2E mocks corrected
+final exact-head CI            PENDING
+```
+
+Do not call this increment validated or release it until the final exact-head CI, including Docker/PostgreSQL and distributed Full Stack, is green.
+
+
 ## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — VALIDATED
 
 Extended preview.6 personal-key ownership with aggregate request-count governance across every personal API key owned by the same stable Entra `tid + oid`.
