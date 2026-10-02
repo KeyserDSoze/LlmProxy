@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PageDocumentation from './PageDocumentation'
 
 type ProductRelease = {
   version: string
@@ -53,6 +54,8 @@ export default function ReleaseNotesPage() {
       </div>
       <a className="secondary releaseBack" href="/admin/">Back to Admin</a>
     </div>
+
+    <PageDocumentation page="releases" />
 
     <section className="cards cardsFive">
       <div className="metric"><span>Current version</span><strong>{product.version}</strong></div>
