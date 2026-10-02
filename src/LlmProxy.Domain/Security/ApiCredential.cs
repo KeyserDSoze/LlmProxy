@@ -50,6 +50,7 @@ public sealed class ApiCredential
     public string Name { get; private set; } = string.Empty;
     public string KeyPrefix { get; private set; } = string.Empty;
     public string KeyHash { get; private set; } = string.Empty;
+    public string? SecretCiphertext { get; private set; }
     public bool Enabled { get; private set; } = true;
     public DateTimeOffset CreatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ExpiresAtUtc { get; private set; }
@@ -70,6 +71,16 @@ public sealed class ApiCredential
            string.Equals(OwnerObjectId, objectId, StringComparison.OrdinalIgnoreCase);
 
     public void Revoke() => Enabled = false;
+
+    public void SetSecretCiphertext(string secretCiphertext)
+    {
+        if (string.IsNullOrWhiteSpace(secretCiphertext))
+        {
+            throw new ArgumentException("Encrypted credential secret is required.", nameof(secretCiphertext));
+        }
+
+        SecretCiphertext = secretCiphertext;
+    }
 
     public void Rotate(string keyPrefix, string keyHash)
     {
