@@ -1,9 +1,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import Hardware from './Hardware'
+import ContentLogs from './ContentLogs'
+import HelpPage from './HelpPage'
+import PageDocumentation from './PageDocumentation'
+import Playground from './Playground'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
+type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -71,13 +75,15 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
+  const [canWrite, setCanWrite] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
-        api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
+      const [nextSession, nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.adminSession(), api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
       ])
+      setCanWrite(nextSession.canWrite)
       setOverview(nextOverview)
       setRouting(nextRouting)
       setRoutingTuning(nextTuning)
@@ -128,7 +134,10 @@ export default function App() {
           <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
+          {canWrite && <NavItem active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
+          {canWrite && <NavItem active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
           <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          <NavItem active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
       </aside>
@@ -138,6 +147,8 @@ export default function App() {
           <div><h1>{title(view)}</h1><p>On-premises LLM control plane</p></div>
           <button className="secondary" onClick={() => void refresh()}>Refresh</button>
         </header>
+
+        <PageDocumentation page={view} />
 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
         {error && <div className="error">{error}</div>}
@@ -149,9 +160,12 @@ export default function App() {
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
-            {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
+            {view === 'credentials' && <Credentials credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
+            {view === 'playground' && canWrite && <Playground models={models} />}
+            {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
+            {view === 'help' && <HelpPage models={models} />}
           </>
         )}
       </main>
@@ -428,7 +442,7 @@ function Deployments({ deployments, nodes, models, nodeNames, modelNames, refres
   </div>
 }
 
-function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; refresh: () => Promise<void> }) {
+function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCredential[]; canWrite: boolean; refresh: () => Promise<void> }) {
   const [name, setName] = useState('GitHub Copilot')
   const [created, setCreated] = useState<CreatedApiCredential | null>(null)
   async function submit(event: FormEvent) {
@@ -437,17 +451,30 @@ function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; r
     setCreated(result)
     await refresh()
   }
+  async function reveal(id: string) {
+    const result = await api.revealApiCredential(id)
+    setCreated({ id: result.id, name: result.name, keyPrefix: result.keyPrefix, secret: result.secret, enabled: true, createdAtUtc: '', secretAvailable: true })
+  }
+  async function rotate(id: string) {
+    const result = await api.rotateApiCredential(id)
+    setCreated(result)
+    await refresh()
+  }
   return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Inference API credentials</h2><span>Raw secrets are never stored</span></div>
-      <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Action</th></tr></thead><tbody>
-        {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td className="actions">{item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}</td></tr>)}
+    <section className="panel"><div className="panelTitle"><h2>Inference API credentials</h2><span>Encrypted recovery for administrators</span></div>
+      <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Secret</th><th>Action</th></tr></thead><tbody>
+        {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable' : 'Rotate once'}</td><td className="actions">
+          {canWrite && item.secretAvailable && <button onClick={() => void reveal(item.id)}>Reveal / copy</button>}
+          {canWrite && item.enabled && <button onClick={() => void rotate(item.id)}>Rotate</button>}
+          {canWrite && item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}
+        </td></tr>)}
       </tbody></table>
     </section>
     <section className="panel formPanel"><h2>Create credential</h2><form onSubmit={submit}>
       <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="GitHub Copilot Production" /></label>
       <button className="primary">Generate API key</button>
     </form>
-      {created && <div className="secretBox"><strong>Copy this key now</strong><p>It will not be shown again.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
+      {created && <div className="secretBox"><strong>API key available to administrators</strong><p>The authentication hash is one-way; this recoverable copy is stored application-encrypted at rest. Reveals are audited.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
     </section>
   </div>
 }
@@ -506,7 +533,7 @@ function Audit({ events }: { events: AuditEvent[] }) {
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', audit: 'Audit trail' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
