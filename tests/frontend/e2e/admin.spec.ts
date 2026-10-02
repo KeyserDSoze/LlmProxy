@@ -73,6 +73,7 @@ async function installAdminApi(page: Page) {
     const request = route.request()
     const path = new URL(request.url()).pathname
 
+    if (request.method() === 'GET' && path === '/api/admin/session') return json(route, { canWrite: true, roles: ['LlmProxy.Admin'] })
     if (request.method() === 'GET' && path === '/api/admin/overview') return json(route, { nodes: { total: nodes.length, healthy: nodes.filter(item => item.status === 'Healthy').length, degraded: 0, unhealthy: 0, draining: 0 }, models: 1, deployments: deployments.length, activeRequests: 0, requestsToday: 12 })
     if (request.method() === 'GET' && path === '/api/admin/routing') return json(route, { strategy: routingStrategy, supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     if (request.method() === 'GET' && path === '/api/admin/routing/tuning') return json(route, tuning)
@@ -100,6 +101,14 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
     if (request.method() === 'GET' && path === '/api/admin/metrics/summary') return json(route, metricsSummary)
     if (request.method() === 'GET' && path === '/api/admin/audit') return json(route, audit)
+    if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
+    if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'dgx-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
+    if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
+    if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    if (request.method() === 'GET' && path === '/api/admin/content-logs') return json(route, [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
+    if (request.method() === 'GET' && path === '/api/admin/content-logs/1') return json(route, { id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200, requestBody: '{"model":"agic-code-fast"}', responseBody: '{"ok":true}', nodeId: 'node-1', attemptCount: 1, timeToFirstByteMilliseconds: 49, errorCode: null })
+    if (request.method() === 'PUT' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: (request.postDataJSON() as { retentionDays: number }).retentionDays, updatedAtUtc: '2026-09-09T10:06:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    if (request.method() === 'POST' && path === '/api/admin/content-logs/retention/run') return json(route, { startedAtUtc: '2026-09-09T10:06:00Z', completedAtUtc: '2026-09-09T10:06:01Z', retentionDays: 30, cutoffUtc: '2026-08-10T10:06:00Z', deletedLogs: 2 })
 
     if (request.method() === 'POST' && path === '/api/admin/nodes') {
       const input = request.postDataJSON() as Pick<NodeRecord, 'name' | 'baseAddress' | 'weight' | 'maxConcurrency'>
@@ -209,6 +218,23 @@ test('routing strategy, smart tuning and live vLLM pressure are editable', async
   await expect(page.getByRole('heading', { name: 'Smart-routing tuning' })).toBeVisible(); await expect(page.getByRole('heading', { name: 'Live vLLM capacity' })).toBeVisible(); await expect(page.getByText('55.0%')).toBeVisible()
   await page.getByLabel('TTFT target').fill('1500'); await page.getByRole('button', { name: 'Apply smart-routing tuning' }).click(); await expect(page.getByText('Tuning updated live.')).toBeVisible()
   await page.getByLabel('Routing strategy').selectOption('WeightedRoundRobin'); await page.getByRole('button', { name: 'Apply routing strategy' }).click(); await expect(page.getByText('Routing policy updated live.')).toBeVisible()
+})
+
+
+test('admin playground tests models and System One and full-body logs are inspectable', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/')
+  await page.getByRole('button', { name: 'Playground' }).click()
+  await expect(page.getByRole('heading', { name: 'Model chat test' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'System One classifier' })).toBeVisible()
+  await page.getByRole('button', { name: 'Run chat test' }).click()
+  await expect(page.getByText('HTTP 200')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Content Logs' }).click()
+  await expect(page.getByRole('heading', { name: 'Live request / response log' })).toBeVisible()
+  await page.getByRole('button', { name: 'Inspect' }).click()
+  await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
+  await expect(page.getByText(/agic-code-fast/)).toBeVisible()
+  await expect(page.getByText(/automatic every 4h/)).toBeVisible()
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
