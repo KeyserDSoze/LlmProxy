@@ -39,12 +39,12 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Weighted least loaded, round robin and weighted round robin routing.
 - Health hysteresis and safe drain/resume maintenance.
 - Distributed physical-capacity admission with Redis leases.
-- HMAC-backed bearer credentials with one-time creation/rotation secrets.
+- HMAC-backed bearer credentials with administrator-recoverable encrypted secret copies for newly created/rotated keys.
 - Entra-owned personal API keys with self-service lifecycle and per-key usage attribution.
 - Usage Groups, per-credential request-rate governance, aggregate Entra-user request quotas and output-token budgets.
 - Historical PostgreSQL usage rollups beyond raw-metric retention.
 - Transactional PostgreSQL -> Redis runtime-state outbox.
-- Metadata-only metrics/audit/OTEL; prompts/source/generated content are excluded by default.
+- Metadata-only metrics/audit/OTEL plus a separate administrator-only, application-encrypted full-body request/response log with 10-180 day retention.
 - PostgreSQL backup/restore operators.
 - Automatic immutable SemVer releases from every green `main` push, with build identity, GitHub release notes, multi-arch GHCR digest evidence, SPDX SBOM and SLSA provenance.
 - Executable production environment acceptance for Linux host, direct DGX/vLLM and gateway Chat/Responses/SSE surfaces.
@@ -213,11 +213,11 @@ GET  /healthz
 GET  /readyz
 ```
 
-All `/v1` surfaces use bearer credentials. `/v1/systemone` is a Jev-compatible classifier contract, not an OpenAI generative endpoint, and is enabled only when a private System One upstream is configured. Raw credential secrets are returned only at creation/rotation time and are not stored in PostgreSQL.
+All `/v1` surfaces use bearer credentials. `/v1/systemone` is a Jev-compatible classifier contract, not an OpenAI generative endpoint, and is enabled only when a private System One upstream is configured. Newly created/rotated client credentials keep an application-encrypted recovery copy so administrators can reveal/copy them later; authentication still uses the HMAC hash.
 
 ## Administration
 
-The React control plane manages nodes, models, deployments, routing, credentials, governance, usage, maintenance, runtime synchronization and audit.
+The React control plane manages nodes, models, deployments, routing, credentials, governance, usage, maintenance, runtime synchronization and audit. It also includes a model/System One playground, live administrator-only request/response payload logs, endpoint examples and a collapsed documentation accordion on each screen.
 
 Production administration is designed for Entra ID with roles:
 
