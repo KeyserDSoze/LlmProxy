@@ -146,3 +146,68 @@ Credentials are database-backed, HMAC-hashed, revocable and may have an expiry d
 Administration endpoints live under `/api/admin`. They are not OpenAI-compatible and may evolve independently of `/v1`.
 
 Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity, usage attributable to those credentials and read-only aggregate user request-limit metadata. Administrative user request-limit CRUD lives under `/api/admin/user-rate-limits`; user quota scope is stable Entra `(tid, oid)` with optional logical-model scope.
+
+## Administrator diagnostic and content-log APIs
+
+These endpoints are control-plane APIs. When Entra is enabled they require `LlmProxy.Admin`; `LlmProxy.Reader` cannot access them.
+
+### Model chat diagnostic
+
+```http
+POST /api/admin/testing/chat
+Content-Type: application/json
+```
+
+```json
+{
+  "model": "qwen3-coder-next-256k",
+  "systemPrompt": "You are a concise assistant.",
+  "userPrompt": "Reply with exactly: LlmProxy model test OK",
+  "maxTokens": 256,
+  "temperature": 0.2
+}
+```
+
+The diagnostic resolves the logical model through normal routing, acquires the same node/deployment capacity gate used by inference, sends a non-streaming Chat Completions request to the selected runtime, and returns the selected node plus raw upstream body. Caller rate limits are bypassed because this is an administrator diagnostic.
+
+### System One / classifier diagnostic
+
+```http
+GET  /api/admin/testing/systemone
+POST /api/admin/testing/systemone
+```
+
+The GET surface reports whether System One is enabled, the configured public/upstream endpoint, upstream bearer presence and timeout. The POST surface accepts:
+
+```json
+{
+  "payload": {
+    "state": { "document": "duplicate card charge" },
+    "questions": {
+      "billing": {
+        "type": "noul",
+        "instructions": "Is this request about billing?"
+      }
+    }
+  }
+}
+```
+
+The payload object is forwarded as the exact JSON request body to the configured private System One endpoint. This is suitable for deployments hosting classifiers such as `convaiinnovations/laya`.
+
+### Full-body log inspection
+
+```http
+GET /api/admin/content-logs?take=100
+GET /api/admin/content-logs/{id}
+```
+
+The list endpoint returns safe metadata only. The detail endpoint decrypts and returns the exact captured request and response bodies and correlates OpenAI requests with routing metrics where available. Decrypted responses use `Cache-Control: no-store`.
+
+### Administrator API-key recovery
+
+```http
+GET /api/admin/api-credentials/{id}/secret
+```
+
+For newly created/rotated credentials, the endpoint decrypts the administrator recovery copy and returns the secret with `Cache-Control: no-store`. Reveal actions are audited without secret material. Pre-feature keys return `409 secret_not_recoverable` until rotated, except a configured bootstrap key that can be backfilled at startup.
