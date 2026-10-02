@@ -32,9 +32,9 @@ no operational backend             -> 503 no_healthy_deployment
 
 ## Inference identity and credential lifecycle
 
-Raw API secrets are shown once and never persisted. PostgreSQL stores an HMAC-SHA256 hash and safe metadata. The `/v1` authentication path hashes the supplied bearer secret and resolves it from the local runtime credential cache; there is no synchronous credential SQL lookup per request.
+The `/v1` authentication path remains HMAC-only: PostgreSQL stores the HMAC-SHA256 hash and safe metadata, and the supplied bearer secret is hashed and resolved from the local runtime credential cache without a synchronous credential SQL lookup per request.
 
-Credential creation returns a generated secret once. Credential rotation follows the same secret-handling rule.
+Credential creation and rotation return the generated raw secret with `Cache-Control: no-store`. In addition, newly created/rotated credentials store an application-encrypted recovery copy in PostgreSQL so `LlmProxy.Admin` can reveal/copy it later. The recovery ciphertext is not part of runtime state and is never used for authentication. Raw secrets remain excluded from audit, request metrics, content logs, OTEL and generic application logs.
 
 Credentials may be administrator-created **service credentials** or Entra-owned **personal credentials**. Personal ownership is immutable `(tid, oid)` metadata on the credential; usernames/email are display metadata only. The runtime snapshot carries owner IDs, while durable request telemetry continues to store `ApiCredentialId` so user attribution is resolved without duplicating user PII per request.
 
@@ -66,15 +66,17 @@ Replaced:
 ```text
 KeyPrefix
 KeyHash
+SecretCiphertext
 ```
 
 Rules:
 
 - revoked credentials cannot be rotated;
 - a fresh `lp_...` secret is generated server-side;
-- only the HMAC and safe prefix are stored;
-- the raw replacement secret is returned exactly once;
-- the response is marked `Cache-Control: no-store`;
+- the HMAC and safe prefix remain the authentication material;
+- an encrypted administrator recovery copy is stored with the credential;
+- the raw replacement secret is returned to the rotating caller and may later be revealed only by `LlmProxy.Admin`;
+- secret-bearing responses are marked `Cache-Control: no-store`;
 - audit action is `credential.rotate`;
 - audit details contain safe previous/new prefixes, expiry/group metadata and no raw secret/HMAC;
 - the origin replica updates its local credential L1 only after the PostgreSQL save succeeds;
@@ -221,6 +223,7 @@ Current governance endpoints include:
 ```http
 GET  /api/admin/api-credentials
 POST /api/admin/api-credentials
+GET  /api/admin/api-credentials/{id}/secret
 POST /api/admin/api-credentials/{id}/rotate
 POST /api/admin/api-credentials/{id}/revoke
 
@@ -257,17 +260,19 @@ Administrative mutations are audited. Secrets and prompt/output content are excl
 
 `/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, credential request-rate policies, aggregate Entra-user request limits and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle, own usage and read-only user request-limit visibility.
 
-Credential rotation UI behavior:
+Credential administration UI behavior:
 
 - enabled credentials expose `Rotate`;
-- successful rotation displays the new secret in a one-time copy box;
-- the UI explicitly warns that the previous key is invalid;
+- credentials with encrypted recovery expose `Reveal / copy` to administrators;
+- credentials created before recovery support show `Rotate once`;
+- successful rotation displays the new secret and stores the encrypted recovery copy;
+- the previous key is invalid immediately after rotation;
 - the refreshed row shows the new prefix while preserving Usage Group selection;
-- Playwright verifies this workflow.
+- reveal/rotation responses are no-store and reveal actions are audited without secret material.
 
 ## Usage metrics and reporting
 
-Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where upstream reports them. Prompts, source code, generated output and bearer secrets are not persisted by default.
+Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where upstream reports them. Full request/response payloads are stored only in the separate encrypted administrator content-log store; bearer/API secrets and request headers are excluded.
 
 Usage aggregation is PostgreSQL-side and reports by Usage Group, credential and logical model. Current raw request retention is 90 days by default; optional long-term rollups remain future work.
 
