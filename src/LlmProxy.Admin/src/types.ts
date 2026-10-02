@@ -196,6 +196,7 @@ export type ApiCredential = {
   expiresAtUtc?: string | null
   lastUsedAtUtc?: string | null
   usageGroupId?: string | null
+  secretAvailable?: boolean
 }
 
 export type GovernanceCredential = ApiCredential & {
@@ -381,4 +382,91 @@ export type AuditEvent = {
   entityId: string
   sourceIp?: string | null
   detailsJson?: string | null
+}
+
+
+export type AdminSession = {
+  canWrite: boolean
+  roles: string[]
+}
+
+export type RevealedApiCredential = {
+  id: string
+  name: string
+  keyPrefix: string
+  secret: string
+}
+
+export type SystemOneStatus = {
+  enabled: boolean
+  baseAddress?: string | null
+  upstreamEndpoint?: string | null
+  publicEndpoint: string
+  apiKeyConfigured: boolean
+  timeoutSeconds: number
+  configurationError?: string | null
+}
+
+export type AdminTestResult = {
+  requestId: string
+  success: boolean
+  statusCode: number
+  latencyMilliseconds: number
+  requestBody?: string
+  responseBody?: string
+  responseContentType?: string | null
+  upstreamEndpoint?: string
+  logicalModel?: string
+  providerModel?: string
+  deploymentId?: string
+  nodeId?: string
+  nodeName?: string
+  error?: string
+  message?: string
+}
+
+export type ContentLogSummary = {
+  id: number
+  requestId: string
+  startedAtUtc: string
+  completedAtUtc: string
+  surface: string
+  method: string
+  path: string
+  logicalModel?: string | null
+  apiCredentialId?: string | null
+  statusCode: number
+  requestContentType?: string | null
+  responseContentType?: string | null
+}
+
+export type ContentLogDetail = ContentLogSummary & {
+  requestBody: string
+  responseBody: string
+  deploymentId?: string | null
+  nodeId?: string | null
+  usageGroupId?: string | null
+  attemptCount?: number | null
+  isStreaming?: boolean | null
+  timeToFirstByteMilliseconds?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+  errorCode?: string | null
+}
+
+export type ContentLogSettings = {
+  retentionDays: number
+  updatedAtUtc: string
+  minimumRetentionDays: number
+  maximumRetentionDays: number
+  cleanupIntervalHours: number
+}
+
+export type ContentLogCleanupResult = {
+  startedAtUtc: string
+  completedAtUtc: string
+  retentionDays: number
+  cutoffUtc: string
+  deletedLogs: number
 }
