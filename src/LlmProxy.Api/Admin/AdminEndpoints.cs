@@ -337,18 +337,23 @@ public static class AdminEndpoints
                 item.Enabled,
                 item.CreatedAtUtc,
                 item.ExpiresAtUtc,
-                item.LastUsedAtUtc
+                item.LastUsedAtUtc,
+                item.UsageGroupId,
+                secretAvailable = item.SecretCiphertext != null
             }).ToListAsync(cancellationToken)));
 
         var createCredential = group.MapPost("/api-credentials", async (
             CreateApiCredentialRequest request,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var secret = ApiKeyHasher.GenerateSecret();
             var credential = new ApiCredential(request.Name, ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret), request.ExpiresAtUtc);
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
             AddAudit(dbContext, httpContext, "credential.create", "api_credential", credential.Id.ToString(), new
             {
@@ -364,6 +369,7 @@ public static class AdminEndpoints
                 credential.KeyPrefix,
                 credential.CreatedAtUtc,
                 credential.ExpiresAtUtc,
+                secretAvailable = true,
                 secret
             });
         });
