@@ -8,6 +8,7 @@ using LlmProxy.Domain.Routing;
 using LlmProxy.Domain.Security;
 using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Security;
+using LlmProxy.Infrastructure.Retention;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -21,6 +22,7 @@ public sealed class DatabaseBootstrapper(
     IRouteCatalog routeCatalog,
     IRuntimeStateEventSink runtimeStateSink,
     UpstreamCredentialProtector upstreamCredentialProtector,
+    SensitiveDataProtector sensitiveDataProtector,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -74,10 +76,23 @@ public sealed class DatabaseBootstrapper(
         var bootstrapApiKey = configuration["Authentication:ApiKey"];
         if (!string.IsNullOrWhiteSpace(bootstrapApiKey) && !await dbContext.ApiCredentials.AnyAsync(cancellationToken))
         {
-            dbContext.ApiCredentials.Add(new ApiCredential(
+            var bootstrapCredential = new ApiCredential(
                 "Bootstrap / GitHub Copilot",
                 ApiKeyHasher.GetPrefix(bootstrapApiKey),
-                apiKeyHasher.Hash(bootstrapApiKey)));
+                apiKeyHasher.Hash(bootstrapApiKey));
+            bootstrapCredential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(bootstrapApiKey, $"api-credential:{bootstrapCredential.Id}"));
+            dbContext.ApiCredentials.Add(bootstrapCredential);
+        }
+
+        if (!await dbContext.ContentLogSettings.AnyAsync(cancellationToken))
+        {
+            dbContext.ContentLogSettings.Add(new ContentLogSettingsRecord
+            {
+                Id = ContentLogSettingsRecord.SingletonId,
+                RetentionDays = ContentLogRetentionService.DefaultRetentionDays,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
