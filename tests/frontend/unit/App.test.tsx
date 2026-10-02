@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedApi = vi.hoisted(() => ({
+  adminSession: vi.fn(),
   overview: vi.fn(),
   routing: vi.fn(),
   routingTuning: vi.fn(),
@@ -31,7 +32,17 @@ const mockedApi = vi.hoisted(() => ({
   createDeployment: vi.fn(),
   updateDeployment: vi.fn(),
   createApiCredential: vi.fn(),
-  revokeApiCredential: vi.fn()
+  rotateApiCredential: vi.fn(),
+  revealApiCredential: vi.fn(),
+  revokeApiCredential: vi.fn(),
+  systemOneStatus: vi.fn(),
+  testSystemOne: vi.fn(),
+  testChat: vi.fn(),
+  contentLogs: vi.fn(),
+  contentLog: vi.fn(),
+  contentLogSettings: vi.fn(),
+  updateContentLogSettings: vi.fn(),
+  runContentLogRetention: vi.fn()
 }))
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
@@ -55,6 +66,7 @@ const tuning = {
 describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedApi.adminSession.mockResolvedValue({ canWrite: true, roles: ['LlmProxy.Admin'] })
     mockedApi.overview.mockResolvedValue({
       nodes: { total: 1, healthy: 1, degraded: 0, unhealthy: 0, draining: 0 },
       models: 1,
@@ -91,6 +103,11 @@ describe('admin application', () => {
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
+    mockedApi.systemOneStatus.mockResolvedValue({ enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
+    mockedApi.testChat.mockResolvedValue({ requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 20, nodeName: 'dgx-01', requestBody: '{}', responseBody: '{"ok":true}' })
+    mockedApi.testSystemOne.mockResolvedValue({ requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 10, requestBody: '{}', responseBody: '{"billing":true}' })
+    mockedApi.contentLogs.mockResolvedValue([{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
+    mockedApi.contentLogSettings.mockResolvedValue({ retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
     mockedApi.metrics.mockResolvedValue([{
       id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
       deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
@@ -171,6 +188,21 @@ describe('admin application', () => {
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
+  })
+
+
+  it('shows contextual documentation, playground and administrator-only live content logs', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
+    expect(screen.getByText(/Page documentation · Dashboard/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Playground' }))
+    expect(screen.getByRole('heading', { name: 'Model chat test' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Content Logs' }))
+    expect(await screen.findByRole('heading', { name: 'Live request / response log' })).toBeInTheDocument()
+    expect(screen.getByText('Chat Completions')).toBeInTheDocument()
+    expect(screen.getByText(/10–180 days/)).toBeInTheDocument()
   })
 
   it('shows the administrative audit trail', async () => {
