@@ -69,6 +69,7 @@ public static class IdentitySelfServiceEndpoints
             CreatePersonalApiCredentialRequest request,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -91,6 +92,8 @@ public static class IdentitySelfServiceEndpoints
                 identity.TenantId,
                 identity.ObjectId,
                 identity.PrincipalName);
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
             AddAudit(dbContext, httpContext, identity, "credential.self_service.create", credential, new
             {
@@ -138,6 +141,8 @@ public static class IdentitySelfServiceEndpoints
             var previousKeyPrefix = credential.KeyPrefix;
             var secret = ApiKeyHasher.GenerateSecret();
             credential.Rotate(ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret));
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             AddAudit(dbContext, httpContext, identity, "credential.self_service.rotate", credential, new
             {
                 credential.Name,
