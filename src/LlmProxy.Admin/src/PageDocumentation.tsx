@@ -12,7 +12,10 @@ const help: Record<string, { title: string; body: ReactNode }> = {
   logs: { title: 'Content logs', body: <><p>Administrator-only encrypted-at-rest request and response payloads for Chat Completions, Responses and System One. The page auto-refreshes every two seconds.</p><p>Retention is configurable from 10 to 180 days. Cleanup runs automatically every four hours.</p></> },
   playground: { title: 'Playground', body: <><p>Runs live diagnostics against active logical models and the configured System One classifier. Model tests pass through LlmProxy routing and capacity admission but bypass caller rate limits because they are administrative diagnostics.</p><p>Each upstream diagnostic is written to Content Logs so its exact request and response can be inspected later.</p></> },
   audit: { title: 'Audit trail', body: <><p>Administrative configuration and sensitive-control actions. API-key secret reveals, retention changes and manual cleanup runs are audited without recording the revealed secret itself.</p></> },
-  help: { title: 'Endpoint & platform guide', body: <><p>Copy-ready endpoint examples plus an explanation of authentication, routing, capacity, rate limiting, classifier forwarding, observability and retention.</p></> }
+  help: { title: 'Endpoint & platform guide', body: <><p>Copy-ready endpoint examples plus an explanation of authentication, routing, capacity, rate limiting, classifier forwarding, observability and retention.</p></> },
+  governance: { title: 'Usage & Governance', body: <><p>Maps credentials and Entra users to usage groups, request-rate policies and token budgets. These controls run before routing and capacity admission.</p></> },
+  releases: { title: 'Release notes', body: <><p>Shows immutable product versions, build provenance and the operator-visible changes shipped in each release.</p></> },
+  me: { title: 'My API Keys', body: <><p>Self-service personal credentials are bound to the signed-in Entra identity. Users receive a new raw secret on create/rotate; administrators may recover the encrypted server copy under the separate admin policy.</p></> }
 }
 
 export default function PageDocumentation({ page }: { page: string }) {
