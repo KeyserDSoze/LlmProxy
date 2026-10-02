@@ -14,6 +14,7 @@ public static class CredentialRotationAdminEndpoints
             Guid id,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -31,6 +32,8 @@ public static class CredentialRotationAdminEndpoints
             var previousKeyPrefix = credential.KeyPrefix;
             var secret = ApiKeyHasher.GenerateSecret();
             credential.Rotate(ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret));
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
 
             var actor = ResolveActor(httpContext);
             var sourceIp = httpContext.Connection.RemoteIpAddress?.ToString();
@@ -52,7 +55,7 @@ public static class CredentialRotationAdminEndpoints
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            // The new raw secret is intentionally returned exactly once and is never persisted.
+            // The raw secret is persisted only as application-encrypted ciphertext so administrators can recover it later.
             // Prevent intermediaries and browsers from treating this control-plane response as cacheable.
             httpContext.Response.Headers["Cache-Control"] = "no-store";
             return Results.Ok(new
@@ -65,6 +68,7 @@ public static class CredentialRotationAdminEndpoints
                 credential.ExpiresAtUtc,
                 credential.LastUsedAtUtc,
                 credential.UsageGroupId,
+                secretAvailable = true,
                 secret
             });
         });
