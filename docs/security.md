@@ -37,9 +37,11 @@ The bootstrap key comes from runtime configuration only and must never be commit
 
 ## API-key storage and lifecycle
 
-LlmProxy persists only a cryptographic HMAC hash plus safe metadata such as key prefix, name, timestamps, optional Usage Group and optional Entra owner identifiers. The HMAC pepper remains deployment/recovery secret material outside PostgreSQL.
+LlmProxy authenticates client keys through a cryptographic HMAC hash plus safe metadata such as key prefix, name, timestamps, optional Usage Group and optional Entra owner identifiers. The HMAC pepper remains deployment/recovery secret material outside PostgreSQL.
 
-Raw keys are shown exactly once at creation or rotation. Responses containing the one-time secret use `Cache-Control: no-store`. Raw API keys must never be persisted in PostgreSQL, audit, request metrics, logs or runtime-state payloads.
+For newly created or rotated client credentials, LlmProxy also stores an application-encrypted recovery copy of the raw key. The recovery ciphertext is bound to the credential ID and derived from the deployment API-key pepper; it is never used for request authentication. Only `LlmProxy.Admin` (including configured super admins) can call the reveal endpoint. Reveal responses use `Cache-Control: no-store` and every reveal is audited without recording the secret. Credentials created before this feature remain unrecoverable unless the original configured bootstrap key is still available or the credential is rotated once.
+
+Plaintext API keys must never be written to audit events, request metrics, content logs, runtime-state payloads or ordinary application logs.
 
 ## Upstream inference credentials
 
@@ -63,9 +65,13 @@ Currency/spend limits are not currently enforced. On-prem vLLM does not provide 
 
 ## Content logging
 
-Prompts, source code and generated content are not operational telemetry. They must not be persisted by default.
+The product explicitly provides an administrator-only full-body inference log for authenticated Chat Completions, Responses and System One calls. Request and response payloads are captured byte-for-byte at the gateway boundary and stored only as application-encrypted ciphertext in PostgreSQL. SSE responses are retained in their wire-format text so an administrator can inspect the exact streamed exchange.
 
-Allowed default metadata includes timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Personal-user attribution is resolved through the credential owner rather than copying user PII into every request record.
+The dedicated content-log API requires `AdminWrite` / `LlmProxy.Admin`; `LlmProxy.Reader` cannot access it. Decrypted detail responses use `Cache-Control: no-store`. Authorization headers, client API keys, upstream bearer tokens and other request headers are not persisted in this store.
+
+Full-body log retention is independently configurable from 10 through 180 days, defaults to 30 days, and is enforced by a cleanup worker every four hours. Operators must size PostgreSQL storage for the selected retention because prompts and generated payloads can be materially larger than metadata telemetry.
+
+Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content must not be exported to OTEL spans, acceptance evidence or generic application logs.
 
 ## Network
 
