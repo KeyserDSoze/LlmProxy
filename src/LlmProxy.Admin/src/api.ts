@@ -1,4 +1,4 @@
-import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RoutingSettings, RoutingTuningSettings, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
+import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -28,6 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  adminSession: () => request<AdminSession>('/api/admin/session'),
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
   routingTuning: () => request<RoutingTuningSettings>('/api/admin/routing/tuning'),
@@ -72,7 +73,16 @@ export const api = {
   usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
-  audit: (take = 100) => request<AuditEvent[]>(`/api/admin/audit?take=${take}`),
+  audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
+  contentLogs: (take = 100) => request<ContentLogSummary[]>('/api/admin/content-logs?take=' + take),
+  contentLog: (id: number) => request<ContentLogDetail>('/api/admin/content-logs/' + id),
+  contentLogSettings: () => request<ContentLogSettings>('/api/admin/content-logs/settings'),
+  updateContentLogSettings: (retentionDays: number) => request<ContentLogSettings>('/api/admin/content-logs/settings', { method: 'PUT', body: JSON.stringify({ retentionDays }) }),
+  runContentLogRetention: () => request<ContentLogCleanupResult>('/api/admin/content-logs/retention/run', { method: 'POST' }),
+  systemOneStatus: () => request<SystemOneStatus>('/api/admin/testing/systemone'),
+  testSystemOne: (payload: unknown) => request<AdminTestResult>('/api/admin/testing/systemone', { method: 'POST', body: JSON.stringify({ payload }) }),
+  testChat: (body: { model: string; userPrompt: string; systemPrompt?: string | null; maxTokens?: number; temperature?: number }) =>
+    request<AdminTestResult>('/api/admin/testing/chat', { method: 'POST', body: JSON.stringify(body) }),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number; upstreamBearerToken?: string | null }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   setNodeUpstreamCredential: (id: string, bearerToken: string) =>
@@ -113,6 +123,7 @@ export const api = {
     request<Deployment>(`/api/admin/deployments/${id}/capacity-profile/apply`, { method: 'POST' }),
   createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
-  rotateApiCredential: (id: string) => request<CreatedApiCredential>(`/api/admin/api-credentials/${id}/rotate`, { method: 'POST' }),
+  rotateApiCredential: (id: string) => request<CreatedApiCredential>('/api/admin/api-credentials/' + id + '/rotate', { method: 'POST' }),
+  revealApiCredential: (id: string) => request<RevealedApiCredential>('/api/admin/api-credentials/' + id + '/secret'),
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })
 }
