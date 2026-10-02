@@ -8,6 +8,12 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Administrator-only **Content Logs** persist exact Chat Completions, Responses and System One request/response bodies as application-encrypted PostgreSQL ciphertext, with live 2-second Admin UI inspection and copy controls.
+- Full-body log retention is independently configurable from 10 through 180 days, defaults to 30 days and is enforced automatically every four hours; administrators can also run an audited cleanup immediately.
+- Admin **Playground** tests enabled logical models through real routing/capacity admission and tests the configured System One classifier with an editable JSON payload while showing the raw upstream exchange.
+- Admin **Help & Endpoints** provides copy-ready examples for Models, Chat Completions, Responses and System One plus an explanation of authentication, governance, routing, capacity, observability and retention.
+- Every principal Admin, Governance, Release Notes and User Portal screen now has a collapsed contextual documentation accordion.
+- Newly created or rotated client API keys retain an application-encrypted recovery copy so administrators/super admins can reveal and copy the secret later without changing HMAC-based request authentication.
 - Optional public `POST /v1/systemone` gateway surface for Jev-compatible System One classifiers such as Laya, protected by the existing LlmProxy API-key middleware while keeping the classifier upstream private.
 - Configurable System One upstream base address, bearer credential and timeout; client Authorization is never forwarded to the classifier.
 - Every successful push to `main` now creates one immutable distribution release automatically, starting at `v0.0.1`.
@@ -16,9 +22,18 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Changed
 
+- API credential rows expose whether a recovery secret is available; older non-recoverable keys can be rotated once, while a still-configured bootstrap key is backfilled automatically at startup.
+- The product security contract now separates metadata-only metrics/audit/OTEL from the dedicated encrypted administrator content-log store; request headers and bearer/API secrets remain excluded from payload logs.
 - Distributed Full Stack acceptance is now a required job inside the main CI workflow, so the single successful CI result is the complete release gate.
 - Distribution SemVer is injected into the packaged .NET assembly and OCI metadata instead of requiring a bot commit that rewrites source version files.
 - Exact version, `latest`, `main`, `sha-<7>` and major/minor GHCR aliases are published from the same validated multi-architecture build.
+
+### Security
+
+- API-key reveal and decrypted content-log detail require `LlmProxy.Admin`/`AdminWrite`; read-only operators cannot access them.
+- API-key reveal actions and retention changes/manual cleanup are audited without secret or payload content.
+- Decrypted secret/payload responses use `Cache-Control: no-store`; headers, client API keys and upstream bearer credentials are not persisted in content logs.
+- The deployment API-key pepper is now also required to decrypt administrator recovery copies and full-body logs and must be preserved as recovery material.
 
 ## [0.2.0-preview.8] - 2026-09-30
 
