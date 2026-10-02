@@ -4,17 +4,17 @@ Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
-## Administrator observability / testing candidate — IMPLEMENTED, VALIDATION IN PROGRESS
+## Administrator observability / testing — DONE / VALIDATED
 
 Branch / review:
 
 ```text
 branch   feature/admin-observability-docs
 PR       #1
-state    draft until all CI/full-stack gates are green
+state    exact feature head validated; ready for promotion
 ```
 
-The candidate adds:
+The validated increment adds:
 
 - administrator-recoverable encrypted copies for newly created/rotated client API keys, with audited reveal and no-store responses;
 - application-encrypted full request/response content logs for Chat Completions, Responses and System One;
@@ -36,7 +36,20 @@ API-key recovery copy               encrypted at rest, admin reveal only
 headers / bearer secrets            never copied into content logs
 ```
 
-The feature branch must not be promoted or released until the exact head has green backend, frontend/Playwright, PostgreSQL/Docker and Full Stack CI evidence. The first feature-branch CI exposed a frontend mock gap after adding `/api/admin/session`; backend build/unit tests were green, and the frontend mock has since been corrected. Final evidence must replace this paragraph before promotion.
+Exact validation evidence:
+
+```text
+validated head          6641739bd80f7eaf2b8a92594a5a75541c82546d
+PR                      #1
+CI                      37073147425 SUCCESS
+Backend unit/build      SUCCESS
+Frontend/Vitest         SUCCESS
+Playwright E2E          SUCCESS
+Docker/PostgreSQL       SUCCESS
+Redis/OTEL full stack   SUCCESS
+```
+
+The Docker integration smoke explicitly exercised the administrator System One classifier diagnostic against the classifier mock, the administrator model-chat diagnostic through normal routing/capacity admission, bootstrap API-key reveal, encrypted full-body request/response inspection and the 10-180 day retention boundary. Promotion to `main` still requires the final documentation-only head to re-pass CI; the automatic release train then requires a green `main` CI for the exact merge SHA before publication.
 
 ## Current validated product baseline
 
@@ -268,6 +281,7 @@ OpenAI-compatible client / GitHub Copilot
   -> vLLM
   -> output-token settlement
   -> metadata-only metric + OTEL telemetry
+  -> administrator-only encrypted full-body content log
 ```
 
 ### Runtime state
@@ -286,7 +300,7 @@ Drain pre-blocks admission. Existing streams finish. Resume requires zero global
 
 ### Credentials and caller governance
 
-Credentials persist HMAC-SHA256 hashes and safe metadata. Administrator-created service credentials remain unowned. Personal credentials store stable Entra `OwnerTenantId + OwnerObjectId` and optional principal-name display metadata; raw secrets are returned once. In-place rotation preserves credential identity, Entra ownership, group/policy/history linkage and returns the replacement secret once.
+Credentials use HMAC-SHA256 hashes and safe metadata for authentication. Newly created/rotated credentials additionally retain an application-encrypted recovery copy for administrator reveal/copy; plaintext is never stored. Administrator-created service credentials remain unowned. Personal credentials store stable Entra `OwnerTenantId + OwnerObjectId` and optional principal-name display metadata. In-place rotation preserves credential identity, Entra ownership, group/policy/history linkage while replacing hash/prefix/recovery ciphertext.
 
 Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users use `/api/me/*` or `/admin/me` to create/list/rotate/revoke only their own keys and inspect own credential-attributed usage. Admin/Reader identity inventory is available under `/api/admin/identity`.
 
@@ -303,19 +317,20 @@ raw request metrics           90 days
 daily usage rollups          730 days
 audit events                 365 days
 processed runtime outbox      30 days
+full-body content logs         30 days default, configurable 10-180
 ```
 
 Complete expired UTC days roll up transactionally before raw deletion. A PostgreSQL advisory transaction lock serializes compaction across replicas. Reporting merges historical rollups with newer raw metrics without double counting.
 
 ### Backup / restore
 
-PostgreSQL is durable recovery authority; Redis is rebuildable runtime state. Bash and PowerShell backup/restore operators are validated with destructive clean-target restore smokes. Raw API secrets are not in PostgreSQL. `Authentication__ApiKeyPepper` and deployment secrets must be preserved separately.
+PostgreSQL is durable recovery authority; Redis is rebuildable runtime state. Bash and PowerShell backup/restore operators are validated with destructive clean-target restore smokes. Plaintext API secrets are not in PostgreSQL; administrator recovery copies and full-body inference logs are stored only as application-encrypted ciphertext. `Authentication__ApiKeyPepper` is therefore both authentication and decryption/recovery material and must be preserved separately with deployment secrets.
 
 ### Routing / capacity / observability
 
-Current MVP includes logical aliases, weighted least loaded / round robin / weighted round robin, health hysteresis, path-prefixed service roots, pre-response-only failover, vLLM pressure/EWMA feedback, benchmark-derived Capacity Profiles, distributed capacity leases with lease-loss cancellation, and metadata-only OTEL/DCGM observability.
+Current MVP includes logical aliases, weighted least loaded / round robin / weighted round robin, health hysteresis, path-prefixed service roots, pre-response-only failover, vLLM pressure/EWMA feedback, benchmark-derived Capacity Profiles, distributed capacity leases with lease-loss cancellation, metadata-only OTEL/DCGM observability, and a separate encrypted administrator content-log store.
 
-Prompts/source/generated output/API secrets remain excluded from persistent telemetry by default.
+Prompts/source/generated output remain excluded from ordinary metrics, audit, OTEL and acceptance evidence. Exact request/response bodies are persisted only in the bounded-retention encrypted content-log store. API keys and bearer headers remain excluded everywhere except the dedicated encrypted credential-recovery ciphertext.
 
 ## Current development focus
 

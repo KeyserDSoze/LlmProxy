@@ -26,27 +26,27 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: Redis distributed capacity leases and fail-closed lease-loss handling.
 - DONE: safe distributed maintenance drain/resume with cross-replica admission pre-block and validated warm-up.
 
-## M3 — Enterprise administration — DONE FOR MVP / CURRENT EXTENSION IN VALIDATION
+## M3 — Enterprise administration — DONE FOR CURRENT MVP
 
 - DONE: Entra plumbing with Admin/User/Reader roles.
 - DONE: React admin control plane plus `/admin/me` personal-key user portal.
 - DONE: HMAC-hashed DB-backed service and Entra-owned personal credentials + runtime cache.
 - DONE: stable `tid+oid` ownership, rotation/revocation and audit.
-- CANDIDATE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
-- CANDIDATE: per-page closed documentation accordions and dedicated Help & Endpoints guidance.
+- DONE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
+- DONE: per-page closed documentation accordions and dedicated Help & Endpoints guidance.
 - DONE: product version/build and patch-note visibility.
 - EXTERNAL: real Entra app registration/roles.
 
-## M4 — Observability — CURRENT EXTENSION IN VALIDATION / PRODUCTION STORAGE EVOLUTION REMAINS
+## M4 — Observability — DONE FOR CURRENT MVP / PRODUCTION STORAGE EVOLUTION REMAINS
 
 - DONE: request/status/duration/TTFT/token/attempt metrics.
 - DONE: vLLM pressure + optional DCGM telemetry.
 - DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
 - DONE: trace correlation and capacity-lease-loss evidence.
-- CANDIDATE: administrator-only encrypted full request/response content logs for Chat Completions, Responses and System One.
-- CANDIDATE: live 2-second content-log UI, exact payload inspection and correlation to request metrics.
-- CANDIDATE: content-log retention configurable 10-180 days with four-hour cleanup.
-- CANDIDATE: Admin model/System One Playground and classifier configuration visibility.
+- DONE: administrator-only encrypted full request/response content logs for Chat Completions, Responses and System One.
+- DONE: live 2-second content-log UI, exact payload inspection and correlation to request metrics.
+- DONE: content-log retention configurable 10-180 days with four-hour cleanup.
+- DONE: Admin model/System One Playground and classifier configuration visibility.
 - PLANNED/EXTERNAL: customer-specific HA/object-storage/retention choices.
 
 ## M5 — Capacity and smart routing — DONE FOR CURRENT MVP / EXTERNAL CALIBRATION REMAINS
@@ -123,7 +123,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 - DONE: old credential hash removed after rotation convergence.
 - DONE: maintenance block piggybacks on distributed capacity admission.
 
-## M10 — Retention and operational hygiene — CURRENT EXTENSION IN VALIDATION
+## M10 — Retention and operational hygiene — DONE FOR CURRENT MVP
 
 - DONE: raw request metrics 90-day default.
 - DONE: daily usage rollups 730-day default.
@@ -132,7 +132,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 - DONE: pending outbox never retention-deleted.
 - DONE: daily rollup-before-delete compaction with PostgreSQL advisory lock.
 - DONE: manual/background cleanup, idempotent rerun and Docker smoke proof.
-- CANDIDATE: encrypted full-body content-log retention defaults to 30 days, is bounded to 10-180 days and is automatically cleaned every four hours.
+- DONE: encrypted full-body content-log retention defaults to 30 days, is bounded to 10-180 days and is automatically cleaned every four hours.
 
 ## M11 — Distributed runtime state / HA — DONE FOR CURRENT MVP
 

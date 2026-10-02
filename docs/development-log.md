@@ -1,6 +1,6 @@
 # Development log
 
-## 2026-10-03 — Administrator observability, testing and in-app documentation — CANDIDATE
+## 2026-10-03 — Administrator observability, testing and in-app documentation — DONE / VALIDATED
 
 Implemented the operator-facing visibility requested for the current LlmProxy control plane on `feature/admin-observability-docs` / PR #1.
 
@@ -24,18 +24,21 @@ Security decision:
 - request headers, client API keys and upstream bearer tokens are never copied into content logs;
 - the API-key pepper is now also a decryption/recovery dependency and must remain backed up outside PostgreSQL.
 
-Validation history so far:
+Validation evidence:
 
 ```text
-PR #1 first CI 37071893189
-Backend unit tests             SUCCESS
-Admin frontend build           SUCCESS
-Vitest                         FAILED: missing api.adminSession mock
-follow-up                      frontend unit/E2E mocks corrected
-final exact-head CI            PENDING
+validated feature head         6641739bd80f7eaf2b8a92594a5a75541c82546d
+PR #1 CI                       37073147425 SUCCESS
+Backend build/unit             SUCCESS
+Frontend build/Vitest          SUCCESS
+Playwright E2E                 SUCCESS
+Docker/PostgreSQL integration  SUCCESS
+Redis/OTEL/Grafana full stack  SUCCESS
 ```
 
-Do not call this increment validated or release it until the final exact-head CI, including Docker/PostgreSQL and distributed Full Stack, is green.
+The backend integration smoke proves both requested diagnostic flows: a System One classifier call reaches the classifier mock and returns the expected decision payload, while a model-chat diagnostic traverses normal logical-model routing/capacity and reaches the selected inference mock. The same smoke verifies administrator recovery of the encrypted bootstrap API key, encrypted exact-body content logging and the 10-180 day retention contract.
+
+An earlier feature run exposed two test-fixture gaps (the new `/api/admin/session` mock and one strict Playwright locator); both were corrected before the green exact-head run above. The final documentation-status commit must itself re-pass CI before merge. A green main CI is still required by the automatic immutable release gate.
 
 
 ## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — VALIDATED
