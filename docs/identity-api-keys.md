@@ -64,16 +64,18 @@ Tenant and object ID are both present or both absent. Existing service credentia
 
 ## API-key storage
 
-The existing security model remains authoritative:
+The authentication model remains HMAC-based, with a separate administrator recovery layer:
 
 1. generate a high-entropy raw secret;
 2. derive a safe display prefix;
-3. store only the HMAC hash plus metadata in PostgreSQL;
-4. return the raw secret exactly once at creation or rotation;
-5. send `Cache-Control: no-store` on responses containing a raw key;
-6. keep the HMAC pepper outside PostgreSQL and preserve it as deployment/recovery secret material.
+3. store the HMAC hash plus metadata used for authentication;
+4. store an application-encrypted recovery copy bound to the credential ID for administrator reveal/copy;
+5. return the raw secret at creation or rotation and mark secret-bearing responses `Cache-Control: no-store`;
+6. keep the HMAC pepper outside PostgreSQL and preserve it as deployment/recovery secret material because it is also required to decrypt recovery copies.
 
-A raw personal or service API key must never be written to audit, request metrics, logs or runtime-state payloads.
+The encrypted recovery value is not published to Redis/runtime credential snapshots and is never used for request authentication. Only `LlmProxy.Admin` can reveal it; every reveal is audited without the secret. Credentials created before encrypted recovery remain non-recoverable until rotated once, except the configured bootstrap key can be backfilled when its original secret is still available at startup.
+
+A raw personal or service API key must never be written to audit, request metrics, full-body content logs, OTEL, generic application logs or runtime-state payloads.
 
 ## Self-service endpoints
 
@@ -102,7 +104,7 @@ GET /api/admin/identity/api-credentials
 GET /api/admin/identity/users
 ```
 
-The existing `/api/admin/api-credentials` lifecycle remains the administration path for service credentials and broad supervision. Administrators retain the ability to revoke/rotate credentials through the existing admin contract.
+The existing `/api/admin/api-credentials` lifecycle remains the administration path for service credentials and broad supervision. Administrators retain the ability to revoke/rotate credentials through the existing admin contract. Administrators (not read-only operators) may also reveal an encrypted recovery copy through `GET /api/admin/api-credentials/{id}/secret` when `secretAvailable=true`.
 
 ## Request attribution
 
@@ -119,7 +121,7 @@ Bearer API key
 
 For a personal credential, the runtime credential snapshot also contains `OwnerTenantId` and `OwnerObjectId`. Durable request telemetry continues to persist `ApiCredentialId`; user attribution is resolved through the credential owner instead of duplicating mutable user metadata on every request row.
 
-This preserves the existing privacy rule: prompts, source code, generated output and raw secrets are not persisted as usage telemetry.
+This preserves the usage-telemetry privacy rule: request metrics and usage rollups do not persist prompts, source code, generated output or raw secrets. Full request/response bodies, when enabled by the product contract, live only in the separate administrator-only encrypted content-log store and are governed by its independent 10-180 day retention.
 
 ## Usage and limits
 
