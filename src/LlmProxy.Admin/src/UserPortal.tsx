@@ -196,10 +196,16 @@ export default function UserPortal() {
         </section>}
 
         <section className="panel">
-          <div className="panelTitle"><h2>My request limits</h2><span>Applied across all of your personal API keys.</span></div>
-          <table><thead><tr><th>Model</th><th>Limit</th><th>Status</th><th>Updated</th></tr></thead><tbody>
-            {rateLimits.map(policy => <tr key={policy.id}><td>{policy.logicalModel ?? 'All models'}</td><td><strong>{formatNumber(policy.requestsPerWindow)}</strong> / {policy.windowSeconds}s</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td>{formatDate(policy.updatedAtUtc)}</td></tr>)}
-            {rateLimits.length === 0 && <tr><td colSpan={4} className="muted">No aggregate user request limit is configured.</td></tr>}
+          <div className="panelTitle"><h2>My limits</h2><span>User and group policies apply to every personal API key.</span></div>
+          <table><thead><tr><th>Scope</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+            {rateLimits.map(policy => <tr key={policy.id}>
+              <td><strong>{policy.scope === 'group' ? 'Group' : 'User'}</strong><div className="muted">{policy.scopeName ?? '—'}</div></td>
+              <td>{policy.logicalModel ?? 'All models'}</td>
+              <td><strong>{formatNumber(policy.requestsPerWindow)}</strong> / {policy.windowSeconds}s</td>
+              <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <>{formatNumber(policy.outputTokensPerWindow)} / {policy.windowSeconds}s<div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
+              <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td>{formatDate(policy.updatedAtUtc)}</td>
+            </tr>)}
+            {rateLimits.length === 0 && <tr><td colSpan={6} className="muted">No user or group caller quota is configured.</td></tr>}
           </tbody></table>
         </section>
 
