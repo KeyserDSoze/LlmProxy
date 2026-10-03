@@ -37,6 +37,8 @@ The Release Notes page shows:
 
 Administrators with write access can choose **Update now** or select a local date/time and choose **Schedule**. Pending jobs can be cancelled. Starting an immediate update with force semantics replaces an existing pending schedule, but never interrupts an update that is already running.
 
+When the selected target skips one or more published versions, LlmProxy builds an ascending upgrade chain and applies every intermediate immutable release in order. For example, an installation on `0.0.6` targeting `0.0.9` executes `0.0.7 → 0.0.8 → 0.0.9`. This guarantees that a custom migration attached to an intermediate release cannot be bypassed.
+
 Read-only administrators can inspect versions and plans but cannot schedule, cancel or start an update.
 
 ## Per-release update plan
