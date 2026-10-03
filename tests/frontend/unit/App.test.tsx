@@ -166,7 +166,7 @@ describe('admin application', () => {
   it('shows hardware telemetry and can update the separate DCGM root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
     await user.click(screen.getByRole('button', { name: 'Hardware' }))
-    expect(screen.getByRole('heading', { name: 'hardware telemetry' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Hardware telemetry' })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('67 °C')).toHaveLength(2)

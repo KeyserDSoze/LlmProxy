@@ -67,8 +67,8 @@ public sealed class InMemoryRouteCatalogTests
         var model1Candidates = await catalog.GetCandidatesAsync("model-1", CancellationToken.None);
         var model2Candidates = await catalog.GetCandidatesAsync("model-2", CancellationToken.None);
 
-        Assert.Equal([nodeA, nodeB], model1Candidates.Select(candidate => candidate.NodeId).Order().ToArray());
-        Assert.Equal([nodeB, nodeC, nodeD, nodeE], model2Candidates.Select(candidate => candidate.NodeId).Order().ToArray());
+        Assert.Equal(new[] { nodeA, nodeB }.Order().ToArray(), model1Candidates.Select(candidate => candidate.NodeId).Order().ToArray());
+        Assert.Equal(new[] { nodeB, nodeC, nodeD, nodeE }.Order().ToArray(), model2Candidates.Select(candidate => candidate.NodeId).Order().ToArray());
         Assert.All(model1Candidates, candidate => Assert.Equal("provider-model-1", candidate.ProviderModelName));
         Assert.All(model2Candidates, candidate => Assert.Equal("provider-model-2", candidate.ProviderModelName));
     }
