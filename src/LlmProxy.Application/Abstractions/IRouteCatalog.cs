@@ -50,7 +50,8 @@ public sealed record RouteDeploymentSnapshot(
     Guid ModelId,
     bool Enabled,
     int Weight,
-    int? MaxConcurrency)
+    int? MaxConcurrency,
+    string? RuntimeBaseAddress = null)
 {
     public static RouteDeploymentSnapshot From(ModelDeployment deployment)
         => new(
@@ -59,7 +60,8 @@ public sealed record RouteDeploymentSnapshot(
             deployment.ModelId,
             deployment.Enabled,
             deployment.Weight,
-            deployment.MaxConcurrency);
+            deployment.MaxConcurrency,
+            deployment.RuntimeBaseAddress);
 }
 
 public sealed record RouteCatalogStatus(

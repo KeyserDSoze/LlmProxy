@@ -44,13 +44,17 @@ The first integration gate validates:
 
 LlmProxy authenticates Copilot requests with the API credential supplied by the provider configuration. A central shared credential therefore identifies the **Copilot provider/workload**, not necessarily the individual GitHub user.
 
-For individual GitHub-user adoption and usage, use GitHub Copilot administration/usage metrics. LlmProxy separately records infrastructure-level request telemetry associated with the API credential, logical model, DGX deployment and request timing.
+For individual GitHub-user adoption and usage, GitHub exposes separate Copilot usage metrics that include user-oriented identifiers such as `user_id` and `user_login`. LlmProxy separately records infrastructure-level request telemetry associated with the API credential, logical model, DGX deployment and request timing.
 
-If real-time per-user inference attribution is required inside LlmProxy, issue distinct provider credentials at a scope where the client configuration can select them and map those credentials to the desired person/team. Do not assume GitHub forwards an end-user login to an arbitrary OpenAI-compatible provider unless the specific integration contract documents it.
+The public custom-model/BYOK provider contract documents provider connection/authentication settings but does not promise a per-request developer email, GitHub user ID/login or Microsoft Entra object ID to the arbitrary OpenAI-compatible provider. LlmProxy must therefore not base authorization, billing or suspension on undocumented headers, source IP or User-Agent.
+
+If real-time per-user inference attribution is required inside LlmProxy, use distinct personal LlmProxy credentials per user/client configuration, or place a trusted identity-aware intermediary in front of LlmProxy that injects a signed identity assertion under a contract we control.
+
+A user disabled in the LlmProxy platform-user registry is blocked from the LlmProxy portal and all personal LlmProxy keys are revoked. That does not selectively block the same person when a GitHub organization is using one shared Copilot provider credential; individual Copilot access must be removed in GitHub or the integration must use per-user identity/credentials.
 
 ## Credential lifecycle
 
-The admin console can create and revoke inference credentials. Raw secrets are shown only when created; the database stores an HMAC-SHA256 hash protected with the server-side `Authentication:ApiKeyPepper`.
+The admin console can create, rotate, revoke and reveal recoverable inference credentials. Authentication uses the HMAC-SHA256 hash; newly created/rotated credentials additionally store an application-encrypted recovery copy protected by the deployment `Authentication:ApiKeyPepper`.
 
 Recommended production pattern:
 

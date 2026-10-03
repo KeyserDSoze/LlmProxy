@@ -21,6 +21,9 @@ public sealed class InferenceNode
     [JsonIgnore]
     public string? UpstreamBearerTokenCiphertext { get; private set; }
     public string? HardwareMetricsBaseAddress { get; private set; }
+    public string? ManagementBaseAddress { get; private set; }
+    [JsonIgnore]
+    public string? ManagementBearerTokenCiphertext { get; private set; }
     public bool Enabled { get; private set; } = true;
     public NodeStatus Status { get; private set; } = NodeStatus.Unknown;
     public int Weight { get; private set; } = 1;
@@ -49,6 +52,18 @@ public sealed class InferenceNode
         HardwareMetricsBaseAddress = string.IsNullOrWhiteSpace(baseAddress)
             ? null
             : InferenceEndpoint.NormalizeBaseAddress(baseAddress);
+    }
+
+    public void SetManagementBaseAddress(string? baseAddress)
+    {
+        ManagementBaseAddress = string.IsNullOrWhiteSpace(baseAddress)
+            ? null
+            : InferenceEndpoint.NormalizeBaseAddress(baseAddress);
+    }
+
+    public void SetManagementBearerTokenCiphertext(string? ciphertext)
+    {
+        ManagementBearerTokenCiphertext = string.IsNullOrWhiteSpace(ciphertext) ? null : ciphertext;
     }
 
     public void Enable()

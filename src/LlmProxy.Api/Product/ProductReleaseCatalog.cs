@@ -48,13 +48,29 @@ public static class ProductReleaseCatalog
             "Automated immutable main release",
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
             {
+                ["Added"] =
+                [
+                    "Administrators can use Model & Hardware to inspect prepared hardware, compare deployable open-weight models against live RAM/VRAM/disk capacity, and install, start, stop or remove managed vLLM runtimes.",
+                    "The release ships an authenticated LlmProxy Node Agent for x86_64 and ARM64 Linux hardware plus deployment-specific runtime addressing so multiple models can coexist safely on one physical host.",
+                    "The Admin control plane includes live encrypted full-body request/response inspection, model and System One classifier diagnostics, endpoint examples and contextual page documentation.",
+                    "Administrators can reveal and copy application-encrypted recovery copies of newly created or rotated client API keys.",
+                    "Full-body content-log retention is independently configurable from 10 through 180 days and is cleaned automatically every four hours.",
+                    "Users & Access supports administrator-censused or automatic first-login end-user provisioning, central enable/disable and a personal dashboard with recent request metadata."
+                ],
                 ["Changed"] =
                 [
-                    "This immutable distribution release was generated automatically from a validated main commit."
+                    "This immutable distribution release was generated automatically from a validated main commit.",
+                    "Hardware terminology and deployment tooling are hardware-agnostic; DGX is supported as an example rather than assumed as the only inference platform.",
+                    "Managed model stop/remove disables routing before the remote lifecycle action so traffic fails safe.",
+                    "Operational metrics, audit and OTEL remain metadata-only while exact inference payloads are isolated in the administrator-only encrypted content-log store.",
+                    "Normal-user self-service admission is controlled by the stable Entra tenant/object user registry rather than requiring mutable email identity."
                 ],
                 ["Security"] =
                 [
-                    "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite."
+                    "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite.",
+                    "The node agent requires a bearer in Production and exposes only hardware inventory plus the constrained model lifecycle contract; management credentials are encrypted at rest by LlmProxy.",
+                    "API-key reveal and decrypted payload inspection require LlmProxy.Admin; secret-bearing responses are no-store and reveal/retention actions are audited without secret content.",
+                    "Disabling a normal platform user blocks self-service and revokes every active personal API key owned by the same Entra tid + oid; shared service credentials are not treated as individual-user identity."
                 ]
             });
 
@@ -142,8 +158,8 @@ public static class ProductReleaseCatalog
             {
                 ["Added"] =
                 [
-                    "A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.",
-                    "Acceptance evidence records metadata-only PASS/FAIL, HTTP status, content type and timing for direct DGX and gateway Models, Chat, Responses and SSE probes.",
+                    "A production environment acceptance command validates the actual Linux host, VM-to-inference-node connectivity and deployed OpenAI-compatible surfaces after installation.",
+                    "Acceptance evidence records metadata-only PASS/FAIL, HTTP status, content type and timing for direct inference-node and gateway Models, Chat, Responses and SSE probes.",
                     "A dedicated acceptance runbook defines pass criteria and the remaining benchmark, Entra, Cloudflare, Copilot and deployment-runner follow-on work."
                 ],
                 ["Changed"] =
@@ -152,7 +168,7 @@ public static class ProductReleaseCatalog
                 ],
                 ["Fixed"] =
                 [
-                    "DGX health acceptance validates the canonical vLLM status-only /health response without incorrectly requiring a JSON body or content type."
+                    "Inference-node health acceptance validates the canonical vLLM status-only /health response without incorrectly requiring a JSON body or content type."
                 ],
                 ["Security"] =
                 [
@@ -168,8 +184,8 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.",
-                    "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate DGX connectivity and run the canonical full-stack deployment.",
-                    "A production environment template and end-to-end Linux runbook cover private bootstrap, DGX connectivity, Entra/public exposure, backup, update and rollback.",
+                    "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate inference-node connectivity and run the canonical full-stack deployment.",
+                    "A production environment template and end-to-end Linux runbook cover private bootstrap, inference-node connectivity, Entra/public exposure, backup, update and rollback.",
                     "Production deployment stages runtime Compose and observability assets under /opt/llmproxy/runtime so containers do not depend on a transient runner workspace.",
                     "Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is configured."
                 ],
@@ -253,12 +269,12 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "OpenAI-compatible Chat Completions and Responses surfaces with SSE streaming and cancellation.",
-                    "Logical-model routing across DGX/vLLM with weighted least loaded, round robin and weighted round robin strategies.",
+                    "Logical-model routing across inference-node/vLLM with weighted least loaded, round robin and weighted round robin strategies.",
                     "Distributed runtime state using PostgreSQL as durable truth, Redis as shared L2/coordination and local RAM as request-path L1.",
                     "Physical capacity admission with Redis leases, fail-closed coordination and active lease-loss cancellation.",
                     "Caller governance with HMAC-backed credentials, Usage Groups, request-rate limits and output-token budgets.",
                     "Credential rotation with one-time replacement secrets and cross-replica runtime propagation.",
-                    "Metadata-only request metrics, audit, vLLM runtime telemetry and optional DGX hardware telemetry.",
+                    "Metadata-only request metrics, audit, vLLM runtime telemetry and optional inference-hardware telemetry.",
                     "Repository-supported PostgreSQL backup/restore operators for Bash and PowerShell with destructive clean-target verification.",
                     "Safe node maintenance flow with distributed admission pre-block, drain-to-zero, health/models/warm-up validation and controlled resume.",
                     "Product version and release notes surfaced through the Admin API and UI."

@@ -1,6 +1,6 @@
-# DGX hardware telemetry
+# inference hardware telemetry
 
-LlmProxy treats GPU hardware telemetry as an **optional operational signal** that is independent from vLLM health and inference routing. A broken or unreachable hardware metrics endpoint must never make a DGX node unavailable for inference by itself.
+LlmProxy treats GPU hardware telemetry as an **optional operational signal** that is independent from vLLM health and inference routing. A broken or unreachable hardware metrics endpoint must never make a inference node unavailable for inference by itself.
 
 ## Why it is separate from vLLM telemetry
 
@@ -65,7 +65,7 @@ HARDWARE_METRICS_INTERVAL_SECONDS=10
 The bootstrap node can receive an optional hardware root:
 
 ```text
-DGX_HARDWARE_METRICS_BASE_ADDRESS=http://10.0.0.10:9400
+INFERENCE_NODE_HARDWARE_METRICS_BASE_ADDRESS=http://10.0.0.10:9400
 ```
 
 Existing nodes can be configured or cleared at runtime:
@@ -106,7 +106,7 @@ The distinction is intentional: a temporary exporter outage retains the last sam
 
 ## Admin UI
 
-The React console has a dedicated **DGX Hardware** view. It shows current collector availability, GPU count, utilization, framebuffer usage, temperature and power, and allows the independent DCGM service root to be configured or cleared per node.
+The React console has a dedicated **inference node Hardware** view. It shows current collector availability, GPU count, utilization, framebuffer usage, temperature and power, and allows the independent DCGM service root to be configured or cleared per node.
 
 The page deliberately labels this data as observational and includes a **Routing isolation** note. Aggregate cards use only currently available snapshots; retained values from a transient failed collector are shown only as diagnostics for that node.
 
@@ -116,15 +116,15 @@ The recommended production network shape is:
 
 ```text
 LlmProxy VM
-    -> TCP 8000 (example) vLLM on DGX
-    -> TCP 9400 (example) DCGM exporter on DGX
+    -> TCP 8000 (example) vLLM on inference node
+    -> TCP 9400 (example) DCGM exporter on inference node
 ```
 
-The DCGM exporter endpoint should not be publicly exposed. Firewall it so only the gateway/monitoring network can reach it. Cloudflare Tunnel should expose the gateway, not raw DGX telemetry endpoints.
+The DCGM exporter endpoint should not be publicly exposed. Firewall it so only the gateway/monitoring network can reach it. Cloudflare Tunnel should expose the gateway, not raw inference node telemetry endpoints.
 
 ## Routing policy
 
-Hardware signals are **not part of the routing score yet**. This is deliberate. High GPU utilization is often a sign that batching is working efficiently, while queue depth/KV-cache pressure are usually more directly related to inference latency. We will only introduce hardware-aware routing after representative DGX Spark benchmarks demonstrate useful thresholds.
+Hardware signals are **not part of the routing score yet**. This is deliberate. High GPU utilization is often a sign that batching is working efficiently, while queue depth/KV-cache pressure are usually more directly related to inference latency. We will only introduce hardware-aware routing after representative GPU inference hardware benchmarks demonstrate useful thresholds.
 
 The benchmark should correlate at least:
 

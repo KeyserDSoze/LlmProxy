@@ -12,17 +12,19 @@
 
 Production control-plane and user self-service authentication use Microsoft Entra ID through OpenID Connect. Application roles are:
 
-- `LlmProxy.Admin`: full configuration access plus user self-service capabilities.
-- `LlmProxy.User`: normal inference consumer; may manage only personal API keys owned by the current Entra identity and inspect own usage.
-- `LlmProxy.Reader`: read-only operational/admin access; retained for operators and does not grant normal user self-service by itself.
+- `LlmProxy.Admin`: full configuration access and administrator bypass of the normal-user registry.
+- `LlmProxy.User`: optional normal-user app-role assignment retained for tenant policy/compatibility.
+- `LlmProxy.Reader`: read-only operational/admin access.
+
+After Entra authentication, normal-user self-service is authorized by the persisted LlmProxy platform-user registry. Administrators choose either manual census or automatic first-login registration. A disabled platform user is denied self-service even if Entra authentication itself succeeds.
 
 Production startup fails when Entra authentication is not enabled rather than silently exposing administration endpoints.
 
 An installation may additionally configure a host-local `EntraId:SuperAdmins` allow-list. Matching occurs only after successful Entra authentication in the configured tenant and grants the internal `LlmProxy.Admin` role. Plain UPN/email matching is supported for operator convenience, while `oid:<object-id>` entries are preferred because Entra object IDs are stable and user principal names can change.
 
-Personal-key ownership is based on the stable Entra `tid` + `oid` claims. Username, email and display name may be retained as non-authoritative metadata but must not be used to authorize key ownership.
+Personal-key ownership and platform-user authorization are based on the stable Entra `tid` + `oid` claims. Username, email and display name may be retained as non-authoritative metadata but must not be used to authorize access or key ownership. Disabling a normal platform user revokes that user's active personal keys; shared service credentials are outside this user boundary.
 
-See `docs/identity-api-keys.md` for the complete role, ownership and lifecycle contract.
+See `docs/identity-api-keys.md` and `docs/user-access.md` for the complete role, admission, ownership and lifecycle contract.
 
 ## Inference authentication
 
@@ -31,15 +33,17 @@ GitHub Copilot BYOK and other OpenAI-compatible clients use bearer API keys on `
 Two credential forms are supported:
 
 - **service credential**: administrator-created, with no Entra owner, suitable for shared integrations such as centrally configured Copilot or unattended applications;
-- **personal credential**: self-created by an Entra `LlmProxy.User`/`LlmProxy.Admin` and permanently associated with the creator's tenant/object identity.
+- **personal credential**: self-created by an enabled Entra-authenticated LlmProxy platform user (or administrator) and permanently associated with the creator's tenant/object identity.
 
 The bootstrap key comes from runtime configuration only and must never be committed.
 
 ## API-key storage and lifecycle
 
-LlmProxy persists only a cryptographic HMAC hash plus safe metadata such as key prefix, name, timestamps, optional Usage Group and optional Entra owner identifiers. The HMAC pepper remains deployment/recovery secret material outside PostgreSQL.
+LlmProxy authenticates client keys through a cryptographic HMAC hash plus safe metadata such as key prefix, name, timestamps, optional Usage Group and optional Entra owner identifiers. The HMAC pepper remains deployment/recovery secret material outside PostgreSQL.
 
-Raw keys are shown exactly once at creation or rotation. Responses containing the one-time secret use `Cache-Control: no-store`. Raw API keys must never be persisted in PostgreSQL, audit, request metrics, logs or runtime-state payloads.
+For newly created or rotated client credentials, LlmProxy also stores an application-encrypted recovery copy of the raw key. The recovery ciphertext is bound to the credential ID and derived from the deployment API-key pepper; it is never used for request authentication. Only `LlmProxy.Admin` (including configured super admins) can call the reveal endpoint. Reveal responses use `Cache-Control: no-store` and every reveal is audited without recording the secret. Credentials created before this feature remain unrecoverable unless the original configured bootstrap key is still available or the credential is rotated once.
+
+Plaintext API keys must never be written to audit events, request metrics, content logs, runtime-state payloads or ordinary application logs.
 
 ## Upstream inference credentials
 
@@ -63,9 +67,13 @@ Currency/spend limits are not currently enforced. On-prem vLLM does not provide 
 
 ## Content logging
 
-Prompts, source code and generated content are not operational telemetry. They must not be persisted by default.
+The product explicitly provides an administrator-only full-body inference log for authenticated Chat Completions, Responses and System One calls. Request and response payloads are captured byte-for-byte at the gateway boundary and stored only as application-encrypted ciphertext in PostgreSQL. SSE responses are retained in their wire-format text so an administrator can inspect the exact streamed exchange.
 
-Allowed default metadata includes timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Personal-user attribution is resolved through the credential owner rather than copying user PII into every request record.
+The dedicated content-log API requires `AdminWrite` / `LlmProxy.Admin`; `LlmProxy.Reader` cannot access it. Decrypted detail responses use `Cache-Control: no-store`. Authorization headers, client API keys, upstream bearer tokens and other request headers are not persisted in this store.
+
+Full-body log retention is independently configurable from 10 through 180 days, defaults to 30 days, and is enforced by a cleanup worker every four hours. Operators must size PostgreSQL storage for the selected retention because prompts and generated payloads can be materially larger than metadata telemetry.
+
+Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content must not be exported to OTEL spans, acceptance evidence or generic application logs.
 
 ## Network
 

@@ -257,6 +257,37 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Setup .NET 10 for node-agent release assets
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build Node Agent release assets
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for RID in linux-x64 linux-arm64; do
+            STAGE="$(mktemp -d)"
+            dotnet publish src/LlmProxy.NodeAgent/LlmProxy.NodeAgent.csproj \
+              -c Release -r "$RID" --self-contained true \
+              -p:PublishSingleFile=true -p:PublishTrimmed=false \
+              -p:Version="$VERSION" \
+              -o "$STAGE"
+            cp distribution/llmproxy-node-agent.service "$STAGE/"
+            cp distribution/node-agent.env.example "$STAGE/"
+            cp distribution/install-node-agent.sh "$STAGE/"
+            chmod 0755 "$STAGE/LlmProxy.NodeAgent" "$STAGE/install-node-agent.sh"
+            ARCHIVE="dist/llmproxy-node-agent-$VERSION-$RID.tar.gz"
+            tar -C "$STAGE" -czf "$ARCHIVE" .
+            sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+            rm -rf "$STAGE"
+          done
+          sha256sum -c "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"
+          sha256sum -c "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"
+
       - name: Build Linux release assets
         shell: bash
         env:
@@ -278,7 +309,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             release-manifest.json
+          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"             release-manifest.json
 
           {
             echo "### Immutable release published"

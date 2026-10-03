@@ -112,6 +112,8 @@ export type Node = {
   name: string
   baseAddress: string
   hardwareMetricsBaseAddress?: string | null
+  managementBaseAddress?: string | null
+  hasManagementCredential?: boolean
   hasUpstreamCredential?: boolean
   enabled: boolean
   status: string
@@ -141,6 +143,9 @@ export type Deployment = {
   enabled: boolean
   weight: number
   maxConcurrency?: number | null
+  runtimeBaseAddress?: string | null
+  catalogModelId?: string | null
+  managedInstallationId?: string | null
   recommendedMaxConcurrency?: number | null
   benchmarkP95TtftMilliseconds?: number | null
   benchmarkP95DurationMilliseconds?: number | null
@@ -196,6 +201,12 @@ export type ApiCredential = {
   expiresAtUtc?: string | null
   lastUsedAtUtc?: string | null
   usageGroupId?: string | null
+  kind?: 'organization' | 'personal'
+  enforceCallerGovernance?: boolean
+  ownerTenantId?: string | null
+  ownerObjectId?: string | null
+  ownerPrincipalName?: string | null
+  secretAvailable?: boolean
 }
 
 export type GovernanceCredential = ApiCredential & {
@@ -224,6 +235,8 @@ export type UserRateLimitPolicy = {
   logicalModel?: string | null
   requestsPerWindow: number
   windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
   enabled: boolean
   createdAtUtc: string
   updatedAtUtc: string
@@ -236,6 +249,7 @@ export type UsageGroup = {
   createdAtUtc: string
   updatedAtUtc: string
   credentialCount: number
+  userCount: number
 }
 
 export type RateLimitPolicy = {
@@ -381,4 +395,237 @@ export type AuditEvent = {
   entityId: string
   sourceIp?: string | null
   detailsJson?: string | null
+}
+
+
+export type AdminSession = {
+  canWrite: boolean
+  roles: string[]
+}
+
+export type RevealedApiCredential = {
+  id: string
+  name: string
+  keyPrefix: string
+  secret: string
+}
+
+export type SystemOneStatus = {
+  enabled: boolean
+  baseAddress?: string | null
+  upstreamEndpoint?: string | null
+  publicEndpoint: string
+  apiKeyConfigured: boolean
+  timeoutSeconds: number
+  configurationError?: string | null
+}
+
+export type AdminTestResult = {
+  requestId: string
+  success: boolean
+  statusCode: number
+  latencyMilliseconds: number
+  requestBody?: string
+  responseBody?: string
+  responseContentType?: string | null
+  upstreamEndpoint?: string
+  logicalModel?: string
+  providerModel?: string
+  deploymentId?: string
+  nodeId?: string
+  nodeName?: string
+  error?: string
+  message?: string
+}
+
+export type ContentLogSummary = {
+  id: number
+  requestId: string
+  startedAtUtc: string
+  completedAtUtc: string
+  surface: string
+  method: string
+  path: string
+  logicalModel?: string | null
+  apiCredentialId?: string | null
+  statusCode: number
+  requestContentType?: string | null
+  responseContentType?: string | null
+}
+
+export type ContentLogDetail = ContentLogSummary & {
+  requestBody: string
+  responseBody: string
+  deploymentId?: string | null
+  nodeId?: string | null
+  usageGroupId?: string | null
+  attemptCount?: number | null
+  isStreaming?: boolean | null
+  timeToFirstByteMilliseconds?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+  errorCode?: string | null
+}
+
+export type ContentLogSettings = {
+  retentionDays: number
+  updatedAtUtc: string
+  minimumRetentionDays: number
+  maximumRetentionDays: number
+  cleanupIntervalHours: number
+}
+
+export type ContentLogCleanupResult = {
+  startedAtUtc: string
+  completedAtUtc: string
+  retentionDays: number
+  cutoffUtc: string
+  deletedLogs: number
+}
+
+
+export type PlatformUserAccessSettings = {
+  provisioningMode: 'automatic' | 'manual'
+  updatedAtUtc: string
+  configuredTenantId?: string | null
+}
+
+export type PlatformUser = {
+  id: string
+  tenantId: string
+  objectId: string
+  principalName?: string | null
+  displayName?: string | null
+  usageGroupId?: string | null
+  usageGroupName?: string | null
+  enabled: boolean
+  provisioningSource: 'automatic' | 'admin' | 'migration' | string
+  createdAtUtc: string
+  lastSeenAtUtc?: string | null
+  disabledAtUtc?: string | null
+  credentialCount: number
+  activeCredentialCount: number
+  lastCredentialUsedAtUtc?: string | null
+  requestCount30d: number
+  errorCount30d: number
+}
+
+
+export type UsageGroupRateLimitPolicy = {
+  id: string
+  usageGroupId: string
+  usageGroupName?: string | null
+  logicalModel?: string | null
+  requestsPerWindow: number
+  windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
+  enabled: boolean
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+export type UserUsageSummary = {
+  tenantId: string
+  objectId: string
+  principalName?: string | null
+  displayName?: string | null
+  usageGroupId?: string | null
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
+}
+
+
+export type DeployableModel = {
+  id: string
+  displayName: string
+  providerModelName: string
+  family: string
+  license: string
+  sourceUrl: string
+  parameterBillions: number
+  contextTokens: number
+  precision: string
+  minimumGpuMemoryGiB: number
+  recommendedGpuMemoryGiB: number
+  minimumSystemMemoryGiB: number
+  recommendedSystemMemoryGiB: number
+  diskGiB: number
+  minimumGpuCount: number
+  recommendedGpuCount: number
+  supportsStreaming: boolean
+  supportsTools: boolean
+  tags: string[]
+  notes: string
+}
+
+export type ModelCompatibility = {
+  status: 'unknown' | 'insufficient' | 'tight' | 'fits'
+  summary: string
+  reasons: string[]
+  suggestedTensorParallelSize: number
+}
+
+export type GpuInventory = {
+  name: string
+  memoryTotalGiB: number
+  memoryFreeGiB: number
+  driverVersion?: string | null
+  computeCapability?: string | null
+}
+
+export type HardwareInventory = {
+  hostname: string
+  operatingSystem?: string | null
+  architecture?: string | null
+  cpuLogicalCores: number
+  systemMemoryTotalGiB: number
+  systemMemoryAvailableGiB: number
+  diskTotalGiB: number
+  diskAvailableGiB: number
+  gpus?: GpuInventory[] | null
+  runtime?: string | null
+  runtimeVersion?: string | null
+}
+
+export type ManagedModelState = {
+  installationId: string
+  catalogModelId?: string | null
+  providerModelName?: string | null
+  status: string
+  runtimeBaseAddress?: string | null
+  port?: number | null
+  error?: string | null
+}
+
+export type ManagedInstallation = {
+  id: string
+  modelId: string
+  logicalModel?: string | null
+  providerModelName?: string | null
+  catalogModelId?: string | null
+  managedInstallationId?: string | null
+  runtimeBaseAddress?: string | null
+  enabled: boolean
+  agentStatus: string
+  agentState?: ManagedModelState | null
+}
+
+export type ModelManagementOverview = {
+  node: {
+    id: string
+    name: string
+    managementBaseAddress?: string | null
+    hasManagementCredential: boolean
+  }
+  agentAvailable: boolean
+  agentError?: string | null
+  hardware?: HardwareInventory | null
+  catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility }>
+  installations: ManagedInstallation[]
 }

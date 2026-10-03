@@ -58,7 +58,8 @@ public static class IdentitySelfServiceEndpoints
                     item.CreatedAtUtc,
                     item.ExpiresAtUtc,
                     item.LastUsedAtUtc,
-                    item.UsageGroupId
+                    item.UsageGroupId,
+                    item.EnforceCallerGovernance
                 })
                 .ToListAsync(cancellationToken);
 
@@ -69,6 +70,7 @@ public static class IdentitySelfServiceEndpoints
             CreatePersonalApiCredentialRequest request,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -82,6 +84,13 @@ public static class IdentitySelfServiceEndpoints
                 return Results.BadRequest(new { error = "ExpiresAtUtc must be in the future." });
             }
 
+            var tenantLookup = identity.TenantId.ToUpperInvariant();
+            var objectLookup = identity.ObjectId.ToUpperInvariant();
+            var userGroupId = await dbContext.PlatformUsers.AsNoTracking()
+                .Where(item => item.TenantId.ToUpper() == tenantLookup && item.ObjectId.ToUpper() == objectLookup)
+                .Select(item => item.UsageGroupId)
+                .SingleAsync(cancellationToken);
+
             var secret = ApiKeyHasher.GenerateSecret();
             var credential = new ApiCredential(
                 request.Name,
@@ -91,6 +100,12 @@ public static class IdentitySelfServiceEndpoints
                 identity.TenantId,
                 identity.ObjectId,
                 identity.PrincipalName);
+            if (userGroupId is Guid groupId)
+            {
+                credential.AssignUsageGroup(groupId);
+            }
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
             AddAudit(dbContext, httpContext, identity, "credential.self_service.create", credential, new
             {
@@ -116,6 +131,7 @@ public static class IdentitySelfServiceEndpoints
             Guid id,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -138,6 +154,8 @@ public static class IdentitySelfServiceEndpoints
             var previousKeyPrefix = credential.KeyPrefix;
             var secret = ApiKeyHasher.GenerateSecret();
             credential.Rotate(ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret));
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             AddAudit(dbContext, httpContext, identity, "credential.self_service.rotate", credential, new
             {
                 credential.Name,
@@ -187,6 +205,48 @@ public static class IdentitySelfServiceEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/requests", async (
+            int? take,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var credentialIds = await dbContext.ApiCredentials.AsNoTracking()
+                .Where(item => item.OwnerTenantId == identity.TenantId && item.OwnerObjectId == identity.ObjectId)
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+            var size = Math.Clamp(take ?? 50, 1, 200);
+
+            var requests = await dbContext.RequestMetrics.AsNoTracking()
+                .Where(item => item.ApiCredentialId != null && credentialIds.Contains(item.ApiCredentialId.Value))
+                .OrderByDescending(item => item.StartedAtUtc)
+                .Take(size)
+                .Select(item => new
+                {
+                    item.RequestId,
+                    item.StartedAtUtc,
+                    item.LogicalModel,
+                    item.Surface,
+                    item.StatusCode,
+                    item.DurationMilliseconds,
+                    item.IsStreaming,
+                    item.TimeToFirstByteMilliseconds,
+                    item.InputTokens,
+                    item.OutputTokens,
+                    item.TotalTokens,
+                    item.ErrorCode,
+                    item.ApiCredentialId
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(requests);
+        });
+
         group.MapGet("/rate-limits", async (
             GatewayDbContext dbContext,
             HttpContext httpContext,
@@ -199,21 +259,59 @@ public static class IdentitySelfServiceEndpoints
 
             var tenantId = identity.TenantId.ToUpperInvariant();
             var objectId = identity.ObjectId.ToUpperInvariant();
-            var policies = await dbContext.UserRateLimitPolicies.AsNoTracking()
+            var user = await dbContext.PlatformUsers.AsNoTracking()
+                .SingleAsync(
+                    item => item.TenantId.ToUpper() == tenantId && item.ObjectId.ToUpper() == objectId,
+                    cancellationToken);
+
+            var userPolicies = await dbContext.UserRateLimitPolicies.AsNoTracking()
                 .Where(item => item.OwnerTenantId.ToUpper() == tenantId && item.OwnerObjectId.ToUpper() == objectId)
                 .OrderBy(item => item.LogicalModel)
-                .Select(item => new
-                {
-                    item.Id,
-                    item.LogicalModel,
-                    item.RequestsPerWindow,
-                    item.WindowSeconds,
-                    item.Enabled,
-                    item.UpdatedAtUtc
-                })
                 .ToListAsync(cancellationToken);
 
-            return Results.Ok(policies);
+            var groupPolicies = user.UsageGroupId is Guid usageGroupId
+                ? await dbContext.UsageGroupRateLimitPolicies.AsNoTracking()
+                    .Where(item => item.UsageGroupId == usageGroupId)
+                    .OrderBy(item => item.LogicalModel)
+                    .ToListAsync(cancellationToken)
+                : [];
+
+            var groupName = user.UsageGroupId is Guid groupId
+                ? await dbContext.UsageGroups.AsNoTracking()
+                    .Where(item => item.Id == groupId)
+                    .Select(item => item.Name)
+                    .SingleOrDefaultAsync(cancellationToken)
+                : null;
+
+            var rows = new List<object>();
+            rows.AddRange(userPolicies.Select(item => (object)new
+            {
+                item.Id,
+                scope = "user",
+                scopeName = identity.PrincipalName ?? identity.ObjectId,
+                item.LogicalModel,
+                item.RequestsPerWindow,
+                item.WindowSeconds,
+                item.OutputTokensPerWindow,
+                item.MaxOutputTokensPerRequest,
+                item.Enabled,
+                item.UpdatedAtUtc
+            }));
+            rows.AddRange(groupPolicies.Select(item => (object)new
+            {
+                item.Id,
+                scope = "group",
+                scopeName = groupName ?? item.UsageGroupId.ToString(),
+                item.LogicalModel,
+                item.RequestsPerWindow,
+                item.WindowSeconds,
+                item.OutputTokensPerWindow,
+                item.MaxOutputTokensPerRequest,
+                item.Enabled,
+                item.UpdatedAtUtc
+            }));
+
+            return Results.Ok(rows);
         });
 
         group.MapGet("/usage", async (

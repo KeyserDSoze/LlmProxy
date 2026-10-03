@@ -31,4 +31,18 @@ public sealed class UserRateLimitPolicyTests
         Assert.Throws<ArgumentException>(() => new UserRateLimitPolicy(value, "user-1", null, 10));
         Assert.Throws<ArgumentException>(() => new UserRateLimitPolicy("tenant-1", value, null, 10));
     }
+    [Fact]
+    public void User_quota_supports_output_token_budget()
+    {
+        var policy = new UserRateLimitPolicy("tenant-1", "user-1", null, 100, 60, true, 50000, 4096);
+
+        Assert.Equal(50000, policy.OutputTokensPerWindow);
+        Assert.Equal(4096, policy.MaxOutputTokensPerRequest);
+
+        policy.ClearOutputTokenBudget();
+
+        Assert.Null(policy.OutputTokensPerWindow);
+        Assert.Null(policy.MaxOutputTokensPerRequest);
+    }
+
 }

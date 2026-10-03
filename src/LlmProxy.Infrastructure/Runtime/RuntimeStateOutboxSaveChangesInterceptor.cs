@@ -20,7 +20,8 @@ public sealed class RuntimeStateOutboxSaveChangesInterceptor : SaveChangesInterc
         nameof(ApiCredential.KeyHash),
         nameof(ApiCredential.Enabled),
         nameof(ApiCredential.ExpiresAtUtc),
-        nameof(ApiCredential.UsageGroupId)
+        nameof(ApiCredential.UsageGroupId),
+        nameof(ApiCredential.EnforceCallerGovernance)
     ];
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
@@ -106,6 +107,22 @@ public sealed class RuntimeStateOutboxSaveChangesInterceptor : SaveChangesInterc
         }
 
         foreach (var entry in gatewayDbContext.ChangeTracker.Entries<UserRateLimitPolicy>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                records.Add(CreateUpsert(
+                    RuntimeStateChangeKinds.RatePolicy,
+                    entry.Entity.Id,
+                    RateLimitPolicyRuntimeStateInterceptor.ToSnapshot(entry.Entity),
+                    occurredAtUtc));
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                records.Add(CreateRemove(RuntimeStateChangeKinds.RatePolicy, entry.Entity.Id, occurredAtUtc));
+            }
+        }
+
+        foreach (var entry in gatewayDbContext.ChangeTracker.Entries<UsageGroupRateLimitPolicy>())
         {
             if (entry.State is EntityState.Added or EntityState.Modified)
             {

@@ -1,5 +1,66 @@
 # Development log
 
+## 2026-10-03 — Configurable end-user provisioning and suspension — CANDIDATE
+
+Extended the Entra personal-key model with a first-class `platform_users` registry and administrator-controlled admission policy.
+
+Implemented:
+
+- persisted singleton provisioning mode, default `manual`, with `automatic` first-login registration as an administrator-selectable alternative;
+- stable normal-user identity keyed by Entra `tid + oid`; email/principal/display name remain mutable metadata;
+- startup migration of pre-existing personal-key owners into the registry;
+- `SelfService` authorization now requires successful Entra authentication plus an enabled platform-user record; full administrators bypass the normal-user registry;
+- Admin **Users & Access** UI/API for mode changes, manual registration, inventory, 30-day request counts, personal-key counts and enable/disable;
+- disable revokes all active personal API keys for the user as part of the same control-plane operation, so both portal and personal-key inference access are blocked;
+- re-enable restores portal admission but deliberately leaves revoked keys revoked;
+- `/api/me/requests` and **My dashboard** recent-call visibility;
+- focused GitHub Copilot attribution documentation: a shared custom-model/BYOK API key is reliable workload/credential identity, not a documented individual developer identity signal.
+
+Public GitHub documentation was reviewed for the custom-model/BYOK and Copilot usage-metrics contracts. The design does not assume undocumented provider-facing user headers. Per-user GitHub metrics may be used later for aggregate adoption reporting, while deterministic request-time LlmProxy attribution requires per-user credentials or a trusted signed identity assertion.
+
+Validation is pending on the exact feature head. Do not promote/release this increment until backend, frontend/Playwright, Docker/PostgreSQL and distributed Full Stack CI are green.
+
+## 2026-10-03 — Administrator observability, testing and in-app documentation — DONE / VALIDATED
+
+Implemented the operator-facing visibility requested for the current LlmProxy control plane on `feature/admin-observability-docs` / PR #1.
+
+Product behavior:
+
+- newly created/rotated client API keys retain their HMAC authentication material and additionally store a purpose-bound AES-GCM recovery copy derived from the deployment API-key pepper;
+- `LlmProxy.Admin` and configured super admins can reveal/copy recoverable keys later; reveal responses are no-store and each reveal writes safe audit metadata without the secret;
+- pre-feature keys remain cryptographically non-recoverable from HMAC and show **Rotate once**; the configured bootstrap key can be backfilled when its original secret is still supplied at startup;
+- Chat Completions, Responses and System One requests are captured at the gateway boundary and persisted only as encrypted request/response ciphertext;
+- content-log APIs require `AdminWrite`, excluding `LlmProxy.Reader`;
+- full-body retention defaults to 30 days, is configurable from 10 through 180 days, and cleanup runs at startup then every four hours;
+- Admin Content Logs polls every two seconds and exposes exact request/response bodies plus correlated routing/TTFT/token metadata where request metrics exist;
+- Admin Playground can execute a real logical-model chat through production routing/capacity admission and send editable JSON directly to the configured System One classifier;
+- Help & Endpoints documents Models, Chat Completions, Responses and System One usage plus authentication/routing/capacity/rate-limit/observability semantics;
+- every principal UI screen now has a closed-by-default contextual documentation accordion.
+
+Security decision:
+
+- ordinary request metrics, audit and OTEL remain metadata-only;
+- full prompt/source/output persistence is allowed only inside the dedicated encrypted administrator content-log store under bounded retention;
+- request headers, client API keys and upstream bearer tokens are never copied into content logs;
+- the API-key pepper is now also a decryption/recovery dependency and must remain backed up outside PostgreSQL.
+
+Validation evidence:
+
+```text
+validated feature head         6641739bd80f7eaf2b8a92594a5a75541c82546d
+PR #1 CI                       37073147425 SUCCESS
+Backend build/unit             SUCCESS
+Frontend build/Vitest          SUCCESS
+Playwright E2E                 SUCCESS
+Docker/PostgreSQL integration  SUCCESS
+Redis/OTEL/Grafana full stack  SUCCESS
+```
+
+The backend integration smoke proves both requested diagnostic flows: a System One classifier call reaches the classifier mock and returns the expected decision payload, while a model-chat diagnostic traverses normal logical-model routing/capacity and reaches the selected inference mock. The same smoke verifies administrator recovery of the encrypted bootstrap API key, encrypted exact-body content logging and the 10-180 day retention contract.
+
+An earlier feature run exposed two test-fixture gaps (the new `/api/admin/session` mock and one strict Playwright locator); both were corrected before the green exact-head run above. The final documentation-status commit must itself re-pass CI before merge. A green main CI is still required by the automatic immutable release gate.
+
+
 ## 2026-09-21 — Aggregate Entra user request quotas / 0.2.0-preview.7 — VALIDATED
 
 Extended preview.6 personal-key ownership with aggregate request-count governance across every personal API key owned by the same stable Entra `tid + oid`.

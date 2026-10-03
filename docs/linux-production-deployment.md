@@ -398,7 +398,9 @@ Redeploy and validate Admin authentication privately:
 bash docker/scripts/deploy.sh <same-or-new-image-tag>
 ```
 
-Supported roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. `LlmProxy.User` is the normal inference-consumer role and uses `/admin/me` for personal API-key self-service; `LlmProxy.Reader` remains read-only operational access.
+Supported roles remain `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. After Entra authentication, normal-user access to `/admin/me` is governed by **Users & Access** in LlmProxy: choose manual administrator census (default) or automatic first-login registration. Stable `tid+oid` is used instead of email. `LlmProxy.Reader` remains read-only operational access; `LlmProxy.Admin` bypasses the normal-user registry.
+
+If the Entra enterprise application itself is configured with **assignment required**, automatic LlmProxy provisioning still cannot bypass that upstream Entra assignment gate: the person must first be allowed to authenticate to the application.
 
 The installer can also write these values on first provisioning when they are supplied as environment variables through `sudo -E`.
 

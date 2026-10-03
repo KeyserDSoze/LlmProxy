@@ -1,4 +1,5 @@
-import type { ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, RateLimitPolicy, RequestMetric, RoutingSettings, RoutingTuningSettings, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
+import type { ModelManagementOverview } from './types'
+import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -28,6 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  adminSession: () => request<AdminSession>('/api/admin/session'),
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
   routingTuning: () => request<RoutingTuningSettings>('/api/admin/routing/tuning'),
@@ -55,12 +57,30 @@ export const api = {
     request<void>(`/api/admin/api-credentials/${credentialId}/usage-group`, { method: 'DELETE' }),
   rateLimits: () => request<RateLimitPolicy[]>('/api/admin/rate-limits'),
   identityUsers: () => request<IdentityUserSummary[]>('/api/admin/identity/users'),
+  platformUsers: () => request<PlatformUser[]>('/api/admin/users'),
+  platformUserAccessSettings: () => request<PlatformUserAccessSettings>('/api/admin/users/settings'),
+  updatePlatformUserAccessSettings: (provisioningMode: 'automatic' | 'manual') =>
+    request<PlatformUserAccessSettings>('/api/admin/users/settings', { method: 'PUT', body: JSON.stringify({ provisioningMode }) }),
+  createPlatformUser: (body: { objectId: string; tenantId?: string | null; principalName?: string | null; displayName?: string | null; enabled?: boolean; usageGroupId?: string | null }) =>
+    request<PlatformUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+  assignPlatformUserUsageGroup: (id: string, usageGroupId: string | null) =>
+    request<void>('/api/admin/users/' + id + '/usage-group', { method: 'PUT', body: JSON.stringify({ usageGroupId }) }),
+  disablePlatformUser: (id: string) => request<void>('/api/admin/users/' + id + '/disable', { method: 'POST' }),
+  enablePlatformUser: (id: string) => request<void>('/api/admin/users/' + id + '/enable', { method: 'POST' }),
   userRateLimits: () => request<UserRateLimitPolicy[]>('/api/admin/user-rate-limits'),
-  createUserRateLimit: (body: { ownerTenantId: string; ownerObjectId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean }) =>
+  createUserRateLimit: (body: { ownerTenantId: string; ownerObjectId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<UserRateLimitPolicy>('/api/admin/user-rate-limits', { method: 'POST', body: JSON.stringify(body) }),
-  updateUserRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }) =>
+  updateUserRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<UserRateLimitPolicy>(`/api/admin/user-rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  clearUserOutputTokenBudget: (id: string) => request<void>(`/api/admin/user-rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
   deleteUserRateLimit: (id: string) => request<void>(`/api/admin/user-rate-limits/${id}`, { method: 'DELETE' }),
+  groupRateLimits: () => request<UsageGroupRateLimitPolicy[]>('/api/admin/group-rate-limits'),
+  createGroupRateLimit: (body: { usageGroupId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
+    request<UsageGroupRateLimitPolicy>('/api/admin/group-rate-limits', { method: 'POST', body: JSON.stringify(body) }),
+  updateGroupRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
+    request<UsageGroupRateLimitPolicy>(`/api/admin/group-rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  clearGroupOutputTokenBudget: (id: string) => request<void>(`/api/admin/group-rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
+  deleteGroupRateLimit: (id: string) => request<void>(`/api/admin/group-rate-limits/${id}`, { method: 'DELETE' }),
   createRateLimit: (body: { apiCredentialId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<RateLimitPolicy>('/api/admin/rate-limits', { method: 'POST', body: JSON.stringify(body) }),
   updateRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
@@ -70,9 +90,20 @@ export const api = {
   clearOutputTokenBudget: (id: string) => request<void>(`/api/admin/rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
   deleteRateLimit: (id: string) => request<void>(`/api/admin/rate-limits/${id}`, { method: 'DELETE' }),
   usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
+  usageUsers: (days = 30) => request<UserUsageSummary[]>(`/api/admin/usage/users?days=${days}`),
+  updateCredentialCallerGovernance: (id: string, enabled: boolean) => request<{ id: string; name: string; kind: string; enforceCallerGovernance: boolean }>(`/api/admin/api-credentials/${id}/caller-governance`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
-  audit: (take = 100) => request<AuditEvent[]>(`/api/admin/audit?take=${take}`),
+  audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
+  contentLogs: (take = 100) => request<ContentLogSummary[]>('/api/admin/content-logs?take=' + take),
+  contentLog: (id: number) => request<ContentLogDetail>('/api/admin/content-logs/' + id),
+  contentLogSettings: () => request<ContentLogSettings>('/api/admin/content-logs/settings'),
+  updateContentLogSettings: (retentionDays: number) => request<ContentLogSettings>('/api/admin/content-logs/settings', { method: 'PUT', body: JSON.stringify({ retentionDays }) }),
+  runContentLogRetention: () => request<ContentLogCleanupResult>('/api/admin/content-logs/retention/run', { method: 'POST' }),
+  systemOneStatus: () => request<SystemOneStatus>('/api/admin/testing/systemone'),
+  testSystemOne: (payload: unknown) => request<AdminTestResult>('/api/admin/testing/systemone', { method: 'POST', body: JSON.stringify({ payload }) }),
+  testChat: (body: { model: string; userPrompt: string; systemPrompt?: string | null; maxTokens?: number; temperature?: number }) =>
+    request<AdminTestResult>('/api/admin/testing/chat', { method: 'POST', body: JSON.stringify(body) }),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number; upstreamBearerToken?: string | null }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   setNodeUpstreamCredential: (id: string, bearerToken: string) =>
@@ -113,6 +144,19 @@ export const api = {
     request<Deployment>(`/api/admin/deployments/${id}/capacity-profile/apply`, { method: 'POST' }),
   createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
-  rotateApiCredential: (id: string) => request<CreatedApiCredential>(`/api/admin/api-credentials/${id}/rotate`, { method: 'POST' }),
-  revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })
+  rotateApiCredential: (id: string) => request<CreatedApiCredential>('/api/admin/api-credentials/' + id + '/rotate', { method: 'POST' }),
+  revealApiCredential: (id: string) => request<RevealedApiCredential>('/api/admin/api-credentials/' + id + '/secret'),
+  revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' }),
+  modelManagementOverview: (nodeId: string) =>
+    request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
+  configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
+    request<{ id: string; managementBaseAddress?: string | null; hasManagementCredential: boolean }>(`/api/admin/model-management/nodes/${nodeId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
+  installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[] }) =>
+    request<unknown>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install`, { method: 'POST', body: JSON.stringify(body) }),
+  startManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
+  stopManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/stop`, { method: 'POST' }),
+  removeManagedDeployment: (deploymentId: string) =>
+    request<void>(`/api/admin/model-management/deployments/${deploymentId}`, { method: 'DELETE' })
 }

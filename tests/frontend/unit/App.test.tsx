@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedApi = vi.hoisted(() => ({
+  adminSession: vi.fn(),
   overview: vi.fn(),
   routing: vi.fn(),
   routingTuning: vi.fn(),
@@ -31,7 +32,25 @@ const mockedApi = vi.hoisted(() => ({
   createDeployment: vi.fn(),
   updateDeployment: vi.fn(),
   createApiCredential: vi.fn(),
-  revokeApiCredential: vi.fn()
+  rotateApiCredential: vi.fn(),
+  revealApiCredential: vi.fn(),
+  revokeApiCredential: vi.fn(),
+  systemOneStatus: vi.fn(),
+  testSystemOne: vi.fn(),
+  testChat: vi.fn(),
+  contentLogs: vi.fn(),
+  contentLog: vi.fn(),
+  contentLogSettings: vi.fn(),
+  updateContentLogSettings: vi.fn(),
+  runContentLogRetention: vi.fn(),
+  platformUsers: vi.fn(),
+  platformUserAccessSettings: vi.fn(),
+  updatePlatformUserAccessSettings: vi.fn(),
+  createPlatformUser: vi.fn(),
+  disablePlatformUser: vi.fn(),
+  enablePlatformUser: vi.fn(),
+  usageGroups: vi.fn(),
+  assignPlatformUserUsageGroup: vi.fn()
 }))
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
@@ -55,6 +74,7 @@ const tuning = {
 describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedApi.adminSession.mockResolvedValue({ canWrite: true, roles: ['LlmProxy.Admin'] })
     mockedApi.overview.mockResolvedValue({
       nodes: { total: 1, healthy: 1, degraded: 0, unhealthy: 0, draining: 0 },
       models: 1,
@@ -80,7 +100,7 @@ describe('admin application', () => {
     }])
     mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
-      id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
+      id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
       hasUpstreamCredential: true, weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
       lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 12,
       lastHealthError: null, consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
@@ -91,6 +111,16 @@ describe('admin application', () => {
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
+    mockedApi.systemOneStatus.mockResolvedValue({ enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
+    mockedApi.testChat.mockResolvedValue({ requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 20, nodeName: 'inference-01', requestBody: '{}', responseBody: '{"ok":true}' })
+    mockedApi.testSystemOne.mockResolvedValue({ requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 10, requestBody: '{}', responseBody: '{"billing":true}' })
+    mockedApi.contentLogs.mockResolvedValue([{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
+    mockedApi.contentLogSettings.mockResolvedValue({ retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    mockedApi.platformUserAccessSettings.mockResolvedValue({ provisioningMode: 'manual', updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
+    mockedApi.platformUsers.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 1, activeCredentialCount: 1, lastCredentialUsedAtUtc: null, requestCount30d: 12, errorCount30d: 1 }])
+    mockedApi.updatePlatformUserAccessSettings.mockResolvedValue({ provisioningMode: 'automatic', updatedAtUtc: '2026-10-03T06:10:00Z', configuredTenantId: 'tenant-1' })
+    mockedApi.usageGroups.mockResolvedValue([{ id: 'group-1', name: 'Development CRM', description: 'CRM team', createdAtUtc: '2026-10-03T06:00:00Z', updatedAtUtc: '2026-10-03T06:00:00Z', credentialCount: 1, userCount: 1 }])
+    mockedApi.assignPlatformUserUsageGroup.mockResolvedValue(undefined)
     mockedApi.metrics.mockResolvedValue([{
       id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
       deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
@@ -107,7 +137,7 @@ describe('admin application', () => {
     })
     mockedApi.audit.mockResolvedValue([{ id: 1, occurredAtUtc: '2026-09-09T10:01:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }])
     mockedApi.testNodeConnection.mockResolvedValue({
-      nodeId: 'node-1', nodeName: 'dgx-01', serviceRoot: 'http://10.0.0.21:8000/vllm', healthUrl: 'http://10.0.0.21:8000/vllm/health',
+      nodeId: 'node-1', nodeName: 'inference-01', serviceRoot: 'http://10.0.0.21:8000/vllm', healthUrl: 'http://10.0.0.21:8000/vllm/health',
       modelsUrl: 'http://10.0.0.21:8000/vllm/v1/models', chatCompletionsUrl: 'http://10.0.0.21:8000/vllm/v1/chat/completions', responsesUrl: 'http://10.0.0.21:8000/vllm/v1/responses',
       success: true, health: { url: 'health', success: true, statusCode: 200, latencyMilliseconds: 12 }, openAi: { url: 'models', success: true, statusCode: 200, latencyMilliseconds: 15 }
     })
@@ -115,7 +145,7 @@ describe('admin application', () => {
 
   it('renders fleet and inference observability on the dashboard', async () => {
     render(<App />)
-    expect(await screen.findByText('dgx-01')).toBeInTheDocument()
+    expect(await screen.findByText('inference-01')).toBeInTheDocument()
     expect(screen.getByText('1 H / 0 D')).toBeInTheDocument()
     expect(screen.getByText('12 ms')).toBeInTheDocument()
     expect(screen.getByText('4 ok')).toBeInTheDocument()
@@ -125,18 +155,18 @@ describe('admin application', () => {
     expect(screen.getByText('350 ms')).toBeInTheDocument()
   })
 
-  it('navigates to the DGX management view and tests the complete service root', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
-    expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
+  it('navigates to the inference node management view and tests the complete service root', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Inference Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
+    expect(await screen.findByText('✓ Connection test: inference-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
     expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
   })
 
-  it('shows DGX hardware telemetry and can update the separate DCGM root', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Hardware' }))
-    expect(screen.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeInTheDocument()
+  it('shows hardware telemetry and can update the separate DCGM root', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Hardware' }))
+    expect(screen.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('67 °C')).toHaveLength(2)
@@ -151,7 +181,7 @@ describe('admin application', () => {
   })
 
   it('exposes live routing strategy, tuning and capacity signals', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Routing' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Routing' }))
     expect(screen.getByRole('heading', { name: 'Smart-routing tuning' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Performance feedback' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Live vLLM capacity' })).toBeInTheDocument()
@@ -167,14 +197,40 @@ describe('admin application', () => {
   })
 
   it('shows inference observability by model, node and request', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
   })
 
+
+  it('shows contextual documentation, playground and administrator-only live content logs', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    expect(screen.getByText(/Page documentation · Dashboard/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Playground' }))
+    expect(screen.getByRole('heading', { name: 'Model chat test' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Content Logs' }))
+    expect(await screen.findByRole('heading', { name: 'Live request / response log' })).toBeInTheDocument()
+    expect(screen.getByText('Chat Completions')).toBeInTheDocument()
+    expect(screen.getByText(/10–180 days/)).toBeInTheDocument()
+  })
+
+  it('manages end-user provisioning and access', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Users & Access' }))
+    expect(await screen.findByRole('heading', { name: 'User provisioning policy' })).toBeInTheDocument()
+    expect(screen.getByText('Example User')).toBeInTheDocument()
+    expect(screen.getByText('12', { exact: true })).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Provisioning mode'), 'automatic')
+    await user.click(screen.getByRole('button', { name: 'Save provisioning mode' }))
+    expect(mockedApi.updatePlatformUserAccessSettings).toHaveBeenCalledWith('automatic')
+  })
+
   it('shows the administrative audit trail', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
   })

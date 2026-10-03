@@ -64,7 +64,7 @@ public sealed class RoutingCapacityTests
         new(
             deploymentId,
             nodeId,
-            "dgx-01",
+            "inference-01",
             "http://localhost:8000/vllm",
             Guid.NewGuid(),
             "agic-code",

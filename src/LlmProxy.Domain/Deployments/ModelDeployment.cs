@@ -29,6 +29,9 @@ public sealed class ModelDeployment
     public bool Enabled { get; private set; } = true;
     public int Weight { get; private set; } = 1;
     public int? MaxConcurrency { get; private set; }
+    public string? RuntimeBaseAddress { get; private set; }
+    public string? CatalogModelId { get; private set; }
+    public string? ManagedInstallationId { get; private set; }
 
     public int? RecommendedMaxConcurrency { get; private set; }
     public double? BenchmarkP95TtftMilliseconds { get; private set; }
@@ -51,6 +54,15 @@ public sealed class ModelDeployment
 
         Weight = weight;
         MaxConcurrency = maxConcurrency;
+    }
+
+    public void ConfigureRuntime(string? runtimeBaseAddress, string? catalogModelId = null, string? managedInstallationId = null)
+    {
+        RuntimeBaseAddress = string.IsNullOrWhiteSpace(runtimeBaseAddress)
+            ? null
+            : LlmProxy.Domain.Nodes.InferenceEndpoint.NormalizeBaseAddress(runtimeBaseAddress);
+        CatalogModelId = NormalizeOptional(catalogModelId, 200, nameof(catalogModelId));
+        ManagedInstallationId = NormalizeOptional(managedInstallationId, 300, nameof(managedInstallationId));
     }
 
     public void SetCapacityProfile(
@@ -106,6 +118,17 @@ public sealed class ModelDeployment
 
     public void Enable() => Enabled = true;
     public void Disable() => Enabled = false;
+
+    private static string? NormalizeOptional(string? value, int maxLength, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = value.Trim();
+        if (normalized.Length > maxLength)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, $"Value must be at most {maxLength} characters.");
+        }
+        return normalized;
+    }
 
     private static void ValidateNonNegative(double? value, string parameterName)
     {

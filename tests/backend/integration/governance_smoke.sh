@@ -50,10 +50,10 @@ export LLM_PROXY_API_KEY="governance-test-key"
 export LLM_PROXY_API_KEY_PEPPER="governance-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-governance"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3470/governance"
-export DGX_NODE_WEIGHT="1"
-export DGX_NODE_MAX_CONCURRENCY="10"
+export INFERENCE_NODE_NAME="inference-governance"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3470/governance"
+export INFERENCE_NODE_WEIGHT="1"
+export INFERENCE_NODE_MAX_CONCURRENCY="10"
 export ROUTING_STRATEGY="WeightedLeastLoaded"
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="1"
@@ -118,6 +118,19 @@ call_budget_model() {
     http://127.0.0.1:8080/v1/chat/completions
 }
 
+# Organization credentials are exempt from caller-specific governance by default.
+exempt1="$(call_model /tmp/governance-org-exempt-1)"
+exempt2="$(call_model /tmp/governance-org-exempt-2)"
+exempt3="$(call_model /tmp/governance-org-exempt-3)"
+[[ "$exempt1" == "200" && "$exempt2" == "200" && "$exempt3" == "200" ]] || fail_with_diagnostics "Organization credential should ignore caller quota by default; got ${exempt1}/${exempt2}/${exempt3}."
+
+curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance" >/dev/null
+
+governed_credential="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governance/credentials)"
+echo "$governed_credential" | jq -e --arg credential "$credential_id" 'map(select(.id == $credential and .kind == "organization" and .enforceCallerGovernance == true)) | length == 1' >/dev/null
+
 status1="$(call_model /tmp/governance-request-1)"
 status2="$(call_model /tmp/governance-request-2)"
 status3="$(call_model /tmp/governance-request-3)"
@@ -170,11 +183,16 @@ user_key_b_id="$(echo "$user_key_b_json" | jq -r '.id')"
 user_key_a_secret="$(echo "$user_key_a_json" | jq -r '.secret')"
 user_key_b_secret="$(echo "$user_key_b_json" | jq -r '.secret')"
 
+platform_user_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d "{\"tenantId\":\"tenant-smoke\",\"objectId\":\"user-smoke\",\"principalName\":\"smoke@example.com\",\"displayName\":\"Smoke User\",\"usageGroupId\":\"${group_id}\"}" \
+  http://127.0.0.1:8080/api/admin/users)"
+platform_user_id="$(echo "$platform_user_json" | jq -r '.id')"
+
 "${COMPOSE[@]}" exec -T postgres psql \
   -U "${POSTGRES_USER:-llmproxy}" \
   -d "${POSTGRES_DB:-llmproxy}" \
   -v ON_ERROR_STOP=1 \
-  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='user-smoke', \"OwnerPrincipalName\"='smoke@example.com' WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
+  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='user-smoke', \"OwnerPrincipalName\"='smoke@example.com', \"UsageGroupId\"='${group_id}', \"EnforceCallerGovernance\"=TRUE WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
 
 # Direct SQL is test-only setup; restart rebuilds the credential L1 from PostgreSQL so ownership is present on the inference path.
 "${COMPOSE[@]}" restart llmproxy >/dev/null

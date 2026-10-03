@@ -38,10 +38,10 @@ export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
 export RETENTION_RUNTIME_STATE_OUTBOX_DAYS=30
 export BOOTSTRAP_ENABLED=true
-export DGX_NODE_NAME=dgx-outbox
-export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3491/outbox
-export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=2
+export INFERENCE_NODE_NAME=inference-outbox
+export INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3491/outbox
+export INFERENCE_NODE_WEIGHT=1
+export INFERENCE_NODE_MAX_CONCURRENCY=2
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -110,7 +110,7 @@ wait_http http://127.0.0.1:8080/readyz 60 || fail_with_diagnostics "Primary gate
 healthy=false
 for attempt in {1..40}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes || true)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-outbox" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-outbox" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     healthy=true
     break
   fi
@@ -121,6 +121,15 @@ done
 credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governance/credentials)"
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available."
+
+# Bootstrap/organization credentials intentionally bypass caller governance by default. This smoke
+# explicitly opts the bootstrap credential into caller governance because the recovery assertion below
+# verifies that a credential-scoped rate-limit policy is replayed and enforced by the surviving peer.
+governance_json="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance")"
+echo "$governance_json" | jq -e --arg id "$credential_id" '.id == $id and .enforceCallerGovernance == true' >/dev/null \
+  || fail_with_diagnostics "Bootstrap credential could not be opted into caller governance for the outbox smoke."
 
 # Start a peer against the same durable PostgreSQL and Redis state. Its health loop is deliberately slow
 # so fault injection does not flood the ordered outbox with unrelated health-state mutations.
@@ -160,7 +169,7 @@ wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Outbox peer 
 peer_healthy=false
 for attempt in {1..40}; do
   peer_nodes="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
-  if echo "$peer_nodes" | jq -e 'map(select(.name == "dgx-outbox" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$peer_nodes" | jq -e 'map(select(.name == "inference-outbox" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     peer_healthy=true
     break
   fi

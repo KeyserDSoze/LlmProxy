@@ -25,6 +25,17 @@ public static class AdminEndpoints
             group.RequireAuthorization("AdminRead");
         }
 
+        group.MapGet("/session", (HttpContext httpContext) => Results.Ok(new
+        {
+            canWrite = !entraEnabled || httpContext.User.IsInRole("LlmProxy.Admin"),
+            roles = httpContext.User.Claims
+                .Where(claim => claim.Type == ClaimTypes.Role || claim.Type == "roles")
+                .Select(claim => claim.Value)
+                .Distinct()
+                .OrderBy(value => value)
+                .ToArray()
+        }));
+
         group.MapGet("/overview", async (GatewayDbContext dbContext, IRequestLoadTracker tracker, CancellationToken cancellationToken) =>
         {
             var nodes = await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken);
@@ -295,6 +306,10 @@ public static class AdminEndpoints
             }
 
             var deployment = new ModelDeployment(request.NodeId, request.ModelId, request.Weight, request.MaxConcurrency);
+            if (!string.IsNullOrWhiteSpace(request.RuntimeBaseAddress))
+            {
+                deployment.ConfigureRuntime(request.RuntimeBaseAddress);
+            }
             dbContext.Deployments.Add(deployment);
             AddAudit(dbContext, httpContext, "deployment.create", "deployment", deployment.Id.ToString(), new
             {
@@ -337,24 +352,33 @@ public static class AdminEndpoints
                 item.Enabled,
                 item.CreatedAtUtc,
                 item.ExpiresAtUtc,
-                item.LastUsedAtUtc
+                item.LastUsedAtUtc,
+                item.UsageGroupId,
+                item.EnforceCallerGovernance,
+                kind = item.IsPersonal ? "personal" : "organization",
+                secretAvailable = item.SecretCiphertext != null
             }).ToListAsync(cancellationToken)));
 
         var createCredential = group.MapPost("/api-credentials", async (
             CreateApiCredentialRequest request,
             GatewayDbContext dbContext,
             ApiKeyHasher hasher,
+            SensitiveDataProtector sensitiveDataProtector,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var secret = ApiKeyHasher.GenerateSecret();
             var credential = new ApiCredential(request.Name, ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret), request.ExpiresAtUtc);
+            credential.SetSecretCiphertext(
+                sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
             AddAudit(dbContext, httpContext, "credential.create", "api_credential", credential.Id.ToString(), new
             {
                 credential.Name,
                 credential.KeyPrefix,
-                credential.ExpiresAtUtc
+                credential.ExpiresAtUtc,
+                kind = "organization",
+                credential.EnforceCallerGovernance
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(new
@@ -364,6 +388,9 @@ public static class AdminEndpoints
                 credential.KeyPrefix,
                 credential.CreatedAtUtc,
                 credential.ExpiresAtUtc,
+                kind = "organization",
+                credential.EnforceCallerGovernance,
+                secretAvailable = true,
                 secret
             });
         });
@@ -463,7 +490,8 @@ public static class AdminEndpoints
 
     private static object ToNodeResponse(InferenceNode node) => new
     {
-        node.Id, node.Name, node.BaseAddress, node.HardwareMetricsBaseAddress,
+        node.Id, node.Name, node.BaseAddress, node.HardwareMetricsBaseAddress, node.ManagementBaseAddress,
+        hasManagementCredential = !string.IsNullOrWhiteSpace(node.ManagementBearerTokenCiphertext),
         hasUpstreamCredential = !string.IsNullOrWhiteSpace(node.UpstreamBearerTokenCiphertext),
         node.Enabled, node.Status, node.Weight, node.MaxConcurrency,
         node.LastHealthCheckUtc, node.LastHealthyAtUtc, node.LastHealthLatencyMilliseconds,
@@ -500,7 +528,7 @@ public static class AdminEndpoints
     public sealed record UpdateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
     public sealed record UpdateRoutingRequest(RoutingStrategy Strategy);
     public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true);
-    public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null);
+    public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null, string? RuntimeBaseAddress = null);
     public sealed record UpdateDeploymentRequest(int Weight = 1, int? MaxConcurrency = null, bool Enabled = true);
     public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null);
     public sealed record EndpointProbe(string Url, bool Success, int? StatusCode, long LatencyMilliseconds, string? Error);

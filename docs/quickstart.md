@@ -814,6 +814,7 @@ Dopo questo smoke test puoi passare a:
 - `docs/deployment.md` — deployment production-oriented.
 - `docs/dgx-vllm.md` — contratto DGX/vLLM e service root.
 - `docs/security.md` — trust boundaries, Entra e secret handling.
+- `docs/user-access.md` — censimento automatico/manuale utenti, dashboard personale e disabilitazione.
 - `docs/github-copilot.md` — integrazione GitHub Copilot.
 - `docs/operations.md` — gestione operativa.
 - `docs/testing.md` — quality gate e test.

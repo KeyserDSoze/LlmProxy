@@ -49,13 +49,39 @@ public sealed class OutputTokenBudgetMiddleware(RequestDelegate next)
                 return;
             }
 
-            var policy = rateLimiter.ResolvePolicy(credentialId, logicalModel);
-            if (policy?.HasOutputTokenBudget != true || policy.MaxOutputTokensPerRequest is not int maxPerRequest)
+            var ownerTenantId = context.Items.TryGetValue(InferenceApiKeyMiddleware.OwnerTenantIdItem, out var tenantValue)
+                ? tenantValue as string
+                : null;
+            var ownerObjectId = context.Items.TryGetValue(InferenceApiKeyMiddleware.OwnerObjectIdItem, out var ownerValue)
+                ? ownerValue as string
+                : null;
+            var usageGroupId = context.Items.TryGetValue(InferenceApiKeyMiddleware.UsageGroupIdItem, out var groupValue) && groupValue is Guid groupId
+                ? groupId
+                : (Guid?)null;
+            var enforceCallerGovernance =
+                context.Items.TryGetValue(InferenceApiKeyMiddleware.EnforceCallerGovernanceItem, out var governanceValue) &&
+                governanceValue is true;
+
+            var budgetPolicies = rateLimiter.ResolveApplicablePolicies(
+                    credentialId,
+                    logicalModel,
+                    ownerTenantId,
+                    ownerObjectId,
+                    usageGroupId,
+                    enforceCallerGovernance)
+                .Where(policy => policy.HasOutputTokenBudget)
+                .ToArray();
+
+            if (budgetPolicies.Length == 0)
             {
                 replacementBody = ReplaceBody(context, rawBody);
                 await next(context);
                 return;
             }
+
+            var maxPerRequest = budgetPolicies
+                .Select(policy => policy.MaxOutputTokensPerRequest!.Value)
+                .Min();
 
             if (!OutputTokenRequestPolicy.TryApply(
                     requestObject,
@@ -83,7 +109,7 @@ public sealed class OutputTokenBudgetMiddleware(RequestDelegate next)
             }
 
             var budgetDecision = await budgetLimiter.TryReserveAsync(
-                policy,
+                budgetPolicies,
                 reservationTokens,
                 DateTimeOffset.UtcNow,
                 context.RequestAborted);

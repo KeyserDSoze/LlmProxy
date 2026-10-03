@@ -29,9 +29,9 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and metadata-only enterprise observability.
+Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and enterprise observability with administrator-only encrypted payload inspection.
 
-Raw prompts, source code, generated outputs, response bodies, bearer tokens and API secrets must never be persisted or added to logs/spans/evidence by default.
+Raw prompts, source code, generated outputs and response bodies may be persisted only in the dedicated application-encrypted inference content-log store, visible only to `LlmProxy.Admin`, under the configured 10-180 day retention policy. They must never be copied into OTEL spans, ordinary application logs or acceptance evidence. Authorization headers, upstream bearer tokens and plaintext API secrets must never be persisted in content logs.
 
 ## Engineering conventions
 
@@ -101,11 +101,11 @@ Operators read version/build/patch notes at `/admin/releases`. Keep the legacy s
 
 ## Entra identity and personal API keys
 
-Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership uses stable Entra `tid + oid`; usernames/email are metadata only. `LlmProxy.User` and `LlmProxy.Admin` can manage only their own personal keys through `/api/me/*` and `/admin/me`. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
+Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership and normal-user registry identity use stable Entra `tid + oid`; usernames/email are metadata only. Normal-user self-service admission is controlled by the persisted platform-user registry in either manual-census or automatic-first-login mode; administrators bypass the normal-user registry. An administrator disable blocks `/api/me/*` + `/admin/me` and revokes that user's active personal keys. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
 
 `0.2.0-preview.7` adds aggregate **request-count** quotas at Entra user/model scope across all personal keys. User and credential request-rate policies compose with AND semantics and counters must be acquired atomically. Output-token budgets remain credential/model scoped. Monetary/spend budgets are not implemented without explicit pricing/chargeback semantics.
 
-Read `docs/identity-api-keys.md` and `docs/security.md` before changing identity/credential behavior.
+Read `docs/identity-api-keys.md`, `docs/user-access.md` and `docs/security.md` before changing identity/credential behavior.
 
 ## Runtime topology
 
@@ -139,7 +139,7 @@ Read `docs/operations.md` and `docs/capacity-control.md` before changing mainten
 
 ## Credential and caller-governance contract
 
-Credentials persist only HMAC hashes and safe metadata. Rotation is an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/hash, one-time replacement secret, `Cache-Control: no-store`, safe audit only.
+Credentials persist the HMAC authentication hash plus safe metadata. Newly created/rotated client API keys also persist an application-encrypted recovery copy bound to the credential ID so `LlmProxy.Admin` can reveal/copy the key later. Rotation is an in-place hard cutover: same credential identity/group/policy/history linkage, new prefix/hash/encrypted recovery value, `Cache-Control: no-store`, safe audit only. Every administrator reveal is audited without the secret value.
 
 Inference-node provider credentials are a separate trust boundary from client API keys. A node bearer is write-only and persisted/replicated only as AES-GCM ciphertext; `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` is the external recovery key shared by gateway replicas. The client Authorization header must never be forwarded to an inference provider.
 
@@ -158,9 +158,10 @@ raw request metrics           90 days
 daily usage rollups          730 days
 audit events                 365 days
 processed runtime outbox      30 days
+full-body content logs         30 days default, configurable 10-180 days
 ```
 
-Before expired raw request metrics are deleted, complete UTC days are aggregated into PostgreSQL rollups keyed by day + credential + Usage Group + logical model. Compaction is transactional and serialized across replicas with a PostgreSQL advisory transaction lock. Reporting combines rollups with newer raw metrics without double counting.
+Full-body content logs are a separate encrypted store. Their cleanup worker runs every four hours and deletes entries older than the administrator-configured retention window. Before expired raw request metrics are deleted, complete UTC days are aggregated into PostgreSQL rollups keyed by day + credential + Usage Group + logical model. Compaction is transactional and serialized across replicas with a PostgreSQL advisory transaction lock. Reporting combines rollups with newer raw metrics without double counting.
 
 Read `docs/data-retention.md` before changing retention/reporting semantics.
 

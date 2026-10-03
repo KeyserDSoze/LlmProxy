@@ -70,10 +70,10 @@ export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="ci-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-local-primary"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
-export DGX_NODE_WEIGHT="1"
-export DGX_NODE_MAX_CONCURRENCY="4"
+export INFERENCE_NODE_NAME="inference-local-primary"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
+export INFERENCE_NODE_WEIGHT="1"
+export INFERENCE_NODE_MAX_CONCURRENCY="4"
 export ROUTING_STRATEGY="WeightedRoundRobin"
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="2"
@@ -125,8 +125,91 @@ echo "$primary_response" | grep --quiet '"served_by":"primary"'
 echo "$primary_response" | grep --quiet '"model":"bootstrap-model"'
 echo "$primary_response" | jq -e '.usage.total_tokens == 18' >/dev/null
 
+admin_session="$(curl --fail --silent http://127.0.0.1:8080/api/admin/session)"
+echo "$admin_session" | jq -e '.canWrite == true' >/dev/null
+
+user_access_settings="$(curl --fail --silent http://127.0.0.1:8080/api/admin/users/settings)"
+echo "$user_access_settings" | jq -e '.provisioningMode == "manual"' >/dev/null
+
+automatic_user_access="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"provisioningMode":"automatic"}' http://127.0.0.1:8080/api/admin/users/settings)"
+echo "$automatic_user_access" | jq -e '.provisioningMode == "automatic"' >/dev/null
+curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"provisioningMode":"manual"}' http://127.0.0.1:8080/api/admin/users/settings >/dev/null
+
+platform_user="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"tenantId":"tenant-smoke","objectId":"object-smoke","principalName":"user-smoke@example.com","displayName":"Smoke User","enabled":true}' http://127.0.0.1:8080/api/admin/users)"
+platform_user_id="$(echo "$platform_user" | jq -r '.id')"
+echo "$platform_user" | jq -e '.tenantId == "tenant-smoke" and .objectId == "object-smoke" and .enabled == true and .provisioningSource == "admin"' >/dev/null
+
+user_credential="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"User suspension smoke"}' http://127.0.0.1:8080/api/admin/api-credentials)"
+user_credential_id="$(echo "$user_credential" | jq -r '.id')"
+user_credential_secret="$(echo "$user_credential" | jq -r '.secret')"
+
+"${COMPOSE[@]}" exec -T postgres psql -U llmproxy -d llmproxy -v ON_ERROR_STOP=1 -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='object-smoke', \"OwnerPrincipalName\"='user-smoke@example.com' WHERE \"Id\"='${user_credential_id}';" >/dev/null
+
+curl --fail --silent -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models >/dev/null
+
+curl --fail --silent -X POST "http://127.0.0.1:8080/api/admin/users/${platform_user_id}/disable" >/dev/null
+disabled_user_key_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models)"
+if [[ "$disabled_user_key_status" != "401" ]]; then
+  fail_with_diagnostics "Expected disabled user's personal API key to return 401, got ${disabled_user_key_status}."
+fi
+
+platform_users="$(curl --fail --silent http://127.0.0.1:8080/api/admin/users)"
+echo "$platform_users" | jq -e --arg id "$platform_user_id" 'map(select(.id == $id and .enabled == false and .activeCredentialCount == 0)) | length == 1' >/dev/null
+
+curl --fail --silent -X POST "http://127.0.0.1:8080/api/admin/users/${platform_user_id}/enable" >/dev/null
+reenabled_old_key_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models)"
+if [[ "$reenabled_old_key_status" != "401" ]]; then
+  fail_with_diagnostics "Expected re-enabled user to keep the previously revoked API key invalid, got ${reenabled_old_key_status}."
+fi
+
+systemone_status="$(curl --fail --silent http://127.0.0.1:8080/api/admin/testing/systemone)"
+echo "$systemone_status" | jq -e '.enabled == true and .apiKeyConfigured == true and .publicEndpoint == "/v1/systemone" and .timeoutSeconds == 5 and (.upstreamEndpoint | contains("3452/classifier/v1/systemone"))' >/dev/null
+
+systemone_test="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"payload":{"state":{"document":"admin classifier test"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}}' http://127.0.0.1:8080/api/admin/testing/systemone)"
+echo "$systemone_test" | jq -e '.success == true and .statusCode == 200 and (.responseBody | fromjson | .served_by) == "classifier" and (.responseBody | fromjson | .state.document) == "admin classifier test"' >/dev/null
+
+chat_test="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"model":"agic-code-fast","systemPrompt":"You are concise.","userPrompt":"admin model test","maxTokens":64,"temperature":0.1}' http://127.0.0.1:8080/api/admin/testing/chat)"
+echo "$chat_test" | jq -e '.success == true and .statusCode == 200 and .logicalModel == "agic-code-fast" and .nodeName == "inference-local-primary" and (.responseBody | fromjson | .served_by) == "primary"' >/dev/null
+
+bootstrap_credential="$(curl --fail --silent http://127.0.0.1:8080/api/admin/api-credentials | jq -c 'map(select(.name == "Bootstrap / GitHub Copilot")) | first')"
+bootstrap_credential_id="$(echo "$bootstrap_credential" | jq -r '.id')"
+echo "$bootstrap_credential" | jq -e '.secretAvailable == true' >/dev/null
+revealed_bootstrap="$(curl --fail --silent "http://127.0.0.1:8080/api/admin/api-credentials/${bootstrap_credential_id}/secret")"
+echo "$revealed_bootstrap" | jq -e '.secret == "dev-change-me" and .keyPrefix == "dev-change-me"' >/dev/null
+
+content_log_settings="$(curl --fail --silent http://127.0.0.1:8080/api/admin/content-logs/settings)"
+echo "$content_log_settings" | jq -e '.retentionDays == 30 and .minimumRetentionDays == 10 and .maximumRetentionDays == 180 and .cleanupIntervalHours == 4' >/dev/null
+
+invalid_retention_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":9}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
+if [[ "$invalid_retention_status" != "400" ]]; then
+  fail_with_diagnostics "Expected content-log retention 9 days to be rejected with 400, got ${invalid_retention_status}."
+fi
+
+updated_content_log_settings="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":10}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
+echo "$updated_content_log_settings" | jq -e '.retentionDays == 10 and .cleanupIntervalHours == 4' >/dev/null
+
+content_logs_ready=false
+for attempt in {1..40}; do
+  content_logs_json="$(curl --fail --silent 'http://127.0.0.1:8080/api/admin/content-logs?take=100')"
+  if echo "$content_logs_json" | jq -e 'map(.surface) | (index("chat_completions") != null and index("systemone") != null and index("model_test") != null and index("systemone_test") != null)' >/dev/null; then
+    content_logs_ready=true
+    break
+  fi
+  sleep 0.25
+done
+if [[ "$content_logs_ready" != "true" ]]; then
+  fail_with_diagnostics "Encrypted full-body content logs did not persist the expected inference and admin diagnostic surfaces."
+fi
+
+chat_content_log_id="$(echo "$content_logs_json" | jq -r 'map(select(.surface == "chat_completions" and .logicalModel == "agic-code-fast")) | first | .id')"
+chat_content_log="$(curl --fail --silent "http://127.0.0.1:8080/api/admin/content-logs/${chat_content_log_id}")"
+echo "$chat_content_log" | jq -e '.requestBody | fromjson | .messages[0].content == "hello"' >/dev/null
+echo "$chat_content_log" | jq -e '.responseBody | fromjson | .served_by == "primary"' >/dev/null
+
+curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":30}' http://127.0.0.1:8080/api/admin/content-logs/settings >/dev/null
+
 model_id="$(curl --fail --silent http://127.0.0.1:8080/api/admin/models | jq -r '.[0].id')"
-node2_json="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"dgx-local-alternate","baseAddress":"http://host.docker.internal:3451/altropath","weight":3,"maxConcurrency":4}' http://127.0.0.1:8080/api/admin/nodes)"
+node2_json="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"inference-local-alternate","baseAddress":"http://host.docker.internal:3451/altropath","weight":3,"maxConcurrency":4}' http://127.0.0.1:8080/api/admin/nodes)"
 node2_id="$(echo "$node2_json" | jq -r '.id')"
 
 curl --fail --silent -H 'Content-Type: application/json' -d "{\"nodeId\":\"${node2_id}\",\"modelId\":\"${model_id}\",\"weight\":1,\"maxConcurrency\":4}" http://127.0.0.1:8080/api/admin/deployments >/dev/null
@@ -219,8 +302,14 @@ echo "$audit_json" | jq -e 'map(.action) | index("deployment.create") != null' >
 echo "$audit_json" | jq -e 'map(.action) | index("node.test_connection") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("routing.update") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("routing.tuning.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("credential.secret.reveal") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("content_log.retention.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.provisioning_mode.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.disable") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.enable") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/null
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
 
-echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, System One proxy, live tuning, vLLM runtime telemetry, observability, health hysteresis and audit verified."
+echo "Backend integration smoke suite passed. Weighted=${primary_count}/${alternate_count}, round-robin=${rr_primary}/${rr_alternate}, System One proxy + admin classifier test, admin model chat test, encrypted API-key recovery, encrypted full-body logs/retention, live tuning, vLLM runtime telemetry, observability, health hysteresis and audit verified."

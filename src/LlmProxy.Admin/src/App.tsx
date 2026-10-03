@@ -1,9 +1,17 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import Governance from './Governance'
 import Hardware from './Hardware'
+import ModelHardware from './ModelHardware'
+import ReleaseNotesPage from './ReleaseNotesPage'
+import ContentLogs from './ContentLogs'
+import HelpPage from './HelpPage'
+import PageDocumentation from './PageDocumentation'
+import Playground from './Playground'
+import UsersAccess from './UsersAccess'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
+export type View = 'dashboard' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -53,8 +61,8 @@ const emptyMetricsSummary: MetricsSummary = {
   byNode: []
 }
 
-export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
+  const [view, setView] = useState<View>(initialView)
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
   const [routingTuning, setRoutingTuning] = useState<RoutingTuningSettings>(emptyRoutingTuning)
@@ -71,13 +79,15 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
+  const [canWrite, setCanWrite] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
-        api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
+      const [nextSession, nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.adminSession(), api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
       ])
+      setCanWrite(nextSession.canWrite)
       setOverview(nextOverview)
       setRouting(nextRouting)
       setRoutingTuning(nextTuning)
@@ -116,19 +126,28 @@ export default function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brandMark">LP</div>
+          <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
           <div><strong>LlmProxy</strong><span>AI Gateway</span></div>
         </div>
         <nav>
-          <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>DGX Nodes</NavItem>
-          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>DGX Hardware</NavItem>
-          <NavItem active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
-          <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
-          <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
-          <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
-          <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
-          <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
+          <NavItem icon="nodes" active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
+          <NavItem icon="hardware" active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
+          {canWrite && <NavItem icon="control" active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
+          <NavItem icon="models" active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
+          <NavItem icon="deployments" active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
+          <NavItem icon="routing" active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
+          <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
+          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
+          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
+          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
+          <NavItem icon="audit" active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          <NavItem icon="help" active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
+          <div className="navSecondary">
+            <NavItem icon="governance" active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
+            {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => setView('users')}>Users & Access</NavItem>}
+            <ProductNavItem active={view === 'releases'} onClick={() => setView('releases')} />
+          </div>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
       </aside>
@@ -139,6 +158,8 @@ export default function App() {
           <button className="secondary" onClick={() => void refresh()}>Refresh</button>
         </header>
 
+        <PageDocumentation page={view} />
+
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
@@ -146,12 +167,19 @@ export default function App() {
             {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
             {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
             {view === 'hardware' && <Hardware nodes={nodes} hardware={hardware} refresh={refresh} />}
+            {view === 'model-management' && canWrite && <ModelHardware nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
-            {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
+            {view === 'credentials' && <Credentials credentials={credentials} canWrite={canWrite} refresh={refresh} />}
+            {view === 'users' && canWrite && <UsersAccess />}
             {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
+            {view === 'playground' && canWrite && <Playground models={models} />}
+            {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
+            {view === 'help' && <HelpPage models={models} />}
+            {view === 'governance' && <Governance />}
+            {view === 'releases' && <ReleaseNotesPage embedded />}
           </>
         )}
       </main>
@@ -251,8 +279,8 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
         <p className="mono">Responses: {result.responsesUrl}</p>
       </div>)}
     </section>
-    <section className="panel formPanel"><h2>Add DGX node</h2><form onSubmit={submit}>
-      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="dgx-02" /></label>
+    <section className="panel formPanel"><h2>Add inference node</h2><form onSubmit={submit}>
+      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="inference-02" /></label>
       <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
       <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
       <label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={e => setMaxConcurrency(Number(e.target.value))} /></label>
@@ -415,7 +443,7 @@ function Deployments({ deployments, nodes, models, nodeNames, modelNames, refres
     await refresh()
   }
   return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → DGX</span></div>
+    <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → hardware</span></div>
       <table><thead><tr><th>Model</th><th>Node</th><th>Weight</th><th>Concurrency</th><th>State</th></tr></thead><tbody>
         {deployments.map(deployment => <tr key={deployment.id}><td><strong>{modelNames.get(deployment.modelId) ?? deployment.modelId}</strong></td><td>{nodeNames.get(deployment.nodeId) ?? deployment.nodeId}</td><td>{deployment.weight}</td><td>{deployment.maxConcurrency ?? 'node default'}</td><td>{deployment.enabled ? 'Enabled' : 'Disabled'}</td></tr>)}
       </tbody></table>
@@ -428,7 +456,7 @@ function Deployments({ deployments, nodes, models, nodeNames, modelNames, refres
   </div>
 }
 
-function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; refresh: () => Promise<void> }) {
+function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCredential[]; canWrite: boolean; refresh: () => Promise<void> }) {
   const [name, setName] = useState('GitHub Copilot')
   const [created, setCreated] = useState<CreatedApiCredential | null>(null)
   async function submit(event: FormEvent) {
@@ -437,17 +465,30 @@ function Credentials({ credentials, refresh }: { credentials: ApiCredential[]; r
     setCreated(result)
     await refresh()
   }
+  async function reveal(id: string) {
+    const result = await api.revealApiCredential(id)
+    setCreated({ id: result.id, name: result.name, keyPrefix: result.keyPrefix, secret: result.secret, enabled: true, createdAtUtc: '', secretAvailable: true })
+  }
+  async function rotate(id: string) {
+    const result = await api.rotateApiCredential(id)
+    setCreated(result)
+    await refresh()
+  }
   return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Inference API credentials</h2><span>Raw secrets are never stored</span></div>
-      <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Action</th></tr></thead><tbody>
-        {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td className="actions">{item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}</td></tr>)}
+    <section className="panel"><div className="panelTitle"><h2>Organization API credentials</h2><span>Admin-created shared/workload keys · caller quotas off by default</span></div>
+      <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Secret</th><th>Action</th></tr></thead><tbody>
+        {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable' : 'Rotate once'}</td><td className="actions">
+          {canWrite && item.secretAvailable && <button onClick={() => void reveal(item.id)}>Reveal / copy</button>}
+          {canWrite && item.enabled && <button onClick={() => void rotate(item.id)}>Rotate</button>}
+          {canWrite && item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}
+        </td></tr>)}
       </tbody></table>
     </section>
-    <section className="panel formPanel"><h2>Create credential</h2><form onSubmit={submit}>
+    <section className="panel formPanel"><h2>Create organization credential</h2><p className="muted">Use this for shared integrations such as GitHub Copilot. Admins who need a personal key use <a href="/admin/me">My dashboard</a>; normal users can create only their own personal keys.</p><form onSubmit={submit}>
       <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="GitHub Copilot Production" /></label>
-      <button className="primary">Generate API key</button>
+      <button className="primary">Generate organization API key</button>
     </form>
-      {created && <div className="secretBox"><strong>Copy this key now</strong><p>It will not be shown again.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
+      {created && <div className="secretBox"><strong>API key available to administrators</strong><p>The authentication hash is one-way; this recoverable copy is stored application-encrypted at rest. Reveals are audited.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
     </section>
   </div>
 }
@@ -468,7 +509,7 @@ function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: Re
           {summary.byModel.map(item => <tr key={item.logicalModel}><td><strong>{item.logicalModel}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.averageTimeToFirstByteMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
         </tbody></table>
       </section>
-      <section className="panel"><div className="panelTitle"><h2>By DGX node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
+      <section className="panel"><div className="panelTitle"><h2>By inference node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
         <table><thead><tr><th>Node</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>P95 duration</th><th>Output tokens</th></tr></thead><tbody>
           {summary.byNode.map(item => <tr key={item.nodeId}><td><strong>{nodeNames.get(item.nodeId) ?? short(item.nodeId)}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.p95DurationMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
         </tbody></table>
@@ -505,8 +546,48 @@ function Audit({ events }: { events: AuditEvent[] }) {
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
-function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', audit: 'Audit trail' } as const)[view] }
+type NavIconName = 'dashboard' | 'nodes' | 'hardware' | 'control' | 'models' | 'deployments' | 'routing' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases'
+
+function NavItem({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: NavIconName; children: React.ReactNode }) {
+  return <button className={active ? 'active' : ''} onClick={onClick}><NavIcon name={icon} /><span>{children}</span></button>
+}
+
+function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/admin/product', { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() as Promise<{ version: string }> : null)
+      .then(product => { if (!cancelled && product) setVersion(product.version) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  return <NavItem icon="releases" active={active} onClick={onClick}>{version ? `v${version} · Release Notes` : 'Release Notes'}</NavItem>
+}
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const paths: Record<NavIconName, React.ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    nodes: <><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.3 10.8 15.6 7.2M8.3 13.2l7.3 3.6" /></>,
+    hardware: <><rect x="5" y="5" width="14" height="14" rx="2" /><rect x="9" y="9" width="6" height="6" rx="1" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></>,
+    control: <><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></>,
+    models: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></>,
+    deployments: <><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5" /></>,
+    routing: <><path d="M5 5v4a3 3 0 0 0 3 3h8" /><path d="m13 9 3 3-3 3" /><path d="M5 19v-3a4 4 0 0 1 4-4" /></>,
+    key: <><circle cx="8" cy="12" r="4" /><path d="M12 12h9M17 12v3M20 12v2" /></>,
+    metrics: <><path d="M4 20V10M10 20V4M16 20v-7M22 20V7" /></>,
+    play: <path d="m8 5 11 7-11 7V5Z" />,
+    logs: <><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 11h6M9 15h6" /></>,
+    audit: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    help: <><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.3 1-1.3 1.7M12 17h.01" /></>,
+    governance: <><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-5" /></>,
+    users: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20a6 6 0 0 1 12 0M14 16a5 5 0 0 1 7 4" /></>,
+    releases: <><path d="M4 5h10l6 6-9 9-7-7V5Z" /><circle cx="9" cy="10" r="1.5" /></>
+  }
+  return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
+}
+
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

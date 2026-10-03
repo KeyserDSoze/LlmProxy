@@ -7,23 +7,23 @@ This document defines the identity, authorization, API-key and user-request-quot
 LlmProxy supports two distinct credential types:
 
 ```text
-service credential   created/administered by LlmProxy administrators; no Entra owner
-personal credential  created by an authenticated Entra user; permanently bound to that Entra identity
+organization credential  created/administered by LlmProxy administrators; no Entra owner
+personal credential      created by an authenticated Entra user; permanently bound to that Entra identity
 ```
 
-Existing GitHub Copilot/shared integration credentials remain valid service credentials. Personal credentials add self-service without changing the `/v1/*` bearer contract.
+Organization credentials are intended for shared workloads such as GitHub Copilot. Administrators create organization credentials through the Admin API/UI and can also create their own personal credentials through `/admin/me`. Normal users can create only personal credentials owned by their own stable Entra identity.
 
-## Entra roles
+## Entra roles and platform-user admission
 
-The application roles are:
+The Entra application roles remain:
 
 ```text
-LlmProxy.Admin   full product administration + self-service
-LlmProxy.User    normal product user; personal API-key and own-usage self-service
-LlmProxy.Reader  read-only operational/admin visibility; retained for operators
+LlmProxy.Admin   full product administration
+LlmProxy.User    optional normal-user app-role assignment
+LlmProxy.Reader  read-only operational/admin visibility
 ```
 
-`LlmProxy.User` is intentionally different from `LlmProxy.Reader`: a Reader is an operator with read access to the administrative control plane, while a User is a consumer of the inference service.
+Normal-user portal admission is now controlled by the LlmProxy platform-user registry after Entra authentication, rather than requiring the `LlmProxy.User` role on every user. The administrator selects either automatic first-login registration or manual census. Stable `tid + oid` remains the authorization identity; email/UPN is metadata only. See `docs/user-access.md`.
 
 ### Installer-configured super administrators
 
@@ -60,24 +60,26 @@ OwnerObjectId
 OwnerPrincipalName   optional display/audit metadata
 ```
 
-Tenant and object ID are both present or both absent. Existing service credentials therefore remain distinguishable without a schema-breaking migration.
+Tenant and object ID are both present or both absent. Credentials without an Entra owner are organization credentials. Personal credentials are always caller-governed; organization credentials are caller-quota exempt by default and may be opted into normal caller governance only by an administrator.
 
 ## API-key storage
 
-The existing security model remains authoritative:
+The authentication model remains HMAC-based, with a separate administrator recovery layer:
 
 1. generate a high-entropy raw secret;
 2. derive a safe display prefix;
-3. store only the HMAC hash plus metadata in PostgreSQL;
-4. return the raw secret exactly once at creation or rotation;
-5. send `Cache-Control: no-store` on responses containing a raw key;
-6. keep the HMAC pepper outside PostgreSQL and preserve it as deployment/recovery secret material.
+3. store the HMAC hash plus metadata used for authentication;
+4. store an application-encrypted recovery copy bound to the credential ID for administrator reveal/copy;
+5. return the raw secret at creation or rotation and mark secret-bearing responses `Cache-Control: no-store`;
+6. keep the HMAC pepper outside PostgreSQL and preserve it as deployment/recovery secret material because it is also required to decrypt recovery copies.
 
-A raw personal or service API key must never be written to audit, request metrics, logs or runtime-state payloads.
+The encrypted recovery value is not published to Redis/runtime credential snapshots and is never used for request authentication. Only `LlmProxy.Admin` can reveal it; every reveal is audited without the secret. Credentials created before encrypted recovery remain non-recoverable until rotated once, except the configured bootstrap key can be backfilled when its original secret is still available at startup.
+
+A raw personal or service API key must never be written to audit, request metrics, full-body content logs, OTEL, generic application logs or runtime-state payloads.
 
 ## Self-service endpoints
 
-When Entra is enabled, `LlmProxy.Admin` and `LlmProxy.User` may call:
+When Entra is enabled, an authenticated normal user may call these endpoints only when the platform-user registry admits the stable `tid + oid` identity. Administrators bypass the normal-user registry:
 
 ```http
 GET  /api/me
@@ -87,22 +89,39 @@ POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
+GET  /api/me/requests?take=50
 ```
 
 The server derives ownership exclusively from the authenticated Entra principal. A caller cannot submit another tenant/object ID in a request body.
 
 List/rotate/revoke operations filter by both credential ID and the current `(tid, oid)` pair. A credential owned by another user therefore behaves as not found rather than exposing ownership information.
 
+## User provisioning and suspension
+
+Administrator-only user-access endpoints are:
+
+```http
+GET  /api/admin/users/settings
+PUT  /api/admin/users/settings
+GET  /api/admin/users
+POST /api/admin/users
+POST /api/admin/users/{id}/disable
+POST /api/admin/users/{id}/enable
+PUT  /api/admin/users/{id}/usage-group
+```
+
+Manual is the default provisioning mode. Automatic mode creates an enabled normal user on first successful Entra portal access. Disabling a user blocks `/api/me/*` and `/admin/me` and revokes all currently active personal API keys for the same `tid + oid`. Re-enabling portal access does not resurrect revoked keys.
+
 ## Administrator visibility
 
-Administrators/read-only operators can inspect identity attribution through:
+Administrators/read-only operators can inspect credential-derived identity attribution through:
 
 ```http
 GET /api/admin/identity/api-credentials
 GET /api/admin/identity/users
 ```
 
-The existing `/api/admin/api-credentials` lifecycle remains the administration path for service credentials and broad supervision. Administrators retain the ability to revoke/rotate credentials through the existing admin contract.
+The existing `/api/admin/api-credentials` lifecycle is the administration path for organization credentials and broad supervision. `PUT /api/admin/api-credentials/{id}/caller-governance` lets an administrator opt an organization key into or out of caller-specific limits; personal keys cannot opt out. Administrators retain the ability to revoke/rotate credentials through the existing admin contract. Administrators (not read-only operators) may also reveal an encrypted recovery copy through `GET /api/admin/api-credentials/{id}/secret` when `secretAvailable=true`.
 
 ## Request attribution
 
@@ -119,33 +138,25 @@ Bearer API key
 
 For a personal credential, the runtime credential snapshot also contains `OwnerTenantId` and `OwnerObjectId`. Durable request telemetry continues to persist `ApiCredentialId`; user attribution is resolved through the credential owner instead of duplicating mutable user metadata on every request row.
 
-This preserves the existing privacy rule: prompts, source code, generated output and raw secrets are not persisted as usage telemetry.
+This preserves the usage-telemetry privacy rule: request metrics and usage rollups do not persist prompts, source code, generated output or raw secrets. Full request/response bodies, when enabled by the product contract, live only in the separate administrator-only encrypted content-log store and are governed by its independent 10-180 day retention.
 
-## Usage and limits
+## Usage, groups and limits
 
-Credential/model-scoped governance remains supported:
+A platform user may belong to zero or one current Usage Group. Group assignment is administrator-controlled. The assignment is copied to the user's personal credentials so request-time telemetry keeps the existing historical `UsageGroupId` snapshot even if the user later changes group.
 
-```text
-requests per time window
-output tokens per time window
-maximum output tokens per request
-```
-
-Starting with `0.2.0-preview.7`, administrators may also configure **aggregate user request-rate policies** keyed by stable Entra `(tid, oid)`, optionally scoped to one logical model. These limits span all personal API keys owned by the user.
-
-Request admission uses:
+For a governed personal credential, caller policy composition is:
 
 ```text
-applicable user request policy
-AND
-applicable credential request policy
+applicable user policy
+AND applicable usage-group policy
+AND applicable credential policy
 ```
 
-The fixed-window counters are acquired atomically: if either applicable request policy rejects, neither counter is incremented. Redis-enabled deployments coordinate the counters across gateway replicas; Redis-disabled deployments use the local in-memory store.
+Each scope may define request-count limits and optional output-token budgets, optionally narrowed to one logical model. Request counters are acquired together with existing atomic AND semantics. Output-token reservations are applied to every applicable budget; the effective per-request output cap is the smallest applicable maximum.
 
-The personal portal and `GET /api/me/rate-limits` expose user request-limit metadata read-only. Only administrators configure user policies.
+An administrator-created **organization credential** defaults to `EnforceCallerGovernance=false`. In that mode user/group/credential caller quotas are not applied, which is the expected default for shared workloads such as centrally configured GitHub Copilot. Authentication, model routing, health/capacity admission and other platform-wide infrastructure protections still apply. An administrator may explicitly enable caller governance on that organization credential; any credential-specific and assigned-group policies then become applicable.
 
-Output-token budgets remain credential/model scoped in this increment.
+The personal portal and `GET /api/me/rate-limits` expose the current user's effective user/group request and token policies read-only. Only administrators configure these policies.
 
 ### Monetary/spend limit
 
@@ -168,7 +179,7 @@ Authorization: Bearer <LlmProxy personal key>
 
 Do not commit it to source control, container images, scripts or CI logs.
 
-For unattended/shared production applications, ownership is an open architectural choice. Long-lived automation should generally not depend on an employee's personal key. The supported current option is an administrator-created service credential. A future option may use Entra service principals/workload identity to obtain or broker application credentials.
+For unattended/shared production applications, use an administrator-created organization credential rather than an employee's personal key. Organization credentials are caller-quota exempt by default but may be opted into governance when the workload should behave like a governed client. A future option may use Entra service principals/workload identity to obtain or broker application credentials.
 
 ## Open decisions
 
@@ -181,8 +192,8 @@ Before extending governance beyond the current increment, decide:
 5. whether aggregate **output-token** budgets should also exist at user scope and how they interact with credential budgets;
 6. the monetary/chargeback model required for spend limits;
 7. whether unattended applications remain on service API keys or move to an Entra workload-identity flow;
-8. whether a disabled/deleted Entra account should trigger automatic key revocation and how directory reconciliation would be performed.
+8. whether Microsoft Graph/directory reconciliation should automatically disable LlmProxy users whose Entra account is disabled/deleted; local administrator disable already revokes active personal keys.
 
 ## External acceptance
 
-Repository tests validate ownership invariants and claim resolution without calling Entra. Real acceptance still requires an actual app registration with roles `LlmProxy.Admin`, `LlmProxy.User` and (if used) `LlmProxy.Reader`, plus browser login and end-to-end self-service/inference tests in the target tenant.
+Repository tests validate ownership invariants and claim resolution without calling Entra. Real acceptance still requires an actual app registration and browser login in the target tenant. Validate Admin/Reader roles, both manual and automatic platform-user provisioning, user disable/re-enable, personal-key revocation, user dashboard calls and end-to-end inference.

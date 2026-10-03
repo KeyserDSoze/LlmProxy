@@ -56,7 +56,7 @@ chmod 600 "$ENV_FILE" 2>/dev/null || true
 
 echo "Full-stack environment prepared: docker/.env.full"
 echo "Internal PostgreSQL, Redis and OpenTelemetry service URLs are injected automatically by Compose."
-echo "Before startup, edit only operator-specific values such as DGX_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME."
+echo "Before startup, edit only operator-specific values such as INFERENCE_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME."
 echo "If GHCR is private, authenticate first with: docker login ghcr.io"
 
 if [[ "$START" == "true" ]]; then

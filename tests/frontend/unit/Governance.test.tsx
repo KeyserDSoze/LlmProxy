@@ -6,11 +6,19 @@ const mockedApi = vi.hoisted(() => ({
   usageGroups: vi.fn(),
   governanceCredentials: vi.fn(),
   rateLimits: vi.fn(),
-  identityUsers: vi.fn(),
+  platformUsers: vi.fn(),
   userRateLimits: vi.fn(),
+  groupRateLimits: vi.fn(),
+  usageUsers: vi.fn(),
   createUserRateLimit: vi.fn(),
   updateUserRateLimit: vi.fn(),
   deleteUserRateLimit: vi.fn(),
+  clearUserOutputTokenBudget: vi.fn(),
+  createGroupRateLimit: vi.fn(),
+  updateGroupRateLimit: vi.fn(),
+  clearGroupOutputTokenBudget: vi.fn(),
+  deleteGroupRateLimit: vi.fn(),
+  updateCredentialCallerGovernance: vi.fn(),
   usageSummary: vi.fn(),
   models: vi.fn(),
   createUsageGroup: vi.fn(),
@@ -30,12 +38,12 @@ import Governance from '../../../src/LlmProxy.Admin/src/Governance'
 
 const group = {
   id: 'group-1', name: 'Development CRM', description: 'CRM team',
-  createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z', credentialCount: 1
+  createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z', credentialCount: 1, userCount: 1
 }
 
 const credential = {
   id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', enabled: true,
-  createdAtUtc: '2026-09-14T10:00:00Z', usageGroupId: 'group-1'
+  createdAtUtc: '2026-09-14T10:00:00Z', usageGroupId: 'group-1', kind: 'organization', enforceCallerGovernance: false
 }
 
 const usage = {
@@ -65,11 +73,19 @@ describe('Usage governance', () => {
     mockedApi.usageGroups.mockResolvedValue([group])
     mockedApi.governanceCredentials.mockResolvedValue([credential])
     mockedApi.rateLimits.mockResolvedValue([])
-    mockedApi.identityUsers.mockResolvedValue([{ tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', credentialCount: 1, activeCredentialCount: 1, firstCredentialCreatedAtUtc: '2026-09-17T06:00:00Z' }])
+    mockedApi.platformUsers.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', usageGroupId: 'group-1', usageGroupName: 'Development CRM', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-09-17T06:00:00Z', credentialCount: 1, activeCredentialCount: 1, requestCount30d: 42, errorCount30d: 2 }])
     mockedApi.userRateLimits.mockResolvedValue([])
+    mockedApi.groupRateLimits.mockResolvedValue([])
+    mockedApi.usageUsers.mockResolvedValue([{ tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', usageGroupId: 'group-1', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }])
     mockedApi.createUserRateLimit.mockResolvedValue({ id: 'user-rate-1' })
     mockedApi.updateUserRateLimit.mockResolvedValue({})
     mockedApi.deleteUserRateLimit.mockResolvedValue(undefined)
+    mockedApi.clearUserOutputTokenBudget.mockResolvedValue(undefined)
+    mockedApi.createGroupRateLimit.mockResolvedValue({ id: 'group-rate-1' })
+    mockedApi.updateGroupRateLimit.mockResolvedValue({})
+    mockedApi.clearGroupOutputTokenBudget.mockResolvedValue(undefined)
+    mockedApi.deleteGroupRateLimit.mockResolvedValue(undefined)
+    mockedApi.updateCredentialCallerGovernance.mockResolvedValue({ id: 'credential-1', name: 'Copilot CRM', kind: 'organization', enforceCallerGovernance: true })
     mockedApi.usageSummary.mockResolvedValue(usage)
     mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'provider', supportsStreaming: true, supportsTools: true, enabled: true }])
     mockedApi.createUsageGroup.mockResolvedValue(group)

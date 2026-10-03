@@ -36,10 +36,10 @@ export RUNTIME_METRICS_ENABLED=false
 export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
 export BOOTSTRAP_ENABLED=true
-export DGX_NODE_NAME=dgx-maintenance
-export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3495/maintenance
-export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=4
+export INFERENCE_NODE_NAME=inference-maintenance
+export INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3495/maintenance
+export INFERENCE_NODE_WEIGHT=1
+export INFERENCE_NODE_MAX_CONCURRENCY=4
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -105,14 +105,14 @@ wait_http http://127.0.0.1:8080/readyz 60 || fail_with_diagnostics "Primary main
 healthy=false
 for attempt in {1..40}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes || true)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-maintenance" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-maintenance" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     healthy=true
     break
   fi
   sleep 1
 done
 [[ "$healthy" == "true" ]] || fail_with_diagnostics "Maintenance node did not become Healthy."
-node_id="$(echo "$nodes_json" | jq -r '.[] | select(.name == "dgx-maintenance") | .id')"
+node_id="$(echo "$nodes_json" | jq -r '.[] | select(.name == "inference-maintenance") | .id')"
 [[ "$node_id" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_with_diagnostics "Maintenance node id was not resolved."
 node_field="${node_id//-/}"
 

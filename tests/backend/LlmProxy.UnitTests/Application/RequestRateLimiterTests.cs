@@ -165,4 +165,46 @@ public sealed class RequestRateLimiterTests
         Assert.Equal(userPolicyId, userRejected.Policy?.Id);
     }
 
+    [Fact]
+    public async Task Organization_credential_with_caller_governance_off_does_not_consume_credential_policy()
+    {
+        var credentialId = Guid.NewGuid();
+        var policyId = Guid.NewGuid();
+        var limiter = new RequestRateLimiter();
+        limiter.ReplacePolicies([new RateLimitPolicySnapshot(policyId, credentialId, null, 1, 60, true)]);
+        var now = DateTimeOffset.UtcNow;
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, false, now, cancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, false, now.AddSeconds(1), cancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, true, now.AddSeconds(2), cancellationToken)).Allowed);
+
+        var rejected = await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, true, now.AddSeconds(3), cancellationToken);
+
+        Assert.False(rejected.Allowed);
+        Assert.Equal(policyId, rejected.Policy?.Id);
+    }
+
+    [Fact]
+    public async Task Usage_group_policy_aggregates_member_credentials()
+    {
+        var groupId = Guid.NewGuid();
+        var policyId = Guid.NewGuid();
+        var limiter = new RequestRateLimiter();
+        limiter.ReplacePolicies([
+            new RateLimitPolicySnapshot(policyId, Guid.Empty, null, 2, 60, true, UsageGroupId: groupId)
+        ]);
+        var now = DateTimeOffset.UtcNow;
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        Assert.True((await limiter.TryAcquireAsync(Guid.NewGuid(), "agic-code", "tenant-1", "user-a", groupId, true, now, cancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(Guid.NewGuid(), "agic-code", "tenant-1", "user-b", groupId, true, now.AddSeconds(1), cancellationToken)).Allowed);
+
+        var rejected = await limiter.TryAcquireAsync(Guid.NewGuid(), "agic-code", "tenant-1", "user-c", groupId, true, now.AddSeconds(2), cancellationToken);
+
+        Assert.False(rejected.Allowed);
+        Assert.Equal(policyId, rejected.Policy?.Id);
+        Assert.True(rejected.Policy?.IsUsageGroupScoped);
+    }
+
 }

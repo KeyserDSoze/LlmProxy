@@ -12,7 +12,7 @@ Mocking rule: **mock boundaries, not business rules**. We do not mock `Inference
 
 ### Infrastructure-focused tests
 
-Deterministic infrastructure components such as API-key hashing, vLLM/DCGM Prometheus parsing and in-memory telemetry trackers are tested with controlled inputs. Network calls, Entra ID and real DGX inference are not invoked from unit tests.
+Deterministic infrastructure components such as API-key hashing, vLLM/DCGM Prometheus parsing and in-memory telemetry trackers are tested with controlled inputs. Network calls, Entra ID and real inference node inference are not invoked from unit tests.
 
 ### Backend integration
 
@@ -30,7 +30,7 @@ Vitest and Testing Library validate React behavior and the browser API client. `
 
 ### Browser E2E
 
-Playwright runs Chromium against the real Vite-served React application. Admin API calls are intercepted at the browser network layer so flows such as navigation, DGX creation, hardware telemetry administration, routing tuning and authentication errors can be exercised deterministically.
+Playwright runs Chromium against the real Vite-served React application. Admin API calls are intercepted at the browser network layer so flows such as navigation, inference node creation, hardware telemetry administration, routing tuning and authentication errors can be exercised deterministically.
 
 ### Performance tooling
 
@@ -54,9 +54,9 @@ The following scenarios require the real target environment and are not part of 
 1. Entra ID login and application-role authorization.
 2. Cloudflare Tunnel public-domain reachability.
 3. GitHub Copilot BYOK against the public OpenAI-compatible endpoint.
-4. Real DGX/vLLM streaming and tool calling.
-5. Multi-DGX failover and drain under concurrent real-model load.
-6. Capacity and latency benchmarks against the intended DGX/model/runtime profile.
+4. Real inference node/vLLM streaming and tool calling.
+5. Multi-node failover and drain under concurrent real-model load.
+6. Capacity and latency benchmarks against the intended inference node/model/runtime profile.
 
 ## CI quality gate
 
@@ -78,4 +78,4 @@ CI uses `cancel-in-progress` for superseded runs on the same branch/PR. Integrat
 
 ## Performance-test safety
 
-CI must never gain a hard-coded remote DGX target. A future self-hosted benchmark workflow, if added, must be manual (`workflow_dispatch`), environment-scoped and explicit about target/model/concurrency. Credentials must come from protected secrets/environment variables and benchmark artifacts must continue to exclude prompt bodies and bearer tokens.
+CI must never gain a hard-coded remote inference node target. A future self-hosted benchmark workflow, if added, must be manual (`workflow_dispatch`), environment-scoped and explicit about target/model/concurrency. Credentials must come from protected secrets/environment variables and benchmark artifacts must continue to exclude prompt bodies and bearer tokens.

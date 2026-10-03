@@ -8,6 +8,7 @@ using LlmProxy.Domain.Routing;
 using LlmProxy.Domain.Security;
 using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Security;
+using LlmProxy.Infrastructure.Retention;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -21,6 +22,7 @@ public sealed class DatabaseBootstrapper(
     IRouteCatalog routeCatalog,
     IRuntimeStateEventSink runtimeStateSink,
     UpstreamCredentialProtector upstreamCredentialProtector,
+    SensitiveDataProtector sensitiveDataProtector,
     RoutingStrategyState routingStrategyState,
     RoutingTuningState routingTuningState,
     RequestRateLimiter requestRateLimiter)
@@ -72,12 +74,86 @@ public sealed class DatabaseBootstrapper(
         }
 
         var bootstrapApiKey = configuration["Authentication:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(bootstrapApiKey) && !await dbContext.ApiCredentials.AnyAsync(cancellationToken))
+        if (!string.IsNullOrWhiteSpace(bootstrapApiKey))
         {
-            dbContext.ApiCredentials.Add(new ApiCredential(
-                "Bootstrap / GitHub Copilot",
-                ApiKeyHasher.GetPrefix(bootstrapApiKey),
-                apiKeyHasher.Hash(bootstrapApiKey)));
+            var bootstrapHash = apiKeyHasher.Hash(bootstrapApiKey);
+            var bootstrapCredential = await dbContext.ApiCredentials
+                .SingleOrDefaultAsync(item => item.KeyHash == bootstrapHash, cancellationToken);
+
+            if (bootstrapCredential is null && !await dbContext.ApiCredentials.AnyAsync(cancellationToken))
+            {
+                bootstrapCredential = new ApiCredential(
+                    "Bootstrap / GitHub Copilot",
+                    ApiKeyHasher.GetPrefix(bootstrapApiKey),
+                    bootstrapHash);
+                dbContext.ApiCredentials.Add(bootstrapCredential);
+            }
+
+            if (bootstrapCredential is not null && string.IsNullOrWhiteSpace(bootstrapCredential.SecretCiphertext))
+            {
+                bootstrapCredential.SetSecretCiphertext(
+                    sensitiveDataProtector.Protect(bootstrapApiKey, $"api-credential:{bootstrapCredential.Id}"));
+            }
+        }
+
+        if (!await dbContext.ContentLogSettings.AnyAsync(cancellationToken))
+        {
+            dbContext.ContentLogSettings.Add(new ContentLogSettingsRecord
+            {
+                Id = ContentLogSettingsRecord.SingletonId,
+                RetentionDays = ContentLogRetentionService.DefaultRetentionDays,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
+        }
+
+        if (!await dbContext.UserAccessSettings.AnyAsync(cancellationToken))
+        {
+            dbContext.UserAccessSettings.Add(new UserAccessSettingsRecord
+            {
+                Id = UserAccessSettingsRecord.SingletonId,
+                ProvisioningMode = UserAccessSettingsRecord.ManualMode,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
+        }
+
+        var existingUsers = await dbContext.PlatformUsers
+            .AsNoTracking()
+            .Select(item => new { item.TenantId, item.ObjectId })
+            .ToListAsync(cancellationToken);
+        var existingUserKeys = existingUsers
+            .Select(item => $"{item.TenantId}|{item.ObjectId}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var ownedCredentials = await dbContext.ApiCredentials.AsNoTracking()
+            .Where(item => item.OwnerTenantId != null && item.OwnerObjectId != null)
+            .GroupBy(item => new { item.OwnerTenantId, item.OwnerObjectId })
+            .Select(grouping => new
+            {
+                TenantId = grouping.Key.OwnerTenantId!,
+                ObjectId = grouping.Key.OwnerObjectId!,
+                PrincipalName = grouping.Max(item => item.OwnerPrincipalName),
+                CreatedAtUtc = grouping.Min(item => item.CreatedAtUtc),
+                LastSeenAtUtc = grouping.Max(item => item.LastUsedAtUtc)
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var owner in ownedCredentials)
+        {
+            if (!existingUserKeys.Add($"{owner.TenantId}|{owner.ObjectId}"))
+            {
+                continue;
+            }
+
+            dbContext.PlatformUsers.Add(new PlatformUserRecord
+            {
+                TenantId = owner.TenantId,
+                ObjectId = owner.ObjectId,
+                PrincipalName = owner.PrincipalName,
+                Enabled = true,
+                ProvisioningSource = "migration",
+                CreatedAtUtc = owner.CreatedAtUtc,
+                LastSeenAtUtc = owner.LastSeenAtUtc
+            });
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -98,7 +174,12 @@ public sealed class DatabaseBootstrapper(
             .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
         var userRatePolicySnapshots = (await dbContext.UserRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
             .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
-        var ratePolicySnapshots = credentialRatePolicySnapshots.Concat(userRatePolicySnapshots).ToArray();
+        var groupRatePolicySnapshots = (await dbContext.UsageGroupRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var ratePolicySnapshots = credentialRatePolicySnapshots
+            .Concat(userRatePolicySnapshots)
+            .Concat(groupRatePolicySnapshots)
+            .ToArray();
         requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
         runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);
     }

@@ -1,0 +1,81 @@
+# Admin observability, testing and in-app help
+
+## Purpose
+
+The Admin UI is intended to explain the operational behavior of LlmProxy without requiring an operator to read source code first. Every Admin screen has a collapsed-by-default documentation accordion. The dedicated **Help & Endpoints** page contains copy-ready client examples and a request-path explanation.
+
+## Playground
+
+**Playground** is visible only when the current principal has write/admin capability.
+
+### Model test
+
+The model tester lists enabled logical models and calls `POST /api/admin/testing/chat`.
+
+The backend:
+
+1. resolves the logical model through the production routing service;
+2. acquires the normal distributed/local capacity gate;
+3. rewrites the logical name to the provider model;
+4. applies the configured node upstream bearer;
+5. sends a non-streaming Chat Completions request;
+6. returns selected node/deployment, latency, request body and raw response.
+
+The diagnostic intentionally bypasses client API-key rate limits because it is a control-plane test.
+
+### System One classifier test
+
+The classifier panel displays:
+
+- enabled/disabled state;
+- public endpoint `/v1/systemone`;
+- configured private upstream endpoint;
+- whether upstream bearer auth is configured;
+- timeout.
+
+A JSON editor lets an administrator send the exact classifier payload. The default example is compatible with the System One decision shape used for classifiers such as `convaiinnovations/laya`.
+
+## Full-body content logs
+
+Authenticated requests to:
+
+- `POST /v1/chat/completions`;
+- `POST /v1/responses`;
+- `POST /v1/systemone`
+
+are captured at the HTTP gateway boundary. Request and response payloads are stored as AES-GCM ciphertext derived from the deployment API-key pepper and bound to request-specific purposes.
+
+The UI polls the log list every two seconds while **Content Logs** is open. Selecting a row loads/decrypts the detail and shows request/response bodies, correlated node/deployment/attempt/TTFT/token data when a request metric exists, and copy controls.
+
+Only `LlmProxy.Admin` can access these APIs. Configured super admins receive that role through the existing claims transformation. `LlmProxy.Reader` cannot read payload logs.
+
+Headers are not copied into the payload store. In particular client `Authorization` and upstream bearer credentials are never persisted there.
+
+## Content-log retention
+
+Retention is administrator-controlled from 10 through 180 days, default 30. A hosted cleanup worker runs at startup and every four hours. A manual cleanup action is also available from the UI and is audited.
+
+This is independent from request-metric/usage-rollup retention.
+
+## Recoverable API keys
+
+Request authentication still uses only the HMAC hash. New/rotated API keys additionally store an AES-GCM encrypted recovery value tied to the credential ID.
+
+Admin UI **Reveal / copy** calls the dedicated secret endpoint. Each reveal is audited and returned with `Cache-Control: no-store`.
+
+Credentials created before encrypted recovery cannot be reversed from their HMAC. Rotate them once to make the replacement key recoverable. The configured bootstrap API key is backfilled automatically when its current hash is found during startup.
+
+## Endpoint help
+
+The **Help & Endpoints** screen documents:
+
+- `GET /v1/models`;
+- `POST /v1/chat/completions`;
+- `POST /v1/responses`;
+- `POST /v1/systemone`;
+- bearer authentication;
+- current logical/provider model aliases;
+- classifier forwarding;
+- routing, capacity admission, rate limiting, observability and retention.
+
+The contextual accordion on each page describes only that page's controls and the most important operational consequences.

@@ -25,26 +25,18 @@ public static class UserRateLimitAdminEndpoints
                 .ThenBy(item => item.LogicalModel)
                 .ToListAsync(cancellationToken);
 
-            var principals = await dbContext.ApiCredentials.AsNoTracking()
-                .Where(item => item.OwnerTenantId != null && item.OwnerObjectId != null)
+            var principals = await dbContext.PlatformUsers.AsNoTracking()
                 .Select(item => new
                 {
-                    item.OwnerTenantId,
-                    item.OwnerObjectId,
-                    item.OwnerPrincipalName
+                    item.TenantId,
+                    item.ObjectId,
+                    item.PrincipalName
                 })
                 .ToListAsync(cancellationToken);
 
-            var principalNames = principals
-                .GroupBy(item => new
-                {
-                    TenantId = item.OwnerTenantId!,
-                    ObjectId = item.OwnerObjectId!
-                })
-                .ToDictionary(
-                    groupItem => (groupItem.Key.TenantId.ToUpperInvariant(), groupItem.Key.ObjectId.ToUpperInvariant()),
-                    groupItem => groupItem.Select(item => item.OwnerPrincipalName)
-                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)));
+            var principalNames = principals.ToDictionary(
+                item => (item.TenantId.ToUpperInvariant(), item.ObjectId.ToUpperInvariant()),
+                item => item.PrincipalName);
 
             return Results.Ok(rows.Select(item =>
             {
@@ -60,6 +52,8 @@ public static class UserRateLimitAdminEndpoints
                     item.LogicalModel,
                     item.RequestsPerWindow,
                     item.WindowSeconds,
+                    item.OutputTokensPerWindow,
+                    item.MaxOutputTokensPerRequest,
                     item.Enabled,
                     item.CreatedAtUtc,
                     item.UpdatedAtUtc
@@ -81,15 +75,13 @@ public static class UserRateLimitAdminEndpoints
 
             var logicalModel = NormalizeLogicalModel(request.LogicalModel);
 
-            var ownerExists = await dbContext.ApiCredentials.AnyAsync(
-                item => item.OwnerTenantId != null &&
-                        item.OwnerObjectId != null &&
-                        item.OwnerTenantId.ToUpper() == tenantId &&
-                        item.OwnerObjectId.ToUpper() == objectId,
+            var ownerExists = await dbContext.PlatformUsers.AnyAsync(
+                item => item.TenantId.ToUpper() == tenantId &&
+                        item.ObjectId.ToUpper() == objectId,
                 cancellationToken);
             if (!ownerExists)
             {
-                return Results.BadRequest(new { error = "The Entra user must own at least one personal API credential before a user quota can be created." });
+                return Results.BadRequest(new { error = "The Entra identity must be registered as a LlmProxy platform user before a user quota can be created." });
             }
 
             if (logicalModel is not null &&
@@ -109,7 +101,9 @@ public static class UserRateLimitAdminEndpoints
                 logicalModel,
                 request.RequestsPerWindow,
                 request.WindowSeconds,
-                request.Enabled);
+                request.Enabled,
+                request.OutputTokensPerWindow,
+                request.MaxOutputTokensPerRequest);
             dbContext.UserRateLimitPolicies.Add(policy);
             AddAudit(dbContext, httpContext, "user_rate_limit.create", policy, new
             {
@@ -118,6 +112,8 @@ public static class UserRateLimitAdminEndpoints
                 policy.LogicalModel,
                 policy.RequestsPerWindow,
                 policy.WindowSeconds,
+                policy.OutputTokensPerWindow,
+                policy.MaxOutputTokensPerRequest,
                 policy.Enabled
             });
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -163,6 +159,23 @@ public static class UserRateLimitAdminEndpoints
                 policy.Enabled
             };
             policy.Update(logicalModel, request.RequestsPerWindow, request.WindowSeconds, request.Enabled);
+            if (request.OutputTokensPerWindow.HasValue || request.MaxOutputTokensPerRequest.HasValue)
+            {
+                if (!request.OutputTokensPerWindow.HasValue || !request.MaxOutputTokensPerRequest.HasValue)
+                {
+                    return Results.BadRequest(new { error = "Output token budget fields must be supplied together." });
+                }
+
+                try
+                {
+                    policy.SetOutputTokenBudget(request.OutputTokensPerWindow.Value, request.MaxOutputTokensPerRequest.Value);
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(new { error = exception.Message });
+                }
+            }
+
             AddAudit(dbContext, httpContext, "user_rate_limit.update", policy, new
             {
                 before,
@@ -284,11 +297,15 @@ public static class UserRateLimitAdminEndpoints
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
 
     public sealed record UpdateUserRateLimitRequest(
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
 }

@@ -27,7 +27,8 @@ public static class IdentityAdminEndpoints
                     item.ExpiresAtUtc,
                     item.LastUsedAtUtc,
                     item.UsageGroupId,
-                    kind = item.OwnerObjectId == null ? "service" : "personal",
+                    item.EnforceCallerGovernance,
+                    kind = item.OwnerObjectId == null ? "organization" : "personal",
                     item.OwnerTenantId,
                     item.OwnerObjectId,
                     item.OwnerPrincipalName

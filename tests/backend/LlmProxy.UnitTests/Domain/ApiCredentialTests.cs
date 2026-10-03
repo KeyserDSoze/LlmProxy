@@ -95,6 +95,36 @@ public sealed class ApiCredentialTests
         Assert.True(credential.Enabled);
     }
 
+
+    [Fact]
+    public void Organization_credential_is_caller_governance_exempt_by_default_and_admin_can_opt_in()
+    {
+        var credential = new ApiCredential("GitHub Copilot", "lp_org", "HASH");
+
+        Assert.False(credential.IsPersonal);
+        Assert.False(credential.EnforceCallerGovernance);
+
+        credential.SetCallerGovernance(true);
+
+        Assert.True(credential.EnforceCallerGovernance);
+    }
+
+    [Fact]
+    public void Personal_credential_is_always_caller_governed()
+    {
+        var credential = new ApiCredential(
+            "Personal",
+            "lp_personal",
+            "HASH",
+            ownerTenantId: "tenant-1",
+            ownerObjectId: "object-1");
+
+        Assert.True(credential.EnforceCallerGovernance);
+        Assert.Throws<InvalidOperationException>(() => credential.SetCallerGovernance(false));
+        Assert.True(credential.EnforceCallerGovernance);
+    }
+
+
     [Fact]
     public void Revoked_credential_cannot_be_rotated()
     {

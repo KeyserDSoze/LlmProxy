@@ -35,10 +35,10 @@ export RUNTIME_METRICS_ENABLED=false
 export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
 export BOOTSTRAP_ENABLED=true
-export DGX_NODE_NAME=dgx-full-stack
-export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3490/full-stack
-export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=1
+export INFERENCE_NODE_NAME=inference-full-stack
+export INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3490/full-stack
+export INFERENCE_NODE_WEIGHT=1
+export INFERENCE_NODE_MAX_CONCURRENCY=1
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -83,6 +83,18 @@ call_model() {
     "http://127.0.0.1:${port}/v1/chat/completions"
 }
 
+wait_capacity_released() {
+  for attempt in {1..50}; do
+    local remaining
+    remaining="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$remaining" == "0" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 python3 tests/backend/integration/mock_llm.py --port 3490 --prefix /full-stack --name full-stack > /tmp/llmproxy-full-stack-mock.log 2>&1 &
 MOCK_PID="$!"
 sleep 1
@@ -102,7 +114,7 @@ wait_http http://127.0.0.1:9090/-/ready 60 || fail_with_diagnostics "Prometheus 
 healthy=false
 for attempt in {1..40}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes || true)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     healthy=true
     break
   fi
@@ -172,7 +184,15 @@ credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governan
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available for distributed coordination smoke."
 
-# Start a second gateway against the same PostgreSQL, Redis and DGX runtime.
+# Organization credentials are caller-governance exempt by default. This test intentionally opts
+# the bootstrap organization key in before validating shared cross-replica caller limits.
+credential_governance="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance")"
+echo "$credential_governance" | jq -e '.kind == "organization" and .enforceCallerGovernance == true' >/dev/null \
+  || fail_with_diagnostics "Bootstrap organization credential could not be opted into caller governance."
+
+# Start a second gateway against the same PostgreSQL, Redis and inference node runtime.
 if ! docker run -d --name "$PEER_NAME" \
   --network llmproxy-full_default \
   --add-host host.docker.internal:host-gateway \
@@ -211,7 +231,7 @@ wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Second LlmPr
 peer_healthy=false
 for attempt in {1..40}; do
   peer_nodes="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
-  if echo "$peer_nodes" | jq -e 'map(select(.name == "dgx-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$peer_nodes" | jq -e 'map(select(.name == "inference-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     peer_healthy=true
     break
   fi
@@ -220,19 +240,41 @@ done
 [[ "$peer_healthy" == "true" ]] || fail_with_diagnostics "Second gateway did not observe the shared inference node as Healthy."
 
 # Rate-limit counter must be shared across both gateways.
+peer_sync_before_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
+peer_version_before_policy="$(echo "$peer_sync_before_policy" | jq -r '.lastAppliedVersion // 0')"
+
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
   -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
 policy_id="$(echo "$policy_json" | jq -r '.id')"
+policy_redis_field="${policy_id//-/}"
 echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
-sleep 1
+
+policy_converged=false
+for attempt in {1..50}; do
+  peer_sync_after_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync || true)"
+  peer_version_after_policy="$(echo "$peer_sync_after_policy" | jq -r '.lastAppliedVersion // 0' 2>/dev/null || echo 0)"
+  redis_policy_present="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HEXISTS llmproxy:rate-policies "$policy_redis_field" 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$peer_version_after_policy" =~ ^[0-9]+$ && "$peer_version_after_policy" -gt "$peer_version_before_policy" && "$redis_policy_present" == "1" ]]; then
+    policy_converged=true
+    break
+  fi
+  sleep 0.2
+done
+[[ "$policy_converged" == "true" ]] || fail_with_diagnostics "Rate-limit policy did not converge to Redis and the peer gateway before shared-counter validation."
 
 shared1="$(call_model 8080 /tmp/full-stack-rate-a)"
+[[ "$shared1" == "200" ]] || fail_with_diagnostics "Expected first globally governed request to succeed; got ${shared1}."
+wait_capacity_released || fail_with_diagnostics "Capacity lease from first rate-limit probe did not release."
+
 shared2="$(call_model 8081 /tmp/full-stack-rate-b)"
+[[ "$shared2" == "200" ]] || fail_with_diagnostics "Expected second globally governed request to succeed; got ${shared2}."
+wait_capacity_released || fail_with_diagnostics "Capacity lease from second rate-limit probe did not release."
+
 shared3="$(call_model 8080 /tmp/full-stack-rate-c)"
-[[ "$shared1" == "200" && "$shared2" == "200" ]] || fail_with_diagnostics "Expected first two globally governed requests to succeed; got ${shared1}/${shared2}."
 [[ "$shared3" == "429" ]] || fail_with_diagnostics "Expected third request across two gateways to hit the shared Redis rate limit; got ${shared3}."
-jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded"' /tmp/full-stack-rate-c.json >/dev/null
+jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded"' /tmp/full-stack-rate-c.json >/dev/null \
+  || fail_with_diagnostics "Expected shared rate limiter to reject the third request before capacity admission."
 
 global_counter_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:rate-limit:*' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$global_counter_keys" -ge 1 ]] || fail_with_diagnostics "Expected a Redis-backed shared rate-limit counter key."
@@ -242,7 +284,7 @@ curl --fail --silent -X DELETE "http://127.0.0.1:8080/api/admin/rate-limits/${po
 docker restart "$PEER_NAME" >/dev/null
 wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Second gateway did not recover after rate-policy removal."
 
-# Hold the single physical DGX slot on gateway A. Gateway B must observe the same Redis lease and reject.
+# Hold the single physical inference node slot on gateway A. Gateway B must observe the same Redis lease and reject.
 curl --silent --no-buffer \
   -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
   -H 'Content-Type: application/json' \
@@ -254,7 +296,7 @@ sleep 0.15
 capacity_status="$(call_model 8081 /tmp/full-stack-capacity-b)"
 if [[ "$capacity_status" != "429" ]]; then
   wait "$stream_pid" || true
-  fail_with_diagnostics "Expected peer gateway to honor the shared DGX capacity lease; got ${capacity_status}."
+  fail_with_diagnostics "Expected peer gateway to honor the shared inference node capacity lease; got ${capacity_status}."
 fi
 jq -e '.error.type == "rate_limit_error" and .error.code == "capacity_exhausted"' /tmp/full-stack-capacity-b.json >/dev/null
 
@@ -350,4 +392,4 @@ done
 [[ "$lease_loss_trace_recorded" == "true" ]] \
   || fail_with_diagnostics "Expected capacity_lease_lost to be visible in Tempo trace $loss_trace_id."
 
-echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed DGX capacity leases and lease-loss cancellation are operational."
+echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed inference node capacity leases and lease-loss cancellation are operational."

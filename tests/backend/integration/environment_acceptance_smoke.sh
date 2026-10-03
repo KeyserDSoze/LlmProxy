@@ -37,7 +37,7 @@ SECRET='ci-acceptance-secret-never-persist'
 cat > "$TMP_DIR/acceptance.env" <<EOF
 LLM_PROXY_API_KEY=$SECRET
 LLMPROXY_PORT=$PORT
-DGX_NODE_BASE_ADDRESS=http://127.0.0.1:$PORT
+INFERENCE_NODE_BASE_ADDRESS=http://127.0.0.1:$PORT
 PUBLIC_MODEL_NAME=bootstrap-model
 PROVIDER_MODEL_NAME=bootstrap-model
 EOF
@@ -47,16 +47,16 @@ LLMPROXY_ACCEPTANCE_API_KEY="$SECRET" \
   bash docker/scripts/environment-acceptance.sh \
     --env-file "$TMP_DIR/acceptance.env" \
     --gateway-url "http://127.0.0.1:$PORT" \
-    --dgx-url "http://127.0.0.1:$PORT" \
+    --node-url "http://127.0.0.1:$PORT" \
     --evidence-dir "$TMP_DIR/evidence" \
     --skip-docker
 
 test -s "$TMP_DIR/evidence/summary.md"
 test -s "$TMP_DIR/evidence/checks.tsv"
 grep -Fq -- '- Result: PASS' "$TMP_DIR/evidence/summary.md"
-grep -Fq $'PASS\tdgx-health' "$TMP_DIR/evidence/checks.tsv"
-grep -Fq $'PASS\tdgx-chat-stream' "$TMP_DIR/evidence/checks.tsv"
-grep -Fq $'PASS\tdgx-responses-stream' "$TMP_DIR/evidence/checks.tsv"
+grep -Fq $'PASS\tinference-health' "$TMP_DIR/evidence/checks.tsv"
+grep -Fq $'PASS\tinference-chat-stream' "$TMP_DIR/evidence/checks.tsv"
+grep -Fq $'PASS\tinference-responses-stream' "$TMP_DIR/evidence/checks.tsv"
 grep -Fq $'PASS\tgateway-chat-stream' "$TMP_DIR/evidence/checks.tsv"
 grep -Fq $'PASS\tgateway-responses-stream' "$TMP_DIR/evidence/checks.tsv"
 if grep -R -Fq "$SECRET" "$TMP_DIR/evidence"; then

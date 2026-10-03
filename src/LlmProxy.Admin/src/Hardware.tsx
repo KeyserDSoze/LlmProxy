@@ -125,7 +125,7 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>DGX hardware telemetry</h2><span>NVIDIA/DCGM · observational only</span></div>
+        <div className="panelTitle"><h2>Hardware telemetry</h2><span>NVIDIA/DCGM · observational only</span></div>
         <table><thead><tr><th>Node</th><th>Collector</th><th>GPU</th><th>GPU util</th><th>FB memory</th><th>Temperature</th><th>Power</th><th>Last sample</th></tr></thead><tbody>
           {nodes.map(node => {
             const item = hardware.find(snapshot => snapshot.nodeId === node.id)
@@ -140,7 +140,7 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
               <td>{formatDate(item?.collectedAtUtc ?? item?.lastAttemptAtUtc)}</td>
             </tr>
           })}
-          {nodes.length === 0 && <tr><td colSpan={8} className="muted">No DGX nodes registered.</td></tr>}
+          {nodes.length === 0 && <tr><td colSpan={8} className="muted">No inference nodes registered.</td></tr>}
         </tbody></table>
       </section>
 
@@ -148,7 +148,7 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
         <h2>DCGM exporter endpoint</h2>
         <p className="muted">Optional and independent from the vLLM service root. LlmProxy appends <span className="mono">/metrics</span>.</p>
         <form onSubmit={submit}>
-          <label>DGX node<select aria-label="Hardware DGX node" value={nodeId} onChange={event => { setNodeId(event.target.value); setSaved(false) }} disabled={nodes.length === 0}>
+          <label>Inference node<select aria-label="Hardware Inference node" value={nodeId} onChange={event => { setNodeId(event.target.value); setSaved(false) }} disabled={nodes.length === 0}>
             {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
           </select></label>
           <label>Hardware metrics service root<input aria-label="Hardware metrics service root" value={baseAddress} onChange={event => { setBaseAddress(event.target.value); setSaved(false) }} placeholder="http://10.0.0.21:9400" /></label>
@@ -163,14 +163,14 @@ export default function Hardware({ nodes, hardware, refresh }: Props) {
     </div>
 
     <section className="panel">
-      <div className="panelTitle"><h2>Physical DGX capacity</h2><span>Atomic node-wide concurrency · all deployments share the same physical ceiling</span></div>
+      <div className="panelTitle"><h2>Physical node capacity</h2><span>Atomic node-wide concurrency · all deployments share the same physical ceiling</span></div>
       <table><thead><tr><th>Node</th><th>Active</th><th>Physical limit</th><th>Remaining</th><th>Behavior at saturation</th></tr></thead><tbody>
         {capacity.nodes.map(item => <tr key={item.id}>
           <td><strong>{item.name}</strong></td><td>{item.activeRequests}</td><td>{item.maxConcurrency}</td><td>{item.remaining}</td><td>HTTP 429 · Retry-After: 1</td>
         </tr>)}
         {capacity.nodes.length === 0 && <tr><td colSpan={5} className="muted">No node capacity data available.</td></tr>}
       </tbody></table>
-      <p className="muted">A deployment limit can be lower than the physical DGX limit. It can never bypass the aggregate node ceiling: concurrent deployments consume the same node-wide lease pool.</p>
+      <p className="muted">A deployment limit can be lower than the physical node limit. It can never bypass the aggregate node ceiling: concurrent deployments consume the same node-wide lease pool.</p>
     </section>
 
     <div className="gridTwo">

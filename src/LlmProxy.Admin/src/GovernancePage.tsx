@@ -1,4 +1,5 @@
 import Governance from './Governance'
+import PageDocumentation from './PageDocumentation'
 
 export default function GovernancePage() {
   return <div className="shell">
@@ -15,6 +16,7 @@ export default function GovernancePage() {
         <div><h1>Usage & Governance</h1><p>Authentication, groups, caller rate limits and consolidated usage</p></div>
         <button className="secondary" onClick={() => { window.location.href = '/admin/' }}>Back to gateway</button>
       </header>
+      <PageDocumentation page="governance" />
       <Governance />
     </main>
   </div>

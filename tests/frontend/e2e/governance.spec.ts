@@ -8,7 +8,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   const groups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM team', credentialCount: 1, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }]
   const credentials = [{ id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', enabled: true, usageGroupId: 'group-1', createdAtUtc: '2026-09-14T10:00:00Z' }]
   const policies: Array<Record<string, unknown>> = []
-  const users = [{ tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', credentialCount: 2, activeCredentialCount: 2, lastUsedAtUtc: null, firstCredentialCreatedAtUtc: '2026-09-17T06:00:00Z' }]
+  const users = [{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-09-17T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 2, activeCredentialCount: 2, lastCredentialUsedAtUtc: null, requestCount30d: 42, errorCount30d: 2 }]
   const userPolicies: Array<Record<string, unknown>> = []
 
   await page.route('**/api/admin/**', async route => {
@@ -19,8 +19,10 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
     if (request.method() === 'GET' && path === '/api/admin/usage-groups') return json(route, groups)
     if (request.method() === 'GET' && path === '/api/admin/governance/credentials') return json(route, credentials)
     if (request.method() === 'GET' && path === '/api/admin/rate-limits') return json(route, policies)
-    if (request.method() === 'GET' && path === '/api/admin/identity/users') return json(route, users)
+    if (request.method() === 'GET' && path === '/api/admin/users') return json(route, users)
     if (request.method() === 'GET' && path === '/api/admin/user-rate-limits') return json(route, userPolicies)
+    if (request.method() === 'GET' && path === '/api/admin/group-rate-limits') return json(route, [])
+    if (request.method() === 'GET' && path === '/api/admin/usage/users') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'provider', supportsStreaming: true, supportsTools: true, enabled: true }])
     if (request.method() === 'GET' && path === '/api/admin/usage/summary') return json(route, {
       windowDays: Number(url.searchParams.get('days') ?? 30), sinceUtc: '2026-08-18T00:00:00Z', windowGranularity: 'utc_day',
@@ -88,7 +90,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   const rotatedSecret = page.getByTestId('rotated-credential-secret')
   await expect(rotatedSecret).toContainText('lp_rotated_secret_once')
   await expect(rotatedSecret).toContainText('will not be shown again')
-  const membershipSection = page.getByRole('heading', { name: 'Credential → group membership & rotation' }).locator('..').locator('..')
+  const membershipSection = page.getByRole('heading', { name: 'Organization & personal credentials' }).locator('..').locator('..')
   await expect(membershipSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_rotated')
   await expect(page.getByLabel('Usage group for Copilot CRM')).toHaveValue('group-1')
 
@@ -100,22 +102,24 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   await expect(page.getByText('2 / 60s')).toBeVisible()
   await expect(page.getByText('Not set')).toBeVisible()
 
-  const userLimitForm = page.getByRole('heading', { name: 'Add user request limit' }).locator('..')
+  const userLimitForm = page.getByRole('heading', { name: 'Add user quota' }).locator('..')
   await userLimitForm.getByLabel('Requests per window').fill('5')
   await userLimitForm.getByLabel('Window seconds').fill('60')
-  await userLimitForm.getByRole('button', { name: 'Add user limit' }).click()
+  await userLimitForm.getByRole('button', { name: 'Add user quota' }).click()
   await expect(page.getByText('User rate-limit policy created and applied live across all personal keys.')).toBeVisible()
-  const userLimitSection = page.getByRole('heading', { name: 'User request limits' }).locator('..').locator('..')
+  const userLimitSection = page.getByRole('heading', { name: 'User quotas' }).locator('..').locator('..')
   await expect(userLimitSection.getByRole('row', { name: /user@example.com/ })).toContainText('5 / 60s')
 
-  await page.getByLabel('Output tokens per window').fill('17000')
-  await page.getByLabel('Max output tokens per request').fill('4096')
-  await page.getByRole('button', { name: 'Apply token budget' }).click()
+  const credentialBudgetSection = page.getByRole('heading', { name: 'Credential-specific output-token budget' }).locator('..').locator('..').locator('..')
+  await credentialBudgetSection.getByLabel('Output tokens per window').fill('17000')
+  await credentialBudgetSection.getByLabel('Max output tokens per request').fill('4096')
+  await credentialBudgetSection.getByRole('button', { name: 'Apply token budget' }).click()
   await expect(page.getByText('Output-token budget updated and applied live.')).toBeVisible()
-  await expect(page.getByText('17,000 tokens / 60s')).toBeVisible()
-  await expect(page.getByText('max 4,096 / request')).toBeVisible()
+  const rateLimitSection = page.getByRole('heading', { name: 'Rate limits' }).locator('..').locator('..')
+  await expect(rateLimitSection.getByText('17,000 tokens / 60s')).toBeVisible()
+  await expect(rateLimitSection.getByText('max 4,096 / request')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Clear token budget' }).click()
+  await credentialBudgetSection.getByRole('button', { name: 'Clear token budget' }).click()
   await expect(page.getByText('Output-token budget cleared. Request-rate policy remains active.')).toBeVisible()
-  await expect(page.getByText('Not set')).toBeVisible()
+  await expect(rateLimitSection.getByText('Not set')).toBeVisible()
 })

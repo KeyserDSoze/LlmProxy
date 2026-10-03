@@ -13,7 +13,8 @@ public sealed class ApiCredential
         DateTimeOffset? expiresAtUtc = null,
         string? ownerTenantId = null,
         string? ownerObjectId = null,
-        string? ownerPrincipalName = null)
+        string? ownerPrincipalName = null,
+        bool? enforceCallerGovernance = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -44,12 +45,14 @@ public sealed class ApiCredential
         OwnerTenantId = hasTenant ? ownerTenantId!.Trim() : null;
         OwnerObjectId = hasObject ? ownerObjectId!.Trim() : null;
         OwnerPrincipalName = string.IsNullOrWhiteSpace(ownerPrincipalName) ? null : ownerPrincipalName.Trim();
+        EnforceCallerGovernance = enforceCallerGovernance ?? (hasTenant && hasObject);
     }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     public string Name { get; private set; } = string.Empty;
     public string KeyPrefix { get; private set; } = string.Empty;
     public string KeyHash { get; private set; } = string.Empty;
+    public string? SecretCiphertext { get; private set; }
     public bool Enabled { get; private set; } = true;
     public DateTimeOffset CreatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ExpiresAtUtc { get; private set; }
@@ -58,6 +61,7 @@ public sealed class ApiCredential
     public string? OwnerTenantId { get; private set; }
     public string? OwnerObjectId { get; private set; }
     public string? OwnerPrincipalName { get; private set; }
+    public bool EnforceCallerGovernance { get; private set; }
 
     public bool IsPersonal => OwnerTenantId is not null && OwnerObjectId is not null;
 
@@ -70,6 +74,16 @@ public sealed class ApiCredential
            string.Equals(OwnerObjectId, objectId, StringComparison.OrdinalIgnoreCase);
 
     public void Revoke() => Enabled = false;
+
+    public void SetSecretCiphertext(string secretCiphertext)
+    {
+        if (string.IsNullOrWhiteSpace(secretCiphertext))
+        {
+            throw new ArgumentException("Encrypted credential secret is required.", nameof(secretCiphertext));
+        }
+
+        SecretCiphertext = secretCiphertext;
+    }
 
     public void Rotate(string keyPrefix, string keyHash)
     {
@@ -103,6 +117,16 @@ public sealed class ApiCredential
     }
 
     public void ClearUsageGroup() => UsageGroupId = null;
+
+    public void SetCallerGovernance(bool enabled)
+    {
+        if (IsPersonal && !enabled)
+        {
+            throw new InvalidOperationException("Personal credentials must always participate in caller governance.");
+        }
+
+        EnforceCallerGovernance = enabled;
+    }
 
     public void Touch(DateTimeOffset nowUtc)
     {

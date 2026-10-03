@@ -50,7 +50,7 @@ wait_node_healthy() {
   for attempt in {1..50}; do
     local nodes_json
     nodes_json="$(curl --fail --silent http://127.0.0.1:8086/api/admin/nodes || true)"
-    if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-backup-restore" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+    if echo "$nodes_json" | jq -e 'map(select(.name == "inference-backup-restore" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -81,7 +81,7 @@ fi
 rm -f "$BACKUP_FILE" "${BACKUP_FILE}.sha256" "${BACKUP_FILE}.meta"
 "${COMPOSE[@]}" up -d || fail_with_diagnostics "PowerShell backup/restore stack failed to start."
 wait_http http://127.0.0.1:8086/readyz 60 || fail_with_diagnostics "PowerShell source gateway did not become ready."
-wait_node_healthy || fail_with_diagnostics "PowerShell source DGX route did not become Healthy."
+wait_node_healthy || fail_with_diagnostics "PowerShell source inference node route did not become Healthy."
 
 group_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
   -d '{"name":"PowerShell Restore Team","description":"PowerShell backup restore verification group"}' \

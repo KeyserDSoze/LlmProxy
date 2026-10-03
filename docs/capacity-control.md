@@ -6,15 +6,15 @@ LlmProxy enforces physical inference capacity at both deployment and node level.
 
 A deployment may define its own `MaxConcurrency`. If it is null, the node limit is used as its effective deployment ceiling.
 
-The physical `InferenceNode.MaxConcurrency` is an aggregate ceiling shared by **all** deployments on that DGX:
+The physical `InferenceNode.MaxConcurrency` is an aggregate ceiling shared by **all** deployments on that inference node:
 
 ```text
-DGX-01 physical max = 8
+inference node-01 physical max = 8
 
 agic-code      active = 5
 agic-reasoning active = 3
                        ---
-DGX-01 total active = 8 -> saturated
+inference node-01 total active = 8 -> saturated
 ```
 
 A request to either deployment cannot bypass the physical ceiling merely because that deployment still has local headroom.
@@ -147,7 +147,7 @@ Example:
 ```text
 benchmark recommendation = 8
 active deployment limit  = 4
-physical DGX limit        = 6
+physical node limit        = 6
 ```
 
 Saving `8` is allowed as evidence. Applying it is not allowed while the physical node limit is `6`.
@@ -179,7 +179,7 @@ Unit/integration coverage verifies local aggregate node capacity, deployment cei
 
 The dedicated Full Stack Smoke additionally proves multi-replica behavior:
 
-1. gateway A holds the single DGX slot with a real SSE stream;
+1. gateway A holds the single inference node slot with a real SSE stream;
 2. gateway B sees the shared Redis lease and returns `429 capacity_exhausted`;
 3. Redis contains capacity lease keys while inference is active;
 4. after release, traffic recovers;
@@ -200,4 +200,4 @@ Full Stack 34961566463 SUCCESS
 
 Capacity control is not a per-user commercial quota. Request-rate governance is a separate layer, and token/budget quotas still require reservation/settlement semantics.
 
-Production concurrency limits must be derived from real DGX/vLLM benchmark evidence. Values used in CI/local environments are test values, not capacity promises.
+Production concurrency limits must be derived from real inference node/vLLM benchmark evidence. Values used in CI/local environments are test values, not capacity promises.

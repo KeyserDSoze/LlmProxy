@@ -1,8 +1,75 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-09-30**.
+Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
+
+## End-user provisioning / suspension — IMPLEMENTED, VALIDATION IN PROGRESS
+
+The current PR now also adds a first-class platform-user registry and a new **Users & Access** administrator screen.
+
+Behavior:
+
+- global provisioning mode is either `manual` (default) or `automatic`;
+- manual mode admits only administrator-censused, enabled Entra identities;
+- automatic mode registers an authenticated Entra identity on first access to `/admin/me`;
+- authorization identity is stable Entra `tid + oid`; email/UPN/display name are metadata only;
+- existing personal-key owners are migrated into the registry at startup;
+- administrators can disable a user, which blocks `/api/me/*` and `/admin/me` and revokes all active personal API keys for that owner;
+- re-enable restores portal access without resurrecting revoked keys;
+- the user portal is now **My dashboard** and shows latest request metadata as well as personal keys, own usage and limits;
+- shared GitHub Copilot provider credentials remain workload/service identity, not guaranteed individual developer identity.
+
+Focused contract: `docs/user-access.md`.
+
+These changes were made after the previously validated observability head below, so they require a new exact-head CI/Full Stack pass before PR #1 can be promoted.
+
+## Administrator observability / testing — DONE / VALIDATED
+
+Branch / review:
+
+```text
+branch   feature/admin-observability-docs
+PR       #1
+state    exact feature head validated; ready for promotion
+```
+
+The validated increment adds:
+
+- administrator-recoverable encrypted copies for newly created/rotated client API keys, with audited reveal and no-store responses;
+- application-encrypted full request/response content logs for Chat Completions, Responses and System One;
+- administrator-only live content-log UI with 2-second refresh, exact body inspection and copy controls;
+- configurable full-body log retention from 10 through 180 days, default 30 days, with automatic cleanup every four hours and manual audited cleanup;
+- an Admin Playground that tests enabled logical models through real routing/capacity admission and tests the configured System One classifier using an editable JSON body;
+- a Help & Endpoints page with copy-ready client examples and platform flow documentation;
+- a collapsed-by-default contextual documentation accordion on all principal Admin, Governance, Releases and User Portal screens;
+- focused documentation in `docs/admin-observability.md`, plus API/security/retention/identity/governance contract updates.
+
+Security boundary:
+
+```text
+request metrics / OTEL / audit      metadata-only
+full prompt + response payloads     dedicated encrypted content-log store only
+content-log readers                 LlmProxy.Admin / configured super admins only
+API-key authentication              HMAC only
+API-key recovery copy               encrypted at rest, admin reveal only
+headers / bearer secrets            never copied into content logs
+```
+
+Exact validation evidence:
+
+```text
+validated head          6641739bd80f7eaf2b8a92594a5a75541c82546d
+PR                      #1
+CI                      37073147425 SUCCESS
+Backend unit/build      SUCCESS
+Frontend/Vitest         SUCCESS
+Playwright E2E          SUCCESS
+Docker/PostgreSQL       SUCCESS
+Redis/OTEL full stack   SUCCESS
+```
+
+The Docker integration smoke explicitly exercised the administrator System One classifier diagnostic against the classifier mock, the administrator model-chat diagnostic through normal routing/capacity admission, bootstrap API-key reveal, encrypted full-body request/response inspection and the 10-180 day retention boundary. Promotion to `main` still requires the final documentation-only head to re-pass CI; the automatic release train then requires a green `main` CI for the exact merge SHA before publication.
 
 ## Current validated product baseline
 
@@ -234,6 +301,7 @@ OpenAI-compatible client / GitHub Copilot
   -> vLLM
   -> output-token settlement
   -> metadata-only metric + OTEL telemetry
+  -> administrator-only encrypted full-body content log
 ```
 
 ### Runtime state
@@ -252,7 +320,7 @@ Drain pre-blocks admission. Existing streams finish. Resume requires zero global
 
 ### Credentials and caller governance
 
-Credentials persist HMAC-SHA256 hashes and safe metadata. Administrator-created service credentials remain unowned. Personal credentials store stable Entra `OwnerTenantId + OwnerObjectId` and optional principal-name display metadata; raw secrets are returned once. In-place rotation preserves credential identity, Entra ownership, group/policy/history linkage and returns the replacement secret once.
+Credentials use HMAC-SHA256 hashes and safe metadata for authentication. Newly created/rotated credentials additionally retain an application-encrypted recovery copy for administrator reveal/copy; plaintext is never stored. Administrator-created service credentials remain unowned. Personal credentials store stable Entra `OwnerTenantId + OwnerObjectId` and optional principal-name display metadata. In-place rotation preserves credential identity, Entra ownership, group/policy/history linkage while replacing hash/prefix/recovery ciphertext.
 
 Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users use `/api/me/*` or `/admin/me` to create/list/rotate/revoke only their own keys and inspect own credential-attributed usage. Admin/Reader identity inventory is available under `/api/admin/identity`.
 
@@ -269,30 +337,31 @@ raw request metrics           90 days
 daily usage rollups          730 days
 audit events                 365 days
 processed runtime outbox      30 days
+full-body content logs         30 days default, configurable 10-180
 ```
 
 Complete expired UTC days roll up transactionally before raw deletion. A PostgreSQL advisory transaction lock serializes compaction across replicas. Reporting merges historical rollups with newer raw metrics without double counting.
 
 ### Backup / restore
 
-PostgreSQL is durable recovery authority; Redis is rebuildable runtime state. Bash and PowerShell backup/restore operators are validated with destructive clean-target restore smokes. Raw API secrets are not in PostgreSQL. `Authentication__ApiKeyPepper` and deployment secrets must be preserved separately.
+PostgreSQL is durable recovery authority; Redis is rebuildable runtime state. Bash and PowerShell backup/restore operators are validated with destructive clean-target restore smokes. Plaintext API secrets are not in PostgreSQL; administrator recovery copies and full-body inference logs are stored only as application-encrypted ciphertext. `Authentication__ApiKeyPepper` is therefore both authentication and decryption/recovery material and must be preserved separately with deployment secrets.
 
 ### Routing / capacity / observability
 
-Current MVP includes logical aliases, weighted least loaded / round robin / weighted round robin, health hysteresis, path-prefixed service roots, pre-response-only failover, vLLM pressure/EWMA feedback, benchmark-derived Capacity Profiles, distributed capacity leases with lease-loss cancellation, and metadata-only OTEL/DCGM observability.
+Current MVP includes logical aliases, weighted least loaded / round robin / weighted round robin, health hysteresis, path-prefixed service roots, pre-response-only failover, vLLM pressure/EWMA feedback, benchmark-derived Capacity Profiles, distributed capacity leases with lease-loss cancellation, metadata-only OTEL/DCGM observability, and a separate encrypted administrator content-log store.
 
-Prompts/source/generated output/API secrets remain excluded from persistent telemetry by default.
+Prompts/source/generated output remain excluded from ordinary metrics, audit, OTEL and acceptance evidence. Exact request/response bodies are persisted only in the bounded-retention encrypted content-log store. API keys and bearer headers remain excluded everywhere except the dedicated encrypted credential-recovery ciphertext.
 
 ## Current development focus
 
-The immediate step is validating the first automatically generated `v0.0.x` releases and then continuing physical product acceptance:
+The immediate step is first obtaining green exact-head CI for the new user-registry changes, then validating the first automatically generated `v0.0.x` releases and then continuing physical product acceptance:
 
 1. get green CI + Full Stack on the exact `0.2.0-preview.8` source and validate tagged multi-architecture publication/release assets;
 2. install/update/rollback the candidate on the actual ARM64 GB10 host;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
 3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
 4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
-5. validate real Entra Admin/User/Reader roles, personal-key self-service, aggregate user request quotas and Cloudflare/public hostname;
+5. validate real Entra Admin/Reader roles plus manual/automatic platform-user admission, disable/re-enable, personal-key revocation, aggregate user request quotas and Cloudflare/public hostname;
 6. validate GitHub Copilot BYOK end-to-end;
 7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
 8. create an immutable Git tag/GitHub Release only when explicitly requested.

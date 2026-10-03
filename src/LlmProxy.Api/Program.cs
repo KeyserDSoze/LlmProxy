@@ -95,9 +95,12 @@ builder.Services.AddDbContext<GatewayDbContext>((services, options) =>
 
 builder.Services.AddSingleton<ApiKeyHasher>();
 builder.Services.AddSingleton<UpstreamCredentialProtector>();
+builder.Services.AddSingleton<SensitiveDataProtector>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<DataRetentionService>();
 builder.Services.AddHostedService<DataRetentionWorker>();
+builder.Services.AddScoped<ContentLogRetentionService>();
+builder.Services.AddHostedService<ContentLogRetentionWorker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
 builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();
@@ -113,6 +116,10 @@ builder.Services.AddSingleton<BufferedRequestMetricsSink>();
 builder.Services.AddSingleton<IRequestMetricsSink, HttpContextRequestMetricsSink>();
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedRequestMetricsSink>());
 
+builder.Services.AddSingleton<BufferedInferenceContentLogSink>();
+builder.Services.AddSingleton<IInferenceContentLogSink>(services => services.GetRequiredService<BufferedInferenceContentLogSink>());
+builder.Services.AddHostedService(services => services.GetRequiredService<BufferedInferenceContentLogSink>());
+
 builder.Services.AddSingleton<BufferedCredentialUsageSink>();
 builder.Services.AddSingleton<ICredentialUsageSink>(services => services.GetRequiredService<BufferedCredentialUsageSink>());
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedCredentialUsageSink>());
@@ -123,6 +130,7 @@ builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.From
 builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
@@ -132,8 +140,13 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminRead", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.Reader"));
     options.AddPolicy("AdminWrite", policy => policy.RequireRole("LlmProxy.Admin"));
-    options.AddPolicy("SelfService", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.User"));
+    options.AddPolicy("SelfService", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new PlatformUserAccessRequirement());
+    });
 });
+builder.Services.AddScoped<IAuthorizationHandler, PlatformUserAccessAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationMiddlewareResultHandler>();
 
 if (reverseProxyEnabled)
@@ -189,6 +202,7 @@ if (entraEnabled)
 
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
+app.UseMiddleware<InferenceContentLoggingMiddleware>();
 app.UseMiddleware<OutputTokenBudgetMiddleware>();
 
 app.MapGet("/healthz", (RoutingStrategyState strategyState) => Results.Ok(new
@@ -209,17 +223,26 @@ app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);
+app.MapPlatformUserAdminEndpoints(entraEnabled);
+app.MapPlatformUserGroupEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
+app.MapCredentialGovernanceAdminEndpoints(entraEnabled);
+app.MapApiCredentialSecretAdminEndpoints(entraEnabled);
+app.MapContentLogsAdminEndpoints(entraEnabled);
+app.MapTestingAdminEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapRouteCatalogAdminEndpoints(entraEnabled);
 app.MapRuntimeStateAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
+app.MapNodeModelManagementEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapUserRateLimitAdminEndpoints(entraEnabled);
+app.MapUserTokenBudgetAdminEndpoints(entraEnabled);
+app.MapUsageGroupRateLimitAdminEndpoints(entraEnabled);
 app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
 app.MapDataRetentionAdminEndpoints(entraEnabled);

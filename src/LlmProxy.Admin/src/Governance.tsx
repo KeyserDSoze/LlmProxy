@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { CreatedApiCredential, GovernanceCredential, IdentityUserSummary, Model, RateLimitPolicy, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
+import type { CreatedApiCredential, GovernanceCredential, Model, PlatformUser, RateLimitPolicy, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 const emptyUsage: UsageReport = {
   windowDays: 30,
@@ -28,8 +28,10 @@ export default function Governance() {
   const [groups, setGroups] = useState<UsageGroup[]>([])
   const [credentials, setCredentials] = useState<GovernanceCredential[]>([])
   const [rateLimits, setRateLimits] = useState<RateLimitPolicy[]>([])
-  const [users, setUsers] = useState<IdentityUserSummary[]>([])
+  const [users, setUsers] = useState<PlatformUser[]>([])
   const [userRateLimits, setUserRateLimits] = useState<UserRateLimitPolicy[]>([])
+  const [groupRateLimits, setGroupRateLimits] = useState<UsageGroupRateLimitPolicy[]>([])
+  const [userUsage, setUserUsage] = useState<UserUsageSummary[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [usage, setUsage] = useState<UsageReport>(emptyUsage)
   const [groupName, setGroupName] = useState('')
@@ -42,6 +44,14 @@ export default function Governance() {
   const [userRateModel, setUserRateModel] = useState('')
   const [userRequestsPerWindow, setUserRequestsPerWindow] = useState(300)
   const [userWindowSeconds, setUserWindowSeconds] = useState(60)
+  const [userOutputTokensPerWindow, setUserOutputTokensPerWindow] = useState(100000)
+  const [userMaxOutputTokensPerRequest, setUserMaxOutputTokensPerRequest] = useState(4096)
+  const [groupPolicyGroupId, setGroupPolicyGroupId] = useState('')
+  const [groupRateModel, setGroupRateModel] = useState('')
+  const [groupRequestsPerWindow, setGroupRequestsPerWindow] = useState(1000)
+  const [groupWindowSeconds, setGroupWindowSeconds] = useState(60)
+  const [groupOutputTokensPerWindow, setGroupOutputTokensPerWindow] = useState(500000)
+  const [groupMaxOutputTokensPerRequest, setGroupMaxOutputTokensPerRequest] = useState(4096)
   const [budgetPolicyId, setBudgetPolicyId] = useState('')
   const [outputTokensPerWindow, setOutputTokensPerWindow] = useState(100000)
   const [maxOutputTokensPerRequest, setMaxOutputTokensPerRequest] = useState(4096)
@@ -53,13 +63,15 @@ export default function Governance() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextGroups, nextCredentials, nextRateLimits, nextUsers, nextUserRateLimits, nextUsage, nextModels] = await Promise.all([
+      const [nextGroups, nextCredentials, nextRateLimits, nextUsers, nextUserRateLimits, nextGroupRateLimits, nextUsage, nextUserUsage, nextModels] = await Promise.all([
         api.usageGroups(),
         api.governanceCredentials(),
         api.rateLimits(),
-        api.identityUsers(),
+        api.platformUsers(),
         api.userRateLimits(),
+        api.groupRateLimits(),
         api.usageSummary(days),
+        api.usageUsers(days),
         api.models()
       ])
       setGroups(nextGroups)
@@ -67,10 +79,13 @@ export default function Governance() {
       setRateLimits(nextRateLimits)
       setUsers(nextUsers)
       setUserRateLimits(nextUserRateLimits)
+      setGroupRateLimits(nextGroupRateLimits)
       setUsage(nextUsage)
+      setUserUsage(nextUserUsage)
       setModels(nextModels)
       setRateCredentialId(current => current || nextCredentials[0]?.id || '')
       setRateUserKey(current => current || (nextUsers[0] ? `${nextUsers[0].tenantId}|${nextUsers[0].objectId}` : ''))
+      setGroupPolicyGroupId(current => current || nextGroups[0]?.id || '')
       setBudgetPolicyId(current => current && nextRateLimits.some(policy => policy.id === current) ? current : nextRateLimits[0]?.id || '')
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -111,6 +126,13 @@ export default function Governance() {
     await refresh()
   }
 
+  async function toggleCredentialGovernance(credential: GovernanceCredential) {
+    if (credential.kind === 'personal') return
+    await api.updateCredentialCallerGovernance(credential.id, !credential.enforceCallerGovernance)
+    setMessage(`Organization credential ${credential.enforceCallerGovernance ? 'exempted from' : 'opted into'} caller governance.`)
+    await refresh()
+  }
+
   async function rotateCredential(credential: GovernanceCredential) {
     setMessage(null)
     setRotatedCredential(null)
@@ -139,7 +161,9 @@ export default function Governance() {
       logicalModel: policy.logicalModel ?? null,
       requestsPerWindow: policy.requestsPerWindow,
       windowSeconds: policy.windowSeconds,
-      enabled: !policy.enabled
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
     })
     setMessage(`Rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
     await refresh()
@@ -165,7 +189,9 @@ export default function Governance() {
       logicalModel: userRateModel || null,
       requestsPerWindow: userRequestsPerWindow,
       windowSeconds: userWindowSeconds,
-      enabled: true
+      enabled: true,
+      outputTokensPerWindow: userOutputTokensPerWindow,
+      maxOutputTokensPerRequest: userMaxOutputTokensPerRequest
     })
     setMessage('User rate-limit policy created and applied live across all personal keys.')
     await refresh()
@@ -176,7 +202,9 @@ export default function Governance() {
       logicalModel: policy.logicalModel ?? null,
       requestsPerWindow: policy.requestsPerWindow,
       windowSeconds: policy.windowSeconds,
-      enabled: !policy.enabled
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
     })
     setMessage(`User rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
     await refresh()
@@ -185,6 +213,41 @@ export default function Governance() {
   async function deleteUserRateLimit(policy: UserRateLimitPolicy) {
     await api.deleteUserRateLimit(policy.id)
     setMessage('User rate-limit policy removed.')
+    await refresh()
+  }
+
+  async function createGroupRateLimit(event: FormEvent) {
+    event.preventDefault()
+    if (!groupPolicyGroupId) return
+    await api.createGroupRateLimit({
+      usageGroupId: groupPolicyGroupId,
+      logicalModel: groupRateModel || null,
+      requestsPerWindow: groupRequestsPerWindow,
+      windowSeconds: groupWindowSeconds,
+      enabled: true,
+      outputTokensPerWindow: groupOutputTokensPerWindow,
+      maxOutputTokensPerRequest: groupMaxOutputTokensPerRequest
+    })
+    setMessage('Group request and output-token quota created and applied live.')
+    await refresh()
+  }
+
+  async function toggleGroupRateLimit(policy: UsageGroupRateLimitPolicy) {
+    await api.updateGroupRateLimit(policy.id, {
+      logicalModel: policy.logicalModel ?? null,
+      requestsPerWindow: policy.requestsPerWindow,
+      windowSeconds: policy.windowSeconds,
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
+    })
+    setMessage(`Group quota ${policy.enabled ? 'disabled' : 'enabled'} live.`)
+    await refresh()
+  }
+
+  async function deleteGroupRateLimit(policy: UsageGroupRateLimitPolicy) {
+    await api.deleteGroupRateLimit(policy.id)
+    setMessage('Group quota removed.')
     await refresh()
   }
 
@@ -243,8 +306,8 @@ export default function Governance() {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>Usage groups</h2><span>{groups.length} configured</span></div>
-        <table><thead><tr><th>Name</th><th>Description</th><th>Credentials</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td><strong>{group.name}</strong></td><td>{group.description ?? '—'}</td><td>{group.credentialCount}</td></tr>)}</tbody></table>
+        <div className="panelTitle"><h2>User / usage groups</h2><span>{groups.length} configured · one current group per user</span></div>
+        <table><thead><tr><th>Name</th><th>Description</th><th>Users</th><th>Credentials</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td><strong>{group.name}</strong></td><td>{group.description ?? '—'}</td><td>{group.userCount}</td><td>{group.credentialCount}</td></tr>)}</tbody></table>
       </section>
       <section className="panel formPanel"><h2>Create usage group</h2><form onSubmit={event => void createGroup(event)}>
         <label>Name<input value={groupName} onChange={event => setGroupName(event.target.value)} required placeholder="Development CRM" /></label>
@@ -254,14 +317,23 @@ export default function Governance() {
     </div>
 
     <section className="panel">
-      <div className="panelTitle"><h2>Credential → group membership & rotation</h2><span>Rotation is an in-place hard cutover: identity, group, policies and history are preserved.</span></div>
-      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}><td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td><td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td><td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td></tr>)}</tbody></table>
+      <div className="panelTitle"><h2>Organization & personal credentials</h2><span>Organization keys are caller-quota exempt by default; admins can opt them in. Personal keys are always governed.</span></div>
+      <table><thead><tr><th>Credential</th><th>Type</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Caller governance</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
+        <td><strong>{credential.name}</strong>{credential.ownerPrincipalName && <div className="muted">{credential.ownerPrincipalName}</div>}</td>
+        <td>{credential.kind === 'personal' ? 'Personal' : 'Organization'}</td>
+        <td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td>
+        <td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
+        <td>{credential.kind === 'personal'
+          ? <><strong>Always on</strong><div className="muted">User + group + key policies</div></>
+          : <label><input type="checkbox" checked={Boolean(credential.enforceCallerGovernance)} onChange={() => void toggleCredentialGovernance(credential)} /> Treat like governed client</label>}</td>
+        <td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td>
+      </tr>)}</tbody></table>
       {rotatedCredential && <div className="secretBox" data-testid="rotated-credential-secret"><strong>Copy the rotated key now</strong><p>The previous key is invalid and this secret will not be shown again.</p><code>{rotatedCredential.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(rotatedCredential.secret)}>Copy</button></div>}
     </section>
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from DGX capacity backpressure.</span></div>
+        <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from inference-node capacity backpressure.</span></div>
         <table><thead><tr><th>Credential</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={6}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}><td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td><td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <><strong>{formatNumber(policy.outputTokensPerWindow)} tokens / {policy.windowSeconds}s</strong><div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td></tr>)}</tbody></table>
       </section>
       <section className="panel formPanel"><h2>Add rate limit</h2><form onSubmit={event => void createRateLimit(event)}>
@@ -275,34 +347,73 @@ export default function Governance() {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>User request limits</h2><span>Aggregate across every personal API key owned by the Entra user.</span></div>
-        <table><thead><tr><th>User</th><th>Model</th><th>Request limit</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          {userRateLimits.length === 0 ? <tr><td colSpan={5}>No user limits configured.</td></tr> : userRateLimits.map(policy => <tr key={policy.id}>
+        <div className="panelTitle"><h2>User quotas</h2><span>Applied across every personal API key owned by the registered Entra user.</span></div>
+        <table><thead><tr><th>User</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {userRateLimits.length === 0 ? <tr><td colSpan={6}>No user quotas configured.</td></tr> : userRateLimits.map(policy => <tr key={policy.id}>
             <td><strong>{policy.principalName ?? policy.ownerObjectId}</strong><div className="muted mono">{policy.ownerObjectId}</div></td>
             <td>{policy.logicalModel ?? 'All models'}</td>
             <td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+            <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <>{formatNumber(policy.outputTokensPerWindow)} / {policy.windowSeconds}s<div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
             <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
             <td className="actions"><button onClick={() => void toggleUserRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteUserRateLimit(policy)}>Delete</button></td>
           </tr>)}
         </tbody></table>
       </section>
-      <section className="panel formPanel"><h2>Add user request limit</h2><form onSubmit={event => void createUserRateLimit(event)}>
-        <label>User<select value={rateUserKey} onChange={event => setRateUserKey(event.target.value)} required><option value="">Select Entra user</option>{users.map(user => <option key={`${user.tenantId}|${user.objectId}`} value={`${user.tenantId}|${user.objectId}`}>{user.principalName ?? user.objectId}</option>)}</select></label>
+      <section className="panel formPanel"><h2>Add user quota</h2><form onSubmit={event => void createUserRateLimit(event)}>
+        <label>User<select value={rateUserKey} onChange={event => setRateUserKey(event.target.value)} required><option value="">Select registered user</option>{users.map(user => <option key={`${user.tenantId}|${user.objectId}`} value={`${user.tenantId}|${user.objectId}`}>{user.displayName ?? user.principalName ?? user.objectId}</option>)}</select></label>
         <label>Logical model<select value={userRateModel} onChange={event => setUserRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
         <label>Requests per window<input type="number" min="1" value={userRequestsPerWindow} onChange={event => setUserRequestsPerWindow(Number(event.target.value))} /></label>
         <label>Window seconds<input type="number" min="1" value={userWindowSeconds} onChange={event => setUserWindowSeconds(Number(event.target.value))} /></label>
-        <button className="primary" disabled={users.length === 0}>Add user limit</button>
-      </form>{users.length === 0 && <p className="muted">A user appears after creating at least one personal API key.</p>}</section>
+        <label>Output tokens per window<input type="number" min="1" value={userOutputTokensPerWindow} onChange={event => setUserOutputTokensPerWindow(Number(event.target.value))} /></label>
+        <label>Max output tokens per request<input type="number" min="1" max={userOutputTokensPerWindow} value={userMaxOutputTokensPerRequest} onChange={event => setUserMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
+        <button className="primary" disabled={users.length === 0}>Add user quota</button>
+      </form>{users.length === 0 && <p className="muted">Register users in Users & Access before assigning personal quotas.</p>}</section>
+    </div>
+
+    <div className="gridTwo">
+      <section className="panel">
+        <div className="panelTitle"><h2>Group quotas</h2><span>Shared across all governed personal/organization credentials currently attributed to the group.</span></div>
+        <table><thead><tr><th>Group</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {groupRateLimits.length === 0 ? <tr><td colSpan={6}>No group quotas configured.</td></tr> : groupRateLimits.map(policy => <tr key={policy.id}>
+            <td><strong>{policy.usageGroupName ?? groupNames.get(policy.usageGroupId) ?? policy.usageGroupId}</strong></td>
+            <td>{policy.logicalModel ?? 'All models'}</td>
+            <td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+            <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <>{formatNumber(policy.outputTokensPerWindow)} / {policy.windowSeconds}s<div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
+            <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
+            <td className="actions"><button onClick={() => void toggleGroupRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteGroupRateLimit(policy)}>Delete</button></td>
+          </tr>)}
+        </tbody></table>
+      </section>
+      <section className="panel formPanel"><h2>Add group quota</h2><form onSubmit={event => void createGroupRateLimit(event)}>
+        <label>Group<select value={groupPolicyGroupId} onChange={event => setGroupPolicyGroupId(event.target.value)} required><option value="">Select group</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+        <label>Logical model<select value={groupRateModel} onChange={event => setGroupRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
+        <label>Requests per window<input type="number" min="1" value={groupRequestsPerWindow} onChange={event => setGroupRequestsPerWindow(Number(event.target.value))} /></label>
+        <label>Window seconds<input type="number" min="1" value={groupWindowSeconds} onChange={event => setGroupWindowSeconds(Number(event.target.value))} /></label>
+        <label>Output tokens per window<input type="number" min="1" value={groupOutputTokensPerWindow} onChange={event => setGroupOutputTokensPerWindow(Number(event.target.value))} /></label>
+        <label>Max output tokens per request<input type="number" min="1" max={groupOutputTokensPerWindow} value={groupMaxOutputTokensPerRequest} onChange={event => setGroupMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
+        <button className="primary" disabled={groups.length === 0}>Add group quota</button>
+      </form></section>
     </div>
 
     <section className="panel formPanel">
-      <div className="panelTitle"><div><h2>Output-token budget</h2><span>Reserve before inference, then settle to actual output usage. Redis-enabled gateways enforce one shared budget.</span></div></div>
+      <div className="panelTitle"><div><h2>Credential-specific output-token budget</h2><span>Optional extra limit on one governed credential/model, composed with user and group budgets when applicable.</span></div></div>
       {rateLimits.length === 0 ? <p className="muted">Create a rate-limit policy first; output-token budgets reuse the same credential/model scope and window.</p> : <form onSubmit={event => void applyOutputTokenBudget(event)}>
         <label>Budget policy<select aria-label="Budget policy" value={budgetPolicyId} onChange={event => setBudgetPolicyId(event.target.value)} required>{rateLimits.map(policy => <option key={policy.id} value={policy.id}>{policy.credentialName ?? policy.apiCredentialId} · {policy.logicalModel ?? 'All models'} · {policy.windowSeconds}s</option>)}</select></label>
         <label>Output tokens per window<input aria-label="Output tokens per window" type="number" min="1" value={outputTokensPerWindow} onChange={event => setOutputTokensPerWindow(Number(event.target.value))} /></label>
         <label>Max output tokens per request<input aria-label="Max output tokens per request" type="number" min="1" max={outputTokensPerWindow} value={maxOutputTokensPerRequest} onChange={event => setMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
         <div className="actions"><button className="primary">Apply token budget</button><button type="button" className="secondary" disabled={!budgetPolicy?.outputTokensPerWindow} onClick={() => void clearOutputTokenBudget()}>Clear token budget</button></div>
       </form>}
+    </section>
+
+    <section className="panel">
+      <div className="panelTitle"><h2>Usage by user</h2><span>Personal API-key usage resolved through stable Entra tenant/object ownership.</span></div>
+      <table><thead><tr><th>User</th><th>Group</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>
+        {userUsage.length === 0 ? <tr><td colSpan={7}>No personal user usage in this window.</td></tr> : userUsage.map(row => <tr key={`${row.tenantId}|${row.objectId}`}>
+          <td><strong>{row.displayName ?? row.principalName ?? row.objectId}</strong><div className="muted">{row.principalName ?? row.objectId}</div></td>
+          <td>{row.usageGroupId ? groupNames.get(row.usageGroupId) ?? row.usageGroupId : 'Ungrouped'}</td>
+          <td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.inputTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td>
+        </tr>)}
+      </tbody></table>
     </section>
 
     <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day UTC window</span></div><table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table></section>

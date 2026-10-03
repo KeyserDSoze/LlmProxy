@@ -23,7 +23,7 @@ From a repository checkout on a new Linux host, the preferred path is:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model <exact-vllm-model-id> \
   --image-tag main
 ```
@@ -39,7 +39,7 @@ detects the Linux distribution/package manager
   -> generates initial production secrets without printing them
   -> creates /opt/llmproxy/.env
   -> optionally authenticates to GHCR from GHCR_USER/GHCR_TOKEN
-  -> validates DGX /health + /v1/models
+  -> validates inference node /health + /v1/models
   -> invokes the canonical full-stack deploy.sh
   -> requires /healthz + /readyz
 ```
@@ -115,4 +115,4 @@ The workflow uses the same `docker/scripts/deploy.sh` path as manual operation, 
 
 EF Core applies pending migrations during application startup. Container rollback is performed by redeploying the prior known-good image tag. A prior image cannot reverse a destructive schema migration, so any destructive migration requires a backup and explicit compatibility/restore plan first.
 
-Read `docs/linux-production-deployment.md` for the complete host setup, installer options, DGX validation, Entra/Cloudflare enablement, backup, logs, update and rollback procedure.
+Read `docs/linux-production-deployment.md` for the complete host setup, installer options, inference node validation, Entra/Cloudflare enablement, backup, logs, update and rollback procedure.

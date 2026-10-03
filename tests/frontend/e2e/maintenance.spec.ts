@@ -7,7 +7,7 @@ async function json(route: Route, body: unknown, status = 200) {
 async function installMaintenanceApi(page: Page) {
   const node = {
     id: 'node-maintenance',
-    name: 'dgx-maintenance',
+    name: 'inference-maintenance',
     baseAddress: 'http://10.0.0.31:8000/vllm',
     hardwareMetricsBaseAddress: null,
     weight: 1,
@@ -29,6 +29,7 @@ async function installMaintenanceApi(page: Page) {
     const path = new URL(request.url()).pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/admin/session') return json(route, { canWrite: true, roles: ['LlmProxy.Admin'] })
     if (method === 'GET' && path === '/api/admin/overview') return json(route, { nodes: { total: 1, healthy: node.status === 'Healthy' ? 1 : 0, degraded: 0, unhealthy: 0, draining: node.status === 'Draining' ? 1 : 0 }, models: 1, deployments: 1, activeRequests: 0, requestsToday: 0 })
     if (method === 'GET' && path === '/api/admin/routing') return json(route, { strategy: 'WeightedLeastLoaded', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     if (method === 'GET' && path === '/api/admin/routing/tuning') return json(route, { warmupSamples: 3, ttftTargetMilliseconds: 2000, ttftPenaltyWeight: 0.25, failurePenaltyWeight: 1.5, externalLoadPenaltyWeight: 0.4, queuePenaltyWeight: 0.75, kvCacheThreshold: 0.7, kvCachePenaltyWeight: 0.6, degradedNodePenalty: 0.35, unknownNodePenalty: 0.1 })
@@ -95,12 +96,12 @@ async function installMaintenanceApi(page: Page) {
   }
 }
 
-test('DGX node controls use safe maintenance drain and validated resume', async ({ page }) => {
+test('inference node controls use safe maintenance drain and validated resume', async ({ page }) => {
   const state = await installMaintenanceApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'DGX Nodes' }).click()
+  await page.getByRole('button', { name: 'Inference Nodes' }).click()
 
-  const row = page.getByRole('row').filter({ hasText: 'dgx-maintenance' })
+  const row = page.getByRole('row').filter({ hasText: 'inference-maintenance' })
   await row.getByRole('button', { name: 'Drain' }).click()
   await expect(row.getByText('Draining', { exact: true })).toBeVisible()
   expect(state.wasLegacyDrainCalled()).toBe(false)

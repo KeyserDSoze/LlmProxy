@@ -70,4 +70,35 @@ public sealed class OutputTokenBudgetTests
         Assert.Equal(10, decisions.Count(decision => decision.Acquired));
         Assert.Equal(10, decisions.Count(decision => !decision.Acquired));
     }
+    [Fact]
+    public async Task Multi_scope_reservation_settles_all_budgets_and_rolls_back_partial_failure()
+    {
+        var store = new InMemoryOutputTokenBudgetStore();
+        var limiter = new OutputTokenBudgetLimiter(store);
+        var userPolicy = new RateLimitPolicySnapshot(
+            Guid.NewGuid(), Guid.Empty, null, 100, 60, true, 100, 10,
+            OwnerTenantId: "tenant-1", OwnerObjectId: "user-1");
+        var groupPolicy = new RateLimitPolicySnapshot(
+            Guid.NewGuid(), Guid.Empty, null, 100, 60, true, 15, 10,
+            UsageGroupId: Guid.NewGuid());
+        var now = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var first = await limiter.TryReserveAsync([userPolicy, groupPolicy], 10, now, cancellationToken);
+        Assert.True(first.Acquired);
+        await first.Reservation!.SettleAsync(5, usageCertain: true, cancellationToken);
+
+        var second = await limiter.TryReserveAsync([userPolicy, groupPolicy], 10, now.AddSeconds(1), cancellationToken);
+        Assert.True(second.Acquired);
+        await second.Reservation!.SettleAsync(5, usageCertain: true, cancellationToken);
+
+        var rejected = await limiter.TryReserveAsync([userPolicy, groupPolicy], 10, now.AddSeconds(2), cancellationToken);
+        Assert.False(rejected.Acquired);
+        Assert.Equal(OutputTokenBudgetAdmissionFailure.BudgetExceeded, rejected.Failure);
+
+        var userStillHasRollbackCapacity = await store.TryReserveAsync(
+            userPolicy.Id, 100, 60, 90, now.AddSeconds(3), cancellationToken);
+        Assert.True(userStillHasRollbackCapacity.Acquired);
+    }
+
 }
