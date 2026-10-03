@@ -22,9 +22,7 @@ public sealed class ReleaseDiscoveryService(
         }
 
         var client = httpClientFactory.CreateClient("github-releases");
-        var releases = await client.GetFromJsonAsync<GitHubRelease[]>(
-            $"https://api.github.com/repos/{_repository}/releases?per_page=30",
-            cancellationToken) ?? [];
+        var releases = await LoadReleasesAsync(client, cancellationToken);
 
         var stable = releases
             .Where(item => !item.Draft && !item.Prerelease)
@@ -54,6 +52,30 @@ public sealed class ReleaseDiscoveryService(
 
         cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
         return result;
+    }
+
+    private async Task<IReadOnlyList<GitHubRelease>> LoadReleasesAsync(
+        HttpClient client,
+        CancellationToken cancellationToken)
+    {
+        const int pageSize = 100;
+        const int maximumPages = 20;
+        var releases = new List<GitHubRelease>();
+
+        for (var page = 1; page <= maximumPages; page++)
+        {
+            var batch = await client.GetFromJsonAsync<GitHubRelease[]>(
+                $"https://api.github.com/repos/{_repository}/releases?per_page={pageSize}&page={page}",
+                cancellationToken) ?? [];
+            releases.AddRange(batch);
+            if (batch.Length < pageSize)
+            {
+                return releases;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Release discovery exceeded {maximumPages * pageSize} releases. Refusing to construct a potentially incomplete upgrade chain.");
     }
 
     private static async Task<ReleaseUpdatePlan> ReadPlanAsync(
