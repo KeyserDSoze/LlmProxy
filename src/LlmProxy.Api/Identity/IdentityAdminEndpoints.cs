@@ -13,6 +13,41 @@ public static class IdentityAdminEndpoints
             group.RequireAuthorization("AdminRead");
         }
 
+        group.MapGet("/me", (HttpContext httpContext) =>
+        {
+            if (!entraEnabled)
+            {
+                return Results.Ok(new
+                {
+                    tenantId = (string?)null,
+                    objectId = (string?)null,
+                    principalName = (string?)null,
+                    displayName = (string?)null,
+                    roles = Array.Empty<string>(),
+                    isAdmin = true
+                });
+            }
+
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return Results.Json(new
+                {
+                    error = "entra_identity_missing",
+                    message = "The authenticated token must contain stable Entra tenant (tid) and object (oid) claims."
+                }, statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Ok(new
+            {
+                identity.TenantId,
+                identity.ObjectId,
+                identity.PrincipalName,
+                identity.DisplayName,
+                identity.Roles,
+                isAdmin = identity.Roles.Contains("LlmProxy.Admin", StringComparer.OrdinalIgnoreCase)
+            });
+        });
+
         group.MapGet("/api-credentials", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
         {
             var rows = await dbContext.ApiCredentials.AsNoTracking()
