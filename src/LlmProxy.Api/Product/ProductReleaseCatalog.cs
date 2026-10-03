@@ -51,6 +51,7 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "Administrators can use Model & Hardware to inspect prepared hardware, compare deployable open-weight models against live RAM/VRAM/disk capacity, and install, start, stop or remove managed vLLM runtimes.",
+                    "Release Notes now discovers published stable releases and lets administrators run an immediate update or schedule one through a persistent host Update Agent; each immutable release carries an explicit standard or bundled-custom update plan.",
                     "The release ships an authenticated LlmProxy Node Agent for x86_64 and ARM64 Linux hardware plus deployment-specific runtime addressing so multiple models can coexist safely on one physical host.",
                     "The Admin control plane includes live encrypted full-body request/response inspection, model and System One classifier diagnostics, endpoint examples and contextual page documentation.",
                     "Administrators can reveal and copy application-encrypted recovery copies of newly created or rotated client API keys.",
