@@ -108,6 +108,9 @@ public static class OpenAiEndpoints
         var ownerObjectId = context.Items.TryGetValue(InferenceApiKeyMiddleware.OwnerObjectIdItem, out var ownerValue)
             ? ownerValue as string
             : null;
+        var enforceCallerGovernance =
+            context.Items.TryGetValue(InferenceApiKeyMiddleware.EnforceCallerGovernanceItem, out var governanceValue) &&
+            governanceValue is true;
         Guid? finalDeploymentId = null;
         Guid? finalNodeId = null;
         var finalStatusCode = StatusCodes.Status500InternalServerError;
@@ -157,6 +160,8 @@ public static class OpenAiEndpoints
                     publicModelName,
                     ownerTenantId,
                     ownerObjectId,
+                    usageGroupId,
+                    enforceCallerGovernance,
                     DateTimeOffset.UtcNow,
                     context.RequestAborted);
                 if (!rateLimitDecision.Allowed)
