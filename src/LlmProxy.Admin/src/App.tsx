@@ -1,9 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import Governance from './Governance'
 import Hardware from './Hardware'
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
+import ReleaseNotesPage from './ReleaseNotesPage'
+import UserManagement from './UserManagement'
+import type { AdminIdentity, ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit'
+export type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'audit' | 'governance' | 'users' | 'releases'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -53,8 +56,8 @@ const emptyMetricsSummary: MetricsSummary = {
   byNode: []
 }
 
-export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
+  const [view, setView] = useState<View>(initialView)
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
   const [routingTuning, setRoutingTuning] = useState<RoutingTuningSettings>(emptyRoutingTuning)
@@ -68,6 +71,7 @@ export default function App() {
   const [credentials, setCredentials] = useState<ApiCredential[]>([])
   const [metrics, setMetrics] = useState<RequestMetric[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
+  const [adminIdentity, setAdminIdentity] = useState<AdminIdentity | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
@@ -75,9 +79,10 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
-        api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
+      const [nextIdentity, nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.adminIdentity(), api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
       ])
+      setAdminIdentity(nextIdentity)
       setOverview(nextOverview)
       setRouting(nextRouting)
       setRoutingTuning(nextTuning)
@@ -121,14 +126,19 @@ export default function App() {
         </div>
         <nav>
           <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>DGX Nodes</NavItem>
-          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>DGX Hardware</NavItem>
+          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
+          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
           <NavItem active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
           <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
           <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
           <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          <div className="navSecondary">
+            <NavItem active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
+            {adminIdentity?.isAdmin && <NavItem active={view === 'users'} onClick={() => setView('users')}>User Management</NavItem>}
+            <ProductNavItem active={view === 'releases'} onClick={() => setView('releases')} />
+          </div>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
       </aside>
@@ -152,6 +162,9 @@ export default function App() {
             {view === 'credentials' && <Credentials credentials={credentials} refresh={refresh} />}
             {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
             {view === 'audit' && <Audit events={audit} />}
+            {view === 'governance' && <Governance />}
+            {view === 'users' && (adminIdentity?.isAdmin ? <UserManagement /> : <div className="error">User Management is available only to LlmProxy.Admin users.</div>)}
+            {view === 'releases' && <ReleaseNotesPage embedded />}
           </>
         )}
       </main>
@@ -506,7 +519,19 @@ function Audit({ events }: { events: AuditEvent[] }) {
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', audit: 'Audit trail' } as const)[view] }
+function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/admin/product', { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() as Promise<{ version: string }> : null)
+      .then(product => { if (!cancelled && product) setVersion(product.version) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  return <NavItem active={active} onClick={onClick}>{version ? `v${version} · Release Notes` : 'Release Notes'}</NavItem>
+}
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', audit: 'Audit trail', governance: 'Usage & Governance', users: 'User Management', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
@@ -517,7 +542,7 @@ function formatNumber(value: number) { return new Intl.NumberFormat().format(val
 function healthStreak(node: Node) { return node.consecutiveHealthFailures > 0 ? `${node.consecutiveHealthFailures} fail` : `${node.consecutiveHealthSuccesses} ok` }
 function short(value: string) { return value.length > 12 ? `${value.slice(0, 8)}…` : value }
 function friendlyStrategy(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Weighted least loaded', RoundRobin: 'Round robin', WeightedRoundRobin: 'Weighted round robin' } as const)[value] }
-function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Routes to the least-loaded eligible deployment while accounting for configured capacity, health, recent inference performance and live vLLM pressure.', RoundRobin: 'Cycles evenly through eligible deployments. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments proportionally to their effective weights.' } as const)[value] }
+function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Builds a candidate pool only from deployments of the requested logical model, then routes to the least-loaded eligible node while accounting for configured capacity, health, recent inference performance and live vLLM pressure.', RoundRobin: 'Cycles evenly through eligible deployments for the requested logical model. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments for the requested logical model proportionally to their effective weights.' } as const)[value] }
 function friendlySurface(value: string) { return value === 'chat_completions' ? 'Chat Completions' : value === 'responses' ? 'Responses' : value }
 function probeSummary(probe: NodeConnectionTest['health']) { return probe.success ? `✓ HTTP ${probe.statusCode} in ${probe.latencyMilliseconds} ms` : `✕ ${probe.error ?? `HTTP ${probe.statusCode}`} (${probe.latencyMilliseconds} ms)` }
 function formatAuditDetails(value?: string | null) { if (!value) return '—'; return value.length > 160 ? `${value.slice(0, 157)}…` : value }
