@@ -16,7 +16,7 @@ const help: Record<string, { title: string; body: ReactNode }> = {
   audit: { title: 'Audit trail', body: <><p>Administrative configuration and sensitive-control actions. API-key secret reveals, retention changes and manual cleanup runs are audited without recording the revealed secret itself.</p></> },
   help: { title: 'Endpoint & platform guide', body: <><p>Copy-ready endpoint examples plus an explanation of authentication, routing, capacity, rate limiting, classifier forwarding, observability and retention.</p></> },
   governance: { title: 'Usage & Governance', body: <><p>Maps credentials and Entra users to usage groups, request-rate policies and token budgets. These controls run before routing and capacity admission.</p></> },
-  releases: { title: 'Release notes', body: <><p>Shows immutable product versions, build provenance and the operator-visible changes shipped in each release.</p></> },
+  releases: { title: 'Release notes & updates', body: <><p>Shows the installed version, published immutable releases and the update plan attached to each release.</p><p>Administrators can launch an immediate update or schedule one. The host Update Agent executes outside the gateway container so the operation survives container replacement. A release can use the standard installer or a bundled custom update procedure; arbitrary commands cannot be entered from the UI.</p></> },
   me: { title: 'My dashboard', body: <><p>Your self-service area shows personal API keys, 30-day usage, request limits and recent calls attributed to your own credentials.</p><p>Portal admission is controlled by the Users & Access registry. A disabled user cannot enter and existing personal keys are revoked when the administrator disables the account.</p></> }
 }
 
