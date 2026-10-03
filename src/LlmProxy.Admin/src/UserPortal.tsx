@@ -36,9 +36,13 @@ type CredentialUsage = {
 
 type PersonalRateLimit = {
   id: string
+  scope: 'user' | 'group'
+  scopeName?: string | null
   logicalModel?: string | null
   requestsPerWindow: number
   windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
   enabled: boolean
   updatedAtUtc: string
 }
