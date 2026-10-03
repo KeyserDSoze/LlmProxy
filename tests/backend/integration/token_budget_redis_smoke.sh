@@ -123,6 +123,14 @@ credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governan
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available."
 
+# Organization credentials intentionally bypass caller governance by default. This smoke later attaches
+# a credential-scoped output-token budget to the bootstrap key, so opt it in explicitly.
+bootstrap_governance_json="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance")"
+echo "$bootstrap_governance_json" | jq -e --arg id "$credential_id" '.id == $id and .enforceCallerGovernance == true' >/dev/null \
+  || fail_with_diagnostics "Bootstrap credential could not be opted into caller governance for the token-budget smoke."
+
 # Prepare two personal credentials with one shared Entra identity. Direct SQL is test-only setup;
 # restarting the primary rebuilds its credential L1 with ownership metadata before the peer starts.
 user_key_a_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"name":"Redis user key A"}' http://127.0.0.1:8080/api/admin/api-credentials)"
@@ -136,7 +144,7 @@ user_key_b_secret="$(echo "$user_key_b_json" | jq -r '.secret')"
   -U "$POSTGRES_USER" \
   -d "$POSTGRES_DB" \
   -v ON_ERROR_STOP=1 \
-  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-redis', \"OwnerObjectId\"='user-redis', \"OwnerPrincipalName\"='redis-user@example.com' WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
+  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-redis', \"OwnerObjectId\"='user-redis', \"OwnerPrincipalName\"='redis-user@example.com', \"EnforceCallerGovernance\"=TRUE WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
 
 "${COMPOSE[@]}" restart llmproxy >/dev/null
 wait_http http://127.0.0.1:8080/readyz 60 || fail_with_diagnostics "Primary gateway did not become ready after user-ownership test setup."
