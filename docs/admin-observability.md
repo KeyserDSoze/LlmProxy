@@ -35,7 +35,7 @@ The classifier panel displays:
 
 A JSON editor lets an administrator send the exact classifier payload. The default example is compatible with the System One decision shape used for classifiers such as `convaiinnovations/laya`.
 
-## Full-body content logs
+## Request audit / full-body content logs
 
 Authenticated requests to:
 
@@ -45,15 +45,15 @@ Authenticated requests to:
 
 are captured at the HTTP gateway boundary. Request and response payloads are stored as AES-GCM ciphertext derived from the deployment API-key pepper and bound to request-specific purposes.
 
-The UI polls the log list every two seconds while **Content Logs** is open. Selecting a row loads/decrypts the detail and shows request/response bodies, correlated node/deployment/attempt/TTFT/token data when a request metric exists, and copy controls.
+The Admin UI exposes this as **Request Audit**. It supports server-side paging and filters for user ownership, credential, logical model, surface, status, request ID and time range, with optional two-second live refresh. Selecting a row loads/decrypts the detail and shows request/response bodies, correlated node/deployment/attempt/TTFT/token data when a request metric exists, and copy controls.
 
-Only `LlmProxy.Admin` can access these APIs. Configured super admins receive that role through the existing claims transformation. `LlmProxy.Reader` cannot read payload logs.
+Global request-audit APIs require `LlmProxy.Admin`. Configured super admins receive that role through the existing claims transformation. `LlmProxy.Reader` cannot read payload logs. A separate normal-user self-service surface under `/api/me/content-logs*` permits an admitted user to inspect only rows linked to personal credentials owned by the same stable Entra `tid + oid`; other users' rows and organization/shared credentials are excluded.
 
 Headers are not copied into the payload store. In particular client `Authorization` and upstream bearer credentials are never persisted there.
 
 ## Content-log retention
 
-Retention is administrator-controlled from 10 through 180 days, default 30. A hosted cleanup worker runs at startup and every four hours. A manual cleanup action is also available from the UI and is audited.
+Retention is administrator-controlled from 10 through 4015 days (11 x 365 days), default 30. A hosted cleanup worker runs at startup and every four hours. A manual cleanup action is also available from the UI and is audited. Decrypted detail responses use `Cache-Control: no-store`.
 
 This is independent from request-metric/usage-rollup retention.
 
