@@ -58,6 +58,120 @@ public static class ContentLogsAdminEndpoints
             return Results.Ok(rows);
         });
 
+        group.MapGet("/query", async (
+            int? page,
+            int? pageSize,
+            string? surface,
+            string? model,
+            Guid? apiCredentialId,
+            string? ownerTenantId,
+            string? ownerObjectId,
+            string? status,
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
+            Guid? requestId,
+            GatewayDbContext dbContext,
+            CancellationToken cancellationToken) =>
+        {
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? 50, 1, 100);
+            var query = dbContext.InferenceContentLogs.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(surface))
+            {
+                var normalizedSurface = surface.Trim();
+                query = query.Where(item => item.Surface == normalizedSurface);
+            }
+
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                var normalizedModel = model.Trim().ToLower();
+                query = query.Where(item => item.LogicalModel != null && item.LogicalModel.ToLower().Contains(normalizedModel));
+            }
+
+            if (apiCredentialId is Guid selectedCredentialId)
+            {
+                query = query.Where(item => item.ApiCredentialId == selectedCredentialId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(ownerTenantId) || !string.IsNullOrWhiteSpace(ownerObjectId))
+            {
+                var credentials = dbContext.ApiCredentials.AsNoTracking().AsQueryable();
+                if (!string.IsNullOrWhiteSpace(ownerTenantId))
+                {
+                    var tenantId = ownerTenantId.Trim();
+                    credentials = credentials.Where(item => item.OwnerTenantId == tenantId);
+                }
+
+                if (!string.IsNullOrWhiteSpace(ownerObjectId))
+                {
+                    var objectId = ownerObjectId.Trim();
+                    credentials = credentials.Where(item => item.OwnerObjectId == objectId);
+                }
+
+                var credentialIds = credentials.Select(item => item.Id);
+                query = query.Where(item => item.ApiCredentialId != null && credentialIds.Contains(item.ApiCredentialId.Value));
+            }
+
+            if (string.Equals(status, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(item => item.StatusCode >= 200 && item.StatusCode < 300);
+            }
+            else if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(item => item.StatusCode < 200 || item.StatusCode >= 300);
+            }
+            else if (int.TryParse(status, out var exactStatusCode))
+            {
+                query = query.Where(item => item.StatusCode == exactStatusCode);
+            }
+
+            if (fromUtc is not null)
+            {
+                query = query.Where(item => item.StartedAtUtc >= fromUtc.Value);
+            }
+
+            if (toUtc is not null)
+            {
+                query = query.Where(item => item.StartedAtUtc <= toUtc.Value);
+            }
+
+            if (requestId is Guid selectedRequestId)
+            {
+                query = query.Where(item => item.RequestId == selectedRequestId);
+            }
+
+            var total = await query.CountAsync(cancellationToken);
+            var rows = await query
+                .OrderByDescending(item => item.StartedAtUtc)
+                .Skip((currentPage - 1) * size)
+                .Take(size)
+                .Select(item => new
+                {
+                    item.Id,
+                    item.RequestId,
+                    item.StartedAtUtc,
+                    item.CompletedAtUtc,
+                    item.Surface,
+                    item.Method,
+                    item.Path,
+                    item.LogicalModel,
+                    item.ApiCredentialId,
+                    item.StatusCode,
+                    item.RequestContentType,
+                    item.ResponseContentType
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                items = rows,
+                total,
+                page = currentPage,
+                pageSize = size
+            });
+        });
+
         group.MapGet("/{id:long}", async (
             long id,
             GatewayDbContext dbContext,
