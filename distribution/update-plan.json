@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "mode": "standard",
+  "title": "Standard immutable update",
+  "description": "Uses the versioned LlmProxy installer and preserves host configuration and Docker volumes.",
+  "requiresHostRestart": false
+}
