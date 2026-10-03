@@ -33,10 +33,12 @@ Options:
   --image-tag TAG         GHCR image tag to deploy (default: main)
   --ghcr-owner OWNER      GHCR owner (default: keyserdsoze)
   --node-url URL           Initial inference node/vLLM service root
+  --dgx-url URL            Deprecated alias for --node-url (upgrade compatibility)
   --provider-model MODEL  Exact provider model id exposed by vLLM
   --super-admins USERS    Comma/semicolon-separated Entra principals granted LlmProxy.Admin
   --prepare-only          Install host prerequisites and create config, but do not deploy
   --skip-node-check        Skip /health and /v1/models checks against the initial inference node
+  --skip-dgx-check         Deprecated alias for --skip-node-check (upgrade compatibility)
   --skip-docker-install   Require Docker + Compose to already be installed
   --non-interactive       Never prompt; required values must be supplied by flags/env/file
   --validate-only         Validate installer/repository compatibility without changing host
@@ -71,8 +73,11 @@ while [[ $# -gt 0 ]]; do
       GHCR_OWNER_VALUE="${2:?--ghcr-owner requires a value}"
       shift 2
       ;;
-    --node-url)
-      INFERENCE_NODE_URL_VALUE="${2:?--node-url requires a value}"
+    --node-url|--dgx-url)
+      INFERENCE_NODE_URL_VALUE="${2:?$1 requires a value}"
+      if [[ "$1" == "--dgx-url" ]]; then
+        echo "Warning: --dgx-url is deprecated; use --node-url." >&2
+      fi
       shift 2
       ;;
     --provider-model)
@@ -92,7 +97,10 @@ while [[ $# -gt 0 ]]; do
       PREPARE_ONLY=true
       shift
       ;;
-    --skip-node-check)
+    --skip-node-check|--skip-dgx-check)
+      if [[ "$1" == "--skip-dgx-check" ]]; then
+        echo "Warning: --skip-dgx-check is deprecated; use --skip-node-check." >&2
+      fi
       SKIP_NODE_CHECK=true
       shift
       ;;
