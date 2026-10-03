@@ -5,6 +5,7 @@
     <Project Path="src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
     <Project Path="src/LlmProxy.Api/LlmProxy.Api.csproj" />
     <Project Path="src/LlmProxy.NodeAgent/LlmProxy.NodeAgent.csproj" />
+    <Project Path="src/LlmProxy.UpdateAgent/LlmProxy.UpdateAgent.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj" />

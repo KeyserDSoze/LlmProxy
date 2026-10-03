@@ -629,3 +629,41 @@ export type ModelManagementOverview = {
   catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility }>
   installations: ManagedInstallation[]
 }
+
+export type UpdateJobStatus = {
+  id: string
+  version: string
+  requestedAtUtc: string
+  scheduledForUtc: string
+  status: 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Cancelled' | string
+  startedAtUtc?: string | null
+  completedAtUtc?: string | null
+  error?: string | null
+  exitCode?: number | null
+  upgradePath?: string[] | null
+  currentStep?: string | null
+}
+
+export type AvailableProductRelease = {
+  version: string
+  title: string
+  publishedAtUtc: string
+  releaseUrl: string
+  isNewer: boolean
+  updateMode: 'standard' | 'custom' | string
+  updateTitle: string
+  updateDescription: string
+  requiresHostRestart: boolean
+  operatorCommand: string
+}
+
+export type ProductUpdateOverview = {
+  currentVersion: string
+  agentAvailable: boolean
+  agent?: {
+    installedVersion?: string | null
+    activeJob?: UpdateJobStatus | null
+    recentJobs: UpdateJobStatus[]
+  } | null
+  releases: AvailableProductRelease[]
+}

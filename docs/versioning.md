@@ -172,7 +172,11 @@ Every immutable GitHub Release contains:
 - SHA-256 checksum for the bundle;
 - `llmproxy-bootstrap.sh`;
 - SHA-256 checksum for the bootstrap;
+- `llmproxy-update-plan.json` and its SHA-256 checksum, declaring the standard/custom host update contract and operator command;
+- self-contained Node Agent release archives for x86_64 and ARM64;
 - `release-manifest.json` with image/source/digest/SBOM/provenance evidence.
+
+The Linux operator bundle also embeds the self-contained LlmProxy Update Agent for x86_64 and ARM64. Selecting a later target release through Admin update orchestration applies every intervening stable release in ascending order, so release-specific custom migrations are never skipped.
 
 The application image index contains both:
 

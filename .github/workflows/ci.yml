@@ -91,8 +91,18 @@ jobs:
           bash -n distribution/bootstrap.sh
           bash -n distribution/llmproxyctl
           bash -n distribution/install-node-agent.sh
+          bash -n distribution/install-update-agent.sh
+          jq -e '.schemaVersion == 1 and (.mode == "standard" or .mode == "custom") and (.operatorCommand | type == "string")' distribution/update-plan.json >/dev/null
+          UPDATE_PLAN_MODE="$(jq -r '.mode' distribution/update-plan.json)"
+          if [[ "$UPDATE_PLAN_MODE" == "custom" ]]; then
+            test -f distribution/update.sh
+            bash -n distribution/update.sh
+          fi
+          grep -F 'AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new' distribution/install-update-agent.sh >/dev/null
+          grep -F 'mv -f "$AGENT_TEMP" "$AGENT_TARGET"' distribution/install-update-agent.sh >/dev/null
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
-          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check' distribution/llmproxyctl >/dev/null
+          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
           bash -n distribution/build-release-bundle.sh
           grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
           grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
@@ -102,17 +112,30 @@ jobs:
 
           VERSION="$(bash docker/scripts/validate-release-version.sh)"
           RELEASE_DIR="$(mktemp -d)"
-          bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
+          DUMMY_UPDATE_AGENT_X64="$(mktemp)"
+          DUMMY_UPDATE_AGENT_ARM64="$(mktemp)"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_X64"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_ARM64"
+          chmod 0755 "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+          UPDATE_AGENT_X64_BINARY="$DUMMY_UPDATE_AGENT_X64" \
+          UPDATE_AGENT_ARM64_BINARY="$DUMMY_UPDATE_AGENT_ARM64" \
+            bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
           (
             cd "$RELEASE_DIR"
             sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
             sha256sum -c llmproxy-bootstrap.sh.sha256
+            sha256sum -c llmproxy-update-plan.json.sha256
           )
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-plan.json" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-update-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-update-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-arm64/LlmProxy.UpdateAgent" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
-          rm -rf "$RELEASE_DIR"
+          rm -rf "$RELEASE_DIR" "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4

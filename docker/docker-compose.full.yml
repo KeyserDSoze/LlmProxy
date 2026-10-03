@@ -149,6 +149,10 @@ services:
       EntraId__SuperAdmins: ${ENTRA_SUPER_ADMINS:-}
       ReverseProxy__Enabled: ${REVERSE_PROXY_ENABLED:-false}
 
+      Updates__Repository: ${LLMPROXY_UPDATE_REPOSITORY:-KeyserDSoze/LlmProxy}
+      Updates__AgentBaseAddress: ${UPDATE_AGENT_BASE_ADDRESS:-http://host.docker.internal:9910}
+      Updates__AgentBearerToken: ${UPDATE_AGENT_BEARER_TOKEN:-}
+
       SystemOne__Enabled: ${SYSTEM_ONE_ENABLED:-false}
       SystemOne__BaseAddress: ${SYSTEM_ONE_BASE_ADDRESS:-}
       SystemOne__ApiKey: ${SYSTEM_ONE_API_KEY:-}

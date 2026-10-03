@@ -27,6 +27,19 @@ cp "$ROOT_DIR/distribution/llmproxyctl" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/install-node-agent.sh" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/llmproxy-node-agent.service" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/node-agent.env.example" "$BUNDLE/distribution/"
+cp "$ROOT_DIR/distribution/update-plan.json" "$BUNDLE/distribution/"
+cp "$ROOT_DIR/distribution/install-update-agent.sh" "$BUNDLE/distribution/"
+cp "$ROOT_DIR/distribution/llmproxy-update-agent.service" "$BUNDLE/distribution/"
+cp "$ROOT_DIR/distribution/update-agent.env.example" "$BUNDLE/distribution/"
+if [[ -f "$ROOT_DIR/distribution/update.sh" ]]; then
+  cp "$ROOT_DIR/distribution/update.sh" "$BUNDLE/distribution/"
+fi
+if [[ -n "${UPDATE_AGENT_X64_BINARY:-}" && -n "${UPDATE_AGENT_ARM64_BINARY:-}" ]]; then
+  mkdir -p "$BUNDLE/distribution/update-agent/linux-x64" "$BUNDLE/distribution/update-agent/linux-arm64"
+  cp "$UPDATE_AGENT_X64_BINARY" "$BUNDLE/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent"
+  cp "$UPDATE_AGENT_ARM64_BINARY" "$BUNDLE/distribution/update-agent/linux-arm64/LlmProxy.UpdateAgent"
+  chmod 0755 "$BUNDLE/distribution/update-agent/"*/LlmProxy.UpdateAgent
+fi
 chmod 0755 "$BUNDLE/distribution/"*.sh "$BUNDLE/distribution/llmproxyctl"
 
 mkdir -p "$OUT_DIR"
@@ -37,9 +50,11 @@ tar -C "$STAGE" -czf "$ARCHIVE" "llmproxy-$VERSION"
   sha256sum "$(basename "$ARCHIVE")" > "$(basename "$ARCHIVE").sha256"
 )
 cp "$ROOT_DIR/distribution/bootstrap.sh" "$OUT_DIR/llmproxy-bootstrap.sh"
+cp "$ROOT_DIR/distribution/update-plan.json" "$OUT_DIR/llmproxy-update-plan.json"
 (
   cd "$OUT_DIR"
   sha256sum llmproxy-bootstrap.sh > llmproxy-bootstrap.sh.sha256
+  sha256sum llmproxy-update-plan.json > llmproxy-update-plan.json.sha256
 )
 
 printf 'Created release assets in %s\n' "$OUT_DIR"

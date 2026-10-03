@@ -1,4 +1,4 @@
-import type { ModelManagementOverview } from './types'
+import type { ModelManagementOverview, ProductUpdateOverview, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -30,6 +30,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   adminSession: () => request<AdminSession>('/api/admin/session'),
+  productUpdates: () => request<ProductUpdateOverview>('/api/admin/updates'),
+  scheduleProductUpdate: (body: { version: string; scheduledForUtc?: string | null; force?: boolean }) =>
+    request<UpdateJobStatus>('/api/admin/updates', { method: 'POST', body: JSON.stringify(body) }),
+  cancelProductUpdate: (id: string) => request<void>(`/api/admin/updates/${id}`, { method: 'DELETE' }),
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
   routingTuning: () => request<RoutingTuningSettings>('/api/admin/routing/tuning'),

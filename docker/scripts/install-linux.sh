@@ -573,6 +573,15 @@ prepare_environment() {
 
   migrate_legacy_inference_configuration
 
+  if [[ -x "$ROOT_DIR/distribution/install-update-agent.sh" && -d "$ROOT_DIR/distribution/update-agent" ]]; then
+    if have systemctl && [[ -d /run/systemd/system ]]; then
+      log "Installing the host update agent used by Admin update orchestration."
+      LLMPROXY_ENV_FILE="$ENV_FILE" bash "$ROOT_DIR/distribution/install-update-agent.sh"
+    else
+      warn "systemd is not available; skipping the optional host Update Agent. Manual llmproxyctl updates remain supported."
+    fi
+  fi
+
   if is_missing_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY; then
     log "Generating upstream-credential encryption key for this installation."
     set_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY "$(hex_secret 32)"

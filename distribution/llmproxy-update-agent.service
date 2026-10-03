@@ -1,0 +1,16 @@
+[Unit]
+Description=LlmProxy Update Agent
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/llmproxy/update-agent.env
+ExecStart=/opt/llmproxy-update-agent/LlmProxy.UpdateAgent
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

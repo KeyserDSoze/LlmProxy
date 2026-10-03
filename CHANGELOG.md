@@ -8,6 +8,9 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Admin **Release Notes & Updates** shows the installed version and subsequent immutable GitHub Releases, exposes the per-release operator command/update plan, and supports **Update now**, scheduled updates, cancellation of pending work and recent job status.
+- A persistent, bearer-authenticated **LlmProxy Update Agent** runs on the Linux control-plane host outside the gateway container so update jobs survive container replacement/restart.
+- Every immutable release publishes `llmproxy-update-plan.json`; the default plan uses the normal versioned installer, while releases that require special host changes can opt into a checksum-verified bundled `distribution/update.sh` procedure instead of accepting arbitrary UI shell commands.
 - Administrator **Model & Hardware** inventories prepared Linux hosts, compares curated deployable-model requirements with currently free GPU VRAM/system RAM/disk, and controls install/start/stop/remove through an authenticated node agent.
 - The self-contained **LlmProxy Node Agent** manages Docker/vLLM runtimes on prepared x86_64 or ARM64 Linux hardware and publishes CPU, RAM, disk and NVIDIA GPU inventory.
 - Managed deployments carry their own runtime endpoint, catalog identity and agent installation identity, allowing several models on one physical server while keeping routing pools grouped strictly by requested logical model.

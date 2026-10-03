@@ -71,6 +71,35 @@ Redis/OTEL full stack   SUCCESS
 
 The Docker integration smoke explicitly exercised the administrator System One classifier diagnostic against the classifier mock, the administrator model-chat diagnostic through normal routing/capacity admission, bootstrap API-key reveal, encrypted full-body request/response inspection and the 10-180 day retention boundary. Promotion to `main` still requires the final documentation-only head to re-pass CI; the automatic release train then requires a green `main` CI for the exact merge SHA before publication.
 
+## Administrator release update orchestration — DONE / VALIDATED
+
+The current feature branch adds self-service control-plane update management for administrators:
+
+- Release Notes discovers later stable immutable GitHub Releases and their published `llmproxy-update-plan.json`;
+- each release declares a `standard` or `custom` update mode plus an operator-visible command;
+- AdminWrite users can run an update immediately or schedule it for a specific time;
+- pending jobs can be cancelled and recent outcomes are visible in the Admin UI;
+- a bearer-authenticated systemd **LlmProxy Update Agent** runs on the Linux host outside the gateway container, so replacing the container does not terminate the update;
+- scheduled job state persists under `/var/lib/llmproxy-update-agent`;
+- custom release behavior is constrained to a checksum-covered `distribution/update.sh` entry point from the immutable bundle; no arbitrary shell command is accepted by the Admin API;
+- normal `llmproxyctl update VERSION` uses the same release update-plan contract.
+
+Focused contract: `docs/update-management.md`.
+
+Validation evidence:
+
+```text
+validated feature head         301bb179c6b848dd245f30c185b923b09491792c
+PR #5 CI                       37138750752 SUCCESS
+Backend build/unit             SUCCESS
+Frontend build/Vitest          SUCCESS
+Playwright E2E                 SUCCESS
+Docker/PostgreSQL integration  SUCCESS
+Redis/OTEL/Grafana full stack  SUCCESS
+```
+
+The final documentation-status commit must itself re-pass CI before promotion to `main`.
+
 ## Current validated product baseline
 
 Current distribution release contract:

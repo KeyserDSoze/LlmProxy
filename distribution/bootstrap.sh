@@ -4,6 +4,7 @@ set -Eeuo pipefail
 REPOSITORY="${LLMPROXY_GITHUB_REPOSITORY:-KeyserDSoze/LlmProxy}"
 VERSION=""
 KEEP_TEMP=false
+UPGRADE=false
 INSTALL_ARGS=()
 
 usage() {
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --keep-temp)
       KEEP_TEMP=true
+      shift
+      ;;
+    --upgrade)
+      UPGRADE=true
       shift
       ;;
     -h|--help)
@@ -216,17 +221,53 @@ BUNDLE_DIR="$TMP_DIR/llmproxy-$VERSION"
 if [[ ! -x "$BUNDLE_DIR/distribution/install.sh" ]]; then
   chmod +x "$BUNDLE_DIR/distribution/install.sh" 2>/dev/null || true
 fi
+[[ -f "$BUNDLE_DIR/distribution/update.sh" ]] && chmod +x "$BUNDLE_DIR/distribution/update.sh" 2>/dev/null || true
+
+INSTALL_ENTRY="$BUNDLE_DIR/distribution/install.sh"
+if [[ "$UPGRADE" == true && -f "$BUNDLE_DIR/distribution/update-plan.json" ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    UPDATE_MODE="$(jq -r '.mode // "standard"' "$BUNDLE_DIR/distribution/update-plan.json")"
+  elif command -v python3 >/dev/null 2>&1; then
+    UPDATE_MODE="$(python3 - "$BUNDLE_DIR/distribution/update-plan.json" <<'PYPLAN'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle).get("mode", "standard"))
+PYPLAN
+)"
+  else
+    echo "An update plan is present but neither jq nor python3 is available to validate it." >&2
+    exit 5
+  fi
+
+  case "$UPDATE_MODE" in
+    standard)
+      bootstrap_log "Release update plan: standard installer"
+      ;;
+    custom)
+      INSTALL_ENTRY="$BUNDLE_DIR/distribution/update.sh"
+      [[ -x "$INSTALL_ENTRY" ]] || {
+        echo "Release declares a custom update plan but distribution/update.sh is missing." >&2
+        exit 5
+      }
+      bootstrap_log "Release update plan: bundled custom procedure"
+      ;;
+    *)
+      echo "Unsupported release update-plan mode: $UPDATE_MODE" >&2
+      exit 5
+      ;;
+  esac
+fi
 
 bootstrap_stage "Running privileged LlmProxy installer"
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-  bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
+  bash "$INSTALL_ENTRY" "${INSTALL_ARGS[@]}"
 else
   if ! command -v sudo >/dev/null 2>&1; then
     echo "Root privileges are required to install LlmProxy and sudo is not available." >&2
     echo "Re-run the bootstrap as root." >&2
     exit 4
   fi
-  sudo -E bash "$BUNDLE_DIR/distribution/install.sh" "${INSTALL_ARGS[@]}"
+  sudo -E bash "$INSTALL_ENTRY" "${INSTALL_ARGS[@]}"
 fi
 
 
