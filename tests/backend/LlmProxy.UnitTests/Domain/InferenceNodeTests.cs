@@ -7,7 +7,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Constructor_rejects_non_http_address()
     {
-        Assert.Throws<ArgumentException>(() => new InferenceNode("dgx-01", "not-a-uri"));
+        Assert.Throws<ArgumentException>(() => new InferenceNode("inference-01", "not-a-uri"));
     }
 
     [Fact]
@@ -21,7 +21,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Constructor_accepts_local_ip_address()
     {
-        var node = new InferenceNode("dgx-ip", "http://10.0.0.25:8000/vllm");
+        var node = new InferenceNode("inference-ip", "http://10.0.0.25:8000/vllm");
 
         Assert.Equal("http://10.0.0.25:8000/vllm", node.BaseAddress);
     }
@@ -29,7 +29,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Hardware_metrics_address_is_optional_and_normalized_as_service_root()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
 
         node.SetHardwareMetricsBaseAddress("http://10.0.0.21:9400/dcgm/");
 
@@ -41,7 +41,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Hardware_metrics_address_rejects_non_http_uri()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
 
         Assert.Throws<ArgumentException>(() => node.SetHardwareMetricsBaseAddress("not-a-uri"));
     }
@@ -49,7 +49,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Drain_keeps_node_enabled_but_marks_it_draining()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
 
         node.StartDrain();
 
@@ -60,7 +60,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Disabled_node_cannot_be_drained()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         node.Disable();
 
         Assert.Throws<InvalidOperationException>(() => node.StartDrain());
@@ -69,7 +69,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Node_requires_consecutive_successes_before_becoming_healthy()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         var now = DateTimeOffset.UtcNow;
 
         node.RecordHealthSuccess(now, 12, healthyAfterSuccesses: 2);
@@ -88,7 +88,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Node_degrades_before_becoming_unhealthy_after_repeated_failures()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         var now = DateTimeOffset.UtcNow;
         node.RecordHealthSuccess(now, 10, healthyAfterSuccesses: 1);
 
@@ -109,7 +109,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Unhealthy_node_requires_success_streak_to_recover()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         var now = DateTimeOffset.UtcNow;
         node.RecordHealthFailure(now, 5, "down", unhealthyAfterFailures: 1);
         Assert.Equal(NodeStatus.Unhealthy, node.Status);
@@ -126,7 +126,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Health_result_does_not_override_draining_state()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         node.StartDrain();
 
         node.RecordHealthSuccess(DateTimeOffset.UtcNow, 4);
@@ -139,7 +139,7 @@ public sealed class InferenceNodeTests
     [Fact]
     public void Enabling_disabled_node_resets_health_streaks()
     {
-        var node = new InferenceNode("dgx-01", "http://10.0.0.21:8000");
+        var node = new InferenceNode("inference-01", "http://10.0.0.21:8000");
         node.RecordHealthFailure(DateTimeOffset.UtcNow, 10, "down", unhealthyAfterFailures: 1);
         node.Disable();
 

@@ -15,8 +15,8 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         var secondId = Guid.NewGuid();
         var candidates = new[]
         {
-            Candidate(firstId, "dgx-01", maxConcurrency: 4, weight: 1),
-            Candidate(secondId, "dgx-02", maxConcurrency: 4, weight: 1)
+            Candidate(firstId, "inference-01", maxConcurrency: 4, weight: 1),
+            Candidate(secondId, "inference-02", maxConcurrency: 4, weight: 1)
         };
         var tracker = new StubLoadTracker(new Dictionary<Guid, int>
         {
@@ -37,8 +37,8 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         var highWeightId = Guid.NewGuid();
         var candidates = new[]
         {
-            Candidate(lowWeightId, "dgx-01", maxConcurrency: 4, weight: 1),
-            Candidate(highWeightId, "dgx-02", maxConcurrency: 4, weight: 4)
+            Candidate(lowWeightId, "inference-01", maxConcurrency: 4, weight: 1),
+            Candidate(highWeightId, "inference-02", maxConcurrency: 4, weight: 4)
         };
         var tracker = new StubLoadTracker();
 
@@ -55,8 +55,8 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         var failingId = Guid.NewGuid();
         var candidates = new[]
         {
-            Candidate(stableId, "dgx-stable", maxConcurrency: 4, weight: 1),
-            Candidate(failingId, "dgx-fast-but-failing", maxConcurrency: 4, weight: 4)
+            Candidate(stableId, "inference-stable", maxConcurrency: 4, weight: 1),
+            Candidate(failingId, "inference-fast-but-failing", maxConcurrency: 4, weight: 4)
         };
         var performance = new InMemoryDeploymentPerformanceTracker();
         var now = DateTimeOffset.UtcNow;
@@ -85,8 +85,8 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         var busyNode = Guid.NewGuid();
         var candidates = new[]
         {
-            Candidate(clearId, "dgx-clear", maxConcurrency: 8, weight: 1, nodeId: clearNode),
-            Candidate(busyId, "dgx-busy", maxConcurrency: 8, weight: 3, nodeId: busyNode)
+            Candidate(clearId, "inference-clear", maxConcurrency: 8, weight: 1, nodeId: clearNode),
+            Candidate(busyId, "inference-busy", maxConcurrency: 8, weight: 3, nodeId: busyNode)
         };
         var runtime = new VllmRuntimeMetricsTracker();
         var now = DateTimeOffset.UtcNow;
@@ -127,10 +127,10 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
         var healthy = Guid.NewGuid();
         var candidates = new[]
         {
-            Candidate(unhealthy, "dgx-01", status: NodeStatus.Unhealthy),
-            Candidate(draining, "dgx-02", status: NodeStatus.Draining),
-            Candidate(full, "dgx-03", maxConcurrency: 1),
-            Candidate(healthy, "dgx-04", status: NodeStatus.Healthy)
+            Candidate(unhealthy, "inference-01", status: NodeStatus.Unhealthy),
+            Candidate(draining, "inference-02", status: NodeStatus.Draining),
+            Candidate(full, "inference-03", maxConcurrency: 1),
+            Candidate(healthy, "inference-04", status: NodeStatus.Healthy)
         };
         var tracker = new StubLoadTracker(new Dictionary<Guid, int> { [full] = 1 });
 
@@ -144,7 +144,7 @@ public sealed class WeightedLeastLoadedRouteSelectorTests
     public void Select_returns_null_when_every_candidate_is_unavailable()
     {
         var id = Guid.NewGuid();
-        var candidates = new[] { Candidate(id, "dgx-01", status: NodeStatus.Unhealthy) };
+        var candidates = new[] { Candidate(id, "inference-01", status: NodeStatus.Unhealthy) };
 
         var route = new WeightedLeastLoadedRouteSelector().Select(candidates, new StubLoadTracker());
 

@@ -59,7 +59,7 @@ public sealed class NodeHardwareMetricsCollector(
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "DGX hardware metrics collection iteration failed.");
+            logger.LogError(exception, "Hardware metrics collection iteration failed.");
         }
     }
 
@@ -105,7 +105,7 @@ public sealed class NodeHardwareMetricsCollector(
             tracker.RecordFailure(node.Id, exception.Message, attemptedAtUtc);
             logger.LogDebug(
                 exception,
-                "DGX hardware metrics unavailable for node {NodeName} at {MetricsUri}.",
+                "Hardware metrics unavailable for node {NodeName} at {MetricsUri}.",
                 node.Name,
                 metricsUri);
         }

@@ -53,8 +53,8 @@ public sealed class RoutingServiceTests
         => new(
             deploymentId,
             Guid.NewGuid(),
-            "dgx-test",
-            "http://dgx-test:8000",
+            "inference-test",
+            "http://inference-test:8000",
             Guid.NewGuid(),
             "agic-code-fast",
             "provider-model",
