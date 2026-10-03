@@ -317,8 +317,17 @@ export default function Governance() {
     </div>
 
     <section className="panel">
-      <div className="panelTitle"><h2>Credential → group membership & rotation</h2><span>Rotation is an in-place hard cutover: identity, group, policies and history are preserved.</span></div>
-      <table><thead><tr><th>Credential</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}><td><strong>{credential.name}</strong></td><td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td><td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td><td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td></tr>)}</tbody></table>
+      <div className="panelTitle"><h2>Organization & personal credentials</h2><span>Organization keys are caller-quota exempt by default; admins can opt them in. Personal keys are always governed.</span></div>
+      <table><thead><tr><th>Credential</th><th>Type</th><th>Prefix</th><th>Status</th><th>Usage group</th><th>Caller governance</th><th>Actions</th></tr></thead><tbody>{credentials.map(credential => <tr key={credential.id}>
+        <td><strong>{credential.name}</strong>{credential.ownerPrincipalName && <div className="muted">{credential.ownerPrincipalName}</div>}</td>
+        <td>{credential.kind === 'personal' ? 'Personal' : 'Organization'}</td>
+        <td className="mono">{credential.keyPrefix}</td><td>{credential.enabled ? 'Enabled' : 'Revoked'}</td>
+        <td><select aria-label={`Usage group for ${credential.name}`} value={credential.usageGroupId ?? ''} onChange={event => void changeCredentialGroup(credential.id, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
+        <td>{credential.kind === 'personal'
+          ? <><strong>Always on</strong><div className="muted">User + group + key policies</div></>
+          : <label><input type="checkbox" checked={Boolean(credential.enforceCallerGovernance)} onChange={() => void toggleCredentialGovernance(credential)} /> Treat like governed client</label>}</td>
+        <td className="actions">{credential.enabled && <button aria-label={`Rotate ${credential.name}`} onClick={() => void rotateCredential(credential)}>Rotate</button>}</td>
+      </tr>)}</tbody></table>
       {rotatedCredential && <div className="secretBox" data-testid="rotated-credential-secret"><strong>Copy the rotated key now</strong><p>The previous key is invalid and this secret will not be shown again.</p><code>{rotatedCredential.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(rotatedCredential.secret)}>Copy</button></div>}
     </section>
 
