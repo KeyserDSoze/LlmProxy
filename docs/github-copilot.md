@@ -10,7 +10,7 @@ Developer
   -> https://<company-ai-domain>/v1
   -> LlmProxy
   -> logical model
-  -> selected DGX deployment
+  -> selected inference node deployment
   -> vLLM
 ```
 
@@ -44,7 +44,7 @@ The first integration gate validates:
 
 LlmProxy authenticates Copilot requests with the API credential supplied by the provider configuration. A central shared credential therefore identifies the **Copilot provider/workload**, not necessarily the individual GitHub user.
 
-For individual GitHub-user adoption and usage, use GitHub Copilot administration/usage metrics. LlmProxy separately records infrastructure-level request telemetry associated with the API credential, logical model, DGX deployment and request timing.
+For individual GitHub-user adoption and usage, use GitHub Copilot administration/usage metrics. LlmProxy separately records infrastructure-level request telemetry associated with the API credential, logical model, inference node deployment and request timing.
 
 If real-time per-user inference attribution is required inside LlmProxy, issue distinct provider credentials at a scope where the client configuration can select them and map those credentials to the desired person/team. Do not assume GitHub forwards an end-user login to an arbitrary OpenAI-compatible provider unless the specific integration contract documents it.
 
