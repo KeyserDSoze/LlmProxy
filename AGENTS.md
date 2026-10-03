@@ -27,7 +27,7 @@ running code + migrations + tests + successful CI/integration evidence
 
 ## Product goal
 
-LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
+LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six GPU inference hardware nodes running vLLM.
 
 Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and metadata-only enterprise observability.
 
@@ -45,7 +45,7 @@ Raw prompts, source code, generated outputs, response bodies, bearer tokens and 
 - Redis is shared runtime L2/coordination when enabled; local RAM remains request-path configuration L1.
 - Preserve SSE streaming/cancellation end-to-end.
 - Never fail over after downstream bytes/tokens have started.
-- Public model names are logical aliases; provider/DGX identifiers stay internal.
+- Public model names are logical aliases; provider/inference node identifiers stay internal.
 - Capacity claims require benchmark evidence.
 - GPU/DCGM telemetry is observational unless benchmarks justify scheduling use.
 - Every meaningful increment updates focused docs, project status, development log and roadmap where status changes.
@@ -191,12 +191,12 @@ Canonical repository-checkout first-install entry point:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://<dgx>:8000 \
+  --node-url http://<inference-node>:8000 \
   --provider-model '<provider-model-id>' \
   --image-tag sha-df3ecf7
 ```
 
-The installer supports Docker official repository paths for Debian, Ubuntu, Fedora, CentOS and RHEL plus controlled package-manager fallbacks; preserves working existing Docker/Compose and an existing protected `/opt/llmproxy/.env`; generates initial secrets without printing them; optionally logs into GHCR; checks DGX `/health` + `/v1/models`; and invokes the canonical `docker/scripts/deploy.sh`.
+The installer supports Docker official repository paths for Debian, Ubuntu, Fedora, CentOS and RHEL plus controlled package-manager fallbacks; preserves working existing Docker/Compose and an existing protected `/opt/llmproxy/.env`; generates initial secrets without printing them; optionally logs into GHCR; checks inference node `/health` + `/v1/models`; and invokes the canonical `docker/scripts/deploy.sh`.
 
 Production host contract:
 
@@ -233,11 +233,11 @@ Repository-supported Actions path:
 
 The workflow runs on the production self-hosted labels `self-hosted, linux, x64, llmproxy-prod`, accepts no API-key dispatch inputs, reads the host-owned `/opt/llmproxy/.env`, requires non-interactive sudo, uploads only `summary.md` and `checks.tsv` with 14-day retention, rejects unexpected files and removes runner-local evidence after the run.
 
-The harness validates host Docker/Compose, direct VM->DGX/vLLM and gateway `/v1/models`, Chat, Responses and SSE surfaces. Canonical vLLM `/health` is status-only: HTTP 200 with an empty body is valid and must not be rejected for lacking JSON.
+The harness validates host Docker/Compose, direct VM->inference node/vLLM and gateway `/v1/models`, Chat, Responses and SSE surfaces. Canonical vLLM `/health` is status-only: HTTP 200 with an empty body is valid and must not be rejected for lacking JSON.
 
 Evidence is metadata-only. Never add prompts, source, generated output, response bodies or credentials to acceptance evidence.
 
-Repository CI validates the harness against mocks and the workflow repository path. The first real self-hosted-runner run on the target VM/DGX remains **EXTERNAL** and is the next acceptance milestone.
+Repository CI validates the harness against mocks and the workflow repository path. The first real self-hosted-runner run on the target VM/inference node remains **EXTERNAL** and is the next acceptance milestone.
 
 ## Release/build/supply-chain contract
 
@@ -253,8 +253,8 @@ Automatic immutable distribution is now the release contract. Every successful `
 
 1. obtain green CI + Full Stack for the `0.2.0-preview.8` source, validate the multi-architecture/tagged GitHub Release path, then install it on the actual ARM64 GB10 target;
 2. if candidate validation fails, continue using immutable `sha-df3ecf7` as the runtime baseline;
-3. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM;
-4. calibrate real DGX capacity with intended models and representative Copilot load;
+3. install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + inference node/vLLM;
+4. calibrate real inference node capacity with intended models and representative Copilot load;
 5. validate real Entra roles, personal-key self-service + aggregate user request quotas, Cloudflare/public hostname and GitHub Copilot BYOK end-to-end;
 6. define customer-specific PostgreSQL/Redis/observability HA/storage and backup destination/retention/encryption;
 7. evolve quota semantics only with explicit tokenizer/pricing requirements;
@@ -265,9 +265,9 @@ Do not invent per-user identity from a shared GitHub Copilot BYOK credential or 
 ## External validation still required
 
 - installer/package behavior on the actual target Linux distribution/version;
-- first real environment-acceptance run on the production VM/DGX;
-- real DGX Spark + intended vLLM/model benchmark sweeps;
-- representative multi-DGX coding load;
+- first real environment-acceptance run on the production VM/inference node;
+- real GPU inference hardware + intended vLLM/model benchmark sweeps;
+- representative multi-node coding load;
 - real Entra app/roles;
 - real Cloudflare Tunnel/public domain;
 - real GitHub Copilot BYOK end-to-end;
@@ -289,7 +289,7 @@ docs/project-status.md              canonical state and exact resume point
 docs/development-log.md             chronological engineering + validation trace
 docs/roadmap.md                     milestone state/backlog
 docs/linux-production-deployment.md zero-to-running Linux production runbook
-docs/environment-acceptance.md      target-host/DGX/gateway acceptance contract
+docs/environment-acceptance.md      target-host/inference node/gateway acceptance contract
 docs/deployment.md                  deployment contract/automation summary
 docs/versioning.md                  SemVer/release/build/supply-chain rules
 docs/operations.md                  health, acceptance, maintenance and release operations
@@ -301,7 +301,7 @@ docs/full-stack.md                  Redis + observability bundle
 docs/capacity-control.md            physical admission + capacity leases
 docs/benchmarking.md                benchmark protocol
 docs/routing.md                     routing and tuning
-docs/hardware-telemetry.md          DGX/DCGM boundary
+docs/hardware-telemetry.md          inference node/DCGM boundary
 docs/github-copilot.md              Copilot/BYOK limitations and external validation
 ```
 
