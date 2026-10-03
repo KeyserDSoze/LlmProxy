@@ -63,13 +63,15 @@ export default function Governance() {
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextGroups, nextCredentials, nextRateLimits, nextUsers, nextUserRateLimits, nextUsage, nextModels] = await Promise.all([
+      const [nextGroups, nextCredentials, nextRateLimits, nextUsers, nextUserRateLimits, nextGroupRateLimits, nextUsage, nextUserUsage, nextModels] = await Promise.all([
         api.usageGroups(),
         api.governanceCredentials(),
         api.rateLimits(),
-        api.identityUsers(),
+        api.platformUsers(),
         api.userRateLimits(),
+        api.groupRateLimits(),
         api.usageSummary(days),
+        api.usageUsers(days),
         api.models()
       ])
       setGroups(nextGroups)
@@ -77,10 +79,13 @@ export default function Governance() {
       setRateLimits(nextRateLimits)
       setUsers(nextUsers)
       setUserRateLimits(nextUserRateLimits)
+      setGroupRateLimits(nextGroupRateLimits)
       setUsage(nextUsage)
+      setUserUsage(nextUserUsage)
       setModels(nextModels)
       setRateCredentialId(current => current || nextCredentials[0]?.id || '')
       setRateUserKey(current => current || (nextUsers[0] ? `${nextUsers[0].tenantId}|${nextUsers[0].objectId}` : ''))
+      setGroupPolicyGroupId(current => current || nextGroups[0]?.id || '')
       setBudgetPolicyId(current => current && nextRateLimits.some(policy => policy.id === current) ? current : nextRateLimits[0]?.id || '')
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
