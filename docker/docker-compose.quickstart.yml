@@ -26,6 +26,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-llmproxy};Username=${POSTGRES_USER:-llmproxy};Password=${POSTGRES_PASSWORD}
       Authentication__ApiKey: ${LLM_PROXY_API_KEY:?Set LLM_PROXY_API_KEY in .env}
+      Security__UpstreamCredentialEncryptionKey: ${LLMPROXY_UPSTREAM_CREDENTIAL_KEY:-}
       Authentication__ApiKeyPepper: ${LLM_PROXY_API_KEY_PEPPER:?Set LLM_PROXY_API_KEY_PEPPER in .env}
       Routing__Strategy: ${ROUTING_STRATEGY:-WeightedLeastLoaded}
       Health__IntervalSeconds: ${HEALTH_INTERVAL_SECONDS:-10}
