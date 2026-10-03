@@ -10,6 +10,13 @@ LlmProxy exposes runtime routing configuration that is persisted in PostgreSQL a
 
 Effective weight is `node weight × deployment weight`. Every selector excludes disabled, draining, unhealthy and saturated deployments.
 
+### Model-scoped candidate pools
+
+Routing is always scoped to the **requested logical model before a strategy is evaluated**. LlmProxy resolves that model and builds the candidate pool only from enabled deployments that publish it. Inference nodes that do not host the requested model are never considered for that request.
+
+This means pools can overlap without becoming global. For example, if `model-1` is deployed on nodes A and B, requests for `model-1` route only across A/B. If `model-2` is deployed on B, C, D and E, requests for `model-2` route only across B/C/D/E. Node B may participate in both pools because it hosts both models. Hardware vendor or form factor does not affect pool membership; the deployment graph does.
+
+
 ## Performance-aware least-loaded routing
 
 `WeightedLeastLoaded` keeps its decision signals in memory; PostgreSQL is not queried on the inference hot path. Its score combines configured capacity/load with operational penalties.
