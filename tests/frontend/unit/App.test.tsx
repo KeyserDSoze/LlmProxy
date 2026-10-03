@@ -42,7 +42,13 @@ const mockedApi = vi.hoisted(() => ({
   contentLog: vi.fn(),
   contentLogSettings: vi.fn(),
   updateContentLogSettings: vi.fn(),
-  runContentLogRetention: vi.fn()
+  runContentLogRetention: vi.fn(),
+  platformUsers: vi.fn(),
+  platformUserAccessSettings: vi.fn(),
+  updatePlatformUserAccessSettings: vi.fn(),
+  createPlatformUser: vi.fn(),
+  disablePlatformUser: vi.fn(),
+  enablePlatformUser: vi.fn()
 }))
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
@@ -108,6 +114,9 @@ describe('admin application', () => {
     mockedApi.testSystemOne.mockResolvedValue({ requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 10, requestBody: '{}', responseBody: '{"billing":true}' })
     mockedApi.contentLogs.mockResolvedValue([{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
     mockedApi.contentLogSettings.mockResolvedValue({ retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    mockedApi.platformUserAccessSettings.mockResolvedValue({ provisioningMode: 'manual', updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
+    mockedApi.platformUsers.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 1, activeCredentialCount: 1, lastCredentialUsedAtUtc: null, requestCount30d: 12, errorCount30d: 1 }])
+    mockedApi.updatePlatformUserAccessSettings.mockResolvedValue({ provisioningMode: 'automatic', updatedAtUtc: '2026-10-03T06:10:00Z', configuredTenantId: 'tenant-1' })
     mockedApi.metrics.mockResolvedValue([{
       id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
       deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
@@ -203,6 +212,17 @@ describe('admin application', () => {
     expect(await screen.findByRole('heading', { name: 'Live request / response log' })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions')).toBeInTheDocument()
     expect(screen.getByText(/10–180 days/)).toBeInTheDocument()
+  })
+
+  it('manages end-user provisioning and access', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
+    await user.click(screen.getByRole('button', { name: 'Users & Access' }))
+    expect(await screen.findByRole('heading', { name: 'User provisioning policy' })).toBeInTheDocument()
+    expect(screen.getByText('Example User')).toBeInTheDocument()
+    expect(screen.getByText(/12/)).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Provisioning mode'), 'automatic')
+    await user.click(screen.getByRole('button', { name: 'Save provisioning mode' }))
+    expect(mockedApi.updatePlatformUserAccessSettings).toHaveBeenCalledWith('automatic')
   })
 
   it('shows the administrative audit trail', async () => {
