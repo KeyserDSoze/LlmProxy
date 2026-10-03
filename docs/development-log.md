@@ -80,15 +80,15 @@ Real Entra tenant acceptance remains external: create/assign Admin/User/Reader a
 
 Chronological engineering trace for LlmProxy. Canonical current state and resume point live in `docs/project-status.md`; product-visible release history lives in `CHANGELOG.md` and `/admin/releases`.
 
-## 2026-09-09 — Repository, gateway and multi-DGX foundation
+## 2026-09-09 — Repository, gateway and multi-node foundation
 
-Created the .NET 10 layered solution, React/TypeScript Admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical models, DGX nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility. Added bearer credentials, Entra administration plumbing, health hysteresis, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM signals.
+Created the .NET 10 layered solution, React/TypeScript Admin, PostgreSQL persistence, Docker/GitHub Actions foundations, logical models, inference nodes/deployments, `/v1/models`, Chat Completions + SSE and Responses compatibility. Added bearer credentials, Entra administration plumbing, health hysteresis, audit, routing strategies, pre-response-only failover, metadata-only request metrics and vLLM signals.
 
 ## 2026-09-09 — Repository-first handover discipline
 
 Introduced root `AGENTS.md` and the rule that meaningful increments update focused docs, project status, development log and roadmap with actual validation evidence.
 
-## 2026-09-10 — DGX/DCGM telemetry + benchmark harness — VALIDATED
+## 2026-09-10 — inference node/DCGM telemetry + benchmark harness — VALIDATED
 
 ```text
 telemetry checkpoint 6c238a095273843e713a72fb2e26b2c7c434fc62
@@ -256,12 +256,12 @@ Implemented `docker/scripts/environment-acceptance.sh` as the executable bridge 
 The harness:
 
 - records Linux distro/kernel/architecture plus Docker Engine and Compose v2 availability;
-- probes direct VM -> DGX/vLLM `/health`, `/v1/models`, Chat and Responses, streaming and non-streaming;
+- probes direct VM -> inference node/vLLM `/health`, `/v1/models`, Chat and Responses, streaming and non-streaming;
 - probes LlmProxy `/healthz`, `/readyz`, `/v1/models`, Chat and Responses, streaming and non-streaming;
 - requires exact provider-model visibility directly and logical public-model visibility through the gateway;
 - records status/content-type/TTFB/total-time metadata only;
 - keeps synthetic requests and response bodies temporary;
-- rejects evidence containing gateway/DGX bearer values;
+- rejects evidence containing gateway/inference node bearer values;
 - writes only `summary.md` + `checks.tsv`.
 
 During current-vLLM compatibility review, canonical `/health` behavior was verified to permit an empty/bodyless HTTP 200 response. The initial harness incorrectly expected JSON and would have false-failed a standard healthy vLLM server. The implementation and CI mock were corrected to validate status only and explicitly exercise bodyless health.
@@ -311,9 +311,9 @@ changed paths           .github/workflows/environment-acceptance.yml
                         docs/environment-acceptance.md
 ```
 
-CI `35110131158` revalidated backend, frontend/Playwright and the full Docker/PostgreSQL suite: Linux production deployment rendering, environment-acceptance smoke, image identity, backend integration, DGX telemetry, capacity/backpressure, governance, PostgreSQL-outage routing, retention and Bash/PowerShell restore.
+CI `35110131158` revalidated backend, frontend/Playwright and the full Docker/PostgreSQL suite: Linux production deployment rendering, environment-acceptance smoke, image identity, backend integration, inference node telemetry, capacity/backpressure, governance, PostgreSQL-outage routing, retention and Bash/PowerShell restore.
 
-This workflow commit is an operator/repository checkpoint, not a replacement for the validated runtime image `sha-723c47d`. The first actual run against the target VM + DGX/vLLM remains external.
+This workflow commit is an operator/repository checkpoint, not a replacement for the validated runtime image `sha-723c47d`. The first actual run against the target VM + inference node/vLLM remains external.
 
 ## Historical next increment after preview.5
 
@@ -321,7 +321,7 @@ Repository hardening, Linux bootstrap and executable acceptance automation are c
 
 1. install the then-current immutable runtime image on the target Linux host;
 2. install/validate the `llmproxy-prod` self-hosted runner;
-3. run `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence;
+3. run `.github/workflows/environment-acceptance.yml` against the real VM + inference node/vLLM and retain the metadata evidence;
 4. benchmark intended models and apply evidence-backed Capacity Profiles;
 5. validate real Entra/Cloudflare/GitHub Copilot BYOK;
 6. finalize customer-specific HA/storage/backup topology.
@@ -365,7 +365,7 @@ Closed the two blockers for a protected llama.cpp/vLLM runtime on the same GB10 
 - keep the stable encryption master key outside PostgreSQL as `LLMPROXY_UPSTREAM_CREDENTIAL_KEY`;
 - apply the node credential to health, model discovery, vLLM metrics, maintenance warm-up and inference while never forwarding the client-facing LlmProxy API key;
 - added Admin API/UI set/rotate/clear flows that expose only credential presence;
-- added optional one-time `DGX_UPSTREAM_BEARER_TOKEN` bootstrap and remove it from the long-lived container environment after encrypted bootstrap;
+- added optional one-time `INFERENCE_NODE_UPSTREAM_BEARER_TOKEN` bootstrap and remove it from the long-lived container environment after encrypted bootstrap;
 - changed same-host Linux preflight to resolve Docker's bridge gateway for `host.docker.internal`, so a llama-server still bound only to loopback fails with an actionable bind-address message;
 - added a focused protected-upstream integration smoke;
 - made upgrades from earlier installs generate the new stable upstream-credential encryption key when absent;
@@ -379,8 +379,8 @@ The inference runtime/model weights remain externally managed; the gateway now o
 Release-candidate review found and fixed two operator-path issues before publication:
 
 - `llmproxyctl` used a misspelled `INSTAL_DIR` variable for the `current` symlink; CI now executes `config-path` rather than relying only on `bash -n`, catching unbound-variable startup failures.
-- protected upstream bearers are write-only after first bootstrap, so release updates cannot repeat a plaintext-authenticated direct provider precheck. First install still performs that check; `llmproxyctl update` skips only the direct DGX check and relies on the persisted encrypted node credential plus post-deploy gateway readiness.
-- the release bootstrap help no longer recommends `--skip-dgx-check` for the same-host GB10 first-install path and documents the one-time `DGX_UPSTREAM_BEARER_TOKEN` input.
+- protected upstream bearers are write-only after first bootstrap, so release updates cannot repeat a plaintext-authenticated direct provider precheck. First install still performs that check; `llmproxyctl update` skips only the direct inference node check and relies on the persisted encrypted node credential plus post-deploy gateway readiness.
+- the release bootstrap help no longer recommends `--skip-node-check` for the same-host GB10 first-install path and documents the one-time `INFERENCE_NODE_UPSTREAM_BEARER_TOKEN` input.
 
 
 ## 2026-09-30 — Root-safe release bootstrap
