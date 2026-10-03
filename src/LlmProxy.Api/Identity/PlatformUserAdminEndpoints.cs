@@ -185,12 +185,19 @@ public static class PlatformUserAdminEndpoints
                 });
             }
 
+            if (request.UsageGroupId is Guid requestedGroupId &&
+                !await dbContext.UsageGroups.AnyAsync(item => item.Id == requestedGroupId, cancellationToken))
+            {
+                return Results.BadRequest(new { error = "UsageGroupId must reference an existing usage group." });
+            }
+
             var user = new PlatformUserRecord
             {
                 TenantId = tenantId,
                 ObjectId = objectId,
                 PrincipalName = Clean(request.PrincipalName),
                 DisplayName = Clean(request.DisplayName),
+                UsageGroupId = request.UsageGroupId,
                 Enabled = request.Enabled ?? true,
                 ProvisioningSource = "admin",
                 CreatedAtUtc = DateTimeOffset.UtcNow,
@@ -327,5 +334,6 @@ public static class PlatformUserAdminEndpoints
         string? TenantId = null,
         string? PrincipalName = null,
         string? DisplayName = null,
-        bool? Enabled = true);
+        bool? Enabled = true,
+        Guid? UsageGroupId = null);
 }
