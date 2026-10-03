@@ -173,55 +173,120 @@ public sealed class InMemoryOutputTokenBudgetStore : IOutputTokenBudgetStore
 
 public sealed class OutputTokenBudgetLimiter(IOutputTokenBudgetStore store)
 {
-    public async ValueTask<OutputTokenBudgetStoreDecision> TryReserveAsync(
+    public ValueTask<OutputTokenBudgetStoreDecision> TryReserveAsync(
         RateLimitPolicySnapshot? policy,
         int reservationTokens,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        if (policy?.OutputTokensPerWindow is not int budget ||
-            policy.MaxOutputTokensPerRequest is not int maxPerRequest)
+        if (policy is null)
         {
-            throw new InvalidOperationException("Output-token reservation requires a policy with a complete output-token budget configuration.");
+            throw new InvalidOperationException("Output-token reservation requires a policy.");
         }
 
-        if (reservationTokens is < 1 || reservationTokens > maxPerRequest)
+        return TryReserveAsync([policy], reservationTokens, nowUtc, cancellationToken);
+    }
+
+    public async ValueTask<OutputTokenBudgetStoreDecision> TryReserveAsync(
+        IReadOnlyList<RateLimitPolicySnapshot> policies,
+        int reservationTokens,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (policies.Count == 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(reservationTokens));
+            throw new InvalidOperationException("Output-token reservation requires at least one policy.");
         }
 
-        using var activity = LlmProxyActivity.Start("llmproxy.governance.output_token_budget");
-        LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.policy_id", policy.Id);
-        activity?.SetTag("llmproxy.output_token_budget.tokens_per_window", budget);
-        activity?.SetTag("llmproxy.output_token_budget.max_per_request", maxPerRequest);
-        activity?.SetTag("llmproxy.output_token_budget.reservation", reservationTokens);
-        activity?.SetTag("llmproxy.output_token_budget.window_seconds", policy.WindowSeconds);
+        var reservations = new List<IOutputTokenBudgetReservation>(policies.Count);
+        OutputTokenBudgetStoreDecision? lastDecision = null;
 
-        var decision = await store.TryReserveAsync(
-            policy.Id,
-            budget,
-            policy.WindowSeconds,
-            reservationTokens,
-            nowUtc,
-            cancellationToken);
-
-        activity?.SetTag("llmproxy.output_token_budget.provider", decision.Provider);
-        activity?.SetTag("llmproxy.output_token_budget.window_usage", decision.WindowUsage);
-        activity?.SetTag("llmproxy.output_token_budget.result", decision.Failure switch
+        foreach (var policy in policies.OrderBy(item => item.Id))
         {
-            OutputTokenBudgetAdmissionFailure.None => "allowed",
-            OutputTokenBudgetAdmissionFailure.BudgetExceeded => "rejected",
-            OutputTokenBudgetAdmissionFailure.CoordinationUnavailable => "coordination_unavailable",
-            _ => "unknown"
-        });
+            if (policy.OutputTokensPerWindow is not int budget ||
+                policy.MaxOutputTokensPerRequest is not int maxPerRequest)
+            {
+                throw new InvalidOperationException("Output-token reservation requires complete budget configuration on every applicable policy.");
+            }
 
-        if (!decision.Acquired)
-        {
-            LlmProxyActivity.MarkError(activity, decision.Failure == OutputTokenBudgetAdmissionFailure.BudgetExceeded
-                ? "token_budget_exceeded"
-                : "token_budget_coordination_unavailable");
+            if (reservationTokens is < 1 || reservationTokens > maxPerRequest)
+            {
+                throw new ArgumentOutOfRangeException(nameof(reservationTokens));
+            }
+
+            using var activity = LlmProxyActivity.Start("llmproxy.governance.output_token_budget");
+            LlmProxyActivity.SetGuid(activity, "llmproxy.rate_limit.policy_id", policy.Id);
+            activity?.SetTag("llmproxy.output_token_budget.scope",
+                policy.IsUserScoped ? "user" : policy.IsUsageGroupScoped ? "usage_group" : "credential");
+            activity?.SetTag("llmproxy.output_token_budget.tokens_per_window", budget);
+            activity?.SetTag("llmproxy.output_token_budget.max_per_request", maxPerRequest);
+            activity?.SetTag("llmproxy.output_token_budget.reservation", reservationTokens);
+            activity?.SetTag("llmproxy.output_token_budget.window_seconds", policy.WindowSeconds);
+
+            var decision = await store.TryReserveAsync(
+                policy.Id,
+                budget,
+                policy.WindowSeconds,
+                reservationTokens,
+                nowUtc,
+                cancellationToken);
+            lastDecision = decision;
+
+            activity?.SetTag("llmproxy.output_token_budget.provider", decision.Provider);
+            activity?.SetTag("llmproxy.output_token_budget.window_usage", decision.WindowUsage);
+            activity?.SetTag("llmproxy.output_token_budget.result", decision.Failure switch
+            {
+                OutputTokenBudgetAdmissionFailure.None => "allowed",
+                OutputTokenBudgetAdmissionFailure.BudgetExceeded => "rejected",
+                OutputTokenBudgetAdmissionFailure.CoordinationUnavailable => "coordination_unavailable",
+                _ => "unknown"
+            });
+
+            if (!decision.Acquired || decision.Reservation is null)
+            {
+                LlmProxyActivity.MarkError(activity, decision.Failure == OutputTokenBudgetAdmissionFailure.BudgetExceeded
+                    ? "token_budget_exceeded"
+                    : "token_budget_coordination_unavailable");
+
+                foreach (var acquired in reservations)
+                {
+                    await acquired.SettleAsync(0, usageCertain: true, CancellationToken.None);
+                }
+
+                return decision;
+            }
+
+            reservations.Add(decision.Reservation);
         }
 
-        return decision;
+        return OutputTokenBudgetStoreDecision.Permit(
+            lastDecision?.WindowUsage ?? 0,
+            lastDecision?.Provider ?? "local",
+            new CompositeReservation(reservations, reservationTokens));
+    }
+
+    private sealed class CompositeReservation(
+        IReadOnlyList<IOutputTokenBudgetReservation> reservations,
+        int reservedTokens) : IOutputTokenBudgetReservation
+    {
+        private int _settled;
+
+        public int ReservedTokens { get; } = reservedTokens;
+
+        public async ValueTask SettleAsync(
+            int? actualOutputTokens,
+            bool usageCertain,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _settled, 1) != 0)
+            {
+                return;
+            }
+
+            foreach (var reservation in reservations)
+            {
+                await reservation.SettleAsync(actualOutputTokens, usageCertain, cancellationToken);
+            }
+        }
     }
 }
