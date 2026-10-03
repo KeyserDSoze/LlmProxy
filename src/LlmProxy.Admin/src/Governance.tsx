@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { CreatedApiCredential, GovernanceCredential, IdentityUserSummary, Model, RateLimitPolicy, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
+import type { CreatedApiCredential, GovernanceCredential, Model, PlatformUser, RateLimitPolicy, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 const emptyUsage: UsageReport = {
   windowDays: 30,
@@ -28,8 +28,10 @@ export default function Governance() {
   const [groups, setGroups] = useState<UsageGroup[]>([])
   const [credentials, setCredentials] = useState<GovernanceCredential[]>([])
   const [rateLimits, setRateLimits] = useState<RateLimitPolicy[]>([])
-  const [users, setUsers] = useState<IdentityUserSummary[]>([])
+  const [users, setUsers] = useState<PlatformUser[]>([])
   const [userRateLimits, setUserRateLimits] = useState<UserRateLimitPolicy[]>([])
+  const [groupRateLimits, setGroupRateLimits] = useState<UsageGroupRateLimitPolicy[]>([])
+  const [userUsage, setUserUsage] = useState<UserUsageSummary[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [usage, setUsage] = useState<UsageReport>(emptyUsage)
   const [groupName, setGroupName] = useState('')
@@ -42,6 +44,14 @@ export default function Governance() {
   const [userRateModel, setUserRateModel] = useState('')
   const [userRequestsPerWindow, setUserRequestsPerWindow] = useState(300)
   const [userWindowSeconds, setUserWindowSeconds] = useState(60)
+  const [userOutputTokensPerWindow, setUserOutputTokensPerWindow] = useState(100000)
+  const [userMaxOutputTokensPerRequest, setUserMaxOutputTokensPerRequest] = useState(4096)
+  const [groupPolicyGroupId, setGroupPolicyGroupId] = useState('')
+  const [groupRateModel, setGroupRateModel] = useState('')
+  const [groupRequestsPerWindow, setGroupRequestsPerWindow] = useState(1000)
+  const [groupWindowSeconds, setGroupWindowSeconds] = useState(60)
+  const [groupOutputTokensPerWindow, setGroupOutputTokensPerWindow] = useState(500000)
+  const [groupMaxOutputTokensPerRequest, setGroupMaxOutputTokensPerRequest] = useState(4096)
   const [budgetPolicyId, setBudgetPolicyId] = useState('')
   const [outputTokensPerWindow, setOutputTokensPerWindow] = useState(100000)
   const [maxOutputTokensPerRequest, setMaxOutputTokensPerRequest] = useState(4096)
