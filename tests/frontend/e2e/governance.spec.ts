@@ -111,7 +111,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   await credentialLimitDialog.getByLabel('Window seconds').fill('60')
   await credentialLimitDialog.getByRole('button', { name: 'Add rate limit' }).click()
   await expect(page.getByText('Credential quota created and applied live.')).toBeVisible()
-  const credentialQuotaSection = page.getByRole('heading', { name: 'Credential quotas' }).locator('..').locator('..')
+  const credentialQuotaSection = page.getByRole('heading', { name: 'Credential quotas' }).locator('..').locator('..').locator('..')
   await expect(credentialQuotaSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('2 / 60s')
   await expect(credentialQuotaSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('100,000')
 
@@ -121,6 +121,6 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   await userLimitDialog.getByLabel('Window seconds').fill('60')
   await userLimitDialog.getByRole('button', { name: 'Add user quota' }).click()
   await expect(page.getByText('User quota created and applied live.')).toBeVisible()
-  const userLimitSection = page.getByRole('heading', { name: 'User quotas' }).locator('..').locator('..')
+  const userLimitSection = page.getByRole('heading', { name: 'User quotas' }).locator('..').locator('..').locator('..')
   await expect(userLimitSection.getByRole('row', { name: /user@example.com/ })).toContainText('5 / 60s')
 })
