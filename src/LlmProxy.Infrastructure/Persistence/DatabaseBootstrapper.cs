@@ -49,7 +49,7 @@ public sealed class DatabaseBootstrapper(
         if (configuration.GetValue("Bootstrap:Enabled", true) && !await dbContext.Nodes.AnyAsync(cancellationToken))
         {
             var node = new InferenceNode(
-                configuration["Bootstrap:NodeName"] ?? "dgx-01",
+                configuration["Bootstrap:NodeName"] ?? "inference-01",
                 configuration["Bootstrap:NodeBaseAddress"] ?? "http://localhost:8000",
                 configuration.GetValue("Bootstrap:NodeWeight", 1),
                 configuration.GetValue("Bootstrap:NodeMaxConcurrency", 4));
