@@ -20,6 +20,11 @@ public static class GovernanceCredentialEndpoints
                     item.KeyPrefix,
                     item.Enabled,
                     item.UsageGroupId,
+                    item.EnforceCallerGovernance,
+                    kind = item.IsPersonal ? "personal" : "organization",
+                    item.OwnerTenantId,
+                    item.OwnerObjectId,
+                    item.OwnerPrincipalName,
                     item.CreatedAtUtc,
                     item.ExpiresAtUtc,
                     item.LastUsedAtUtc
