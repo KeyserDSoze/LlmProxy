@@ -223,6 +223,7 @@ app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);
 app.MapPlatformUserAdminEndpoints(entraEnabled);
+app.MapPlatformUserGroupEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
