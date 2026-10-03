@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using LlmProxy.Api.Security;
+using LlmProxy.Api.SystemOne;
 using LlmProxy.Application.Abstractions;
 
 namespace LlmProxy.Api.Observability;
@@ -64,7 +65,9 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
                 SurfaceFor(context.Request.Path),
                 context.Request.Method,
                 context.Request.Path.Value ?? string.Empty,
-                TryReadLogicalModel(requestBody),
+                context.Items.TryGetValue(SystemOneEndpoints.LogicalModelItem, out var logicalModelValue)
+                    ? logicalModelValue as string
+                    : TryReadLogicalModel(requestBody),
                 apiCredentialId,
                 context.Response.StatusCode,
                 context.Request.ContentType,

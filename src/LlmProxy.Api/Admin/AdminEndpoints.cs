@@ -318,14 +318,15 @@ public static class AdminEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var model = new ModelDefinition(request.PublicName, request.ProviderModelName, request.SupportsStreaming, request.SupportsTools);
+            var model = new ModelDefinition(request.PublicName, request.ProviderModelName, request.SupportsStreaming, request.SupportsTools, request.Surface);
             dbContext.Models.Add(model);
             AddAudit(dbContext, httpContext, "model.create", "model", model.Id.ToString(), new
             {
                 model.PublicName,
                 model.ProviderModelName,
                 model.SupportsStreaming,
-                model.SupportsTools
+                model.SupportsTools,
+                model.Surface
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Created($"/api/admin/models/{model.Id}", model);
@@ -627,7 +628,7 @@ public static class AdminEndpoints
     public sealed record SetNodeUpstreamCredentialRequest(string BearerToken);
     public sealed record UpdateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
     public sealed record UpdateRoutingRequest(RoutingStrategy Strategy);
-    public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true);
+    public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true, ModelSurface Surface = ModelSurface.OpenAi);
     public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null, string? RuntimeBaseAddress = null);
     public sealed record UpdateDeploymentRequest(int Weight = 1, int? MaxConcurrency = null, bool Enabled = true);
     public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null);

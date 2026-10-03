@@ -131,6 +131,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<string>("ProviderModelName").IsRequired().HasMaxLength(300).HasColumnType("character varying(300)");
             b.Property<string>("PublicName").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<int>("Surface").HasColumnType("integer");
             b.Property<bool>("SupportsStreaming").HasColumnType("boolean");
             b.Property<bool>("SupportsTools").HasColumnType("boolean");
             b.HasKey("Id");
@@ -304,6 +305,24 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("LogicalModel", "DayUtc");
             b.HasIndex("UsageGroupId", "DayUtc");
             b.ToTable("daily_usage_rollups");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.ProductUpdatePolicyRecord", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<int>("DayOfMonth").HasColumnType("integer");
+            b.Property<int>("DayOfWeek").HasColumnType("integer");
+            b.Property<DateTimeOffset?>("LastCheckedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("LastError").HasMaxLength(1200).HasColumnType("character varying(1200)");
+            b.Property<DateTimeOffset?>("LastScheduledAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("LastScheduledVersion").HasMaxLength(32).HasColumnType("character varying(32)");
+            b.Property<int>("LocalHour").HasColumnType("integer");
+            b.Property<int>("LocalMinute").HasColumnType("integer");
+            b.Property<string>("Mode").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+            b.Property<string>("TimeZoneId").IsRequired().HasMaxLength(128).HasColumnType("character varying(128)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("product_update_policy");
         });
 
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RequestMetricRecord", b =>

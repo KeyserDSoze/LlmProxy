@@ -157,6 +157,10 @@ services:
       SystemOne__BaseAddress: ${SYSTEM_ONE_BASE_ADDRESS:-}
       SystemOne__ApiKey: ${SYSTEM_ONE_API_KEY:-}
       SystemOne__TimeoutSeconds: ${SYSTEM_ONE_TIMEOUT_SECONDS:-30}
+      SystemOne__DefaultModel: ${SYSTEM_ONE_DEFAULT_MODEL:-}
+      SystemOne__ProviderModelName: ${SYSTEM_ONE_PROVIDER_MODEL_NAME:-systemone-classifier}
+      SystemOne__NodeName: ${SYSTEM_ONE_NODE_NAME:-systemone-classifier}
+      SystemOne__MaxConcurrency: ${SYSTEM_ONE_MAX_CONCURRENCY:-8}
 
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
       Bootstrap__NodeName: ${INFERENCE_NODE_NAME:-inference-01}

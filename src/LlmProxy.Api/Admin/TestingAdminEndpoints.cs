@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Security;
 
@@ -23,74 +23,48 @@ public static class TestingAdminEndpoints
             group.RequireAuthorization("AdminWrite");
         }
 
-        group.MapGet("/systemone", (
-            IConfiguration configuration) =>
+        group.MapGet("/systemone", async (
+            IDeploymentCatalog catalog,
+            IConfiguration configuration,
+            CancellationToken cancellationToken) =>
         {
-            var enabled = configuration.GetValue<bool>("SystemOne:Enabled");
-            var baseAddress = configuration["SystemOne:BaseAddress"];
-            var timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300);
-            string? upstreamEndpoint = null;
-            string? configurationError = null;
-
-            if (!string.IsNullOrWhiteSpace(baseAddress))
-            {
-                try
-                {
-                    upstreamEndpoint = InferenceEndpoint.Combine(baseAddress, SystemOnePath).ToString();
-                }
-                catch (ArgumentException exception)
-                {
-                    configurationError = exception.Message;
-                }
-            }
-
+            var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.SystemOne);
             return Results.Ok(new
             {
-                enabled,
-                baseAddress,
-                upstreamEndpoint,
+                enabled = models.Count > 0,
+                baseAddress = (string?)null,
+                upstreamEndpoint = (string?)null,
                 publicEndpoint = SystemOnePath,
-                apiKeyConfigured = !string.IsNullOrWhiteSpace(configuration["SystemOne:ApiKey"]),
-                timeoutSeconds,
-                configurationError
+                apiKeyConfigured = false,
+                timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300),
+                configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
+                models = models.Select(item => item.PublicName).ToArray(),
+                defaultModel = configuration["SystemOne:DefaultModel"] ?? (models.Count == 1 ? models[0].PublicName : null)
             });
         });
 
         group.MapPost("/systemone", async (
             SystemOneTestRequest request,
-            IConfiguration configuration,
+            IDeploymentCatalog catalog,
+            RoutingService routingService,
+            IRequestCapacityGate capacityGate,
             IHttpClientFactory httpClientFactory,
+            UpstreamCredentialProtector upstreamCredentialProtector,
             IInferenceContentLogSink contentLogSink,
+            IConfiguration configuration,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            if (!configuration.GetValue<bool>("SystemOne:Enabled"))
+            var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.SystemOne);
+            var logicalModel = string.IsNullOrWhiteSpace(request.Model) ? configuration["SystemOne:DefaultModel"] : request.Model.Trim();
+            if (string.IsNullOrWhiteSpace(logicalModel) && models.Count == 1) logicalModel = models[0].PublicName;
+            if (string.IsNullOrWhiteSpace(logicalModel) || !models.Any(item => string.Equals(item.PublicName, logicalModel, StringComparison.Ordinal)))
             {
                 return Results.Json(new
                 {
-                    error = "classifier_unavailable",
-                    message = "System One is disabled. Enable SystemOne:Enabled before testing the classifier."
-                }, statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-            var baseAddress = configuration["SystemOne:BaseAddress"];
-            if (string.IsNullOrWhiteSpace(baseAddress))
-            {
-                return Results.Json(new
-                {
-                    error = "classifier_not_configured",
-                    message = "SystemOne:BaseAddress is not configured."
-                }, statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-            Uri destination;
-            try
-            {
-                destination = InferenceEndpoint.Combine(baseAddress, SystemOnePath);
-            }
-            catch (ArgumentException exception)
-            {
-                return Results.BadRequest(new { error = "classifier_address_invalid", message = exception.Message });
+                    error = models.Count == 0 ? "classifier_unavailable" : "systemone_model_required",
+                    message = models.Count == 0 ? "No enabled System One logical model is deployed." : "Select a System One logical model before running the diagnostic."
+                }, statusCode: models.Count == 0 ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status400BadRequest);
             }
 
             var requestId = Guid.NewGuid();
@@ -101,6 +75,22 @@ public static class TestingAdminEndpoints
             var responseBody = string.Empty;
             string? responseContentType = null;
 
+            var selected = await routingService.SelectDetailedAsync(logicalModel, ModelSurface.SystemOne, null, cancellationToken);
+            if (selected.Route is not { } route)
+            {
+                var unavailableStatus = selected.Failure == RoutingSelectionFailure.CapacityExhausted ? StatusCodes.Status429TooManyRequests : StatusCodes.Status503ServiceUnavailable;
+                return Results.Json(new { error = selected.Failure == RoutingSelectionFailure.CapacityExhausted ? "capacity_exhausted" : "no_healthy_deployment", model = logicalModel }, statusCode: unavailableStatus);
+            }
+
+            var admission = await capacityGate.TryAcquireAsync(route.DeploymentId, route.NodeId, route.MaxConcurrency, route.NodeMaxConcurrency, cancellationToken);
+            if (!admission.Acquired || admission.Lease is null)
+            {
+                return Results.Json(new { error = admission.Failure == CapacityAdmissionFailure.CoordinationUnavailable ? "capacity_coordination_unavailable" : "capacity_exhausted", model = logicalModel }, statusCode: admission.Failure == CapacityAdmissionFailure.CoordinationUnavailable ? 503 : 429);
+            }
+
+            await using var lease = admission.Lease;
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lease.CoordinationLost);
+            var destination = InferenceEndpoint.Combine(route.BaseAddress, SystemOnePath);
             try
             {
                 using var outbound = new HttpRequestMessage(HttpMethod.Post, destination)
@@ -108,21 +98,12 @@ public static class TestingAdminEndpoints
                     Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
                 };
                 outbound.Headers.TryAddWithoutValidation("X-LlmProxy-Request-Id", requestId.ToString());
+                upstreamCredentialProtector.ApplyBearer(outbound, route.UpstreamBearerTokenCiphertext);
 
-                var upstreamApiKey = configuration["SystemOne:ApiKey"];
-                if (!string.IsNullOrWhiteSpace(upstreamApiKey))
-                {
-                    outbound.Headers.Authorization = new AuthenticationHeaderValue("Bearer", upstreamApiKey.Trim());
-                }
-
-                using var upstream = await httpClientFactory.CreateClient("system-one").SendAsync(
-                    outbound,
-                    HttpCompletionOption.ResponseContentRead,
-                    cancellationToken);
+                using var upstream = await httpClientFactory.CreateClient("system-one").SendAsync(outbound, HttpCompletionOption.ResponseContentRead, linked.Token);
                 statusCode = (int)upstream.StatusCode;
                 responseContentType = upstream.Content.Headers.ContentType?.ToString();
-                responseBody = await upstream.Content.ReadAsStringAsync(cancellationToken);
-
+                responseBody = await upstream.Content.ReadAsStringAsync(linked.Token);
                 httpContext.Response.Headers.CacheControl = "no-store";
                 return Results.Ok(new
                 {
@@ -131,6 +112,11 @@ public static class TestingAdminEndpoints
                     statusCode,
                     latencyMilliseconds = stopwatch.ElapsedMilliseconds,
                     upstreamEndpoint = destination.ToString(),
+                    logicalModel,
+                    providerModel = route.ProviderModelName,
+                    deploymentId = route.DeploymentId,
+                    nodeId = route.NodeId,
+                    nodeName = route.NodeName,
                     requestBody,
                     responseContentType,
                     responseBody
@@ -140,33 +126,13 @@ public static class TestingAdminEndpoints
             {
                 statusCode = StatusCodes.Status504GatewayTimeout;
                 responseBody = """{"error":"classifier_timeout"}""";
-                return Results.Json(new
-                {
-                    requestId,
-                    success = false,
-                    statusCode,
-                    latencyMilliseconds = stopwatch.ElapsedMilliseconds,
-                    upstreamEndpoint = destination.ToString(),
-                    requestBody,
-                    responseBody,
-                    error = "classifier_timeout"
-                }, statusCode: StatusCodes.Status504GatewayTimeout);
+                return Results.Json(new { requestId, success = false, statusCode, latencyMilliseconds = stopwatch.ElapsedMilliseconds, logicalModel, nodeName = route.NodeName, requestBody, responseBody, error = "classifier_timeout" }, statusCode: statusCode);
             }
             catch (HttpRequestException exception)
             {
                 statusCode = StatusCodes.Status502BadGateway;
                 responseBody = JsonSerializer.Serialize(new { error = "classifier_unreachable", message = exception.Message });
-                return Results.Json(new
-                {
-                    requestId,
-                    success = false,
-                    statusCode,
-                    latencyMilliseconds = stopwatch.ElapsedMilliseconds,
-                    upstreamEndpoint = destination.ToString(),
-                    requestBody,
-                    responseBody,
-                    error = "classifier_unreachable"
-                }, statusCode: StatusCodes.Status502BadGateway);
+                return Results.Json(new { requestId, success = false, statusCode, latencyMilliseconds = stopwatch.ElapsedMilliseconds, logicalModel, nodeName = route.NodeName, requestBody, responseBody, error = "classifier_unreachable" }, statusCode: statusCode);
             }
             finally
             {
@@ -177,7 +143,7 @@ public static class TestingAdminEndpoints
                     "systemone_test",
                     HttpMethods.Post,
                     "/api/admin/testing/systemone",
-                    null,
+                    logicalModel,
                     null,
                     statusCode,
                     "application/json",
@@ -207,7 +173,7 @@ public static class TestingAdminEndpoints
             var stopwatch = Stopwatch.StartNew();
             var maxTokens = Math.Clamp(request.MaxTokens ?? 256, 1, 8192);
             var temperature = Math.Clamp(request.Temperature ?? 0.2, 0, 2);
-            var routeResult = await routingService.SelectDetailedAsync(request.Model.Trim(), null, cancellationToken);
+            var routeResult = await routingService.SelectDetailedAsync(request.Model.Trim(), ModelSurface.OpenAi, null, cancellationToken);
             if (routeResult.Route is not { } route)
             {
                 var code = routeResult.Failure == RoutingSelectionFailure.CapacityExhausted
@@ -349,7 +315,7 @@ public static class TestingAdminEndpoints
         return endpoints;
     }
 
-    public sealed record SystemOneTestRequest(JsonElement Payload);
+    public sealed record SystemOneTestRequest(JsonElement Payload, string? Model = null);
 
     public sealed record ChatModelTestRequest(
         string Model,
