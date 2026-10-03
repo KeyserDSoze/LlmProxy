@@ -127,6 +127,8 @@ Back up both `LLM_PROXY_API_KEY_PEPPER` and `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` s
 
 If LlmProxy was installed through the release/bootstrap installer, the machine has the `llmproxyctl` operator command available globally.
 
+Newer releases also install a persistent **LlmProxy Update Agent** on the control-plane host. Administrators can open **Release Notes & Updates** in the Admin UI to see the installed version, discover subsequent immutable releases, inspect each release's update plan/operator command, run **Update now**, or schedule the update for a later date/time. See `docs/update-management.md`.
+
 Check the currently installed version and health:
 
 ```bash
@@ -374,6 +376,7 @@ Use `docker/.env.production.example` as the manual production template; the Linu
 Start with:
 
 - `docs/release-installation.md` — immutable GitHub Release bundle, bootstrap, `llmproxyctl`, update and rollback.
+- `docs/update-management.md` — Admin update-now/scheduling workflow, host Update Agent and per-release standard/custom update plans.
 - `docs/linux-production-deployment.md` — canonical zero-to-running Linux production runbook.
 - `docs/environment-acceptance.md` — production host/DGX/gateway acceptance and evidence rules.
 - `docs/deployment.md` — deployment contract and automation summary.
