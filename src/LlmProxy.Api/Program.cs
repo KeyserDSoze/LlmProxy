@@ -139,8 +139,13 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminRead", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.Reader"));
     options.AddPolicy("AdminWrite", policy => policy.RequireRole("LlmProxy.Admin"));
-    options.AddPolicy("SelfService", policy => policy.RequireRole("LlmProxy.Admin", "LlmProxy.User"));
+    options.AddPolicy("SelfService", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new PlatformUserAccessRequirement());
+    });
 });
+builder.Services.AddScoped<IAuthorizationHandler, PlatformUserAccessAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationMiddlewareResultHandler>();
 
 if (reverseProxyEnabled)
@@ -217,6 +222,7 @@ app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);
+app.MapPlatformUserAdminEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
