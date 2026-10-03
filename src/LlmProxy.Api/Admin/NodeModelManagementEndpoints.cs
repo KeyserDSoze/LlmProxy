@@ -177,15 +177,15 @@ public static class NodeModelManagementEndpoints
 
                 AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
                 {
-                    node.Id,
+                    nodeId = node.Id,
                     node.Name,
-                    descriptor.Id,
+                    catalogModelId = descriptor.Id,
                     descriptor.ProviderModelName,
                     publicName,
                     state.InstallationId,
-                    state.Status,
+                    agentStatus = state.Status,
                     state.RuntimeBaseAddress,
-                    compatibility.Status
+                    compatibilityStatus = compatibility.Status
                 });
                 await dbContext.SaveChangesAsync(cancellationToken);
 

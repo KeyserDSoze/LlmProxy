@@ -155,18 +155,18 @@ describe('admin application', () => {
     expect(screen.getByText('350 ms')).toBeInTheDocument()
   })
 
-  it('navigates to the DGX management view and tests the complete service root', async () => {
+  it('navigates to the inference node management view and tests the complete service root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
+    await user.click(screen.getByRole('button', { name: 'Inference Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
     expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
   })
 
-  it('shows DGX hardware telemetry and can update the separate DCGM root', async () => {
+  it('shows hardware telemetry and can update the separate DCGM root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Hardware' }))
-    expect(screen.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Hardware' }))
+    expect(screen.getByRole('heading', { name: 'hardware telemetry' })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('67 °C')).toHaveLength(2)

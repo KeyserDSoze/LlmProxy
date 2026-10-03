@@ -24,7 +24,7 @@ public sealed record NodeAgentOptions(
             section["DockerImage"] ?? "vllm/vllm-openai:latest",
             section["DataDirectory"] ?? "/var/lib/llmproxy-node-agent",
             section["ModelCacheDirectory"] ?? "/var/lib/llmproxy-node-agent/huggingface",
-            section["AdvertiseHost"] ?? Environment.MachineName,
+            string.IsNullOrWhiteSpace(section["AdvertiseHost"]) ? Environment.MachineName : section["AdvertiseHost"]!,
             ParseInt(section["PortStart"], 18000, 1024, 65500),
             ParseBool(section["UseNvidiaGpus"], true),
             ParseBool(section["PrefetchModels"], true),

@@ -33,7 +33,10 @@ public sealed class DockerModelRuntimeManager(
             var existing = (await registry.ReadAsync(cancellationToken)).FirstOrDefault(item =>
                 string.Equals(item.CatalogModelId, request.CatalogModelId, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
-                return ToState(existing, await IsRunningAsync(existing, cancellationToken) ? "running" : "stopped", existing.RuntimeBaseAddress);
+            {
+                var running = await IsRunningAsync(existing, cancellationToken);
+                return ToState(existing, running ? "running" : "stopped", running ? RuntimeAddress(existing.Port) : null);
+            }
 
             Directory.CreateDirectory(options.ModelCacheDirectory);
             var rows = await registry.ReadAsync(cancellationToken);
@@ -222,7 +225,7 @@ public sealed class DockerModelRuntimeManager(
             try
             {
                 using var response = await client.GetAsync(url, timeoutCts.Token);
-                if (response.StatusCode is >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices) return;
+                if ((int)response.StatusCode is >= 200 and < 300) return;
             }
             catch (HttpRequestException)
             {
