@@ -38,7 +38,7 @@ async function json(route: Route, body: unknown, status = 200) {
 
 async function installAdminApi(page: Page) {
   const nodes: NodeRecord[] = [{
-    id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+    id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
     lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 9, lastHealthError: null,
     consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
   }]
@@ -159,7 +159,7 @@ async function installAdminApi(page: Page) {
       return route.fulfill({ status: 204, body: '' })
     }
     if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
-    if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'dgx-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
+    if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
     if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
     if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
     if (request.method() === 'GET' && path === '/api/admin/content-logs') return json(route, [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
@@ -233,22 +233,22 @@ async function installAdminApi(page: Page) {
 test('admin can inspect health, observability, add a path-prefixed node and test it', async ({ page }) => {
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
-  await expect(page.getByText('dgx-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
-  await page.getByRole('button', { name: 'DGX Nodes' }).click()
-  await page.getByLabel('Name').fill('dgx-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
-  const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
+  await expect(page.getByText('inference-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
+  await page.getByRole('button', { name: 'Inference Nodes' }).click()
+  await page.getByLabel('Name').fill('inference-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
+  const row = page.getByRole('row').filter({ hasText: 'inference-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: inference-02')).toBeVisible()
 })
 
-test('DGX hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'DGX Hardware' }).click()
-  await expect(page.getByRole('heading', { name: 'DGX hardware', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeVisible()
+test('hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Hardware' }).click()
+  await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Hardware telemetry' })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
   await expect(page.getByText('4.0 GiB used · 25.0%')).toBeVisible()
   await expect(page.getByRole('cell', { name: '67 °C' })).toBeVisible()
   await expect(page.getByText('261 W')).toBeVisible()
   await expect(page.getByText('Routing isolation')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Physical DGX capacity' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Physical node capacity' })).toBeVisible()
   await expect(page.getByText('HTTP 429 · Retry-After: 1')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Benchmark capacity profiles' })).toBeVisible()
 
