@@ -115,9 +115,10 @@ Administrator/super-admin access is not controlled by the normal-user registry.
 - personal API-key lifecycle;
 - 30-day request/token/error usage;
 - applicable user and group request/output-token limits;
-- latest request metadata from the user's personal credentials.
+- latest request metadata from the user's personal credentials;
+- exact retained request/response payload inspection for calls attributable to those same personal credentials.
 
-Recent-call rows expose metadata such as time, logical model, surface, HTTP status, duration, TTFT, token counts and error code. Full prompt/response payload inspection remains administrator-only in Content Logs.
+Recent-call rows expose metadata such as time, logical model, surface, HTTP status, duration, TTFT, token counts and error code. **My request audit** adds encrypted-at-rest payload inspection. Authorization is resolved from the signed-in user's stable Entra `tid + oid` through personal credential ownership; another user's rows and organization/shared credentials are never exposed through self-service. Administrators retain the global **Request Audit** view across all retained traffic.
 
 ## GitHub Copilot and end-user identity
 
