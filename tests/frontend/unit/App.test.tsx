@@ -189,4 +189,11 @@ describe('admin application', () => {
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument()
     expect(screen.getByText('user@example.com')).toBeInTheDocument()
   })
+
+  it('hides user management from read-only operators', async () => {
+    mockedApi.adminIdentity.mockResolvedValue({ tenantId: 'tenant-1', objectId: 'reader-1', principalName: 'reader@example.com', displayName: 'Reader', roles: ['LlmProxy.Reader'], isAdmin: false })
+    render(<App />)
+    await screen.findByText('inference-01')
+    expect(screen.queryByRole('button', { name: 'User Management' })).not.toBeInTheDocument()
+  })
 })
