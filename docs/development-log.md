@@ -561,7 +561,7 @@ Refactored the Admin control plane to reduce page length and remove overlapping 
 
 Implemented:
 
-- active/disabled Inference Node tabs, add/credential dialogs, and safe deletion for disabled idle nodes;
+- active/disabled Inference Node tabs, add/credential dialogs, and safe deletion for disabled idle nodes after managed installations are removed;
 - Hardware tabs for telemetry, physical capacity and benchmark profiles, with configuration in dialogs;
 - Model & Hardware inventory/deploy tabs and direct Node Agent installer download;
 - unified Models & Deployments workspace with model-centric and node-centric views plus rapid deployment/routing controls;

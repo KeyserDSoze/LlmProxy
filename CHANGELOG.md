@@ -9,7 +9,7 @@ The project follows Semantic Versioning from the first formal preview release on
 ### Added
 
 - Admin **Request Metrics** now starts with the newest 20 requests and provides server-side pagination plus model, node, credential and success/error filters.
-- Disabled, idle inference nodes can be deleted safely from Admin; deletion removes their deployments transactionally and is rejected while the node is enabled or still serving active requests.
+- Disabled, idle inference nodes can be deleted safely from Admin; deletion removes ordinary deployments transactionally and is rejected while the node is enabled, still serving active requests, or still owns managed model installations.
 - Newly created or rotated API-key secrets use scope-aware prefixes: `lp_org_` for organization credentials and `lp_usr_` for personal credentials. Existing keys keep working unchanged until rotation.
 - The Model & Hardware page exposes the Node Agent installer directly for download.
 

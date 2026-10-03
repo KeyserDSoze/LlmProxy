@@ -289,6 +289,15 @@ public static class AdminEndpoints
             var deployments = await dbContext.Deployments
                 .Where(deployment => deployment.NodeId == id)
                 .ToListAsync(cancellationToken);
+
+            if (deployments.Any(deployment => deployment.ManagedInstallationId != null))
+            {
+                return Results.Conflict(new
+                {
+                    error = "This node still has managed model installations. Remove them from Model & Hardware before deleting the node."
+                });
+            }
+
             dbContext.Deployments.RemoveRange(deployments);
             dbContext.Nodes.Remove(node);
             AddAudit(dbContext, httpContext, "node.delete", "node", node.Id.ToString(), new

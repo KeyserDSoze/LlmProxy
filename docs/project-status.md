@@ -8,7 +8,7 @@ This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md`
 
 The current source consolidates the administrator experience around compact task surfaces:
 
-- Inference Nodes defaults to active nodes; add-node and upstream-credential workflows are dialogs, while disabled idle nodes can be deleted safely.
+- Inference Nodes defaults to active nodes; add-node and upstream-credential workflows are dialogs, while disabled idle nodes can be deleted safely after managed model installations have been removed.
 - Hardware is split into Telemetry, Physical capacity and Benchmark profiles tabs; endpoint/profile creation no longer occupies the default page.
 - Model & Hardware separates inventory from model deployment and exposes the management-agent installer directly.
 - Models and Deployments are one bidirectional workspace for model → nodes and node → models, including quick deploy to another/all active nodes and routing enable/disable.
