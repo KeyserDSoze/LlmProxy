@@ -1,4 +1,4 @@
-import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageReport, UserRateLimitPolicy } from './types'
+import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -60,8 +60,10 @@ export const api = {
   platformUserAccessSettings: () => request<PlatformUserAccessSettings>('/api/admin/users/settings'),
   updatePlatformUserAccessSettings: (provisioningMode: 'automatic' | 'manual') =>
     request<PlatformUserAccessSettings>('/api/admin/users/settings', { method: 'PUT', body: JSON.stringify({ provisioningMode }) }),
-  createPlatformUser: (body: { objectId: string; tenantId?: string | null; principalName?: string | null; displayName?: string | null; enabled?: boolean }) =>
+  createPlatformUser: (body: { objectId: string; tenantId?: string | null; principalName?: string | null; displayName?: string | null; enabled?: boolean; usageGroupId?: string | null }) =>
     request<PlatformUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+  assignPlatformUserUsageGroup: (id: string, usageGroupId: string | null) =>
+    request<void>('/api/admin/users/' + id + '/usage-group', { method: 'PUT', body: JSON.stringify({ usageGroupId }) }),
   disablePlatformUser: (id: string) => request<void>('/api/admin/users/' + id + '/disable', { method: 'POST' }),
   enablePlatformUser: (id: string) => request<void>('/api/admin/users/' + id + '/enable', { method: 'POST' }),
   userRateLimits: () => request<UserRateLimitPolicy[]>('/api/admin/user-rate-limits'),
