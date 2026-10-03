@@ -123,6 +123,7 @@ export default function UsersAccess() {
           <label>Object ID<input value={objectId} onChange={event => setObjectId(event.target.value)} required placeholder="Entra user object ID (oid)" /></label>
           <label>Email / principal name<input value={principalName} onChange={event => setPrincipalName(event.target.value)} placeholder="user@example.com (display metadata)" /></label>
           <label>Display name<input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Example User" /></label>
+          <label>Usage group<select value={newUserGroupId} onChange={event => setNewUserGroupId(event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
           <p className="muted">Email is not the security key because it can change. Access is matched against Entra <code>tid</code> + <code>oid</code>.</p>
           <button className="primary">Register user</button>
         </form>
@@ -132,11 +133,12 @@ export default function UsersAccess() {
     <section className="panel">
       <div className="panelTitle"><h2>Registered users</h2><span>{users.length} users</span></div>
       <table>
-        <thead><tr><th>User</th><th>Stable identity</th><th>State</th><th>Source</th><th>30d calls</th><th>Personal keys</th><th>Last seen</th><th>Action</th></tr></thead>
+        <thead><tr><th>User</th><th>Stable identity</th><th>Group</th><th>State</th><th>Source</th><th>30d calls</th><th>Personal keys</th><th>Last seen</th><th>Action</th></tr></thead>
         <tbody>
           {users.map(user => <tr key={user.id}>
             <td><strong>{user.displayName ?? user.principalName ?? user.objectId}</strong><div className="muted">{user.principalName ?? '—'}</div></td>
             <td><div className="mono">{user.objectId}</div><div className="muted mono">{user.tenantId}</div></td>
+            <td><select aria-label={`Usage group for ${user.displayName ?? user.principalName ?? user.objectId}`} value={user.usageGroupId ?? ''} onChange={event => void changeGroup(user, event.target.value)}><option value="">Ungrouped</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></td>
             <td>{user.enabled ? 'Enabled' : 'Disabled'}</td>
             <td>{friendlySource(user.provisioningSource)}</td>
             <td>{new Intl.NumberFormat().format(user.requestCount30d)}{user.errorCount30d > 0 && <div className="muted">{user.errorCount30d} errors</div>}</td>
@@ -144,7 +146,7 @@ export default function UsersAccess() {
             <td>{formatDate(user.lastSeenAtUtc ?? user.lastCredentialUsedAtUtc)}</td>
             <td><button className={user.enabled ? 'secondary' : 'primary'} onClick={() => void toggle(user)}>{user.enabled ? 'Disable user' : 'Enable user'}</button></td>
           </tr>)}
-          {users.length === 0 && <tr><td colSpan={8} className="muted">No registered end users yet.</td></tr>}
+          {users.length === 0 && <tr><td colSpan={9} className="muted">No registered end users yet.</td></tr>}
         </tbody>
       </table>
     </section>
