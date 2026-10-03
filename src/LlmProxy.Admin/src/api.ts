@@ -89,6 +89,7 @@ export const api = {
   clearOutputTokenBudget: (id: string) => request<void>(`/api/admin/rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
   deleteRateLimit: (id: string) => request<void>(`/api/admin/rate-limits/${id}`, { method: 'DELETE' }),
   usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
+  usageUsers: (days = 30) => request<UserUsageSummary[]>(`/api/admin/usage/users?days=${days}`),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
