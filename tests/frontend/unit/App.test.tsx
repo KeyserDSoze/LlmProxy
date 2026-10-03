@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockedApi = vi.hoisted(() => ({
+  adminIdentity: vi.fn(),
+  identityUsers: vi.fn(),
   overview: vi.fn(),
   routing: vi.fn(),
   routingTuning: vi.fn(),
@@ -55,6 +57,8 @@ const tuning = {
 describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedApi.adminIdentity.mockResolvedValue({ tenantId: 'tenant-1', objectId: 'admin-1', principalName: 'admin@example.com', displayName: 'Admin', roles: ['LlmProxy.Admin'], isAdmin: true })
+    mockedApi.identityUsers.mockResolvedValue([{ tenantId: 'tenant-1', objectId: 'user-1', principalName: 'user@example.com', credentialCount: 2, activeCredentialCount: 1, lastUsedAtUtc: '2026-09-09T10:00:00Z', firstCredentialCreatedAtUtc: '2026-09-01T10:00:00Z' }])
     mockedApi.overview.mockResolvedValue({
       nodes: { total: 1, healthy: 1, degraded: 0, unhealthy: 0, draining: 0 },
       models: 1,
@@ -80,7 +84,7 @@ describe('admin application', () => {
     }])
     mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
-      id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
+      id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
       hasUpstreamCredential: true, weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
       lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 12,
       lastHealthError: null, consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
@@ -107,7 +111,7 @@ describe('admin application', () => {
     })
     mockedApi.audit.mockResolvedValue([{ id: 1, occurredAtUtc: '2026-09-09T10:01:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }])
     mockedApi.testNodeConnection.mockResolvedValue({
-      nodeId: 'node-1', nodeName: 'dgx-01', serviceRoot: 'http://10.0.0.21:8000/vllm', healthUrl: 'http://10.0.0.21:8000/vllm/health',
+      nodeId: 'node-1', nodeName: 'inference-01', serviceRoot: 'http://10.0.0.21:8000/vllm', healthUrl: 'http://10.0.0.21:8000/vllm/health',
       modelsUrl: 'http://10.0.0.21:8000/vllm/v1/models', chatCompletionsUrl: 'http://10.0.0.21:8000/vllm/v1/chat/completions', responsesUrl: 'http://10.0.0.21:8000/vllm/v1/responses',
       success: true, health: { url: 'health', success: true, statusCode: 200, latencyMilliseconds: 12 }, openAi: { url: 'models', success: true, statusCode: 200, latencyMilliseconds: 15 }
     })
@@ -115,7 +119,7 @@ describe('admin application', () => {
 
   it('renders fleet and inference observability on the dashboard', async () => {
     render(<App />)
-    expect(await screen.findByText('dgx-01')).toBeInTheDocument()
+    expect(await screen.findByText('inference-01')).toBeInTheDocument()
     expect(screen.getByText('1 H / 0 D')).toBeInTheDocument()
     expect(screen.getByText('12 ms')).toBeInTheDocument()
     expect(screen.getByText('4 ok')).toBeInTheDocument()
@@ -125,18 +129,18 @@ describe('admin application', () => {
     expect(screen.getByText('350 ms')).toBeInTheDocument()
   })
 
-  it('navigates to the DGX management view and tests the complete service root', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
-    expect(await screen.findByText('✓ Connection test: dgx-01')).toBeInTheDocument()
+  it('navigates to the inference-node management view and tests the complete service root', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Inference Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
+    expect(await screen.findByText('✓ Connection test: inference-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
     expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
   })
 
-  it('shows DGX hardware telemetry and can update the separate DCGM root', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01')
-    await user.click(screen.getByRole('button', { name: 'DGX Hardware' }))
-    expect(screen.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeInTheDocument()
+  it('shows Hardware telemetry and can update the separate DCGM root', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Hardware' }))
+    expect(screen.getByRole('heading', { name: 'Hardware telemetry' })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('67 °C')).toHaveLength(2)
@@ -151,7 +155,7 @@ describe('admin application', () => {
   })
 
   it('exposes live routing strategy, tuning and capacity signals', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Routing' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Routing' }))
     expect(screen.getByRole('heading', { name: 'Smart-routing tuning' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Performance feedback' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Live vLLM capacity' })).toBeInTheDocument()
@@ -167,15 +171,22 @@ describe('admin application', () => {
   })
 
   it('shows inference observability by model, node and request', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
   })
 
   it('shows the administrative audit trail', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('dgx-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
+  })
+
+  it('shows administrator-only user management in the navigation', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'User Management' }))
+    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument()
+    expect(screen.getByText('user@example.com')).toBeInTheDocument()
   })
 })
