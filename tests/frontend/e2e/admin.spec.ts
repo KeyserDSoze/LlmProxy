@@ -62,12 +62,15 @@ async function installAdminApi(page: Page) {
   const audit = [{ id: 1, occurredAtUtc: '2026-09-09T10:05:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }]
   const metrics = [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions', deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1047, attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 49, inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null }]
   let userProvisioningMode: 'automatic' | 'manual' = 'manual'
+  const usageGroups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM team', createdAtUtc: '2026-10-03T06:00:00Z', updatedAtUtc: '2026-10-03T06:00:00Z', credentialCount: 1, userCount: 1 }]
   const platformUsers = [{
     id: 'user-1',
     tenantId: 'tenant-1',
     objectId: 'object-1',
     principalName: 'user@example.com',
     displayName: 'Example User',
+    usageGroupId: 'group-1',
+    usageGroupName: 'Development CRM',
     enabled: true,
     provisioningSource: 'admin',
     createdAtUtc: '2026-10-03T06:00:00Z',
@@ -119,6 +122,7 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
     if (request.method() === 'GET' && path === '/api/admin/metrics/summary') return json(route, metricsSummary)
     if (request.method() === 'GET' && path === '/api/admin/audit') return json(route, audit)
+    if (request.method() === 'GET' && path === '/api/admin/usage-groups') return json(route, usageGroups)
     if (request.method() === 'GET' && path === '/api/admin/users/settings') return json(route, { provisioningMode: userProvisioningMode, updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
     if (request.method() === 'PUT' && path === '/api/admin/users/settings') {
       userProvisioningMode = (request.postDataJSON() as { provisioningMode: 'automatic' | 'manual' }).provisioningMode
@@ -130,6 +134,14 @@ async function installAdminApi(page: Page) {
       const created = { id: 'user-2', tenantId: input.tenantId ?? 'tenant-1', objectId: input.objectId, principalName: input.principalName ?? null, displayName: input.displayName ?? null, enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:31:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 0, activeCredentialCount: 0, lastCredentialUsedAtUtc: null, requestCount30d: 0, errorCount30d: 0 }
       platformUsers.push(created)
       return json(route, created)
+    }
+    const userGroup = path.match(/^\/api\/admin\/users\/([^/]+)\/usage-group$/)
+    if (request.method() === 'PUT' && userGroup) {
+      const user = platformUsers.find(item => item.id === userGroup[1])!
+      const input = request.postDataJSON() as { usageGroupId: string | null }
+      user.usageGroupId = input.usageGroupId
+      user.usageGroupName = usageGroups.find(item => item.id === input.usageGroupId)?.name ?? null
+      return route.fulfill({ status: 204, body: '' })
     }
     const userDisable = path.match(/^\/api\/admin\/users\/([^/]+)\/disable$/)
     if (request.method() === 'POST' && userDisable) {
