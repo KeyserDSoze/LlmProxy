@@ -119,6 +119,8 @@ public static class PlatformUserAdminEndpoints
                 .OrderBy(item => item.PrincipalName)
                 .ThenBy(item => item.ObjectId)
                 .ToListAsync(cancellationToken);
+            var usageGroupNames = await dbContext.UsageGroups.AsNoTracking()
+                .ToDictionaryAsync(item => item.Id, item => item.Name, cancellationToken);
 
             return Results.Ok(users.Select(user =>
             {
@@ -131,6 +133,8 @@ public static class PlatformUserAdminEndpoints
                     user.ObjectId,
                     user.PrincipalName,
                     user.DisplayName,
+                    user.UsageGroupId,
+                    usageGroupName = user.UsageGroupId is Guid usageGroupId && usageGroupNames.TryGetValue(usageGroupId, out var groupName) ? groupName : null,
                     user.Enabled,
                     user.ProvisioningSource,
                     user.CreatedAtUtc,
