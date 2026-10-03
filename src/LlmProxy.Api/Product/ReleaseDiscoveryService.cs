@@ -73,7 +73,7 @@ public sealed class ReleaseDiscoveryService(
             return await client.GetFromJsonAsync<ReleaseUpdatePlan>(asset.BrowserDownloadUrl, cancellationToken)
                 ?? ReleaseUpdatePlan.LegacyDefault;
         }
-        catch
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
             return ReleaseUpdatePlan.LegacyDefault;
         }
