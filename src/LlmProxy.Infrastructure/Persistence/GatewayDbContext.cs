@@ -18,6 +18,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<UsageGroup> UsageGroups => Set<UsageGroup>();
     public DbSet<RateLimitPolicy> RateLimitPolicies => Set<RateLimitPolicy>();
     public DbSet<UserRateLimitPolicy> UserRateLimitPolicies => Set<UserRateLimitPolicy>();
+    public DbSet<UsageGroupRateLimitPolicy> UsageGroupRateLimitPolicies => Set<UsageGroupRateLimitPolicy>();
     public DbSet<RoutingPolicy> RoutingPolicies => Set<RoutingPolicy>();
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
@@ -110,6 +111,16 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => new { x.OwnerTenantId, x.OwnerObjectId, x.LogicalModel });
         });
 
+        modelBuilder.Entity<UsageGroupRateLimitPolicy>(entity =>
+        {
+            entity.ToTable("usage_group_rate_limit_policies");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.LogicalModel).HasMaxLength(160);
+            entity.HasIndex(x => x.UsageGroupId);
+            entity.HasIndex(x => new { x.UsageGroupId, x.LogicalModel }).IsUnique();
+            entity.HasOne<UsageGroup>().WithMany().HasForeignKey(x => x.UsageGroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<RoutingPolicy>(entity =>
         {
             entity.ToTable("routing_policy");
@@ -175,6 +186,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.ProvisioningSource).HasMaxLength(32).IsRequired();
             entity.HasIndex(x => new { x.TenantId, x.ObjectId }).IsUnique();
             entity.HasIndex(x => x.PrincipalName);
+            entity.HasIndex(x => x.UsageGroupId);
+            entity.HasOne<UsageGroup>().WithMany().HasForeignKey(x => x.UsageGroupId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<UserAccessSettingsRecord>(entity =>
