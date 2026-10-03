@@ -123,6 +123,70 @@ Generated passwords/API credential/pepper are not printed. The protected operato
 
 Back up both `LLM_PROXY_API_KEY_PEPPER` and `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` separately before treating the host as production.
 
+### Updating an existing Linux installation
+
+If LlmProxy was installed through the release/bootstrap installer, the machine has the `llmproxyctl` operator command available globally.
+
+Check the currently installed version and health:
+
+```bash
+llmproxyctl version
+llmproxyctl status
+llmproxyctl health
+```
+
+Update to a specific immutable release:
+
+```bash
+sudo -E llmproxyctl update 0.0.3
+```
+
+Replace `0.0.3` with the release version you want to install. The command is **`llmproxyctl update`** (not `llmproxy update`).
+
+The update preserves the protected host configuration and Docker data:
+
+```text
+/opt/llmproxy/.env
+Docker volumes (PostgreSQL, Redis and observability data)
+```
+
+If GHCR requires authentication, export the credentials before running the update so `sudo -E` can pass them through:
+
+```bash
+export GHCR_USER='<github-user>'
+export GHCR_TOKEN='<token-with-package-read-access>'
+sudo -E llmproxyctl update 0.0.3
+```
+
+The existing super-administrator list is preserved automatically. To replace it during the update:
+
+```bash
+sudo -E llmproxyctl update 0.0.3 \
+  --super-admins 'admin1@example.com;admin2@example.com'
+```
+
+After the update:
+
+```bash
+llmproxyctl version
+llmproxyctl doctor
+llmproxyctl health
+```
+
+If the update fails or remains in readiness checks, inspect the persistent installer log:
+
+```bash
+sudo tail -f /var/log/llmproxy/latest-install.log
+```
+
+For rollback to a release already installed locally:
+
+```bash
+sudo llmproxyctl rollback 0.0.2
+```
+
+See `docs/release-installation.md` for the complete release/update/rollback procedure.
+
 ### Manual/redeployment path
 
 After first host preparation, or when provisioning manually, deploy a published image with:
