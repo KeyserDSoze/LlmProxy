@@ -15,8 +15,8 @@ and runs its installer. Public GitHub Releases require no authentication.
 For private repository/package access, authenticate with GitHub CLI or export the required credentials.
 
 Examples:
-  bootstrap.sh --version 0.0.1 --dgx-url http://10.0.0.21:8000 --provider-model Qwen/model
-  DGX_UPSTREAM_BEARER_TOKEN=llama-local bootstrap.sh --version 0.0.1 --skip-docker-install --dgx-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
+  bootstrap.sh --version 0.0.1 --node-url http://10.0.0.21:8000 --provider-model Qwen/model
+  INFERENCE_NODE_UPSTREAM_BEARER_TOKEN=llama-local bootstrap.sh --version 0.0.1 --skip-docker-install --node-url http://host.docker.internal:8080 --provider-model qwen3-next-80b-1m
 
 Environment:
   GH_TOKEN / GITHUB_TOKEN          GitHub token for private release downloads
@@ -24,7 +24,7 @@ Environment:
   ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
                                       Required for ASPNETCORE_ENVIRONMENT=Production
   ENTRA_SUPER_ADMINS                 Optional comma/semicolon-separated full administrators
-  DGX_UPSTREAM_BEARER_TOKEN        Optional one-time upstream llama.cpp/vLLM bearer for first install
+  INFERENCE_NODE_UPSTREAM_BEARER_TOKEN        Optional one-time upstream llama.cpp/vLLM bearer for first install
   LLMPROXY_GITHUB_REPOSITORY       Repository override (default KeyserDSoze/LlmProxy)
 USAGE
 }
@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
       shift
       if [[ ${#INSTALL_ARGS[@]} -gt 0 ]]; then
         case "${INSTALL_ARGS[-1]}" in
-          --ghcr-owner|--dgx-url|--provider-model|--super-admins)
+          --ghcr-owner|--node-url|--provider-model|--super-admins)
             if [[ $# -eq 0 ]]; then
               echo "${INSTALL_ARGS[-1]} requires a value" >&2
               exit 2
