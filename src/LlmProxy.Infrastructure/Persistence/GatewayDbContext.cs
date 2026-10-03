@@ -23,6 +23,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
     public DbSet<InferenceContentLogRecord> InferenceContentLogs => Set<InferenceContentLogRecord>();
     public DbSet<ContentLogSettingsRecord> ContentLogSettings => Set<ContentLogSettingsRecord>();
+    public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
+    public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<RuntimeStateOutboxRecord> RuntimeStateOutbox => Set<RuntimeStateOutboxRecord>();
@@ -160,6 +162,27 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.ToTable("content_log_settings");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<PlatformUserRecord>(entity =>
+        {
+            entity.ToTable("platform_users");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.TenantId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.ObjectId).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PrincipalName).HasMaxLength(320);
+            entity.Property(x => x.DisplayName).HasMaxLength(320);
+            entity.Property(x => x.ProvisioningSource).HasMaxLength(32).IsRequired();
+            entity.HasIndex(x => new { x.TenantId, x.ObjectId }).IsUnique();
+            entity.HasIndex(x => x.PrincipalName);
+        });
+
+        modelBuilder.Entity<UserAccessSettingsRecord>(entity =>
+        {
+            entity.ToTable("user_access_settings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.ProvisioningMode).HasMaxLength(32).IsRequired();
         });
 
         modelBuilder.Entity<DailyUsageRollupRecord>(entity =>
