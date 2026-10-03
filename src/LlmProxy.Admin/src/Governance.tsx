@@ -126,6 +126,13 @@ export default function Governance() {
     await refresh()
   }
 
+  async function toggleCredentialGovernance(credential: GovernanceCredential) {
+    if (credential.kind === 'personal') return
+    await api.updateCredentialCallerGovernance(credential.id, !credential.enforceCallerGovernance)
+    setMessage(`Organization credential ${credential.enforceCallerGovernance ? 'exempted from' : 'opted into'} caller governance.`)
+    await refresh()
+  }
+
   async function rotateCredential(credential: GovernanceCredential) {
     setMessage(null)
     setRotatedCredential(null)
@@ -154,7 +161,9 @@ export default function Governance() {
       logicalModel: policy.logicalModel ?? null,
       requestsPerWindow: policy.requestsPerWindow,
       windowSeconds: policy.windowSeconds,
-      enabled: !policy.enabled
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
     })
     setMessage(`Rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
     await refresh()
@@ -180,7 +189,9 @@ export default function Governance() {
       logicalModel: userRateModel || null,
       requestsPerWindow: userRequestsPerWindow,
       windowSeconds: userWindowSeconds,
-      enabled: true
+      enabled: true,
+      outputTokensPerWindow: userOutputTokensPerWindow,
+      maxOutputTokensPerRequest: userMaxOutputTokensPerRequest
     })
     setMessage('User rate-limit policy created and applied live across all personal keys.')
     await refresh()
