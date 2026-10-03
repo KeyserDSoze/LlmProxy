@@ -38,7 +38,7 @@ test('release notes page exposes the current product version and versioned patch
         releasedOn: '2026-09-16',
         title: 'Production environment acceptance evidence',
         sections: {
-          Added: ['A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.']
+          Added: ['A production environment acceptance command validates the actual Linux host, VM-to-inference node connectivity and deployed OpenAI-compatible surfaces after installation.']
         }
       },
       {
