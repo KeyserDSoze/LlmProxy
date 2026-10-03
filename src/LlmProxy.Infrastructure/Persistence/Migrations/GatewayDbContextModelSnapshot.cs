@@ -219,6 +219,33 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("inference_content_logs");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.PlatformUserRecord", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset?>("DisabledAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("DisplayName").HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<bool>("Enabled").HasColumnType("boolean");
+            b.Property<DateTimeOffset?>("LastSeenAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("ObjectId").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("PrincipalName").HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<string>("ProvisioningSource").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+            b.Property<string>("TenantId").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.HasKey("Id");
+            b.HasIndex("PrincipalName");
+            b.HasIndex("TenantId", "ObjectId").IsUnique();
+            b.ToTable("platform_users");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.UserAccessSettingsRecord", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<string>("ProvisioningMode").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("user_access_settings");
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DailyUsageRollupRecord", b =>
         {
             b.Property<DateOnly>("DayUtc").HasColumnType("date");
