@@ -119,7 +119,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   const userLimitDialog = page.getByRole('dialog', { name: 'Add user quota' })
   await userLimitDialog.getByLabel('Requests per window').fill('5')
   await userLimitDialog.getByLabel('Window seconds').fill('60')
-  await userLimitDialog.getByRole('button', { name: 'Add user quota' }).click()
+  await userLimitDialog.getByRole('button', { name: 'Add user quota', exact: true }).click()
   await expect(page.getByText('User quota created and applied live.')).toBeVisible()
   const userLimitSection = page.getByRole('heading', { name: 'User quotas' }).locator('..').locator('..').locator('..')
   await expect(userLimitSection.getByRole('row', { name: /user@example.com/ })).toContainText('5 / 60s')
