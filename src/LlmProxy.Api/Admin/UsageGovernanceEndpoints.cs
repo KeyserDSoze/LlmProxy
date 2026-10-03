@@ -376,8 +376,14 @@ public static class UsageGovernanceEndpoints
         RequestRateLimiter rateLimiter,
         CancellationToken cancellationToken)
     {
-        var policies = await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken);
-        rateLimiter.ReplacePolicies(policies.Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot));
+        var credentialPolicies = (await dbContext.RateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var userPolicies = (await dbContext.UserRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var groupPolicies = (await dbContext.UsageGroupRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+
+        rateLimiter.ReplacePolicies(credentialPolicies.Concat(userPolicies).Concat(groupPolicies));
     }
 
     private static void AddAudit(
