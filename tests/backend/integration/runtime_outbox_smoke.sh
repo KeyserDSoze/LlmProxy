@@ -122,6 +122,15 @@ credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governan
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available."
 
+# Bootstrap/organization credentials intentionally bypass caller governance by default. This smoke
+# explicitly opts the bootstrap credential into caller governance because the recovery assertion below
+# verifies that a credential-scoped rate-limit policy is replayed and enforced by the surviving peer.
+governance_json="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance")"
+echo "$governance_json" | jq -e --arg id "$credential_id" '.id == $id and .enforceCallerGovernance == true' >/dev/null \
+  || fail_with_diagnostics "Bootstrap credential could not be opted into caller governance for the outbox smoke."
+
 # Start a peer against the same durable PostgreSQL and Redis state. Its health loop is deliberately slow
 # so fault injection does not flood the ordered outbox with unrelated health-state mutations.
 if ! docker run -d --name "$PEER_NAME" \
