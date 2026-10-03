@@ -101,7 +101,9 @@ public static class UserRateLimitAdminEndpoints
                 logicalModel,
                 request.RequestsPerWindow,
                 request.WindowSeconds,
-                request.Enabled);
+                request.Enabled,
+                request.OutputTokensPerWindow,
+                request.MaxOutputTokensPerRequest);
             dbContext.UserRateLimitPolicies.Add(policy);
             AddAudit(dbContext, httpContext, "user_rate_limit.create", policy, new
             {
@@ -110,6 +112,8 @@ public static class UserRateLimitAdminEndpoints
                 policy.LogicalModel,
                 policy.RequestsPerWindow,
                 policy.WindowSeconds,
+                policy.OutputTokensPerWindow,
+                policy.MaxOutputTokensPerRequest,
                 policy.Enabled
             });
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -276,11 +280,15 @@ public static class UserRateLimitAdminEndpoints
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
 
     public sealed record UpdateUserRateLimitRequest(
         string? LogicalModel,
         int RequestsPerWindow,
         int WindowSeconds = 60,
-        bool Enabled = true);
+        bool Enabled = true,
+        int? OutputTokensPerWindow = null,
+        int? MaxOutputTokensPerRequest = null);
 }
