@@ -27,7 +27,7 @@ The project follows Semantic Versioning from the first formal preview release on
 - Immutable GitHub Releases can distribute a checksummed Linux operator bundle containing the production Compose stack, observability configuration, operator scripts and the new `llmproxyctl` command.
 - `llmproxyctl` provides status, health, logs, lifecycle, diagnostics, explicit versioned update and local rollback operations while preserving `/opt/llmproxy/.env` and Docker data volumes.
 - An immutable release workflow validates the exact `main` SHA before publication; the later automatic release train removes the manual dispatch step.
-- Tagged container publication targets both `linux/amd64` and `linux/arm64`, enabling the same product release on x86_64 Linux and DGX Spark / GB10-class ARM64 hosts.
+- Tagged container publication targets both `linux/amd64` and `linux/arm64`, enabling the same product release on x86_64 Linux and GPU inference hardware / GB10-class ARM64 hosts.
 - Tagged publication packages the Linux release bundle/bootstrap/checksums and creates the matching GitHub Release after container SBOM/provenance verification.
 - Per-node write-only upstream bearer credentials support protected llama.cpp/vLLM runtimes across health, model discovery, runtime metrics, maintenance warm-up and inference.
 - Same-host inference bootstrap validates `host.docker.internal` through Docker's bridge gateway and reports a concrete bind-address fix when the runtime is loopback-only.
@@ -105,7 +105,7 @@ The project follows Semantic Versioning from the first formal preview release on
 ### Added
 
 - `docker/scripts/environment-acceptance.sh` turns target-host acceptance into an executable production step after installation.
-- The acceptance runner checks Linux/Docker/Compose plus direct VM-to-DGX and gateway Models, Chat, Responses and SSE surfaces, including provider/logical-model advertisement.
+- The acceptance runner checks Linux/Docker/Compose plus direct VM-to-inference node and gateway Models, Chat, Responses and SSE surfaces, including provider/logical-model advertisement.
 - `docs/environment-acceptance.md` defines the evidence contract, pass criteria and the follow-on benchmark/Entra/Cloudflare/Copilot/runner acceptance sequence.
 - CI exercises the acceptance runner against the repository mock runtime so syntax, HTTP probes, streaming validation and evidence generation are continuously checked.
 
@@ -115,7 +115,7 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Fixed
 
-- DGX `/health` acceptance now matches canonical vLLM behavior: a successful bodyless status response is accepted without incorrectly requiring JSON or a content type.
+- inference node `/health` acceptance now matches canonical vLLM behavior: a successful bodyless status response is accepted without incorrectly requiring JSON or a content type.
 
 ### Security
 
@@ -126,17 +126,17 @@ The project follows Semantic Versioning from the first formal preview release on
 ### Added
 
 - A single Linux production deployment path now installs the validated full stack: LlmProxy, PostgreSQL, Redis and bundled observability.
-- `docker/scripts/install-linux.sh` can prepare a new Linux host across the common Debian/Ubuntu, RHEL/Fedora, SUSE, Arch and Alpine package-manager families: it installs or preserves Docker Engine/Compose v2, prepares `/opt/llmproxy`, generates initial secrets, optionally logs into GHCR, validates DGX connectivity and runs the canonical deployment.
+- `docker/scripts/install-linux.sh` can prepare a new Linux host across the common Debian/Ubuntu, RHEL/Fedora, SUSE, Arch and Alpine package-manager families: it installs or preserves Docker Engine/Compose v2, prepares `/opt/llmproxy`, generates initial secrets, optionally logs into GHCR, validates inference node connectivity and runs the canonical deployment.
 - `docker/.env.production.example` provides an operator-oriented production template separate from development/full-stack examples.
 - The production deploy script stages Compose and observability assets under `/opt/llmproxy/runtime`, so running containers do not depend on a transient GitHub Actions workspace.
 - Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is present.
-- A dedicated Linux production guide covers zero-to-running host bootstrap, private-LAN acceptance, DGX connectivity, Entra/public exposure, self-hosted runner setup, backup, update and rollback.
+- A dedicated Linux production guide covers zero-to-running host bootstrap, private-LAN acceptance, inference node connectivity, Entra/public exposure, self-hosted runner setup, backup, update and rollback.
 
 ### Changed
 
 - `docker/scripts/deploy.sh` and `.github/workflows/deploy.yml` now deploy the same Redis-enabled full-stack topology used by the supported production documentation instead of the legacy minimal Compose overlay.
 - Production deployment performs Compose validation before pull/up and verifies both `/healthz` and `/readyz` before succeeding.
-- The production DGX address is an explicit `CHANGE_ME` placeholder rather than a plausible example IP, preventing accidental unattended deployment against sample infrastructure.
+- The production inference node address is an explicit `CHANGE_ME` placeholder rather than a plausible example IP, preventing accidental unattended deployment against sample infrastructure.
 
 ### Security
 
@@ -193,12 +193,12 @@ The project follows Semantic Versioning from the first formal preview release on
 ### Added
 
 - OpenAI-compatible Chat Completions and Responses surfaces with SSE streaming and cancellation.
-- Logical-model routing across DGX/vLLM with weighted least loaded, round robin and weighted round robin strategies.
+- Logical-model routing across inference node/vLLM with weighted least loaded, round robin and weighted round robin strategies.
 - Distributed runtime state using PostgreSQL as durable truth, Redis as shared L2/coordination and local RAM as request-path L1.
 - Physical capacity admission with Redis leases, fail-closed coordination and active lease-loss cancellation.
 - Caller governance with HMAC-backed credentials, Usage Groups, request-rate limits and output-token budgets.
 - Credential rotation with one-time replacement secrets and cross-replica runtime propagation.
-- Metadata-only request metrics, audit, vLLM runtime telemetry and optional DGX hardware telemetry.
+- Metadata-only request metrics, audit, vLLM runtime telemetry and optional inference hardware telemetry.
 - Repository-supported PostgreSQL backup/restore operators for Bash and PowerShell with destructive clean-target verification.
 - Safe node maintenance flow with distributed admission pre-block, drain-to-zero, health/models/warm-up validation and controlled resume.
 - Product version and release notes exposed through the Admin API and Admin UI.
@@ -220,7 +220,7 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### External validation still required
 
-- Real DGX Spark/vLLM/model benchmark sweeps and representative multi-DGX coding load.
+- Real GPU inference hardware/vLLM/model benchmark sweeps and representative multi-node coding load.
 - Real GitHub Copilot BYOK end-to-end.
 - Real Entra app/role configuration and Cloudflare/public-hostname acceptance.
 - Customer production backup destination/encryption/retention and native deployment-host acceptance where applicable.
