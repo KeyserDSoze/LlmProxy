@@ -92,11 +92,13 @@ Keep production secrets in `/opt/llmproxy/.env`, not workflow YAML.
 
 ## Entra user self-service
 
-Production Entra roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal users open `/admin/me`; the self-service API is under `/api/me`. Personal keys are permanently attributed to Entra `tid+oid`; shared/unattended integrations may continue using administrator-created service credentials.
+Production Entra roles remain `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Normal-user portal admission is additionally controlled by **Users & Access**: manual census is the default, while automatic mode registers an authenticated `tid+oid` identity on first portal access. Normal users open `/admin/me`; the self-service API is under `/api/me`.
+
+An administrator disable blocks the portal/API self-service and revokes all active personal keys for that stable identity. Re-enable restores portal access but revoked keys remain revoked. Shared/unattended integrations continue using administrator-created service credentials and are not treated as individual-user identity.
 
 Per-key request/output-token governance remains available. Aggregate Entra-user request-count quotas are also supported across all personal keys with atomic user+credential admission. Aggregate user output-token budgets and monetary budgets remain out of scope until their reservation/pricing semantics are explicitly defined.
 
-See `docs/identity-api-keys.md`.
+See `docs/identity-api-keys.md` and `docs/user-access.md`.
 
 ## Production environment acceptance
 
