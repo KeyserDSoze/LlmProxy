@@ -238,6 +238,7 @@ app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapUserRateLimitAdminEndpoints(entraEnabled);
+app.MapUserTokenBudgetAdminEndpoints(entraEnabled);
 app.MapUsageGroupRateLimitAdminEndpoints(entraEnabled);
 app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
