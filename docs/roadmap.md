@@ -30,6 +30,9 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 
 - DONE: Entra plumbing with Admin/User/Reader roles.
 - DONE: React admin control plane plus `/admin/me` personal-key user portal.
+- CANDIDATE: first-class platform-user registry with administrator-selectable manual census or automatic first-login provisioning.
+- CANDIDATE: administrator user disable/re-enable; disable blocks self-service and revokes active personal API keys.
+- CANDIDATE: user dashboard recent request history from personal credentials.
 - DONE: HMAC-hashed DB-backed service and Entra-owned personal credentials + runtime cache.
 - DONE: stable `tid+oid` ownership, rotation/revocation and audit.
 - DONE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
@@ -110,7 +113,7 @@ Future quota extensions remain requirements-driven: aggregate **output-token** u
 - DONE: raw + rollup reporting without double counting.
 - DONE: Admin windows up to 730 days with visible raw/rollup provenance.
 - PLANNED: archive/deletion semantics if required.
-- PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics.
+- PLANNED/EXTERNAL: Copilot usage-metrics ingestion for per-user/adoption analytics. GitHub's separate user-level reports must not be treated as a live request identity signal.
 
 Shared Copilot credentials are not individual user identity. Never infer users from IP.
 
