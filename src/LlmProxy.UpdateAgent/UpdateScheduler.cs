@@ -146,7 +146,12 @@ public sealed partial class UpdateScheduler(
                 throw new FileNotFoundException("LlmProxy bootstrap helper is missing.", options.BootstrapPath);
             }
 
-            var path = job.UpgradePath is { Count: > 0 } ? job.UpgradePath : [job.Version];
+            var requestedPath = job.UpgradePath is { Count: > 0 } ? job.UpgradePath : [job.Version];
+            var installedVersion = TryParseInstalledVersion(ReadInstalledVersion());
+            var path = installedVersion is null
+                ? requestedPath
+                : requestedPath.Where(version => Version.Parse(version) > installedVersion).ToArray();
+
             foreach (var stepVersion in path)
             {
                 await SetCurrentStepAsync(job.Id, stepVersion, stoppingToken);
@@ -341,6 +346,19 @@ public sealed partial class UpdateScheduler(
             throw new ArgumentException("Version must be a stable MAJOR.MINOR.PATCH release.", nameof(raw));
         }
         return value;
+    }
+
+    private static Version? TryParseInstalledVersion(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var value = raw.Trim().TrimStart('v');
+        return StableVersionRegex().IsMatch(value) && Version.TryParse(value, out var parsed)
+            ? parsed
+            : null;
     }
 
     private static IReadOnlyList<string> NormalizeUpgradePath(IReadOnlyList<string>? requested, string target)
