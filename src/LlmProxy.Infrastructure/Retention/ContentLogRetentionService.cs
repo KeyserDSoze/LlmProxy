@@ -6,7 +6,7 @@ namespace LlmProxy.Infrastructure.Retention;
 public sealed class ContentLogRetentionService(GatewayDbContext dbContext)
 {
     public const int MinimumRetentionDays = 10;
-    public const int MaximumRetentionDays = 180;
+    public const int MaximumRetentionDays = 11 * 365;
     public const int DefaultRetentionDays = 30;
     public const int CleanupIntervalHours = 4;
 
