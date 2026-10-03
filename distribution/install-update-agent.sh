@@ -24,7 +24,10 @@ for required in "$BINARY" "$SERVICE_SRC" "$ENV_EXAMPLE"; do
 done
 
 install -d -m 0755 /opt/llmproxy-update-agent /etc/llmproxy /var/lib/llmproxy-update-agent
-install -m 0755 "$BINARY" /opt/llmproxy-update-agent/LlmProxy.UpdateAgent
+AGENT_TARGET=/opt/llmproxy-update-agent/LlmProxy.UpdateAgent
+AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new
+install -m 0755 "$BINARY" "$AGENT_TEMP"
+mv -f "$AGENT_TEMP" "$AGENT_TARGET"
 install -m 0644 "$SERVICE_SRC" /etc/systemd/system/llmproxy-update-agent.service
 
 set_env_value() {
@@ -62,7 +65,7 @@ chmod 0600 "$ENV_FILE"
 
 systemctl daemon-reload
 if [[ "${LLMPROXY_UPDATE_AGENT_ACTIVE:-}" == "1" ]] && systemctl is-active --quiet llmproxy-update-agent; then
-  echo "Updated LlmProxy Update Agent files; restart deferred until the active update completes or the service restarts."
+  echo "Updated LlmProxy Update Agent files atomically; the active agent will self-restart after the update chain is recorded as complete."
 else
   systemctl enable --now llmproxy-update-agent
 fi
