@@ -27,8 +27,8 @@ The project follows Semantic Versioning from the first formal preview release on
 - Admin **Users & Access** introduces a first-class Entra end-user registry with selectable **Manual** census or **Automatic** first-login provisioning, keyed by stable tenant/object ID rather than email.
 - Administrators can disable/re-enable end users. Disable blocks the personal portal and revokes all active personal API keys owned by that user's `tid + oid`; re-enable does not resurrect revoked keys.
 - The normal-user `/admin/me` surface is now **My dashboard** and includes recent request metadata in addition to personal keys, own usage and request limits.
-- Administrator-only **Content Logs** persist exact Chat Completions, Responses and System One request/response bodies as application-encrypted PostgreSQL ciphertext, with live 2-second Admin UI inspection and copy controls.
-- Full-body log retention is independently configurable from 10 through 180 days, defaults to 30 days and is enforced automatically every four hours; administrators can also run an audited cleanup immediately.
+- Admin **Request Audit** persists exact Chat Completions, Responses and System One request/response bodies as application-encrypted PostgreSQL ciphertext and adds server-side filtering/pagination by user, credential, model, surface, status, request ID and time range, with optional live refresh and exact-body inspection.
+- Full-body request-audit retention is independently administrator-configurable from 10 through 4015 days (11 x 365 days), defaults to 30 days and is enforced automatically every four hours; administrators can also run an audited cleanup immediately.\n- **My dashboard** now includes **My request audit**, allowing an admitted Entra user to inspect exact retained request/response payloads only for calls attributable to that user's own personal API keys.
 - Admin **Playground** tests enabled logical models through real routing/capacity admission and tests the configured System One classifier with an editable JSON payload while showing the raw upstream exchange.
 - Admin **Help & Endpoints** provides copy-ready examples for Models, Chat Completions, Responses and System One plus an explanation of authentication, governance, routing, capacity, observability and retention.
 - Every principal Admin, Governance, Release Notes and User Portal screen now has a collapsed contextual documentation accordion.
@@ -56,7 +56,7 @@ The project follows Semantic Versioning from the first formal preview release on
 - Self-service authorization is now Entra authentication + the LlmProxy platform-user registry. The `LlmProxy.User` app role may remain assigned, but normal-user portal admission no longer depends on that role when the registry admits the user.
 - GitHub Copilot documentation now distinguishes shared provider/API-key attribution from individual developer identity and explicitly avoids IP/User-Agent/undocumented-header inference.
 - API credential rows expose whether a recovery secret is available; older non-recoverable keys can be rotated once, while a still-configured bootstrap key is backfilled automatically at startup.
-- The product security contract now separates metadata-only metrics/audit/OTEL from the dedicated encrypted administrator content-log store; request headers and bearer/API secrets remain excluded from payload logs.
+- The product security contract now separates metadata-only metrics/audit/OTEL from the dedicated encrypted request-audit store; Admin has global visibility, normal users have stable `tid + oid` owner-scoped visibility for personal credentials only, and request headers plus bearer/API secrets remain excluded.
 - Distributed Full Stack acceptance is now a required job inside the main CI workflow, so the single successful CI result is the complete release gate.
 - Distribution SemVer is injected into the packaged .NET assembly and OCI metadata instead of requiring a bot commit that rewrites source version files.
 - Exact version, `latest`, `main`, `sha-<7>` and major/minor GHCR aliases are published from the same validated multi-architecture build.
@@ -65,9 +65,9 @@ The project follows Semantic Versioning from the first formal preview release on
 
 - End-user authorization and manual census use stable Entra `tid + oid`; email/UPN/display name remain mutable metadata only.
 - Disabling a normal user revokes active personal credentials through the existing runtime cache/outbox propagation path. Shared service credentials are intentionally unaffected because they are not attributable to one person.
-- API-key reveal and decrypted content-log detail require `LlmProxy.Admin`/`AdminWrite`; read-only operators cannot access them.
+- API-key reveal still requires `LlmProxy.Admin`/`AdminWrite`. Global request-audit detail also requires AdminWrite; read-only operators cannot inspect payloads. Normal users can decrypt only request-audit rows attributable to their own personal credentials through `/api/me/content-logs*`.
 - API-key reveal actions and retention changes/manual cleanup are audited without secret or payload content.
-- Decrypted secret/payload responses use `Cache-Control: no-store`; headers, client API keys and upstream bearer credentials are not persisted in content logs.
+- Decrypted secret/request-audit responses use `Cache-Control: no-store`; headers, client API keys and upstream bearer credentials are not persisted in request-audit payloads.
 - The deployment API-key pepper is now also required to decrypt administrator recovery copies and full-body logs and must be preserved as recovery material.
 
 ## [0.2.0-preview.8] - 2026-09-30
