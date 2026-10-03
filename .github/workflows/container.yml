@@ -257,7 +257,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Setup .NET 10 for node-agent release assets
+      - name: Setup .NET 10 for agent release assets
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -288,17 +288,37 @@ jobs:
           sha256sum -c "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"
           sha256sum -c "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"
 
+      - name: Build Update Agent release binaries
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          for RID in linux-x64 linux-arm64; do
+            OUT="dist/update-agent/$RID"
+            mkdir -p "$OUT"
+            dotnet publish src/LlmProxy.UpdateAgent/LlmProxy.UpdateAgent.csproj \
+              -c Release -r "$RID" --self-contained true \
+              -p:PublishSingleFile=true -p:PublishTrimmed=false \
+              -p:Version="$VERSION" \
+              -o "$OUT"
+            test -x "$OUT/LlmProxy.UpdateAgent"
+          done
+
       - name: Build Linux release assets
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          bash distribution/build-release-bundle.sh "$VERSION" dist
+          UPDATE_AGENT_X64_BINARY="$PWD/dist/update-agent/linux-x64/LlmProxy.UpdateAgent" \
+          UPDATE_AGENT_ARM64_BINARY="$PWD/dist/update-agent/linux-arm64/LlmProxy.UpdateAgent" \
+            bash distribution/build-release-bundle.sh "$VERSION" dist
           (
             cd dist
             sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
             sha256sum -c llmproxy-bootstrap.sh.sha256
+            sha256sum -c llmproxy-update-plan.json.sha256
           )
 
       - name: Create immutable GitHub Release
@@ -309,7 +329,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"             release-manifest.json
+          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             "dist/llmproxy-update-plan.json"             "dist/llmproxy-update-plan.json.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"             release-manifest.json
 
           {
             echo "### Immutable release published"
