@@ -5,6 +5,20 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
+  await page.route('**/api/admin/**', async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === '/api/admin/product' || path === '/api/admin/updates' || path === '/api/admin/updates/policy') {
+      return route.fallback()
+    }
+    if (path === '/api/admin/session') return json(route, { canWrite: true, roles: ['LlmProxy.Admin'] })
+    if (path === '/api/admin/overview') return json(route, { nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 }, models: 0, deployments: 0, activeRequests: 0, requestsToday: 0 })
+    if (path === '/api/admin/routing') return json(route, { strategy: 'WeightedLeastLoaded', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
+    if (path === '/api/admin/routing/tuning') return json(route, { warmupSamples: 3, ttftTargetMilliseconds: 2000, ttftPenaltyWeight: 0.25, failurePenaltyWeight: 1.5, externalLoadPenaltyWeight: 0.4, queuePenaltyWeight: 0.75, kvCacheThreshold: 0.7, kvCachePenaltyWeight: 0.6, degradedNodePenalty: 0.35, unknownNodePenalty: 0.1, updatedAtUtc: '2026-10-03T16:00:00Z' })
+    if (path === '/api/admin/metrics/summary') return json(route, { windowHours: 24, sinceUtc: '2026-10-02T16:00:00Z', requestCount: 0, successCount: 0, errorCount: 0, successRatePercent: 0, p50DurationMilliseconds: null, p95DurationMilliseconds: null, p50TimeToFirstByteMilliseconds: null, p95TimeToFirstByteMilliseconds: null, averageUpstreamHeaderMilliseconds: null, inputTokens: 0, outputTokens: 0, totalTokens: 0, tokenObservedRequests: 0, failoverRequests: 0, streamingRequests: 0, byModel: [], byNode: [] })
+    if (path === '/api/admin/routing/performance' || path === '/api/admin/routing/runtime' || path === '/api/admin/hardware' || path === '/api/admin/nodes' || path === '/api/admin/models' || path === '/api/admin/deployments' || path === '/api/admin/api-credentials' || path === '/api/admin/metrics' || path === '/api/admin/audit') return json(route, [])
+    return json(route, { error: `Unhandled release test route ${request.method()} ${path}` }, 500)
+  })
   await page.route('**/api/admin/updates', route => json(route, {
     currentVersion: '0.0.6',
     agentAvailable: true,

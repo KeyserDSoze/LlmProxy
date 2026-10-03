@@ -298,7 +298,7 @@ test('admin playground tests models and System One and full-body logs are inspec
   await expect(page.getByRole('heading', { name: 'System One classifier' })).toBeVisible()
   await expect(page.getByLabel('System One logical model')).toHaveValue('systemone-laya')
   await page.getByRole('button', { name: 'Run classifier test' }).click()
-  await expect(page.getByText('Logical model').locator('..').getByText('systemone-laya', { exact: true })).toBeVisible()
+  await expect(page.getByRole('strong').filter({ hasText: /^systemone-laya$/ })).toBeVisible()
 
   await page.getByRole('button', { name: 'Content Logs' }).click()
   await expect(page.getByRole('heading', { name: 'Live request / response log' })).toBeVisible()

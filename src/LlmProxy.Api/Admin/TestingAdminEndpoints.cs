@@ -5,6 +5,7 @@ using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
+using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
