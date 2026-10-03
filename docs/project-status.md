@@ -4,6 +4,21 @@ Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
+## Safe automatic updates + routed System One — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Current source now closes two control-plane gaps:
+
+- administrator update policy is persisted as Manual, ASAP (five-minute checks), Nightly, Weekly or Monthly with configured time zone/time/day;
+- automatic updates always select the latest stable release but submit every intermediate release in ascending order, preserving per-release custom migration plans;
+- future manual `llmproxyctl update VERSION` resolves and executes the same safe stable-release chain instead of jumping directly to the target;
+- bootstrap downloads retry transient GitHub/network failures while retaining SHA-256 verification;
+- System One is a first-class model surface in the shared model/deployment/node catalog rather than a single global upstream URL;
+- System One traffic uses the common routing, capacity, failover, request-rate governance, metrics and content-log correlation path;
+- old `SYSTEM_ONE_*` configuration is imported once into normal topology records for upgrade compatibility;
+- Models & Deployments and Playground now distinguish OpenAI versus System One surfaces and expose System One placement/routing controls.
+
+Validation required before marking DONE: exact-head backend/frontend CI, full-stack System One compatibility smoke, distributed gate and immutable release publication.
+
 ## Administrator UX consolidation — IMPLEMENTED / VALIDATION IN PROGRESS
 
 The current source consolidates the administrator experience around compact task surfaces:

@@ -50,7 +50,26 @@ public sealed class RoutingServiceTests
         Assert.Equal(available.DeploymentId, selector.Candidates[0].DeploymentId);
     }
 
-    private static DeploymentCandidate Candidate(Guid deploymentId)
+    [Fact]
+    public async Task SelectDetailedAsync_filters_candidates_by_required_surface()
+    {
+        var openAi = Candidate(Guid.NewGuid(), ModelSurface.OpenAi);
+        var systemOne = Candidate(Guid.NewGuid(), ModelSurface.SystemOne);
+        var selector = new RecordingSelector(null);
+        var service = new RoutingService(new FakeCatalog([openAi, systemOne]), selector, new EmptyLoadTracker());
+
+        await service.SelectDetailedAsync(
+            "agic-code-fast",
+            ModelSurface.SystemOne,
+            null,
+            CancellationToken.None);
+
+        var selected = Assert.Single(selector.Candidates);
+        Assert.Equal(systemOne.DeploymentId, selected.DeploymentId);
+        Assert.Equal(ModelSurface.SystemOne, selected.Surface);
+    }
+
+    private static DeploymentCandidate Candidate(Guid deploymentId, ModelSurface surface = ModelSurface.OpenAi)
         => new(
             deploymentId,
             Guid.NewGuid(),
@@ -61,7 +80,8 @@ public sealed class RoutingServiceTests
             "provider-model",
             1,
             4,
-            NodeStatus.Healthy);
+            NodeStatus.Healthy,
+            Surface: surface);
 
     private sealed class FakeCatalog(IReadOnlyList<DeploymentCandidate> candidates) : IDeploymentCatalog
     {

@@ -578,3 +578,20 @@ Compatibility notes:
 - Routing behavior is intentionally unchanged.
 
 Validation is not claimed until the exact resulting `main` SHA completes CI/Full Stack and the automatic immutable release workflow.
+
+
+## 2026-10-03 — Safe automatic updates and routed System One
+
+Implemented on the post-v0.0.14 development head:
+
+- added a durable administrator update policy with Manual, ASAP/five-minute, Nightly, Weekly and Monthly modes;
+- automatic policy always targets the newest stable release while handing the Update Agent the complete ascending intermediate release chain;
+- changed future manual `llmproxyctl update VERSION` to resolve and execute every published stable release between installed and target, failing safe if the chain cannot be proven;
+- added retry/backoff to GitHub bootstrap downloads to tolerate transient curl/network reset failures without weakening checksum verification;
+- added `ModelSurface` so OpenAI and System One models share the same catalog without being exposed through the wrong public API;
+- moved `POST /v1/systemone` onto normal routing, distributed capacity, upstream bearer protection, failover, request-rate governance and request metrics;
+- added `GET /v1/systemone/models`, Admin surface labels, System One deployment visibility, deployment-specific runtime roots and a routed classifier Playground diagnostic;
+- retained upgrade compatibility by importing the historical `SYSTEM_ONE_*` configuration into a normal node + model + deployment on startup when no System One model exists;
+- added update-schedule and route-surface unit coverage and refreshed frontend E2E contracts.
+
+Validation is intentionally not claimed until the exact final main SHA completes the repository CI/full-stack gate and the immutable release workflow.

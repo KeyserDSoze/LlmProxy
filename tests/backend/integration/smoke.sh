@@ -118,7 +118,12 @@ fi
 systemone_response="$(curl --fail --silent -H 'Authorization: Bearer dev-change-me' -H 'Content-Type: application/json' -d '{"state":{"document":"duplicate charge"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}' http://127.0.0.1:8080/v1/systemone)"
 echo "$systemone_response" | jq -e '.served_by == "classifier" and .answers.billing.noul == 0.91 and .state.document == "duplicate charge"' >/dev/null
 
+systemone_models="$(curl --fail --silent -H 'Authorization: Bearer dev-change-me' http://127.0.0.1:8080/v1/systemone/models)"
+echo "$systemone_models" | jq -e '.data | map(.id) | index("systemone-default") != null' >/dev/null
 curl --fail --silent -H 'Authorization: Bearer dev-change-me' http://127.0.0.1:8080/v1/models | grep --quiet 'agic-code-fast'
+if curl --fail --silent -H 'Authorization: Bearer dev-change-me' http://127.0.0.1:8080/v1/models | grep --quiet 'systemone-default'; then
+  fail_with_diagnostics "System One logical models must not leak into the OpenAI /v1/models catalog."
+fi
 
 primary_response="$(curl --fail --silent -H 'Authorization: Bearer dev-change-me' -H 'Content-Type: application/json' -d '{"model":"agic-code-fast","messages":[{"role":"user","content":"hello"}]}' http://127.0.0.1:8080/v1/chat/completions)"
 echo "$primary_response" | grep --quiet '"served_by":"primary"'

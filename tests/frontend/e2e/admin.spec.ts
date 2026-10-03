@@ -116,7 +116,10 @@ async function installAdminApi(page: Page) {
     }
 
     if (request.method() === 'GET' && path === '/api/admin/nodes') return json(route, nodes)
-    if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'bootstrap-model', supportsStreaming: true, supportsTools: true, enabled: true }])
+    if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [
+      { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'bootstrap-model', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
+      { id: 'model-systemone', publicName: 'systemone-laya', providerModelName: 'convaiinnovations/laya', supportsStreaming: false, supportsTools: false, surface: 'SystemOne', enabled: true }
+    ])
     if (request.method() === 'GET' && path === '/api/admin/deployments') return json(route, deployments)
     if (request.method() === 'GET' && path === '/api/admin/api-credentials') return json(route, [])
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
@@ -159,9 +162,9 @@ async function installAdminApi(page: Page) {
       user.disabledAtUtc = null
       return route.fulfill({ status: 204, body: '' })
     }
-    if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
+    if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null, models: ['systemone-laya'], defaultModel: 'systemone-laya' })
     if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
-    if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
+    if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, logicalModel: 'systemone-laya', providerModel: 'convaiinnovations/laya', deploymentId: 'deployment-systemone', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
     if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
     if (request.method() === 'GET' && path === '/api/admin/content-logs') return json(route, [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
     if (request.method() === 'GET' && path === '/api/admin/content-logs/1') return json(route, { id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200, requestBody: '{"model":"agic-code-fast"}', responseBody: '{"ok":true}', nodeId: 'node-1', attemptCount: 1, timeToFirstByteMilliseconds: 49, errorCode: null })
@@ -293,6 +296,9 @@ test('admin playground tests models and System One and full-body logs are inspec
   await expect(page.getByText('HTTP 200')).toBeVisible()
   await page.getByRole('tab', { name: 'System One classifier' }).click()
   await expect(page.getByRole('heading', { name: 'System One classifier' })).toBeVisible()
+  await expect(page.getByLabel('System One logical model')).toHaveValue('systemone-laya')
+  await page.getByRole('button', { name: 'Run classifier test' }).click()
+  await expect(page.getByText('systemone-laya', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Content Logs' }).click()
   await expect(page.getByRole('heading', { name: 'Live request / response log' })).toBeVisible()

@@ -4,6 +4,17 @@ Status legend: `DONE` implemented and validated; `PLANNED` not complete; `EXTERN
 
 For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.
 
+## 2026-10-03 control-plane follow-up
+
+- [x] Persist administrator automatic-update policy: Manual / ASAP 5m / Nightly / Weekly / Monthly.
+- [x] Always update to latest through the complete intermediate stable release chain; never skip a custom update plan.
+- [x] Make future manual `llmproxyctl update` resolve the same safe multi-release chain.
+- [x] Add retry/backoff to immutable release downloads.
+- [x] Promote System One to the shared logical-model/deployment/node topology.
+- [x] Apply routing, capacity, failover, request-rate governance and metrics to System One.
+- [x] Surface System One deployment/routing in Models & Deployments and Playground.
+- [ ] Validate the exact main head and real target-host update from the previous installed release.
+
 ## M0 — Repository bootstrap — DONE
 
 - DONE: .NET 10 layered solution, React/TypeScript Admin, PostgreSQL/EF, Docker, GitHub Actions, GHCR.

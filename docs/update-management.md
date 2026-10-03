@@ -35,7 +35,15 @@ The Release Notes page shows:
 - whether a host restart is declared;
 - the active scheduled/running update and recent job history.
 
-Administrators with write access can choose **Update now** or select a local date/time and choose **Schedule**. Pending jobs can be cancelled. Starting an immediate update with force semantics replaces an existing pending schedule, but never interrupts an update that is already running.
+Administrators with write access can choose **Update now**, select a local date/time for a one-off schedule, or persist an **automatic update policy**:
+
+- **Manual** — only explicit administrator actions run updates;
+- **ASAP** — checks for a newer stable release every five minutes and schedules the latest immediately;
+- **Nightly** — once per night at the configured local time;
+- **Weekly** — once per configured weekday/local time;
+- **Monthly** — once per configured day-of-month/local time; days beyond the end of a month are clamped to that month's last day.
+
+Nightly/weekly/monthly policy uses the administrator-selected IANA/system time zone. Changing one of those calendar policies starts with the next occurrence rather than immediately replaying the previous occurrence. Pending jobs can be cancelled. Starting an immediate update with force semantics replaces an existing pending schedule, but never interrupts an update that is already running.
 
 When the selected target skips one or more published versions, LlmProxy builds an ascending upgrade chain and applies every intermediate immutable release in order. For example, an installation on `0.0.6` targeting `0.0.9` executes `0.0.7 → 0.0.8 → 0.0.9`. This guarantees that a custom migration attached to an intermediate release cannot be bypassed.
 
@@ -94,6 +102,8 @@ A custom `update.sh` owns the release-specific migration and must leave the same
 
 ## Scheduling and persistence
 
+The automatic policy itself is durable PostgreSQL configuration and is evaluated by the gateway background worker. In multi-replica deployments a PostgreSQL advisory lock and the persisted last-check timestamp ensure only one replica claims each due check. Automatic policies always target the latest published stable release; they still submit the complete ascending upgrade path to the host agent.
+
 The Update Agent persists its active job and the recent job history under:
 
 ```text
@@ -116,7 +126,9 @@ The supported manual path remains:
 sudo -E llmproxyctl update VERSION
 ```
 
-Starting with releases that contain this feature, `llmproxyctl update` passes explicit upgrade mode to the bootstrap. The bootstrap reads the target release's update plan and selects the standard installer or the bundled custom procedure.
+Starting with the release that contains safe manual chaining, `llmproxyctl update` first resolves every published stable release between the installed version and the target. It refuses the operation if it cannot prove a complete stable chain, then applies each release in ascending order. Each step uses that release's immutable bootstrap/update-plan, so a custom migration cannot be skipped.
+
+The bootstrap download path retries transient GitHub/network failures (including connection resets) before failing, while still requiring the published SHA-256 checksum before extraction.
 
 ## Upgrade compatibility
 

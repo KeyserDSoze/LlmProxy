@@ -219,7 +219,9 @@ sudo -E llmproxyctl update 0.0.3 --super-admins ''
 
 Public GitHub Release assets need no release-download token. If GHCR requires authentication, provide `GHCR_USER` / `GHCR_TOKEN` to the update command environment.`
 
-The update path downloads and verifies the new operator bundle, preserves `/opt/llmproxy/.env`, refreshes runtime assets, pulls the exact application image and requires `/healthz` plus `/readyz` before the new bundle becomes `current`.
+The update path resolves every published stable version between the installed release and the requested target, then downloads/verifies and applies those releases in ascending order. This means `0.0.14 -> 0.0.18` executes any published `0.0.15`, `0.0.16` and `0.0.17` update plans before `0.0.18`; an intermediate custom host migration cannot be skipped. If the complete chain cannot be resolved, the command fails before changing the installation.
+
+Each step preserves `/opt/llmproxy/.env`, refreshes runtime assets, pulls the exact application image and requires `/healthz` plus `/readyz` before continuing. Bootstrap downloads retry transient network/connection-reset failures and still require the release SHA-256 checksum before extraction.
 
 The initial install performs direct authenticated inference-runtime preflight. Later `llmproxyctl update` operations intentionally skip that direct provider precheck because a protected node's bearer is write-only and no longer exists in host plaintext configuration. The update reuses the encrypted credential already persisted with the node and treats the gateway's post-deploy readiness as the acceptance gate.
 

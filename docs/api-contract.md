@@ -56,13 +56,30 @@ Example request:
 
 Responses API fields such as structured `input`, tools, metadata and future compatible properties are passed through to the inference runtime. As with Chat Completions, the public logical model is replaced only for the upstream call.
 
-## `POST /v1/systemone`
+## System One routed models
 
-LlmProxy can optionally expose a Jev-compatible System One decision/classification surface backed by a private classifier such as Laya. This endpoint is intentionally separate from the OpenAI-compatible model surfaces because System One returns typed decisions rather than generated text.
+System One classifiers are first-class logical models and deployments. They use the same durable model → deployment → node topology, health eligibility, weighted routing, distributed capacity admission, failover and request-rate governance as OpenAI-facing models, while keeping their typed payload contract separate.
 
-When `SystemOne:Enabled=true`, the gateway forwards the request body transparently to `<SystemOne:BaseAddress>/v1/systemone`, replaces the client Authorization header with the configured upstream bearer, and returns the upstream status, content type and response body unchanged.
+`GET /v1/systemone/models` lists enabled logical models whose surface is `SystemOne`. System One models are intentionally excluded from `GET /v1/models`, which remains the OpenAI-compatible model catalog.
 
-Example request:
+### `POST /v1/systemone`
+
+The typed classifier request body is forwarded unchanged. The logical System One model is selected in this order:
+
+1. `X-LlmProxy-Model: <logical-name>`;
+2. configured `SystemOne:DefaultModel`;
+3. automatic selection when exactly one enabled System One logical model exists.
+
+If more than one System One model is enabled and no model is selected, the gateway returns `400 systemone_model_required`.
+
+Example:
+
+```http
+POST /v1/systemone
+Authorization: Bearer <gateway-api-key>
+X-LlmProxy-Model: systemone-laya
+Content-Type: application/json
+```
 
 ```json
 {
@@ -78,18 +95,22 @@ Example request:
 }
 ```
 
-The endpoint uses the same LlmProxy bearer API credentials as the other `/v1` surfaces. It does not advertise the classifier through `GET /v1/models`, and it does not treat the classifier as an OpenAI chat model.
+The selected deployment may use the node service root or its own deployment-specific runtime service root. LlmProxy replaces the client credential with the selected node's encrypted upstream bearer, forwards to `<runtime-root>/v1/systemone`, and can fail over to another eligible deployment on transport errors or upstream 5xx responses before the downstream response starts.
 
-Configuration:
+Request-rate governance can be scoped to the System One logical model. Output-token budgets are not applied to System One because its typed classifier response is not token-generation accounting.
+
+### Legacy configuration import
+
+The historical `SYSTEM_ONE_ENABLED`, `SYSTEM_ONE_BASE_ADDRESS`, `SYSTEM_ONE_API_KEY` and timeout variables remain accepted as an upgrade bridge. When enabled and no System One logical model exists yet, startup imports that configuration once into a normal node + System One model + deployment, encrypting the upstream bearer with the existing upstream-credential key. Afterwards administrators manage placement/routing through **Models & Deployments** instead of a separate global classifier configuration.
+
+Optional import metadata:
 
 ```text
-SystemOne__Enabled=true
-SystemOne__BaseAddress=http://host.docker.internal:8090
-SystemOne__ApiKey=<private-classifier-bearer>
-SystemOne__TimeoutSeconds=30
+SYSTEM_ONE_DEFAULT_MODEL=systemone-default
+SYSTEM_ONE_PROVIDER_MODEL_NAME=systemone-classifier
+SYSTEM_ONE_NODE_NAME=systemone-classifier
+SYSTEM_ONE_MAX_CONCURRENCY=8
 ```
-
-Request-rate/model-token governance remains specific to the generative model surfaces in this release; `/v1/systemone` receives the common API-key authentication and credential-usage tracking provided for `/v1` requests.
 
 ## Payload preservation
 
@@ -177,10 +198,11 @@ GET  /api/admin/testing/systemone
 POST /api/admin/testing/systemone
 ```
 
-The GET surface reports whether System One is enabled, the configured public/upstream endpoint, upstream bearer presence and timeout. The POST surface accepts:
+The GET surface reports routed System One availability, the first eligible runtime endpoint for operator diagnostics, protected upstream-credential presence, available logical model names, default model and timeout. The POST surface accepts an optional logical `model` plus the typed payload:
 
 ```json
 {
+  "model": "systemone-laya",
   "payload": {
     "state": { "document": "duplicate card charge" },
     "questions": {
@@ -193,7 +215,7 @@ The GET surface reports whether System One is enabled, the configured public/ups
 }
 ```
 
-The payload object is forwarded as the exact JSON request body to the configured private System One endpoint. This is suitable for deployments hosting classifiers such as `convaiinnovations/laya`.
+The diagnostic resolves the System One logical model through normal routing/capacity admission, reports the selected deployment/node/provider metadata and forwards the payload object as the exact JSON request body. This is suitable for private classifiers such as `convaiinnovations/laya`.
 
 ### Full-body log inspection
 

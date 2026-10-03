@@ -8,6 +8,19 @@ test('release notes page exposes the current product version and versioned patch
   await page.route('**/api/admin/updates', route => json(route, {
     currentVersion: '0.0.6',
     agentAvailable: true,
+    policy: {
+      mode: 'manual',
+      timeZoneId: 'Europe/Rome',
+      localHour: 2,
+      localMinute: 0,
+      dayOfWeek: 0,
+      dayOfMonth: 1,
+      lastCheckedAtUtc: null,
+      lastScheduledAtUtc: null,
+      lastScheduledVersion: null,
+      lastError: null,
+      updatedAtUtc: '2026-10-03T16:00:00Z'
+    },
     agent: { installedVersion: '0.0.6', activeJob: null, recentJobs: [] },
     releases: [
       {
@@ -24,6 +37,10 @@ test('release notes page exposes the current product version and versioned patch
       }
     ]
   }))
+  await page.route('**/api/admin/updates/policy', async route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    await json(route, { ...body, lastCheckedAtUtc: null, lastScheduledAtUtc: null, lastScheduledVersion: null, lastError: null, updatedAtUtc: '2026-10-03T16:05:00Z' })
+  })
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
     version: '0.2.0-preview.7',
@@ -110,4 +127,12 @@ test('release notes page exposes the current product version and versioned patch
   await expect(page.getByText('v0.0.7', { exact: true })).toBeVisible()
   await expect(page.getByText('Standard update')).toBeVisible()
   await expect(page.getByText('sudo -E llmproxyctl update 0.0.7')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Automatic update policy' })).toBeVisible()
+  await expect(page.getByText(/intermediate stable version/)).toBeVisible()
+
+  const policyRequest = page.waitForRequest(request => request.url().endsWith('/api/admin/updates/policy') && request.method() === 'PUT')
+  await page.getByLabel('Automatic update policy').selectOption('asap')
+  await page.getByRole('button', { name: 'Save automatic update policy' }).click()
+  const saved = await policyRequest
+  expect(saved.postDataJSON()).toMatchObject({ mode: 'asap', timeZoneId: 'Europe/Rome' })
 })

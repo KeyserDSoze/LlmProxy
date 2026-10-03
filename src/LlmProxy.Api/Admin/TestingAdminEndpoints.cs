@@ -68,7 +68,9 @@ public static class TestingAdminEndpoints
                 timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300),
                 configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
                 models = models.Select(item => item.PublicName).ToArray(),
-                defaultModel = configuration["SystemOne:DefaultModel"] ?? (models.Count == 1 ? models[0].PublicName : null)
+                defaultModel = string.IsNullOrWhiteSpace(configuration["SystemOne:DefaultModel"])
+                    ? (models.Count == 1 ? models[0].PublicName : null)
+                    : configuration["SystemOne:DefaultModel"]!.Trim()
             });
         });
 

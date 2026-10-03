@@ -8,6 +8,9 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Administrator automatic-update policies support Manual, ASAP (five-minute checks), Nightly, Weekly and Monthly cadence, always targeting the latest stable release.
+- System One classifiers are first-class logical models/deployments with model → node and node → model visibility, deployment-specific runtime roots, routed diagnostics and `GET /v1/systemone/models`.
+
 - Admin **Request Metrics** now starts with the newest 20 requests and provides server-side pagination plus model, node, credential and success/error filters.
 - Disabled, idle inference nodes can be deleted safely from Admin; deletion removes ordinary deployments transactionally and is rejected while the node is enabled, still serving active requests, or still owns managed model installations.
 - Newly created or rotated API-key secrets use scope-aware prefixes: `lp_org_` for organization credentials and `lp_usr_` for personal credentials. Existing keys keep working unchanged until rotation.
@@ -37,6 +40,10 @@ The project follows Semantic Versioning from the first formal preview release on
 - The release publication workflow is reusable and is invoked directly after tag allocation, avoiding reliance on workflow recursion from a `GITHUB_TOKEN`-created tag.
 
 ### Changed
+
+- Version jumps now preserve every intermediate stable release in order for Admin, automatic and future manual `llmproxyctl update` paths, preventing an intermediate custom migration from being skipped.
+- System One now uses the common routing, distributed capacity, failover, request-rate governance, request metrics and encrypted upstream-credential path; legacy `SYSTEM_ONE_*` configuration is imported once for compatibility.
+- Immutable release downloads retry transient network failures such as connection resets before failing checksum-verified bootstrap.
 
 - Admin information architecture was compacted around task-focused tabs and action dialogs: Inference Nodes, Hardware, Model & Hardware, Playground, Usage & Governance, and Users & Access no longer keep every creation/configuration form expanded on the page.
 - **Models** and **Deployments** are now one bidirectional workspace: operators can inspect model → nodes or node → models, publish logical aliases, deploy to another/all active nodes, and enable/disable routing participation without switching between overlapping pages.
