@@ -88,6 +88,7 @@ jobs:
           bash -n distribution/install.sh
           bash -n distribution/bootstrap.sh
           bash -n distribution/llmproxyctl
+          bash -n distribution/install-node-agent.sh
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
           grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check' distribution/llmproxyctl >/dev/null
           bash -n distribution/build-release-bundle.sh
@@ -106,6 +107,8 @@ jobs:
             sha256sum -c llmproxy-bootstrap.sh.sha256
           )
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
           rm -rf "$RELEASE_DIR"
 
