@@ -29,9 +29,9 @@ running code + migrations + tests + successful CI/integration evidence
 
 LlmProxy is Agic's productizable on-premises AI gateway/governance boundary for GitHub Copilot and other OpenAI-compatible clients, targeting one to six NVIDIA DGX Spark nodes running vLLM.
 
-Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and enterprise observability with administrator-only encrypted payload inspection.
+Core responsibilities: authentication, credential lifecycle, request/token governance, Usage Groups and historical usage accounting, logical-model routing, distributed physical-capacity admission, safe runtime maintenance, backup/recovery, version/release visibility, Linux production deployability, supply-chain identity, target-environment acceptance and enterprise observability with encrypted payload inspection: administrators can inspect all retained inference payloads and normal users can inspect only payloads attributable to their own personal API keys.
 
-Raw prompts, source code, generated outputs and response bodies may be persisted only in the dedicated application-encrypted inference content-log store, visible only to `LlmProxy.Admin`, under the configured 10-180 day retention policy. They must never be copied into OTEL spans, ordinary application logs or acceptance evidence. Authorization headers, upstream bearer tokens and plaintext API secrets must never be persisted in content logs.
+Raw prompts, source code, generated outputs and response bodies may be persisted only in the dedicated application-encrypted inference content-log store. `LlmProxy.Admin` can inspect all retained entries; an admitted normal user can inspect only entries whose `ApiCredentialId` belongs to one of that user's personal credentials under stable Entra `tid + oid`. Shared/organization credentials are never exposed through self-service. Retention is administrator-configurable from 10 through 4015 days (11 x 365 days). They must never be copied into OTEL spans, ordinary application logs or acceptance evidence. Authorization headers, upstream bearer tokens and plaintext API secrets must never be persisted in content logs.
 
 ## Engineering conventions
 
@@ -158,7 +158,7 @@ raw request metrics           90 days
 daily usage rollups          730 days
 audit events                 365 days
 processed runtime outbox      30 days
-full-body content logs         30 days default, configurable 10-180 days
+full-body content logs         30 days default, configurable 10-4015 days (11 years)
 ```
 
 Full-body content logs are a separate encrypted store. Their cleanup worker runs every four hours and deletes entries older than the administrator-configured retention window. Before expired raw request metrics are deleted, complete UTC days are aggregated into PostgreSQL rollups keyed by day + credential + Usage Group + logical model. Compaction is transactional and serialized across replicas with a PostgreSQL advisory transaction lock. Reporting combines rollups with newer raw metrics without double counting.
