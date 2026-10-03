@@ -306,8 +306,8 @@ export default function Governance() {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>Usage groups</h2><span>{groups.length} configured</span></div>
-        <table><thead><tr><th>Name</th><th>Description</th><th>Credentials</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td><strong>{group.name}</strong></td><td>{group.description ?? '—'}</td><td>{group.credentialCount}</td></tr>)}</tbody></table>
+        <div className="panelTitle"><h2>User / usage groups</h2><span>{groups.length} configured · one current group per user</span></div>
+        <table><thead><tr><th>Name</th><th>Description</th><th>Users</th><th>Credentials</th></tr></thead><tbody>{groups.map(group => <tr key={group.id}><td><strong>{group.name}</strong></td><td>{group.description ?? '—'}</td><td>{group.userCount}</td><td>{group.credentialCount}</td></tr>)}</tbody></table>
       </section>
       <section className="panel formPanel"><h2>Create usage group</h2><form onSubmit={event => void createGroup(event)}>
         <label>Name<input value={groupName} onChange={event => setGroupName(event.target.value)} required placeholder="Development CRM" /></label>
