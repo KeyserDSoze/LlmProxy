@@ -61,8 +61,26 @@ async function installAdminApi(page: Page) {
   }]
   const audit = [{ id: 1, occurredAtUtc: '2026-09-09T10:05:00Z', actor: 'admin@agic.it', action: 'routing.update', entityType: 'routing_policy', entityId: '1', sourceIp: '10.0.0.5', detailsJson: '{}' }]
   const metrics = [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions', deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1047, attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 49, inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null }]
-  const metricsSummary = {
-    windowHours: 24, sinceUtc: '2026-09-08T10:00:00Z', requestCount: 125, successCount: 124, errorCount: 1, successRatePercent: 99.2,
+  let userProvisioningMode: 'automatic' | 'manual' = 'manual'
+  const platformUsers = [{
+    id: 'user-1',
+    tenantId: 'tenant-1',
+    objectId: 'object-1',
+    principalName: 'user@example.com',
+    displayName: 'Example User',
+    enabled: true,
+    provisioningSource: 'admin',
+    createdAtUtc: '2026-10-03T06:00:00Z',
+    lastSeenAtUtc: '2026-10-03T06:20:00Z',
+    disabledAtUtc: null as string | null,
+    credentialCount: 1,
+    activeCredentialCount: 1,
+    lastCredentialUsedAtUtc: '2026-10-03T06:19:00Z',
+    requestCount30d: 12,
+    errorCount30d: 1
+  }]
+
+  const metricsSummary = {    windowHours: 24, sinceUtc: '2026-09-08T10:00:00Z', requestCount: 125, successCount: 124, errorCount: 1, successRatePercent: 99.2,
     p50DurationMilliseconds: 900, p95DurationMilliseconds: 1800, p50TimeToFirstByteMilliseconds: 120, p95TimeToFirstByteMilliseconds: 350,
     averageUpstreamHeaderMilliseconds: 40, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, tokenObservedRequests: 100, failoverRequests: 2, streamingRequests: 90,
     byModel: [{ logicalModel: 'agic-code-fast', requestCount: 125, errorCount: 1, averageDurationMilliseconds: 900, averageTimeToFirstByteMilliseconds: 120, outputTokens: 500 }],
@@ -101,6 +119,33 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/metrics') return json(route, metrics)
     if (request.method() === 'GET' && path === '/api/admin/metrics/summary') return json(route, metricsSummary)
     if (request.method() === 'GET' && path === '/api/admin/audit') return json(route, audit)
+    if (request.method() === 'GET' && path === '/api/admin/users/settings') return json(route, { provisioningMode: userProvisioningMode, updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
+    if (request.method() === 'PUT' && path === '/api/admin/users/settings') {
+      userProvisioningMode = (request.postDataJSON() as { provisioningMode: 'automatic' | 'manual' }).provisioningMode
+      return json(route, { provisioningMode: userProvisioningMode, updatedAtUtc: '2026-10-03T06:30:00Z', configuredTenantId: 'tenant-1' })
+    }
+    if (request.method() === 'GET' && path === '/api/admin/users') return json(route, platformUsers)
+    if (request.method() === 'POST' && path === '/api/admin/users') {
+      const input = request.postDataJSON() as { tenantId?: string | null; objectId: string; principalName?: string | null; displayName?: string | null }
+      const created = { id: 'user-2', tenantId: input.tenantId ?? 'tenant-1', objectId: input.objectId, principalName: input.principalName ?? null, displayName: input.displayName ?? null, enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:31:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 0, activeCredentialCount: 0, lastCredentialUsedAtUtc: null, requestCount30d: 0, errorCount30d: 0 }
+      platformUsers.push(created)
+      return json(route, created)
+    }
+    const userDisable = path.match(/^\/api\/admin\/users\/([^/]+)\/disable$/)
+    if (request.method() === 'POST' && userDisable) {
+      const user = platformUsers.find(item => item.id === userDisable[1])!
+      user.enabled = false
+      user.disabledAtUtc = '2026-10-03T06:32:00Z'
+      user.activeCredentialCount = 0
+      return route.fulfill({ status: 204, body: '' })
+    }
+    const userEnable = path.match(/^\/api\/admin\/users\/([^/]+)\/enable$/)
+    if (request.method() === 'POST' && userEnable) {
+      const user = platformUsers.find(item => item.id === userEnable[1])!
+      user.enabled = true
+      user.disabledAtUtc = null
+      return route.fulfill({ status: 204, body: '' })
+    }
     if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
     if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'dgx-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
     if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
@@ -235,6 +280,20 @@ test('admin playground tests models and System One and full-body logs are inspec
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
   await expect(page.getByText('agic-code-fast', { exact: true }).nth(1)).toBeVisible()
   await expect(page.getByText(/automatic every 4h/)).toBeVisible()
+})
+
+
+test('admin controls automatic versus manual end-user provisioning and can disable users', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/')
+  await page.getByRole('button', { name: 'Users & Access' }).click()
+  await expect(page.getByRole('heading', { name: 'User provisioning policy' })).toBeVisible()
+  await expect(page.getByText('Example User')).toBeVisible()
+  await page.getByLabel('Provisioning mode').selectOption('automatic')
+  await page.getByRole('button', { name: 'Save provisioning mode' }).click()
+  await expect(page.getByText(/Automatic provisioning enabled/)).toBeVisible()
+  await page.getByRole('button', { name: 'Disable user' }).click()
+  await expect(page.getByRole('button', { name: 'Enable user' })).toBeVisible()
+  await expect(page.getByText(/all currently active personal API keys were revoked/)).toBeVisible()
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
