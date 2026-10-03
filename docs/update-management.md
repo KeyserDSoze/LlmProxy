@@ -19,7 +19,7 @@ LlmProxy Update Agent :9910 on Docker bridge
 /opt/llmproxy + Docker Compose
 ```
 
-The Update Agent is a systemd service on the Linux control-plane host. It is deliberately separate from the LlmProxy container: replacing or restarting the gateway during deployment must not terminate the process performing the update.
+The Update Agent is a systemd service on the Linux control-plane host. It is deliberately separate from the LlmProxy container: replacing or restarting the gateway during deployment must not terminate the process performing the update. On supported Linux installations without systemd, the core LlmProxy install remains valid and manual `llmproxyctl update` remains available, but Admin scheduling/update-now controls report the host agent as unavailable.
 
 The release installer generates a random Update Agent bearer, stores the agent copy in `/etc/llmproxy/update-agent.env`, and writes the gateway-side copy into protected `/opt/llmproxy/.env`. The agent listens on the Docker bridge address rather than all LAN interfaces.
 
