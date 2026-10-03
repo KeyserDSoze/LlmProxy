@@ -202,7 +202,7 @@ If settlement itself fails after reservation, the reserved amount remains charge
 
 ## User self-service API
 
-When Entra is enabled, `LlmProxy.User` and `LlmProxy.Admin` may call:
+When Entra is enabled, self-service requires successful Entra authentication plus an enabled LlmProxy platform-user record. The registry can be automatic-on-first-access or administrator-censused; administrators bypass the normal-user registry:
 
 ```http
 GET  /api/me
@@ -212,15 +212,23 @@ POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
+GET  /api/me/requests?take=50
 ```
 
-Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from request bodies.
+Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from self-service request bodies. User admission uses stable `tid + oid`, not email. Disabling a platform user revokes active personal keys and blocks self-service until re-enabled.
 
 ## Admin API
 
 Current governance endpoints include:
 
 ```http
+GET  /api/admin/users/settings
+PUT  /api/admin/users/settings
+GET  /api/admin/users
+POST /api/admin/users
+POST /api/admin/users/{id}/disable
+POST /api/admin/users/{id}/enable
+
 GET  /api/admin/api-credentials
 POST /api/admin/api-credentials
 GET  /api/admin/api-credentials/{id}/secret
