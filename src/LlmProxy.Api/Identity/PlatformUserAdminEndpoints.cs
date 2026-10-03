@@ -92,8 +92,9 @@ public static class PlatformUserAdminEndpoints
 
             var requestStats = await (
                     from metric in dbContext.RequestMetrics.AsNoTracking()
+                    where metric.ApiCredentialId != null
                     join credential in dbContext.ApiCredentials.AsNoTracking()
-                        on metric.ApiCredentialId equals credential.Id
+                        on metric.ApiCredentialId.Value equals credential.Id
                     where metric.StartedAtUtc >= sinceUtc &&
                           credential.OwnerTenantId != null &&
                           credential.OwnerObjectId != null
