@@ -155,12 +155,12 @@ services:
       SystemOne__TimeoutSeconds: ${SYSTEM_ONE_TIMEOUT_SECONDS:-30}
 
       Bootstrap__Enabled: ${BOOTSTRAP_ENABLED:-true}
-      Bootstrap__NodeName: ${DGX_NODE_NAME:-dgx-01}
-      Bootstrap__NodeBaseAddress: ${DGX_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}
-      Bootstrap__NodeBearerToken: ${DGX_UPSTREAM_BEARER_TOKEN:-}
-      Bootstrap__HardwareMetricsBaseAddress: ${DGX_HARDWARE_METRICS_BASE_ADDRESS:-}
-      Bootstrap__NodeWeight: ${DGX_NODE_WEIGHT:-1}
-      Bootstrap__NodeMaxConcurrency: ${DGX_NODE_MAX_CONCURRENCY:-4}
+      Bootstrap__NodeName: ${INFERENCE_NODE_NAME:-inference-01}
+      Bootstrap__NodeBaseAddress: ${INFERENCE_NODE_BASE_ADDRESS:-http://host.docker.internal:8000}
+      Bootstrap__NodeBearerToken: ${INFERENCE_NODE_UPSTREAM_BEARER_TOKEN:-}
+      Bootstrap__HardwareMetricsBaseAddress: ${INFERENCE_NODE_HARDWARE_METRICS_BASE_ADDRESS:-}
+      Bootstrap__NodeWeight: ${INFERENCE_NODE_WEIGHT:-1}
+      Bootstrap__NodeMaxConcurrency: ${INFERENCE_NODE_MAX_CONCURRENCY:-4}
       Bootstrap__PublicModelName: ${PUBLIC_MODEL_NAME:-agic-code-fast}
       Bootstrap__ProviderModelName: ${PROVIDER_MODEL_NAME:-bootstrap-model}
     extra_hosts:
