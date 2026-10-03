@@ -101,11 +101,11 @@ Operators read version/build/patch notes at `/admin/releases`. Keep the legacy s
 
 ## Entra identity and personal API keys
 
-Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership uses stable Entra `tid + oid`; usernames/email are metadata only. `LlmProxy.User` and `LlmProxy.Admin` can manage only their own personal keys through `/api/me/*` and `/admin/me`. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
+Production Entra application roles are `LlmProxy.Admin`, `LlmProxy.User` and `LlmProxy.Reader`. Personal API-key ownership and normal-user registry identity use stable Entra `tid + oid`; usernames/email are metadata only. Normal-user self-service admission is controlled by the persisted platform-user registry in either manual-census or automatic-first-login mode; administrators bypass the normal-user registry. An administrator disable blocks `/api/me/*` + `/admin/me` and revokes that user's active personal keys. Administrator-created unowned service credentials remain supported for shared/unattended integrations.
 
 `0.2.0-preview.7` adds aggregate **request-count** quotas at Entra user/model scope across all personal keys. User and credential request-rate policies compose with AND semantics and counters must be acquired atomically. Output-token budgets remain credential/model scoped. Monetary/spend budgets are not implemented without explicit pricing/chargeback semantics.
 
-Read `docs/identity-api-keys.md` and `docs/security.md` before changing identity/credential behavior.
+Read `docs/identity-api-keys.md`, `docs/user-access.md` and `docs/security.md` before changing identity/credential behavior.
 
 ## Runtime topology
 
