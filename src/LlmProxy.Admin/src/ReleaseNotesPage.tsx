@@ -54,7 +54,7 @@ export default function ReleaseNotesPage({ embedded = false }: { embedded?: bool
       <a className="secondary releaseBack" href="/admin/">Back to Admin</a>
     </div>}
 
-    {embedded && <div className="muted">{product.product} · {product.channel} · build {shortRevision(product.buildRevision)}</div>}
+    {embedded && <div className="muted">{product.product} · {product.channel}</div>}
 
     <section className="cards cardsFive">
       <div className="metric"><span>Current version</span><strong>{product.version}</strong></div>
