@@ -111,7 +111,7 @@ export GHCR_USER='<github-user>'
 export GHCR_TOKEN='<token-with-package-read-access>'
 
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag main
 ```
@@ -134,10 +134,10 @@ detect distro + architecture
        -> random initial LlmProxy API credential
        -> random stable API-key HMAC pepper
        -> random Grafana admin password
-  -> apply GHCR/image/DGX/model inputs
+  -> apply GHCR/image/inference-node/model inputs
   -> optional docker login to GHCR
-  -> call DGX /health
-  -> call DGX /v1/models
+  -> call inference node /health
+  -> call inference node /v1/models
   -> invoke docker/scripts/deploy.sh
        -> stage runtime assets
        -> docker compose config
@@ -158,7 +158,7 @@ Host/config preparation without starting containers:
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --prepare-only \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
@@ -167,27 +167,27 @@ Require preinstalled Docker:
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --skip-docker-install \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
-Skip DGX precheck only for deliberate staged provisioning:
+Skip inference-node precheck only for deliberate staged provisioning:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
-  --skip-dgx-check \
-  --dgx-url http://10.0.0.21:8000 \
+  --skip-node-check \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
-Do not use `--skip-dgx-check` as a normal production shortcut.
+Do not use `--skip-node-check` as a normal production shortcut.
 
 Non-interactive provisioning:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --non-interactive \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag sha-abcdef1
 ```
