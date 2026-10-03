@@ -124,7 +124,7 @@ test('release notes page exposes the current product version and versioned patch
   await expect(page.getByRole('heading', { name: /Initial versioned preview baseline/ })).toBeVisible()
   await expect(page.getByText('abcdef123456')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Host updates' })).toBeVisible()
-  await expect(page.getByText('v0.0.7', { exact: true })).toBeVisible()
+  await expect(page.locator('.updateVersionLine').getByText('v0.0.7', { exact: true })).toBeVisible()
   await expect(page.getByText('Standard update')).toBeVisible()
   await expect(page.getByText('sudo -E llmproxyctl update 0.0.7')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Automatic update policy' })).toBeVisible()
