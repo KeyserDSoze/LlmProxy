@@ -1,5 +1,33 @@
 # Development log
 
+## 2026-10-03 — Administrator scheduled/self-service updates — CANDIDATE
+
+Added a release-aware control-plane update path designed to survive replacement of the LlmProxy gateway container.
+
+Implemented:
+
+- **Release Notes & Updates** now shows the installed distribution version and discovers later stable immutable GitHub Releases;
+- each new release publishes a checksum-covered `llmproxy-update-plan.json` describing a `standard` or `custom` update procedure, restart requirements and the operator-visible command;
+- custom host migrations are constrained to the immutable bundle's fixed `distribution/update.sh` entry point; neither the browser nor the Admin API accepts arbitrary shell commands;
+- AdminWrite users can run **Update now**, schedule an exact future update, cancel pending work and inspect recent update outcomes;
+- the bearer-authenticated **LlmProxy Update Agent** is installed as a systemd service on the Linux control-plane host, outside Docker, and persists scheduling state under `/var/lib/llmproxy-update-agent`;
+- the agent replaces its own binary atomically during an upgrade, records the final job outcome, then schedules a self-restart so later updates use the newly installed updater;
+- target-version selection expands to an ordered chain of every intervening published stable release, so a custom migration attached to an intermediate version cannot be skipped;
+- manual `llmproxyctl update VERSION` and Admin-triggered updates both use the target release's update-plan contract;
+- the release workflow publishes the update-plan asset and embeds self-contained x86_64 + ARM64 Update Agent binaries in the Linux operator bundle.
+
+Security/reliability boundary:
+
+- the Update Agent listens on the Docker bridge address and requires a generated bearer stored only in protected host configuration;
+- the Admin API accepts only published stable versions newer than the running version;
+- update execution uses argument lists and fixed bundle entry points rather than user-supplied shell text;
+- gateway/container restart does not terminate the host update worker;
+- PostgreSQL/Redis/observability volumes and `/opt/llmproxy/.env` remain governed by the existing installer/update preservation contract.
+
+Focused contract: `docs/update-management.md`.
+
+Validation is in progress on PR #5. Do not promote/release this increment until backend, frontend/Playwright, Docker/PostgreSQL and distributed Full Stack CI are green.
+
 ## 2026-10-03 — Configurable end-user provisioning and suspension — CANDIDATE
 
 Extended the Entra personal-key model with a first-class `platform_users` registry and administrator-controlled admission policy.
