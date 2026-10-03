@@ -456,6 +456,13 @@ export type ContentLogSummary = {
   responseContentType?: string | null
 }
 
+export type ContentLogPage = {
+  items: ContentLogSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export type ContentLogDetail = ContentLogSummary & {
   requestBody: string
   responseBody: string
