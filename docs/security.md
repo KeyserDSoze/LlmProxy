@@ -6,7 +6,7 @@
 2. Cloudflare Tunnel to the on-prem VM.
 3. LlmProxy application boundary.
 4. PostgreSQL network/container boundary.
-5. Private network between gateway and DGX runtimes.
+5. Private network between gateway and inference node runtimes.
 
 ## Entra authentication and roles
 
@@ -49,7 +49,7 @@ Node upstream bearers are write-only. LlmProxy encrypts them with AES-GCM before
 
 The stable encryption key is supplied as `Security__UpstreamCredentialEncryptionKey` / `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` and must remain outside PostgreSQL. Every replica that may route to protected nodes needs the same key. Losing or changing it makes the stored node credentials undecryptable.
 
-For first installation, `DGX_UPSTREAM_BEARER_TOKEN` is a one-time bootstrap input. The Linux installer uses it for authenticated connectivity checks and initial node creation, then removes it from the long-lived container environment after encrypted bootstrap.
+For first installation, `INFERENCE_NODE_UPSTREAM_BEARER_TOKEN` is a one-time bootstrap input. The Linux installer uses it for authenticated connectivity checks and initial node creation, then removes it from the long-lived container environment after encrypted bootstrap.
 
 Revocation disables the existing key. Rotation changes the prefix/hash in place so credential identity, ownership, Usage Group, rate policies and usage history remain associated with the same credential record.
 
@@ -69,7 +69,7 @@ Allowed default metadata includes timestamp, request identifier, logical model, 
 
 ## Network
 
-- DGX vLLM endpoints remain private.
+- inference node vLLM endpoints remain private.
 - PostgreSQL is not published outside the Docker network.
 - Cloudflare Tunnel makes an outbound connection; no public inbound VM port is required for normal external access.
 - A local-only published HTTP port may be retained for troubleshooting and can be firewall-restricted.
