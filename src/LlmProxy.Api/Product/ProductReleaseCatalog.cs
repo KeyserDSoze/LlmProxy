@@ -71,7 +71,7 @@ public static class ProductReleaseCatalog
                     "Immutable GitHub Releases can carry a checksummed Linux operator bundle with the production Compose assets, observability configuration and versioned installer tooling.",
                     "The llmproxyctl command provides status, health, logs, lifecycle, doctor, explicit update and local rollback operations while preserving host-owned configuration and Docker volumes.",
                     "GitHub Actions can create immutable version tags only from an exact main SHA that has passed the repository release gates; the automatic release train later makes that publication step default for every green main push.",
-                    "Tagged container publication targets both linux/amd64 and linux/arm64 so the same release can run on conventional Linux hosts and NVIDIA DGX Spark-class ARM64 systems.",
+                    "Tagged container publication targets both linux/amd64 and linux/arm64 so the same release can run on conventional Linux hosts and GPU inference hardware-class ARM64 systems.",
                     "Inference nodes can store a write-only upstream bearer credential encrypted with AES-GCM; health, model discovery, metrics, maintenance warm-up and inference use that credential without forwarding the client-facing LlmProxy API key.",
                     "Same-host llama.cpp/vLLM installation validates host.docker.internal through Docker's bridge gateway so a loopback-only runtime fails before deployment with an actionable bind-address error."
                 ],
@@ -142,8 +142,8 @@ public static class ProductReleaseCatalog
             {
                 ["Added"] =
                 [
-                    "A production environment acceptance command validates the actual Linux host, VM-to-DGX connectivity and deployed OpenAI-compatible surfaces after installation.",
-                    "Acceptance evidence records metadata-only PASS/FAIL, HTTP status, content type and timing for direct DGX and gateway Models, Chat, Responses and SSE probes.",
+                    "A production environment acceptance command validates the actual Linux host, VM-to-inference node connectivity and deployed OpenAI-compatible surfaces after installation.",
+                    "Acceptance evidence records metadata-only PASS/FAIL, HTTP status, content type and timing for direct inference node and gateway Models, Chat, Responses and SSE probes.",
                     "A dedicated acceptance runbook defines pass criteria and the remaining benchmark, Entra, Cloudflare, Copilot and deployment-runner follow-on work."
                 ],
                 ["Changed"] =
@@ -152,7 +152,7 @@ public static class ProductReleaseCatalog
                 ],
                 ["Fixed"] =
                 [
-                    "DGX health acceptance validates the canonical vLLM status-only /health response without incorrectly requiring a JSON body or content type."
+                    "inference node health acceptance validates the canonical vLLM status-only /health response without incorrectly requiring a JSON body or content type."
                 ],
                 ["Security"] =
                 [
@@ -168,8 +168,8 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "Linux production deployment now has one documented full-stack path with PostgreSQL, Redis and bundled observability.",
-                    "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate DGX connectivity and run the canonical full-stack deployment.",
-                    "A production environment template and end-to-end Linux runbook cover private bootstrap, DGX connectivity, Entra/public exposure, backup, update and rollback.",
+                    "A cross-distribution Linux host installer can install or preserve Docker Engine and Compose v2, prepare /opt/llmproxy, generate initial secrets, validate inference node connectivity and run the canonical full-stack deployment.",
+                    "A production environment template and end-to-end Linux runbook cover private bootstrap, inference node connectivity, Entra/public exposure, backup, update and rollback.",
                     "Production deployment stages runtime Compose and observability assets under /opt/llmproxy/runtime so containers do not depend on a transient runner workspace.",
                     "Cloudflare Tunnel can be enabled as an optional Compose profile when a tunnel token is configured."
                 ],
@@ -253,12 +253,12 @@ public static class ProductReleaseCatalog
                 ["Added"] =
                 [
                     "OpenAI-compatible Chat Completions and Responses surfaces with SSE streaming and cancellation.",
-                    "Logical-model routing across DGX/vLLM with weighted least loaded, round robin and weighted round robin strategies.",
+                    "Logical-model routing across inference node/vLLM with weighted least loaded, round robin and weighted round robin strategies.",
                     "Distributed runtime state using PostgreSQL as durable truth, Redis as shared L2/coordination and local RAM as request-path L1.",
                     "Physical capacity admission with Redis leases, fail-closed coordination and active lease-loss cancellation.",
                     "Caller governance with HMAC-backed credentials, Usage Groups, request-rate limits and output-token budgets.",
                     "Credential rotation with one-time replacement secrets and cross-replica runtime propagation.",
-                    "Metadata-only request metrics, audit, vLLM runtime telemetry and optional DGX hardware telemetry.",
+                    "Metadata-only request metrics, audit, vLLM runtime telemetry and optional inference hardware telemetry.",
                     "Repository-supported PostgreSQL backup/restore operators for Bash and PowerShell with destructive clean-target verification.",
                     "Safe node maintenance flow with distributed admission pre-block, drain-to-zero, health/models/warm-up validation and controlled resume.",
                     "Product version and release notes surfaced through the Admin API and UI."
