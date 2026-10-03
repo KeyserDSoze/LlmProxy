@@ -38,6 +38,8 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
 - DONE: per-page closed documentation accordions and dedicated Help & Endpoints guidance.
 - DONE: product version/build and patch-note visibility.
+- DONE: administrator release discovery plus immediate/scheduled control-plane updates through a persistent host Update Agent.
+- DONE: immutable per-release update-plan metadata with standard fallback and constrained bundled custom-update procedures.
 - EXTERNAL: real Entra app registration/roles.
 
 ## M4 — Observability — DONE FOR CURRENT MVP / PRODUCTION STORAGE EVOLUTION REMAINS
