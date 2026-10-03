@@ -163,7 +163,8 @@ minimum retention      10 days
 maximum retention    4015 days (11 x 365)
 cleanup cadence         4 hours
 storage                 PostgreSQL, application-encrypted ciphertext
-global read              LlmProxy.Admin only\nself-service read         owner-scoped personal credentials only
+global read              LlmProxy.Admin only
+self-service read         owner-scoped personal credentials only
 ```
 
 Administrator endpoints:
@@ -182,6 +183,15 @@ POST /api/admin/content-logs/retention/run
 { "retentionDays": 30 }
 ```
 
-Values below 10 or above 4015 are rejected. The hosted cleanup worker runs at startup and then every four hours, deleting rows whose `StartedAtUtc` is older than the active retention window.\n\nNormal-user self-service endpoints are:\n\n```http\nGET /api/me/content-logs\nGET /api/me/content-logs/{id}\n```\n\nThese endpoints derive identity from the authenticated Entra principal and return only rows whose `ApiCredentialId` belongs to a personal credential owned by the same stable `tid + oid`. Supplying another user's credential ID yields no rows, and direct detail access to a non-owned row returns not found. Organization/shared credentials are not exposed through self-service. Decrypted detail responses use `Cache-Control: no-store`.
+Values below 10 or above 4015 are rejected. The hosted cleanup worker runs at startup and then every four hours, deleting rows whose `StartedAtUtc` is older than the active retention window.
+
+Normal-user self-service endpoints are:
+
+```http
+GET /api/me/content-logs
+GET /api/me/content-logs/{id}
+```
+
+These endpoints derive identity from the authenticated Entra principal and return only rows whose `ApiCredentialId` belongs to a personal credential owned by the same stable `tid + oid`. Supplying another user's credential ID yields no rows, and direct detail access to a non-owned row returns not found. Organization/shared credentials are not exposed through self-service. Decrypted detail responses use `Cache-Control: no-store`.
 
 This retention does not change request-metric/rollup/audit/outbox retention. Full-body content is excluded from telemetry rollups and OTEL export.
