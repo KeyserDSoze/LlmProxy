@@ -166,9 +166,9 @@ Credentials are database-backed, HMAC-hashed, revocable and may have an expiry d
 
 Administration endpoints live under `/api/admin`. They are not OpenAI-compatible and may evolve independently of `/v1`.
 
-Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity, usage attributable to those credentials and read-only aggregate user request-limit metadata. Administrative user request-limit CRUD lives under `/api/admin/user-rate-limits`; user quota scope is stable Entra `(tid, oid)` with optional logical-model scope.
+Authenticated user self-service endpoints live under `/api/me`; they expose only the current Entra identity, credentials owned by that identity, usage attributable to those credentials, read-only aggregate user request-limit metadata, and request-audit payloads attributable to the caller's own personal credentials. Administrative user request-limit CRUD lives under `/api/admin/user-rate-limits`; user quota scope is stable Entra `(tid, oid)` with optional logical-model scope.
 
-## Administrator diagnostic and content-log APIs
+## Administrator diagnostic and request-audit APIs
 
 These endpoints are control-plane APIs. When Entra is enabled they require `LlmProxy.Admin`; `LlmProxy.Reader` cannot access them.
 
@@ -217,14 +217,17 @@ The GET surface reports routed System One availability, the first eligible runti
 
 The diagnostic resolves the System One logical model through normal routing/capacity admission, reports the selected deployment/node/provider metadata and forwards the payload object as the exact JSON request body. This is suitable for private classifiers such as `convaiinnovations/laya`.
 
-### Full-body log inspection
+### Full-body request audit
 
 ```http
-GET /api/admin/content-logs?take=100
+GET /api/admin/content-logs/query
 GET /api/admin/content-logs/{id}
+GET /api/admin/content-logs/settings
+PUT /api/admin/content-logs/settings
+POST /api/admin/content-logs/retention/run
 ```
 
-The list endpoint returns safe metadata only. The detail endpoint decrypts and returns the exact captured request and response bodies and correlates OpenAI requests with routing metrics where available. Decrypted responses use `Cache-Control: no-store`.
+The Admin query endpoint returns safe metadata with paging/filtering by owner, credential, model, surface, status, request ID and time range. The detail endpoint decrypts and returns the exact captured request and response bodies and correlates routing metrics where available. Retention is administrator-controlled from 10 through 4015 days (11 x 365), default 30 days. Normal-user equivalents are `GET /api/me/content-logs` and `GET /api/me/content-logs/{id}`; they are restricted to rows linked to personal credentials owned by the same authenticated Entra `tid + oid`, and never expose shared/organization credentials. Decrypted responses use `Cache-Control: no-store`.
 
 ### Administrator API-key recovery
 
