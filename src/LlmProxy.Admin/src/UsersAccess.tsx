@@ -1,10 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { api } from './api'
-import type { PlatformUser, PlatformUserAccessSettings } from './types'
+import type { PlatformUser, PlatformUserAccessSettings, UsageGroup } from './types'
 
 export default function UsersAccess() {
   const [settings, setSettings] = useState<PlatformUserAccessSettings | null>(null)
   const [users, setUsers] = useState<PlatformUser[]>([])
+  const [groups, setGroups] = useState<UsageGroup[]>([])
+  const [newUserGroupId, setNewUserGroupId] = useState('')
   const [mode, setMode] = useState<'automatic' | 'manual'>('manual')
   const [tenantId, setTenantId] = useState('')
   const [objectId, setObjectId] = useState('')
@@ -15,14 +17,16 @@ export default function UsersAccess() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextSettings, nextUsers] = await Promise.all([
+      const [nextSettings, nextUsers, nextGroups] = await Promise.all([
         api.platformUserAccessSettings(),
-        api.platformUsers()
+        api.platformUsers(),
+        api.usageGroups()
       ])
       setSettings(nextSettings)
       setMode(nextSettings.provisioningMode)
       setTenantId(current => current || nextSettings.configuredTenantId || '')
       setUsers(nextUsers)
+      setGroups(nextGroups)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -52,11 +56,13 @@ export default function UsersAccess() {
         tenantId: tenantId || null,
         principalName: principalName || null,
         displayName: displayName || null,
-        enabled: true
+        enabled: true,
+        usageGroupId: newUserGroupId || null
       })
       setObjectId('')
       setPrincipalName('')
       setDisplayName('')
+      setNewUserGroupId('')
       setMessage('User registered and enabled.')
       await refresh()
     } catch (err) {
