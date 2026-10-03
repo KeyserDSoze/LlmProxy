@@ -4,6 +4,26 @@ Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
+## End-user provisioning / suspension — IMPLEMENTED, VALIDATION IN PROGRESS
+
+The current PR now also adds a first-class platform-user registry and a new **Users & Access** administrator screen.
+
+Behavior:
+
+- global provisioning mode is either `manual` (default) or `automatic`;
+- manual mode admits only administrator-censused, enabled Entra identities;
+- automatic mode registers an authenticated Entra identity on first access to `/admin/me`;
+- authorization identity is stable Entra `tid + oid`; email/UPN/display name are metadata only;
+- existing personal-key owners are migrated into the registry at startup;
+- administrators can disable a user, which blocks `/api/me/*` and `/admin/me` and revokes all active personal API keys for that owner;
+- re-enable restores portal access without resurrecting revoked keys;
+- the user portal is now **My dashboard** and shows latest request metadata as well as personal keys, own usage and limits;
+- shared GitHub Copilot provider credentials remain workload/service identity, not guaranteed individual developer identity.
+
+Focused contract: `docs/user-access.md`.
+
+These changes were made after the previously validated observability head below, so they require a new exact-head CI/Full Stack pass before PR #1 can be promoted.
+
 ## Administrator observability / testing — DONE / VALIDATED
 
 Branch / review:
@@ -334,14 +354,14 @@ Prompts/source/generated output remain excluded from ordinary metrics, audit, OT
 
 ## Current development focus
 
-The immediate step is validating the first automatically generated `v0.0.x` releases and then continuing physical product acceptance:
+The immediate step is first obtaining green exact-head CI for the new user-registry changes, then validating the first automatically generated `v0.0.x` releases and then continuing physical product acceptance:
 
 1. get green CI + Full Stack on the exact `0.2.0-preview.8` source and validate tagged multi-architecture publication/release assets;
 2. install/update/rollback the candidate on the actual ARM64 GB10 host;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
 3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
 4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
-5. validate real Entra Admin/User/Reader roles, personal-key self-service, aggregate user request quotas and Cloudflare/public hostname;
+5. validate real Entra Admin/Reader roles plus manual/automatic platform-user admission, disable/re-enable, personal-key revocation, aggregate user request quotas and Cloudflare/public hostname;
 6. validate GitHub Copilot BYOK end-to-end;
 7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
 8. create an immutable Git tag/GitHub Release only when explicitly requested.
