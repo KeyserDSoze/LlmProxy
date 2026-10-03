@@ -347,24 +347,27 @@ export default function Governance() {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>User request limits</h2><span>Aggregate across every personal API key owned by the Entra user.</span></div>
-        <table><thead><tr><th>User</th><th>Model</th><th>Request limit</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          {userRateLimits.length === 0 ? <tr><td colSpan={5}>No user limits configured.</td></tr> : userRateLimits.map(policy => <tr key={policy.id}>
+        <div className="panelTitle"><h2>User quotas</h2><span>Applied across every personal API key owned by the registered Entra user.</span></div>
+        <table><thead><tr><th>User</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {userRateLimits.length === 0 ? <tr><td colSpan={6}>No user quotas configured.</td></tr> : userRateLimits.map(policy => <tr key={policy.id}>
             <td><strong>{policy.principalName ?? policy.ownerObjectId}</strong><div className="muted mono">{policy.ownerObjectId}</div></td>
             <td>{policy.logicalModel ?? 'All models'}</td>
             <td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+            <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <>{formatNumber(policy.outputTokensPerWindow)} / {policy.windowSeconds}s<div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
             <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
             <td className="actions"><button onClick={() => void toggleUserRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteUserRateLimit(policy)}>Delete</button></td>
           </tr>)}
         </tbody></table>
       </section>
-      <section className="panel formPanel"><h2>Add user request limit</h2><form onSubmit={event => void createUserRateLimit(event)}>
-        <label>User<select value={rateUserKey} onChange={event => setRateUserKey(event.target.value)} required><option value="">Select Entra user</option>{users.map(user => <option key={`${user.tenantId}|${user.objectId}`} value={`${user.tenantId}|${user.objectId}`}>{user.principalName ?? user.objectId}</option>)}</select></label>
+      <section className="panel formPanel"><h2>Add user quota</h2><form onSubmit={event => void createUserRateLimit(event)}>
+        <label>User<select value={rateUserKey} onChange={event => setRateUserKey(event.target.value)} required><option value="">Select registered user</option>{users.map(user => <option key={`${user.tenantId}|${user.objectId}`} value={`${user.tenantId}|${user.objectId}`}>{user.displayName ?? user.principalName ?? user.objectId}</option>)}</select></label>
         <label>Logical model<select value={userRateModel} onChange={event => setUserRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
         <label>Requests per window<input type="number" min="1" value={userRequestsPerWindow} onChange={event => setUserRequestsPerWindow(Number(event.target.value))} /></label>
         <label>Window seconds<input type="number" min="1" value={userWindowSeconds} onChange={event => setUserWindowSeconds(Number(event.target.value))} /></label>
-        <button className="primary" disabled={users.length === 0}>Add user limit</button>
-      </form>{users.length === 0 && <p className="muted">A user appears after creating at least one personal API key.</p>}</section>
+        <label>Output tokens per window<input type="number" min="1" value={userOutputTokensPerWindow} onChange={event => setUserOutputTokensPerWindow(Number(event.target.value))} /></label>
+        <label>Max output tokens per request<input type="number" min="1" max={userOutputTokensPerWindow} value={userMaxOutputTokensPerRequest} onChange={event => setUserMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
+        <button className="primary" disabled={users.length === 0}>Add user quota</button>
+      </form>{users.length === 0 && <p className="muted">Register users in Users & Access before assigning personal quotas.</p>}</section>
     </div>
 
     <section className="panel formPanel">
