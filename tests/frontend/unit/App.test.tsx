@@ -48,7 +48,9 @@ const mockedApi = vi.hoisted(() => ({
   updatePlatformUserAccessSettings: vi.fn(),
   createPlatformUser: vi.fn(),
   disablePlatformUser: vi.fn(),
-  enablePlatformUser: vi.fn()
+  enablePlatformUser: vi.fn(),
+  usageGroups: vi.fn(),
+  assignPlatformUserUsageGroup: vi.fn()
 }))
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
