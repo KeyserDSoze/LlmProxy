@@ -90,7 +90,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   const rotatedSecret = page.getByTestId('rotated-credential-secret')
   await expect(rotatedSecret).toContainText('lp_rotated_secret_once')
   await expect(rotatedSecret).toContainText('will not be shown again')
-  const membershipSection = page.getByRole('heading', { name: 'Credential → group membership & rotation' }).locator('..').locator('..')
+  const membershipSection = page.getByRole('heading', { name: 'Organization & personal credentials' }).locator('..').locator('..')
   await expect(membershipSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_rotated')
   await expect(page.getByLabel('Usage group for Copilot CRM')).toHaveValue('group-1')
 
