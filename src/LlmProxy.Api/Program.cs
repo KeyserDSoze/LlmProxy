@@ -130,6 +130,7 @@ builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.From
 builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
@@ -236,6 +237,7 @@ app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapRouteCatalogAdminEndpoints(entraEnabled);
 app.MapRuntimeStateAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
+app.MapNodeModelManagementEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapUserRateLimitAdminEndpoints(entraEnabled);
