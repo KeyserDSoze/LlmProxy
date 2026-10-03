@@ -10,8 +10,9 @@ Current request governance is:
 OpenAI-compatible inference request
   -> bearer/API credential authentication from local L1
   -> credential + Entra owner + UsageGroup resolution
-  -> output-token budget reservation when configured
-  -> aggregate user + credential request-rate admission
+  -> organization-key caller-governance mode
+  -> user + group + credential output-token reservations when applicable
+  -> user + group + credential request-rate admission when applicable
   -> logical-model routing + physical-capacity admission
   -> DGX / vLLM
   -> output-token budget settlement
@@ -36,7 +37,7 @@ The `/v1` authentication path remains HMAC-only: PostgreSQL stores the HMAC-SHA2
 
 Credential creation and rotation return the generated raw secret with `Cache-Control: no-store`. In addition, newly created/rotated credentials store an application-encrypted recovery copy in PostgreSQL so `LlmProxy.Admin` can reveal/copy it later. The recovery ciphertext is not part of runtime state and is never used for authentication. Raw secrets remain excluded from audit, request metrics, content logs, OTEL and generic application logs.
 
-Credentials may be administrator-created **service credentials** or Entra-owned **personal credentials**. Personal ownership is immutable `(tid, oid)` metadata on the credential; usernames/email are display metadata only. The runtime snapshot carries owner IDs, while durable request telemetry continues to store `ApiCredentialId` so user attribution is resolved without duplicating user PII per request.
+Credentials are either administrator-created **organization credentials** or Entra-owned **personal credentials**. Personal ownership is immutable `(tid, oid)` metadata on the credential; usernames/email are display metadata only. Personal credentials always participate in caller governance. Organization credentials default to caller-governance off and can be opted in only by an administrator. The runtime snapshot carries owner IDs, while durable request telemetry continues to store `ApiCredentialId` so user attribution is resolved without duplicating user PII per request.
 
 Normal users manage their own keys at `/admin/me` or through `/api/me/*`. See `docs/identity-api-keys.md`.
 
@@ -89,46 +90,39 @@ This is a hard cutover rather than a grace-period rotation. Clients must update 
 
 ## Usage Groups
 
-A credential can have zero or one primary `UsageGroupId`. The request-time group id is copied into request metrics so historical accounting does not change when a credential is moved later. Rotation preserves the same credential ID and Usage Group, so it also preserves attribution/history naturally.
+Usage Groups now group both platform users and credentials. A platform user has zero or one current `UsageGroupId`; administrators control that membership. New personal credentials inherit the user's current group, and changing user membership propagates the group to that user's personal credentials.
 
-Never infer a user or Usage Group from source IP. A centrally configured GitHub Copilot BYOK credential may be shared, so gateway attribution is reliably credential/group-level unless the client uses separate credentials.
+The request-time group id is copied into request metrics. Historical accounting therefore remains attached to the group that owned the request at the time, even when a user or credential changes group later.
+
+Organization credentials may also be assigned to a Usage Group. Their group quota applies only when the organization credential's `EnforceCallerGovernance` switch is enabled.
+
+Never infer a user or Usage Group from source IP. A centrally configured GitHub Copilot credential may be shared, so gateway attribution is credential/group-level unless a trustworthy per-user identity is actually present.
 
 ## Unified caller policy scope
 
-`RateLimitPolicy` is the persisted caller-governance policy for one credential and optional logical model:
+Three caller scopes can participate when caller governance is enabled:
 
 ```text
-Id
-ApiCredentialId
-LogicalModel : string?          # null = credential-wide default
-RequestsPerWindow : int
-WindowSeconds : int
-OutputTokensPerWindow : int?    # null = no token budget
-MaxOutputTokensPerRequest : int?# required together with OutputTokensPerWindow
-Enabled : bool
-CreatedAtUtc
-UpdatedAtUtc
+UserRateLimitPolicy          stable Entra tid + oid
+UsageGroupRateLimitPolicy    one UsageGroupId
+RateLimitPolicy              one API credential
 ```
 
-Credential policy precedence is:
+Each scope supports an optional logical-model override, request count/window, and optional output-token budget using `OutputTokensPerWindow + MaxOutputTokensPerRequest`.
+
+Policy precedence inside one scope remains exact logical model over all-model fallback. Across scopes, policies compose rather than override one another:
 
 ```text
-credential + exact logical model
-    overrides
-credential-wide policy (LogicalModel = null)
+user AND group AND credential
 ```
 
-`UserRateLimitPolicy` independently provides an aggregate request-count scope for one Entra `OwnerTenantId + OwnerObjectId`, with the same exact-model then all-model fallback. If both a user policy and credential policy apply, both must permit the request.
-
-An output-token budget is active only when the policy is enabled and both token fields are configured. In V1 the request-rate counter and output-token budget deliberately share the same `WindowSeconds` value and policy scope.
-
-Policy configuration is kept in local L1 and republished through PostgreSQL transactional-outbox -> Redis runtime-state publication. Credential rotation keeps the same `ApiCredentialId`, so policy records are not recreated or rewritten.
+An organization credential with `EnforceCallerGovernance=false` skips these caller-specific policies. When an administrator enables that switch, its credential policy and any assigned group policy become active. Organization credentials do not acquire a synthetic user identity.
 
 ## Request-rate admission
 
 Request-rate admission is fixed-window. Redis-enabled deployments use shared Redis counters across gateway replicas; Redis-disabled deployments use the local in-memory store.
 
-For personal credentials, request admission evaluates the applicable Entra-user policy and credential policy together. Counter acquisition is atomic across the applicable policies: a rejection by either scope leaves both counters unchanged. User policies therefore aggregate traffic from every personal credential owned by the same stable `(tid, oid)`.
+For governed credentials, request admission evaluates every applicable user, Usage Group and credential policy together. Counter acquisition is atomic across the applicable request-count policies: if any applicable scope rejects, none of those request counters is incremented. User policies therefore aggregate traffic from every personal credential owned by the same stable `(tid, oid)`.
 
 A rejection returns:
 
@@ -187,6 +181,9 @@ missing or otherwise uncertain usage after upstream work
 ```
 
 Settlement is idempotent. Unknown usage is deliberately conservative.
+
+
+When multiple token budgets apply, LlmProxy reserves the same request cap against each applicable user/group/credential policy. The request's injected maximum is the smallest applicable `MaxOutputTokensPerRequest`. Successful completion settles the actual output against every acquired reservation. If a later scope cannot reserve, earlier reservations from that request are released before rejection, preventing a failed multi-scope admission from leaking reserved budget.
 
 ### Redis-enabled multi-replica semantics
 
