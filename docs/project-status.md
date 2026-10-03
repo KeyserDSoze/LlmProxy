@@ -1,8 +1,23 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-10-03**.
+Last reviewed: **2026-10-04**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
+
+## Request audit expansion — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Current source makes full-body inference auditing a first-class operator/user surface rather than an administrator-only content-log utility:
+
+- Admin navigation now distinguishes **Request Audit** from **Administrative Audit**.
+- Admin Request Audit supports server-side pagination and filters for user ownership, credential, logical model, surface, status, request ID and time range, plus exact request/response inspection.
+- admitted normal users get **My request audit** and may inspect only rows whose `ApiCredentialId` belongs to one of their personal credentials owned by the same stable Entra `tid + oid`;
+- another user's payload, an organization/shared credential payload, or a direct non-owned detail ID is never exposed through self-service;
+- payloads remain application-encrypted at rest and decrypted detail responses remain `Cache-Control: no-store`;
+- administrator-controlled full-body retention now spans 10 through 4015 days (11 x 365 days), defaults to 30 days and is cleaned every four hours.
+
+Focused contracts: `docs/data-retention.md`, `docs/security.md`, `docs/user-access.md`, `docs/admin-observability.md`.
+
+Validation required before marking DONE: backend build/unit, frontend/Vitest, Playwright E2E, Docker/PostgreSQL integration and distributed Full Stack CI on the exact resulting main SHA.
 
 ## Safe automatic updates + routed System One — IMPLEMENTED / VALIDATION IN PROGRESS
 
@@ -360,7 +375,7 @@ OpenAI-compatible client / GitHub Copilot
   -> vLLM
   -> output-token settlement
   -> metadata-only metric + OTEL telemetry
-  -> administrator-only encrypted full-body content log
+  -> application-encrypted full-body request audit (global Admin + owner-scoped personal self-service)
 ```
 
 ### Runtime state
@@ -396,7 +411,7 @@ raw request metrics           90 days
 daily usage rollups          730 days
 audit events                 365 days
 processed runtime outbox      30 days
-full-body content logs         30 days default, configurable 10-180
+full-body content logs         30 days default, configurable 10-4015 (11 years)
 ```
 
 Complete expired UTC days roll up transactionally before raw deletion. A PostgreSQL advisory transaction lock serializes compaction across replicas. Reporting merges historical rollups with newer raw metrics without double counting.
