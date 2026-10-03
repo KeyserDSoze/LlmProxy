@@ -1,3 +1,4 @@
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 
 namespace LlmProxy.Application.Routing;
@@ -14,13 +15,15 @@ public sealed record DeploymentCandidate(
     int MaxConcurrency,
     NodeStatus NodeStatus,
     int NodeMaxConcurrency = int.MaxValue,
-    string? UpstreamBearerTokenCiphertext = null);
+    string? UpstreamBearerTokenCiphertext = null,
+    ModelSurface Surface = ModelSurface.OpenAi);
 
 public sealed record PublicModel(
     Guid Id,
     string PublicName,
     bool SupportsStreaming,
-    bool SupportsTools);
+    bool SupportsTools,
+    ModelSurface Surface = ModelSurface.OpenAi);
 
 public sealed record RouteSelection(
     Guid DeploymentId,
@@ -31,7 +34,8 @@ public sealed record RouteSelection(
     string ProviderModelName,
     int MaxConcurrency,
     int NodeMaxConcurrency = int.MaxValue,
-    string? UpstreamBearerTokenCiphertext = null);
+    string? UpstreamBearerTokenCiphertext = null,
+    ModelSurface Surface = ModelSurface.OpenAi);
 
 public enum RoutingSelectionFailure
 {

@@ -1,5 +1,6 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Models;
 
 namespace LlmProxy.Infrastructure.Routing;
 
@@ -61,24 +62,26 @@ public sealed class InMemoryRouteCatalog : IRouteCatalog
                 deployment.MaxConcurrency ?? node.MaxConcurrency,
                 node.Status,
                 node.MaxConcurrency,
-                node.UpstreamBearerTokenCiphertext));
+                node.UpstreamBearerTokenCiphertext,
+                model.Surface));
         }
 
         return Task.FromResult<IReadOnlyList<DeploymentCandidate>>(candidates);
     }
 
-    public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken, ModelSurface? surface = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var state = Volatile.Read(ref _state);
         IReadOnlyList<PublicModel> models = state.Models.Values
-            .Where(model => model.Enabled)
+            .Where(model => model.Enabled && (surface is null || model.Surface == surface))
             .OrderBy(model => model.PublicName, StringComparer.Ordinal)
             .Select(model => new PublicModel(
                 model.Id,
                 model.PublicName,
                 model.SupportsStreaming,
-                model.SupportsTools))
+                model.SupportsTools,
+                model.Surface))
             .ToArray();
         return Task.FromResult(models);
     }

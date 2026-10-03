@@ -6,6 +6,7 @@ using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.AspNetCore.Http.Features;
@@ -20,7 +21,7 @@ public static class OpenAiEndpoints
     {
         endpoints.MapGet("/v1/models", async (IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
         {
-            var models = await catalog.GetPublicModelsAsync(cancellationToken);
+            var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.OpenAi);
             return Results.Ok(new
             {
                 @object = "list",
@@ -184,7 +185,7 @@ public static class OpenAiEndpoints
 
             for (var attempt = 1; attempt <= MaxUpstreamAttempts; attempt++)
             {
-                var selection = await routingService.SelectDetailedAsync(publicModelName, excluded, context.RequestAborted);
+                var selection = await routingService.SelectDetailedAsync(publicModelName, ModelSurface.OpenAi, excluded, context.RequestAborted);
                 var route = selection.Route;
                 if (route is null)
                 {

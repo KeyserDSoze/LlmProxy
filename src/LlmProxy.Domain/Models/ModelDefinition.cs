@@ -1,5 +1,11 @@
 namespace LlmProxy.Domain.Models;
 
+public enum ModelSurface
+{
+    OpenAi = 0,
+    SystemOne = 1
+}
+
 public sealed class ModelDefinition
 {
     private ModelDefinition()
@@ -10,9 +16,10 @@ public sealed class ModelDefinition
         string publicName,
         string providerModelName,
         bool supportsStreaming = true,
-        bool supportsTools = true)
+        bool supportsTools = true,
+        ModelSurface surface = ModelSurface.OpenAi)
     {
-        Update(publicName, providerModelName, supportsStreaming, supportsTools);
+        Update(publicName, providerModelName, supportsStreaming, supportsTools, surface);
     }
 
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -20,9 +27,10 @@ public sealed class ModelDefinition
     public string ProviderModelName { get; private set; } = string.Empty;
     public bool SupportsStreaming { get; private set; } = true;
     public bool SupportsTools { get; private set; } = true;
+    public ModelSurface Surface { get; private set; } = ModelSurface.OpenAi;
     public bool Enabled { get; private set; } = true;
 
-    public void Update(string publicName, string providerModelName, bool supportsStreaming, bool supportsTools)
+    public void Update(string publicName, string providerModelName, bool supportsStreaming, bool supportsTools, ModelSurface surface = ModelSurface.OpenAi)
     {
         if (string.IsNullOrWhiteSpace(publicName))
         {
@@ -38,6 +46,7 @@ public sealed class ModelDefinition
         ProviderModelName = providerModelName.Trim();
         SupportsStreaming = supportsStreaming;
         SupportsTools = supportsTools;
+        Surface = surface;
     }
 
     public void Enable() => Enabled = true;

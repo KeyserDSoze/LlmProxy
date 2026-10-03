@@ -35,5 +35,6 @@ internal static class RouteSelectorSupport
             selected.ProviderModelName,
             selected.MaxConcurrency,
             selected.NodeMaxConcurrency,
-            selected.UpstreamBearerTokenCiphertext);
+            selected.UpstreamBearerTokenCiphertext,
+            selected.Surface);
 }

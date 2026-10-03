@@ -1,5 +1,6 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Observability;
+using LlmProxy.Domain.Models;
 
 namespace LlmProxy.Application.Routing;
 
@@ -17,8 +18,15 @@ public sealed class RoutingService(
         CancellationToken cancellationToken)
         => (await SelectDetailedAsync(publicModelName, excludedDeploymentIds, cancellationToken)).Route;
 
+    public Task<RoutingSelectionResult> SelectDetailedAsync(
+        string publicModelName,
+        IReadOnlySet<Guid>? excludedDeploymentIds,
+        CancellationToken cancellationToken)
+        => SelectDetailedAsync(publicModelName, requiredSurface: null, excludedDeploymentIds, cancellationToken);
+
     public async Task<RoutingSelectionResult> SelectDetailedAsync(
         string publicModelName,
+        ModelSurface? requiredSurface,
         IReadOnlySet<Guid>? excludedDeploymentIds,
         CancellationToken cancellationToken)
     {
@@ -28,6 +36,11 @@ public sealed class RoutingService(
 
         var candidates = await catalog.GetCandidatesAsync(publicModelName, cancellationToken);
         activity?.SetTag("llmproxy.routing.candidates_before_exclusion", candidates.Count);
+        if (requiredSurface is ModelSurface surface)
+        {
+            activity?.SetTag("llmproxy.model.surface", surface.ToString());
+            candidates = candidates.Where(candidate => candidate.Surface == surface).ToArray();
+        }
 
         if (excludedDeploymentIds is { Count: > 0 })
         {

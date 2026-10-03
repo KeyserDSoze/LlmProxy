@@ -32,7 +32,8 @@ public sealed record RouteModelSnapshot(
     string ProviderModelName,
     bool Enabled,
     bool SupportsStreaming,
-    bool SupportsTools)
+    bool SupportsTools,
+    ModelSurface Surface = ModelSurface.OpenAi)
 {
     public static RouteModelSnapshot From(ModelDefinition model)
         => new(
@@ -41,7 +42,8 @@ public sealed record RouteModelSnapshot(
             model.ProviderModelName,
             model.Enabled,
             model.SupportsStreaming,
-            model.SupportsTools);
+            model.SupportsTools,
+            model.Surface);
 }
 
 public sealed record RouteDeploymentSnapshot(
