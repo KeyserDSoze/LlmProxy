@@ -1,6 +1,6 @@
 # Production environment acceptance
 
-This runbook captures the environment-specific evidence that repository CI cannot prove: the actual Linux host, Docker/Compose, VM-to-DGX connectivity, intended vLLM model surfaces and the deployed LlmProxy gateway.
+This runbook captures the environment-specific evidence that repository CI cannot prove: the actual Linux host, Docker/Compose, VM-to-inference node connectivity, intended vLLM model surfaces and the deployed LlmProxy gateway.
 
 Use this after the supported production deployment in `docs/linux-production-deployment.md` is running.
 
@@ -12,7 +12,7 @@ From a complete repository checkout on the production host:
 sudo -E bash docker/scripts/environment-acceptance.sh
 ```
 
-By default the script reads `/opt/llmproxy/.env`, probes the locally published gateway and the configured initial DGX/vLLM service root, and writes evidence under:
+By default the script reads `/opt/llmproxy/.env`, probes the locally published gateway and the configured initial inference node/vLLM service root, and writes evidence under:
 
 ```text
 /opt/llmproxy/acceptance/<UTC timestamp>/
@@ -44,7 +44,7 @@ x64
 llmproxy-prod
 ```
 
-It has no workflow-dispatch inputs for API keys or other secrets. The gateway credential is read by the acceptance script from the protected host-owned `/opt/llmproxy/.env`. If direct DGX bearer authentication is required, use the manual acceptance path with `LLMPROXY_ACCEPTANCE_DGX_API_KEY` in the process environment until an approved host-secret injection mechanism is configured.
+It has no workflow-dispatch inputs for API keys or other secrets. The gateway credential is read by the acceptance script from the protected host-owned `/opt/llmproxy/.env`. If direct inference node bearer authentication is required, use the manual acceptance path with `LLMPROXY_ACCEPTANCE_inference node_API_KEY` in the process environment until an approved host-secret injection mechanism is configured.
 
 The workflow runs the acceptance script with non-interactive `sudo`, copies only the generated metadata evidence to the runner account, uploads only:
 
@@ -65,7 +65,7 @@ Host/runtime checks:
 - Docker Engine is reachable;
 - Docker Compose v2 is available.
 
-Direct VM -> DGX/vLLM checks:
+Direct VM -> inference node/vLLM checks:
 
 ```text
 GET  /health
@@ -112,7 +112,7 @@ The acceptance bundle is deliberately metadata-only. It does **not** copy:
 - generated model output;
 - response bodies;
 - gateway bearer credentials;
-- optional DGX bearer credentials.
+- optional inference node bearer credentials.
 
 Synthetic request bodies are written only into a temporary owner-only directory and are deleted when the script exits. Response bodies are also temporary and are deleted rather than copied into evidence.
 
@@ -122,10 +122,10 @@ Gateway secrets are not accepted as command-line flags. The script reads the inf
 LLMPROXY_ACCEPTANCE_API_KEY
 ```
 
-or `LLM_PROXY_API_KEY` in the production env file. If the DGX/vLLM runtime itself requires bearer authentication, provide it only through:
+or `LLM_PROXY_API_KEY` in the production env file. If the inference node/vLLM runtime itself requires bearer authentication, provide it only through:
 
 ```text
-LLMPROXY_ACCEPTANCE_DGX_API_KEY
+LLMPROXY_ACCEPTANCE_inference node_API_KEY
 ```
 
 The script performs a final guard that rejects an evidence bundle if either secret value appears in the generated evidence files.
@@ -138,7 +138,7 @@ A production `.env` should normally provide all required non-secret target value
 bash docker/scripts/environment-acceptance.sh \
   --env-file /opt/llmproxy/.env \
   --gateway-url http://127.0.0.1:8080 \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --public-model agic-code-fast \
   --provider-model '<exact-vllm-model-id>' \
   --evidence-dir /opt/llmproxy/acceptance/manual-01
@@ -157,14 +157,14 @@ bash docker/scripts/environment-acceptance.sh --validate-only
 The environment acceptance command exits successfully only when every enabled check passes. A normal production acceptance therefore requires:
 
 1. working Docker Engine + Compose v2;
-2. VM reachability to the configured DGX service root;
+2. VM reachability to the configured inference node service root;
 3. the exact provider model visible directly from vLLM;
 4. direct Chat, Responses and SSE requests working against vLLM;
 5. LlmProxy liveness and readiness healthy;
 6. the logical public model visible through LlmProxy;
 7. Chat, Responses and SSE requests working through LlmProxy.
 
-The resulting evidence proves connectivity and functional surfaces. It does **not** establish production concurrency. Capacity Profiles must still be calibrated with `docs/benchmarking.md` against the real DGX/model combination and representative workload.
+The resulting evidence proves connectivity and functional surfaces. It does **not** establish production concurrency. Capacity Profiles must still be calibrated with `docs/benchmarking.md` against the real inference node/model combination and representative workload.
 
 ## Entra personal-key acceptance
 

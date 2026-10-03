@@ -1,10 +1,10 @@
-# DGX Spark and inference-runtime contract
+# Inference node and runtime contract
 
 ## Scope
 
-LlmProxy does not install or own the LLM runtime on each DGX in the current product milestone. It expects each registered node to expose an HTTP(S), OpenAI-compatible inference service reachable from the gateway VM.
+LlmProxy does not install or own the LLM runtime on each inference node in the current product milestone. It expects each registered node to expose an HTTP(S), OpenAI-compatible inference service reachable from the gateway VM.
 
-A node endpoint is deliberately modeled as a **complete service root**, not merely a host name. This is important both for real DGX deployments and local development/mocking.
+A node endpoint is deliberately modeled as a **complete service root**, not merely a host name. This is important both for real inference node deployments and local development/mocking.
 
 ## Supported node addresses
 
@@ -16,7 +16,7 @@ http://localhost:3451/altropath
 http://127.0.0.1:8000
 http://10.0.0.21:8000
 http://10.0.0.25:8000/vllm
-https://dgx-01.internal:8443/inference
+https://inference-01.internal:8443/inference
 ```
 
 The service root may contain:
@@ -47,19 +47,19 @@ Chat:     http://10.0.0.21:8000/v1/chat/completions
 Responses:http://10.0.0.21:8000/v1/responses
 ```
 
-This lets local test servers live behind arbitrary prefixes such as `/primopath` and `/altropath` while production DGX nodes can use a bare IP/port or a reverse-proxy prefix.
+This lets local test servers live behind arbitrary prefixes such as `/primopath` and `/altropath` while production inference nodes can use a bare IP/port or a reverse-proxy prefix.
 
 ## Network contract
 
 Typical production configuration:
 
 ```text
-DGX01  http://10.0.0.21:8000
-DGX02  http://10.0.0.22:8000
-DGX03  http://10.0.0.23:8000/vllm
+inference node01  http://10.0.0.21:8000
+inference node02  http://10.0.0.22:8000
+inference node03  http://10.0.0.23:8000/vllm
 ```
 
-DGX endpoints should be reachable only on the trusted network. Do not expose them through Cloudflare or directly to clients.
+inference node endpoints should be reachable only on the trusted network. Do not expose them through Cloudflare or directly to clients.
 
 ## vLLM startup expectations
 
@@ -70,7 +70,7 @@ Example conceptual mapping:
 ```text
 Logical model:       agic-code-fast
 Provider model name: Qwen/<physical-model>
-Node:                dgx-01
+Node:                inference-01
 Base address:        http://10.0.0.21:8000
 ```
 
@@ -109,7 +109,7 @@ Both Chat Completions and Responses can return streaming responses. For `text/ev
 The failover boundary is strict:
 
 - connection failures or upstream 5xx responses may be retried on another eligible deployment **before** a stream is committed;
-- after response bytes have started, LlmProxy never retries on another DGX because concatenating two independent model streams would create a corrupt OpenAI response;
+- after response bytes have started, LlmProxy never retries on another inference node because concatenating two independent model streams would create a corrupt OpenAI response;
 - interrupted committed streams are terminated and recorded as `upstream_stream_interrupted`.
 
 ## Local integration test contract
@@ -132,17 +132,17 @@ and verifies:
 - `/v1/responses` pass-through;
 - actual SSE first-chunk delivery before the mock stream completes.
 
-This gives us a repeatable local approximation of the future multi-DGX topology without requiring physical DGX hardware in CI.
+This gives us a repeatable local approximation of the future multi-node topology without requiring physical inference hardware in CI.
 
 ## Capacity
 
-`MaxConcurrency` is a gateway guardrail, not a claim about physical DGX capacity. Determine its production value through benchmark runs using the real model, quantization, context sizes and expected Copilot workloads.
+`MaxConcurrency` is a gateway guardrail, not a claim about physical inference node capacity. Determine its production value through benchmark runs using the real model, quantization, context sizes and expected Copilot workloads.
 
 Start conservatively, measure TTFT/tokens-per-second/OOM behavior, then raise concurrency. Different models may need different deployment-level concurrency overrides.
 
 ## Initial commissioning checklist
 
-1. Configure static/reserved addressing or resolvable DNS for each DGX.
+1. Configure static/reserved addressing or resolvable DNS for each inference node.
 2. Start vLLM and verify `<service-root>/health` from the gateway VM.
 3. Verify a direct `POST <service-root>/v1/chat/completions` from the gateway VM.
 4. Register the complete service root in LlmProxy.

@@ -10,6 +10,13 @@ LlmProxy exposes runtime routing configuration that is persisted in PostgreSQL a
 
 Effective weight is `node weight × deployment weight`. Every selector excludes disabled, draining, unhealthy and saturated deployments.
 
+### Model-scoped candidate pools
+
+Routing is always scoped to the **requested logical model before a strategy is evaluated**. LlmProxy resolves that model and builds the candidate pool only from enabled deployments that publish it. Inference nodes that do not host the requested model are never considered for that request.
+
+This means pools can overlap without becoming global. For example, if `model-1` is deployed on nodes A and B, requests for `model-1` route only across A/B. If `model-2` is deployed on B, C, D and E, requests for `model-2` route only across B/C/D/E. Node B may participate in both pools because it hosts both models. Hardware vendor or form factor does not affect pool membership; the deployment graph does.
+
+
 ## Performance-aware least-loaded routing
 
 `WeightedLeastLoaded` keeps its decision signals in memory; PostgreSQL is not queried on the inference hot path. Its score combines configured capacity/load with operational penalties.
@@ -59,7 +66,7 @@ The tuning profile contains:
 | `degradedNodePenalty` | penalty for a degraded node | 0.35 |
 | `unknownNodePenalty` | penalty while node health is still unknown | 0.10 |
 
-These are conservative bootstrap values, not claims about DGX Spark capacity. They must be calibrated from representative Copilot traffic and real model/concurrency benchmarks.
+These are conservative bootstrap values, not claims about GPU inference hardware capacity. They must be calibrated from representative Copilot traffic and real model/concurrency benchmarks.
 
 Updates are range-validated, persisted first, audited as `routing.tuning.update`, then published to the in-memory selector. A container restart reloads the persisted profile.
 
@@ -108,7 +115,7 @@ A node address is a complete HTTP(S) service root. Examples:
 http://localhost:3450/primopath
 http://127.0.0.1:8000
 http://10.0.0.25:8000/vllm
-https://dgx-01.internal:8443/inference
+https://inference-01.internal:8443/inference
 ```
 
 LlmProxy appends OpenAI/vLLM paths while preserving any prefix:
@@ -129,4 +136,4 @@ The probe reports the resolved root and URLs for `/health`, `/v1/models`, `/v1/c
 
 ## Hardware telemetry boundary
 
-NVIDIA/DCGM hardware telemetry is intentionally separate from vLLM runtime telemetry. GPU utilization, memory, temperature and power are initially operational diagnostics only. Do not add them to the routing score until real DGX Spark benchmarks establish thresholds that improve throughput/latency rather than merely reacting to noisy utilization samples.
+NVIDIA/DCGM hardware telemetry is intentionally separate from vLLM runtime telemetry. GPU utilization, memory, temperature and power are initially operational diagnostics only. Do not add them to the routing score until real GPU inference hardware benchmarks establish thresholds that improve throughput/latency rather than merely reacting to noisy utilization samples.

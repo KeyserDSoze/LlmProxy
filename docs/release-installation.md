@@ -77,7 +77,7 @@ Then install that exact version:
 ```bash
 ./llmproxy-bootstrap.sh \
   --version "$VERSION" \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-provider-model-id>'
 ```
 
@@ -87,13 +87,13 @@ On a host where Docker is already installed:
 ./llmproxy-bootstrap.sh \
   --version "$VERSION" \
   --skip-docker-install \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-provider-model-id>'
 ```
 
 The bootstrap downloads the immutable bundle and checksum, verifies SHA-256, extracts it into a temporary directory and delegates privileged host work to the versioned installer. Release installations intentionally use the canonical `/opt/llmproxy` layout so `llmproxyctl`, updates and rollback always agree on one host-owned state root.
 
-For a DGX Spark/GB10 where the inference runtime runs on the **same Linux host** as Docker, bind the runtime to Docker's bridge-gateway address instead of loopback. This keeps it reachable from LlmProxy without publishing it on every LAN interface:
+For a GPU inference hardware/GB10 where the inference runtime runs on the **same Linux host** as Docker, bind the runtime to Docker's bridge-gateway address instead of loopback. This keeps it reachable from LlmProxy without publishing it on every LAN interface:
 
 ```bash
 DOCKER_HOST_GATEWAY="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
@@ -108,20 +108,20 @@ llama-server \
 Then provide the runtime bearer only to the installation command and configure the node from the container perspective:
 
 ```bash
-export DGX_UPSTREAM_BEARER_TOKEN='llama-local'
+export INFERENCE_NODE_UPSTREAM_BEARER_TOKEN='llama-local'
 
 ./llmproxy-bootstrap.sh \
   --version "$VERSION" \
   --skip-docker-install \
-  --dgx-url http://host.docker.internal:8080 \
+  --node-url http://host.docker.internal:8080 \
   --provider-model qwen3-next-80b-1m
 
-unset DGX_UPSTREAM_BEARER_TOKEN
+unset INFERENCE_NODE_UPSTREAM_BEARER_TOKEN
 ```
 
 For `host.docker.internal`, the installer resolves Docker's bridge gateway and performs authenticated `/health` + `/v1/models` preflight checks against that address. A runtime still bound only to `127.0.0.1` therefore fails before LlmProxy deployment with the gateway address to use.
 
-During first bootstrap the bearer is encrypted into the node record, then the installer redeploys LlmProxy without `DGX_UPSTREAM_BEARER_TOKEN` so the plaintext is not retained in the long-lived container environment. Keep the inference port restricted to the Docker bridge/trusted network.
+During first bootstrap the bearer is encrypted into the node record, then the installer redeploys LlmProxy without `INFERENCE_NODE_UPSTREAM_BEARER_TOKEN` so the plaintext is not retained in the long-lived container environment. Keep the inference port restricted to the Docker bridge/trusted network.
 
 ## Installer progress, logs and failure diagnostics
 
@@ -251,7 +251,7 @@ After that one-time setup, release creation is automatic.
 
 Every successful `main` push therefore produces at most one immutable release. Exact release tags and exact container tags are never moved or overwritten.
 
-## ARM64 / DGX Spark
+## ARM64 / GPU inference hardware
 
 The release pipeline publishes the application container for both:
 
@@ -260,9 +260,9 @@ linux/amd64
 linux/arm64
 ```
 
-This makes the same exact release consumable by conventional x86_64 Linux hosts and ARM64 systems such as NVIDIA DGX Spark / Dell Pro Max with GB10.
+This makes the same exact release consumable by conventional x86_64 Linux hosts and ARM64 systems such as GPU inference hardware / Dell Pro Max with GB10.
 
-Repository CI still runs primarily on GitHub-hosted amd64 runners. A successful multi-architecture Buildx publication proves the ARM64 image builds, while real DGX Spark installation/runtime acceptance remains a target-environment acceptance step.
+Repository CI still runs primarily on GitHub-hosted amd64 runners. A successful multi-architecture Buildx publication proves the ARM64 image builds, while real GPU inference hardware installation/runtime acceptance remains a target-environment acceptance step.
 
 ## Cloudflare Tunnel and Entra ID
 
@@ -300,7 +300,7 @@ The Admin SPA itself is protected at top-level navigation when Entra is enabled.
 
 ## Inference runtime boundary
 
-The installer deploys **LlmProxy and its control-plane dependencies**. It does not currently install or own llama.cpp/vLLM/model weights. The configured inference runtime must already expose the OpenAI-compatible service-root contract documented in `docs/dgx-vllm.md`.
+The installer deploys **LlmProxy and its control-plane dependencies**. It does not currently install or own llama.cpp/vLLM/model weights. The configured inference runtime must already expose the OpenAI-compatible service-root contract documented in `docs/inference-runtime.md`.
 
 Protected inference runtimes may use a per-node upstream bearer credential. The Admin API/UI treats it as write-only, persists only AES-GCM ciphertext, and applies it to health/model probes, runtime metrics, maintenance warm-up and inference. The deployment master key `LLMPROXY_UPSTREAM_CREDENTIAL_KEY` is an external recovery dependency.
 

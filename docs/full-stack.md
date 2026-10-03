@@ -43,10 +43,10 @@ Windows / PowerShell:
 .\docker\scripts\full-stack-init.ps1
 ```
 
-Review `docker/.env.full`, especially external DGX inputs:
+Review `docker/.env.full`, especially external inference node inputs:
 
 ```env
-DGX_NODE_BASE_ADDRESS=http://10.0.0.21:8000
+INFERENCE_NODE_BASE_ADDRESS=http://10.0.0.21:8000
 PROVIDER_MODEL_NAME=<exact vLLM model id>
 ```
 
@@ -218,7 +218,7 @@ The Full Stack run proves:
 - PostgreSQL/Redis runtime synchronization;
 - OTLP application spans and Grafana datasource wiring;
 - cross-gateway request-rate limiting;
-- shared DGX capacity leases + lease-loss cancellation;
+- shared inference node capacity leases + lease-loss cancellation;
 - transactional outbox Redis-outage/recovery replay;
 - non-originating publishing-peer L1 application;
 - outbox clean -> failed backlog -> drained diagnostics;
