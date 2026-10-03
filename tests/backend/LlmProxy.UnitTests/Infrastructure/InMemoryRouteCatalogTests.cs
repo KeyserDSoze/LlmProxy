@@ -74,6 +74,23 @@ public sealed class InMemoryRouteCatalogTests
     }
 
     [Fact]
+    public async Task Deployment_runtime_address_overrides_the_physical_node_address()
+    {
+        var nodeId = Guid.NewGuid();
+        var modelId = Guid.NewGuid();
+        var catalog = new InMemoryRouteCatalog();
+
+        catalog.Replace(
+            [new RouteNodeSnapshot(nodeId, "hardware-01", "http://hardware-01:8000", true, NodeStatus.Healthy, 1, 8)],
+            [new RouteModelSnapshot(modelId, "model-a", "provider-a", true, true, true)],
+            [new RouteDeploymentSnapshot(Guid.NewGuid(), nodeId, modelId, true, 1, 4, "http://hardware-01:18001/model-a")]);
+
+        var candidate = Assert.Single(await catalog.GetCandidatesAsync("model-a", CancellationToken.None));
+
+        Assert.Equal("http://hardware-01:18001/model-a", candidate.BaseAddress);
+    }
+
+    [Fact]
     public async Task Uses_node_capacity_when_deployment_override_is_absent()
     {
         var nodeId = Guid.NewGuid();

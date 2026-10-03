@@ -223,7 +223,7 @@ public static class NodeModelManagementEndpoints
             {
                 var client = httpClientFactory.CreateClient("node-management");
                 var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/start";
-                var state = await SendAgentAsync<ManagedModelState>(client, node, protector, HttpMethod.Post, path, new { }, cancellationToken);
+                var state = await SendAgentAsync<ManagedModelState>(client, node, protector, HttpMethod.Post, path, new { action = "start" }, cancellationToken);
                 if (string.IsNullOrWhiteSpace(state.RuntimeBaseAddress))
                     return Results.Problem("The management agent started the model but did not return a runtimeBaseAddress.", statusCode: StatusCodes.Status502BadGateway);
 
@@ -264,7 +264,7 @@ public static class NodeModelManagementEndpoints
             {
                 var client = httpClientFactory.CreateClient("node-management");
                 var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/stop";
-                var state = await SendAgentAsync<ManagedModelState>(client, node, protector, HttpMethod.Post, path, new { }, cancellationToken);
+                var state = await SendAgentAsync<ManagedModelState>(client, node, protector, HttpMethod.Post, path, new { action = "stop" }, cancellationToken);
                 return Results.Ok(new { deployment, state });
             }
             catch (AgentException exception)
