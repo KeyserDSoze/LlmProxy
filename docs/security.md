@@ -67,11 +67,11 @@ Currency/spend limits are not currently enforced. On-prem vLLM does not provide 
 
 ## Content logging
 
-The product explicitly provides an administrator-only full-body inference log for authenticated Chat Completions, Responses and System One calls. Request and response payloads are captured byte-for-byte at the gateway boundary and stored only as application-encrypted ciphertext in PostgreSQL. SSE responses are retained in their wire-format text so an administrator can inspect the exact streamed exchange.
+The product provides a separate full-body request-audit store for authenticated Chat Completions, Responses and System One calls. Request and response payloads are captured byte-for-byte at the gateway boundary and stored only as application-encrypted ciphertext in PostgreSQL. SSE responses are retained in their wire-format text so the authorized viewer can inspect the exact streamed exchange.
 
-The dedicated content-log API requires `AdminWrite` / `LlmProxy.Admin`; `LlmProxy.Reader` cannot access it. Decrypted detail responses use `Cache-Control: no-store`. Authorization headers, client API keys, upstream bearer tokens and other request headers are not persisted in this store.
+Global request-audit APIs require `AdminWrite` / `LlmProxy.Admin`; `LlmProxy.Reader` cannot inspect payloads. Admitted normal users have separate `/api/me/content-logs*` endpoints that authorize every row through stable Entra `tid + oid` and the ownership of the row's personal `ApiCredentialId`. They cannot inspect another user's payloads or payloads created through organization/shared credentials. Decrypted detail responses use `Cache-Control: no-store`. Authorization headers, client API keys, upstream bearer tokens and other request headers are not persisted in this store.
 
-Full-body log retention is independently configurable from 10 through 180 days, defaults to 30 days, and is enforced by a cleanup worker every four hours. Operators must size PostgreSQL storage for the selected retention because prompts and generated payloads can be materially larger than metadata telemetry.
+Full-body request-audit retention is independently administrator-configurable from 10 through 4015 days (11 x 365 days), defaults to 30 days, and is enforced by a cleanup worker every four hours. Operators must size PostgreSQL storage for the selected retention because prompts and generated payloads can be materially larger than metadata telemetry.
 
 Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content must not be exported to OTEL spans, acceptance evidence or generic application logs.
 
