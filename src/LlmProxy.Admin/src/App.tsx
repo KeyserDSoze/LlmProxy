@@ -179,7 +179,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'audit' && <Audit events={audit} />}
             {view === 'help' && <HelpPage models={models} />}
             {view === 'governance' && <Governance />}
-            {view === 'releases' && <ReleaseNotesPage embedded />}
+            {view === 'releases' && <ReleaseNotesPage embedded canWrite={canWrite} />}
           </>
         )}
       </main>
