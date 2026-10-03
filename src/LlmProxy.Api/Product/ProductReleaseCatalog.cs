@@ -52,17 +52,20 @@ public static class ProductReleaseCatalog
                 [
                     "The Admin control plane includes live encrypted full-body request/response inspection, model and System One classifier diagnostics, endpoint examples and contextual page documentation.",
                     "Administrators can reveal and copy application-encrypted recovery copies of newly created or rotated client API keys.",
-                    "Full-body content-log retention is independently configurable from 10 through 180 days and is cleaned automatically every four hours."
+                    "Full-body content-log retention is independently configurable from 10 through 180 days and is cleaned automatically every four hours.",
+                    "Users & Access supports administrator-censused or automatic first-login end-user provisioning, central enable/disable and a personal dashboard with recent request metadata."
                 ],
                 ["Changed"] =
                 [
                     "This immutable distribution release was generated automatically from a validated main commit.",
-                    "Operational metrics, audit and OTEL remain metadata-only while exact inference payloads are isolated in the administrator-only encrypted content-log store."
+                    "Operational metrics, audit and OTEL remain metadata-only while exact inference payloads are isolated in the administrator-only encrypted content-log store.",
+                    "Normal-user self-service admission is controlled by the stable Entra tenant/object user registry rather than requiring mutable email identity."
                 ],
                 ["Security"] =
                 [
                     "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite.",
-                    "API-key reveal and decrypted payload inspection require LlmProxy.Admin; secret-bearing responses are no-store and reveal/retention actions are audited without secret content."
+                    "API-key reveal and decrypted payload inspection require LlmProxy.Admin; secret-bearing responses are no-store and reveal/retention actions are audited without secret content.",
+                    "Disabling a normal platform user blocks self-service and revokes every active personal API key owned by the same Entra tid + oid; shared service credentials are not treated as individual-user identity."
                 ]
             });
 
