@@ -219,7 +219,7 @@ describe('admin application', () => {
     await user.click(screen.getByRole('button', { name: 'Users & Access' }))
     expect(await screen.findByRole('heading', { name: 'User provisioning policy' })).toBeInTheDocument()
     expect(screen.getByText('Example User')).toBeInTheDocument()
-    expect(screen.getByText(/12/)).toBeInTheDocument()
+    expect(screen.getByText('12', { exact: true })).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Provisioning mode'), 'automatic')
     await user.click(screen.getByRole('button', { name: 'Save provisioning mode' }))
     expect(mockedApi.updatePlatformUserAccessSettings).toHaveBeenCalledWith('automatic')
