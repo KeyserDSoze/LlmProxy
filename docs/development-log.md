@@ -1,5 +1,25 @@
 # Development log
 
+## 2026-10-03 — Configurable end-user provisioning and suspension — CANDIDATE
+
+Extended the Entra personal-key model with a first-class `platform_users` registry and administrator-controlled admission policy.
+
+Implemented:
+
+- persisted singleton provisioning mode, default `manual`, with `automatic` first-login registration as an administrator-selectable alternative;
+- stable normal-user identity keyed by Entra `tid + oid`; email/principal/display name remain mutable metadata;
+- startup migration of pre-existing personal-key owners into the registry;
+- `SelfService` authorization now requires successful Entra authentication plus an enabled platform-user record; full administrators bypass the normal-user registry;
+- Admin **Users & Access** UI/API for mode changes, manual registration, inventory, 30-day request counts, personal-key counts and enable/disable;
+- disable revokes all active personal API keys for the user as part of the same control-plane operation, so both portal and personal-key inference access are blocked;
+- re-enable restores portal admission but deliberately leaves revoked keys revoked;
+- `/api/me/requests` and **My dashboard** recent-call visibility;
+- focused GitHub Copilot attribution documentation: a shared custom-model/BYOK API key is reliable workload/credential identity, not a documented individual developer identity signal.
+
+Public GitHub documentation was reviewed for the custom-model/BYOK and Copilot usage-metrics contracts. The design does not assume undocumented provider-facing user headers. Per-user GitHub metrics may be used later for aggregate adoption reporting, while deterministic request-time LlmProxy attribution requires per-user credentials or a trusted signed identity assertion.
+
+Validation is pending on the exact feature head. Do not promote/release this increment until backend, frontend/Playwright, Docker/PostgreSQL and distributed Full Stack CI are green.
+
 ## 2026-10-03 — Administrator observability, testing and in-app documentation — DONE / VALIDATED
 
 Implemented the operator-facing visibility requested for the current LlmProxy control plane on `feature/admin-observability-docs` / PR #1.
