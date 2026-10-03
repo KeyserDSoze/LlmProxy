@@ -143,8 +143,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem icon="metrics" active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
-          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
-          <NavItem icon="audit" active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => setView('logs')}>Request Audit</NavItem>}
+          <NavItem icon="audit" active={view === 'audit'} onClick={() => setView('audit')}>Administrative Audit</NavItem>
           <NavItem icon="help" active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
           <div className="navSecondary">
             <NavItem icon="governance" active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
@@ -589,7 +589,7 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
