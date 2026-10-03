@@ -9,7 +9,9 @@ public sealed record UpdateJob(
     DateTimeOffset? StartedAtUtc = null,
     DateTimeOffset? CompletedAtUtc = null,
     string? Error = null,
-    int? ExitCode = null);
+    int? ExitCode = null,
+    IReadOnlyList<string>? UpgradePath = null,
+    string? CurrentStep = null);
 
 public sealed record UpdateAgentSnapshot(
     string? InstalledVersion,
@@ -19,4 +21,5 @@ public sealed record UpdateAgentSnapshot(
 public sealed record ScheduleUpdateRequest(
     string Version,
     DateTimeOffset? ScheduledForUtc = null,
-    bool Force = false);
+    bool Force = false,
+    IReadOnlyList<string>? Versions = null);
