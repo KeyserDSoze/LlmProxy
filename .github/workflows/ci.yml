@@ -91,8 +91,11 @@ jobs:
           bash -n distribution/bootstrap.sh
           bash -n distribution/llmproxyctl
           bash -n distribution/install-node-agent.sh
+          bash -n distribution/install-update-agent.sh
+          jq -e '.schemaVersion == 1 and (.mode == "standard" or .mode == "custom") and (.operatorCommand | type == "string")' distribution/update-plan.json >/dev/null
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
-          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check' distribution/llmproxyctl >/dev/null
+          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
           bash -n distribution/build-release-bundle.sh
           grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
           grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
