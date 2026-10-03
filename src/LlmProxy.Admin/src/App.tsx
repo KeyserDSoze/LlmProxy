@@ -5,9 +5,10 @@ import ContentLogs from './ContentLogs'
 import HelpPage from './HelpPage'
 import PageDocumentation from './PageDocumentation'
 import Playground from './Playground'
+import UsersAccess from './UsersAccess'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help'
+type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -133,6 +134,7 @@ export default function App() {
           <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
           <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
+          {canWrite && <NavItem active={view === 'users'} onClick={() => setView('users')}>Users & Access</NavItem>}
           <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
           {canWrite && <NavItem active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
           {canWrite && <NavItem active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
@@ -161,6 +163,7 @@ export default function App() {
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <Credentials credentials={credentials} canWrite={canWrite} refresh={refresh} />}
+            {view === 'users' && canWrite && <UsersAccess />}
             {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
             {view === 'playground' && canWrite && <Playground models={models} />}
             {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
@@ -533,7 +536,7 @@ function Audit({ events }: { events: AuditEvent[] }) {
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
