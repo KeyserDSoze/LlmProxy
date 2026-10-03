@@ -50,7 +50,7 @@ public sealed class ReleaseDiscoveryService(
             .OrderByDescending(item => ParseVersion(item.Version))
             .ToArray();
 
-        cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        cache.Set(cacheKey, result, TimeSpan.FromMinutes(2));
         return result;
     }
 

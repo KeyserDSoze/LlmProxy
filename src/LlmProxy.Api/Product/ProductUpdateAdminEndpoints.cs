@@ -24,11 +24,16 @@ public static class ProductUpdateAdminEndpoints
             var product = ProductReleaseCatalog.GetInfo();
             var available = await releases.GetAvailableAsync(product.Version, cancellationToken);
             var status = await agent.TryGetStatusAsync(cancellationToken);
+            await using var scope = endpoints.ServiceProvider.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            var policy = await dbContext.ProductUpdatePolicies.AsNoTracking()
+                .SingleAsync(item => item.Id == ProductUpdatePolicyRecord.SingletonId, cancellationToken);
             return Results.Ok(new
             {
                 currentVersion = product.Version,
                 agentAvailable = status is not null,
                 agent = status,
+                policy = ProductUpdatePolicySnapshot.From(policy),
                 releases = available
             });
         });
@@ -80,6 +85,55 @@ public static class ProductUpdateAdminEndpoints
             }
         });
 
+        var updatePolicy = group.MapPut("/policy", async (
+            UpdateProductPolicyRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var mode = request.Mode.Trim().ToLowerInvariant();
+            if (!ProductUpdatePolicyRecord.IsSupportedMode(mode))
+            {
+                return Results.BadRequest(new { error = "invalid_update_mode", message = "Mode must be manual, asap, nightly, weekly or monthly." });
+            }
+
+            try
+            {
+                _ = TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId.Trim());
+            }
+            catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+            {
+                return Results.BadRequest(new { error = "invalid_time_zone", message = "TimeZoneId must be a valid IANA/system time-zone identifier." });
+            }
+
+            if (request.LocalHour is < 0 or > 23 || request.LocalMinute is < 0 or > 59 ||
+                request.DayOfWeek is < 0 or > 6 || request.DayOfMonth is < 1 or > 31)
+            {
+                return Results.BadRequest(new { error = "invalid_update_schedule", message = "The configured update schedule contains an invalid hour, minute, weekday or month day." });
+            }
+
+            var policy = await dbContext.ProductUpdatePolicies
+                .SingleAsync(item => item.Id == ProductUpdatePolicyRecord.SingletonId, cancellationToken);
+            var before = ProductUpdatePolicySnapshot.From(policy);
+            policy.Mode = mode;
+            policy.TimeZoneId = request.TimeZoneId.Trim();
+            policy.LocalHour = request.LocalHour;
+            policy.LocalMinute = request.LocalMinute;
+            policy.DayOfWeek = request.DayOfWeek;
+            policy.DayOfMonth = request.DayOfMonth;
+            policy.LastCheckedAtUtc = null;
+            policy.LastError = null;
+            policy.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+            AddAudit(dbContext, httpContext, "product.update.policy", ProductUpdatePolicyRecord.SingletonId.ToString(), new
+            {
+                before.Mode,
+                after = new { policy.Mode, policy.TimeZoneId, policy.LocalHour, policy.LocalMinute, policy.DayOfWeek, policy.DayOfMonth }
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(ProductUpdatePolicySnapshot.From(policy));
+        });
+
         var cancel = group.MapDelete("/{id:guid}", async (
             Guid id,
             UpdateAgentClient agent,
@@ -107,11 +161,20 @@ public static class ProductUpdateAdminEndpoints
         if (entraEnabled)
         {
             schedule.RequireAuthorization("AdminWrite");
+            updatePolicy.RequireAuthorization("AdminWrite");
             cancel.RequireAuthorization("AdminWrite");
         }
 
         return endpoints;
     }
+
+    public sealed record UpdateProductPolicyRequest(
+        string Mode,
+        string TimeZoneId,
+        int LocalHour = 2,
+        int LocalMinute = 0,
+        int DayOfWeek = 0,
+        int DayOfMonth = 1);
 
     private static void AddAudit(
         GatewayDbContext dbContext,

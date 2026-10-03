@@ -41,6 +41,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReleaseDiscoveryService>();
 builder.Services.AddSingleton<UpdateAgentClient>();
+builder.Services.AddHostedService<ProductAutoUpdateWorker>();
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();

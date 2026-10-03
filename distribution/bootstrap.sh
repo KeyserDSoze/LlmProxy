@@ -146,7 +146,7 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
 elif [[ -n "$TOKEN" ]]; then
   bootstrap_log "Using authenticated GitHub API download"
   RELEASE_JSON="$TMP_DIR/release.json"
-  curl --fail --silent --show-error \
+  curl --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors --retry-max-time 300 --connect-timeout 15 \
     -H "Accept: application/vnd.github+json" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -181,7 +181,7 @@ PYASSET
       echo "Release asset not found: $name in $TAG" >&2
       exit 3
     fi
-    curl --fail --silent --show-error --location \
+    curl --fail --silent --show-error --location --retry 8 --retry-delay 2 --retry-all-errors --retry-max-time 300 --connect-timeout 15 \
       -H "Accept: application/octet-stream" \
       -H "Authorization: Bearer $TOKEN" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -196,16 +196,16 @@ PYASSET
   fi
   if [[ -z "${GHCR_USER:-}" ]]; then
     if command -v jq >/dev/null 2>&1; then
-      export GHCR_USER="$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/user | jq -r .login)"
+      export GHCR_USER="$(curl --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/user | jq -r .login)"
     elif command -v python3 >/dev/null 2>&1; then
-      export GHCR_USER="$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/user | python3 -c 'import json,sys; print(json.load(sys.stdin).get("login", ""))')"
+      export GHCR_USER="$(curl --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors --connect-timeout 15 -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/user | python3 -c 'import json,sys; print(json.load(sys.stdin).get("login", ""))')"
     fi
   fi
 else
   bootstrap_log "Using public GitHub Release download (no GitHub token required)"
   BASE_URL="https://github.com/$REPOSITORY/releases/download/$TAG"
-  curl --fail --silent --show-error --location "$BASE_URL/$ASSET" -o "$TMP_DIR/$ASSET"
-  curl --fail --silent --show-error --location "$BASE_URL/$CHECKSUM" -o "$TMP_DIR/$CHECKSUM"
+  curl --fail --silent --show-error --location --retry 8 --retry-delay 2 --retry-all-errors --retry-max-time 300 --connect-timeout 15 "$BASE_URL/$ASSET" -o "$TMP_DIR/$ASSET"
+  curl --fail --silent --show-error --location --retry 8 --retry-delay 2 --retry-all-errors --retry-max-time 300 --connect-timeout 15 "$BASE_URL/$CHECKSUM" -o "$TMP_DIR/$CHECKSUM"
 fi
 
 bootstrap_stage "Verifying release checksum"

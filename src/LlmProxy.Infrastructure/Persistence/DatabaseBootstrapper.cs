@@ -116,6 +116,67 @@ public sealed class DatabaseBootstrapper(
             });
         }
 
+        if (!await dbContext.ProductUpdatePolicies.AnyAsync(cancellationToken))
+        {
+            dbContext.ProductUpdatePolicies.Add(new ProductUpdatePolicyRecord
+            {
+                Id = ProductUpdatePolicyRecord.SingletonId,
+                Mode = ProductUpdatePolicyRecord.ManualMode,
+                TimeZoneId = "UTC",
+                LocalHour = 2,
+                LocalMinute = 0,
+                DayOfWeek = 0,
+                DayOfMonth = 1,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
+        }
+
+        // Compatibility bridge for installations that configured System One before it became
+        // a first-class routed workload. Once imported, administrators manage it like any model.
+        if (configuration.GetValue<bool>("SystemOne:Enabled") &&
+            !await dbContext.Models.AnyAsync(item => item.Surface == ModelSurface.SystemOne, cancellationToken))
+        {
+            var legacyBaseAddress = configuration["SystemOne:BaseAddress"];
+            if (!string.IsNullOrWhiteSpace(legacyBaseAddress))
+            {
+                var desiredNodeName = configuration["SystemOne:NodeName"] ?? "systemone-classifier";
+                var nodeName = desiredNodeName;
+                for (var suffix = 2; await dbContext.Nodes.AnyAsync(item => item.Name == nodeName, cancellationToken); suffix++)
+                {
+                    nodeName = $"{desiredNodeName}-{suffix}";
+                }
+
+                var node = new InferenceNode(
+                    nodeName,
+                    legacyBaseAddress,
+                    weight: 1,
+                    maxConcurrency: Math.Clamp(configuration.GetValue("SystemOne:MaxConcurrency", 8), 1, 1024));
+                var legacyApiKey = configuration["SystemOne:ApiKey"];
+                if (!string.IsNullOrWhiteSpace(legacyApiKey))
+                {
+                    node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(legacyApiKey));
+                }
+
+                var desiredPublicName = configuration["SystemOne:DefaultModel"] ?? "systemone-default";
+                var publicName = desiredPublicName;
+                for (var suffix = 2; await dbContext.Models.AnyAsync(item => item.PublicName == publicName, cancellationToken); suffix++)
+                {
+                    publicName = $"{desiredPublicName}-{suffix}";
+                }
+
+                var classifier = new ModelDefinition(
+                    publicName,
+                    configuration["SystemOne:ProviderModelName"] ?? "systemone-classifier",
+                    supportsStreaming: false,
+                    supportsTools: false,
+                    surface: ModelSurface.SystemOne);
+
+                dbContext.Nodes.Add(node);
+                dbContext.Models.Add(classifier);
+                dbContext.Deployments.Add(new ModelDeployment(node.Id, classifier.Id));
+            }
+        }
+
         var existingUsers = await dbContext.PlatformUsers
             .AsNoTracking()
             .Select(item => new { item.TenantId, item.ObjectId })

@@ -26,6 +26,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ContentLogSettingsRecord> ContentLogSettings => Set<ContentLogSettingsRecord>();
     public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
+    public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<RuntimeStateOutboxRecord> RuntimeStateOutbox => Set<RuntimeStateOutboxRecord>();
@@ -201,6 +202,17 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.ProvisioningMode).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<ProductUpdatePolicyRecord>(entity =>
+        {
+            entity.ToTable("product_update_policy");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.Mode).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.TimeZoneId).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.LastScheduledVersion).HasMaxLength(32);
+            entity.Property(x => x.LastError).HasMaxLength(1200);
         });
 
         modelBuilder.Entity<DailyUsageRollupRecord>(entity =>
