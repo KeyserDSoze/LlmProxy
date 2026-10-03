@@ -196,6 +196,11 @@ export type ApiCredential = {
   expiresAtUtc?: string | null
   lastUsedAtUtc?: string | null
   usageGroupId?: string | null
+  kind?: 'organization' | 'personal'
+  enforceCallerGovernance?: boolean
+  ownerTenantId?: string | null
+  ownerObjectId?: string | null
+  ownerPrincipalName?: string | null
   secretAvailable?: boolean
 }
 
@@ -225,6 +230,8 @@ export type UserRateLimitPolicy = {
   logicalModel?: string | null
   requestsPerWindow: number
   windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
   enabled: boolean
   createdAtUtc: string
   updatedAtUtc: string
@@ -237,6 +244,7 @@ export type UsageGroup = {
   createdAtUtc: string
   updatedAtUtc: string
   credentialCount: number
+  userCount: number
 }
 
 export type RateLimitPolicy = {
@@ -484,6 +492,8 @@ export type PlatformUser = {
   objectId: string
   principalName?: string | null
   displayName?: string | null
+  usageGroupId?: string | null
+  usageGroupName?: string | null
   enabled: boolean
   provisioningSource: 'automatic' | 'admin' | 'migration' | string
   createdAtUtc: string
@@ -494,4 +504,33 @@ export type PlatformUser = {
   lastCredentialUsedAtUtc?: string | null
   requestCount30d: number
   errorCount30d: number
+}
+
+
+export type UsageGroupRateLimitPolicy = {
+  id: string
+  usageGroupId: string
+  usageGroupName?: string | null
+  logicalModel?: string | null
+  requestsPerWindow: number
+  windowSeconds: number
+  outputTokensPerWindow?: number | null
+  maxOutputTokensPerRequest?: number | null
+  enabled: boolean
+  createdAtUtc: string
+  updatedAtUtc: string
+}
+
+export type UserUsageSummary = {
+  tenantId: string
+  objectId: string
+  principalName?: string | null
+  displayName?: string | null
+  usageGroupId?: string | null
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  rateLimitedRequests: number
 }
