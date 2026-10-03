@@ -206,6 +206,15 @@ export type CreatedApiCredential = ApiCredential & {
   secret: string
 }
 
+export type AdminIdentity = {
+  tenantId?: string | null
+  objectId?: string | null
+  principalName?: string | null
+  displayName?: string | null
+  roles: string[]
+  isAdmin: boolean
+}
+
 export type IdentityUserSummary = {
   tenantId: string
   objectId: string
