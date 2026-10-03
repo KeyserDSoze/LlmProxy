@@ -38,12 +38,12 @@ import Governance from '../../../src/LlmProxy.Admin/src/Governance'
 
 const group = {
   id: 'group-1', name: 'Development CRM', description: 'CRM team',
-  createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z', credentialCount: 1
+  createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z', credentialCount: 1, userCount: 1
 }
 
 const credential = {
   id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', enabled: true,
-  createdAtUtc: '2026-09-14T10:00:00Z', usageGroupId: 'group-1'
+  createdAtUtc: '2026-09-14T10:00:00Z', usageGroupId: 'group-1', kind: 'organization', enforceCallerGovernance: false
 }
 
 const usage = {
