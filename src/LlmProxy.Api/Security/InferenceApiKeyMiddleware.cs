@@ -10,6 +10,7 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
     public const string UsageGroupIdItem = "LlmProxy.UsageGroupId";
     public const string OwnerTenantIdItem = "LlmProxy.OwnerTenantId";
     public const string OwnerObjectIdItem = "LlmProxy.OwnerObjectId";
+    public const string EnforceCallerGovernanceItem = "LlmProxy.EnforceCallerGovernance";
 
     public async Task InvokeAsync(
         HttpContext context,
@@ -70,9 +71,11 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             {
                 context.Items[OwnerObjectIdItem] = credential.OwnerObjectId;
             }
+            context.Items[EnforceCallerGovernanceItem] = credential.EnforceCallerGovernance;
 
             activity?.SetTag("llmproxy.auth.result", "allowed");
             activity?.SetTag("llmproxy.auth.personal", credential.OwnerObjectId is not null);
+            activity?.SetTag("llmproxy.auth.caller_governance", credential.EnforceCallerGovernance);
             LlmProxyActivity.SetGuid(activity, "llmproxy.api_credential.id", credential.Id);
             LlmProxyActivity.SetGuid(activity, "llmproxy.usage_group.id", credential.UsageGroupId);
         }
