@@ -93,6 +93,13 @@ jobs:
           bash -n distribution/install-node-agent.sh
           bash -n distribution/install-update-agent.sh
           jq -e '.schemaVersion == 1 and (.mode == "standard" or .mode == "custom") and (.operatorCommand | type == "string")' distribution/update-plan.json >/dev/null
+          UPDATE_PLAN_MODE="$(jq -r '.mode' distribution/update-plan.json)"
+          if [[ "$UPDATE_PLAN_MODE" == "custom" ]]; then
+            test -f distribution/update.sh
+            bash -n distribution/update.sh
+          fi
+          grep -F 'AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new' distribution/install-update-agent.sh >/dev/null
+          grep -F 'mv -f "$AGENT_TEMP" "$AGENT_TARGET"' distribution/install-update-agent.sh >/dev/null
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
           grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
           grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
@@ -110,8 +117,12 @@ jobs:
             cd "$RELEASE_DIR"
             sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
             sha256sum -c llmproxy-bootstrap.sh.sha256
+            sha256sum -c llmproxy-update-plan.json.sha256
           )
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-plan.json" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-update-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-update-agent.service" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
