@@ -36,6 +36,7 @@ public sealed partial class UpdateScheduler(
     public async Task<UpdateJob> ScheduleAsync(ScheduleUpdateRequest request, CancellationToken cancellationToken)
     {
         var version = NormalizeVersion(request.Version);
+        var upgradePath = NormalizeUpgradePath(request.Versions, version);
         var scheduled = request.ScheduledForUtc?.ToUniversalTime() ?? DateTimeOffset.UtcNow;
         if (scheduled < DateTimeOffset.UtcNow.AddMinutes(-1))
         {
@@ -70,7 +71,8 @@ public sealed partial class UpdateScheduler(
                 version,
                 DateTimeOffset.UtcNow,
                 scheduled,
-                "Pending");
+                "Pending",
+                UpgradePath: upgradePath);
             await SaveLockedAsync(cancellationToken);
             return _activeJob;
         }
@@ -144,43 +146,19 @@ public sealed partial class UpdateScheduler(
                 throw new FileNotFoundException("LlmProxy bootstrap helper is missing.", options.BootstrapPath);
             }
 
-            var startInfo = new ProcessStartInfo(options.BootstrapPath)
+            var path = job.UpgradePath is { Count: > 0 } ? job.UpgradePath : [job.Version];
+            foreach (var stepVersion in path)
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-            startInfo.ArgumentList.Add("--version");
-            startInfo.ArgumentList.Add(job.Version);
-            startInfo.ArgumentList.Add("--skip-docker-install");
-            startInfo.ArgumentList.Add("--skip-node-check");
-            startInfo.ArgumentList.Add("--non-interactive");
-            startInfo.ArgumentList.Add("--upgrade");
-            startInfo.Environment["LLMPROXY_UPDATE_AGENT_ACTIVE"] = "1";
-
-            using var process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Could not start the LlmProxy bootstrap helper.");
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            timeout.CancelAfter(TimeSpan.FromMinutes(options.CommandTimeoutMinutes));
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
-
-            if (process.ExitCode != 0)
-            {
-                var detail = LastText(stderr, stdout);
-                throw new InvalidOperationException(
-                    $"Update command exited with code {process.ExitCode}.{(string.IsNullOrWhiteSpace(detail) ? string.Empty : $" {detail}")}");
+                await SetCurrentStepAsync(job.Id, stepVersion, stoppingToken);
+                await ExecuteVersionAsync(stepVersion, stoppingToken);
             }
 
             completed = job with
             {
                 Status = "Succeeded",
                 CompletedAtUtc = DateTimeOffset.UtcNow,
-                ExitCode = process.ExitCode
+                ExitCode = 0,
+                CurrentStep = null
             };
         }
         catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
@@ -193,6 +171,58 @@ public sealed partial class UpdateScheduler(
                 Error = Truncate(exception.Message, 1200)
             };
         }
+
+    private async Task ExecuteVersionAsync(string version, CancellationToken stoppingToken)
+    {
+        var startInfo = new ProcessStartInfo(options.BootstrapPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("--version");
+        startInfo.ArgumentList.Add(version);
+        startInfo.ArgumentList.Add("--skip-docker-install");
+        startInfo.ArgumentList.Add("--skip-node-check");
+        startInfo.ArgumentList.Add("--non-interactive");
+        startInfo.ArgumentList.Add("--upgrade");
+        startInfo.Environment["LLMPROXY_UPDATE_AGENT_ACTIVE"] = "1";
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start the LlmProxy bootstrap helper.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(options.CommandTimeoutMinutes));
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
+        await process.WaitForExitAsync(timeout.Token);
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        if (process.ExitCode != 0)
+        {
+            var detail = LastText(stderr, stdout);
+            throw new InvalidOperationException(
+                $"Update to {version} exited with code {process.ExitCode}.{(string.IsNullOrWhiteSpace(detail) ? string.Empty : $" {detail}")}");
+        }
+    }
+
+    private async Task SetCurrentStepAsync(Guid jobId, string version, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_activeJob?.Id == jobId)
+            {
+                _activeJob = _activeJob with { CurrentStep = version };
+                await SaveLockedAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
         await _gate.WaitAsync(stoppingToken);
         try
@@ -280,6 +310,29 @@ public sealed partial class UpdateScheduler(
             throw new ArgumentException("Version must be a stable MAJOR.MINOR.PATCH release.", nameof(raw));
         }
         return value;
+    }
+
+    private static IReadOnlyList<string> NormalizeUpgradePath(IReadOnlyList<string>? requested, string target)
+    {
+        var path = (requested is { Count: > 0 } ? requested : [target])
+            .Select(NormalizeVersion)
+            .ToArray();
+        if (!string.Equals(path[^1], target, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The final upgrade-path version must match the requested target version.", nameof(requested));
+        }
+
+        Version? previous = null;
+        foreach (var item in path)
+        {
+            var parsed = Version.Parse(item);
+            if (previous is not null && parsed <= previous)
+            {
+                throw new ArgumentException("Upgrade-path versions must be strictly increasing.", nameof(requested));
+            }
+            previous = parsed;
+        }
+        return path;
     }
 
     private static string LastText(params string[] values)
