@@ -50,6 +50,8 @@ public static class ProductReleaseCatalog
             {
                 ["Added"] =
                 [
+                    "Administrators can use Model & Hardware to inspect prepared hardware, compare deployable open-weight models against live RAM/VRAM/disk capacity, and install, start, stop or remove managed vLLM runtimes.",
+                    "The release ships an authenticated LlmProxy Node Agent for x86_64 and ARM64 Linux hardware plus deployment-specific runtime addressing so multiple models can coexist safely on one physical host.",
                     "The Admin control plane includes live encrypted full-body request/response inspection, model and System One classifier diagnostics, endpoint examples and contextual page documentation.",
                     "Administrators can reveal and copy application-encrypted recovery copies of newly created or rotated client API keys.",
                     "Full-body content-log retention is independently configurable from 10 through 180 days and is cleaned automatically every four hours.",
@@ -58,12 +60,15 @@ public static class ProductReleaseCatalog
                 ["Changed"] =
                 [
                     "This immutable distribution release was generated automatically from a validated main commit.",
+                    "Hardware terminology and deployment tooling are hardware-agnostic; DGX is supported as an example rather than assumed as the only inference platform.",
+                    "Managed model stop/remove disables routing before the remote lifecycle action so traffic fails safe.",
                     "Operational metrics, audit and OTEL remain metadata-only while exact inference payloads are isolated in the administrator-only encrypted content-log store.",
                     "Normal-user self-service admission is controlled by the stable Entra tenant/object user registry rather than requiring mutable email identity."
                 ],
                 ["Security"] =
                 [
                     "Publication occurs only after the source commit completes the repository CI gate, including the distributed full-stack acceptance suite.",
+                    "The node agent requires a bearer in Production and exposes only hardware inventory plus the constrained model lifecycle contract; management credentials are encrypted at rest by LlmProxy.",
                     "API-key reveal and decrypted payload inspection require LlmProxy.Admin; secret-bearing responses are no-store and reveal/retention actions are audited without secret content.",
                     "Disabling a normal platform user blocks self-service and revokes every active personal API key owned by the same Entra tid + oid; shared service credentials are not treated as individual-user identity."
                 ]

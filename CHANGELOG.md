@@ -8,6 +8,11 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Administrator **Model & Hardware** inventories prepared Linux hosts, compares curated deployable-model requirements with currently free GPU VRAM/system RAM/disk, and controls install/start/stop/remove through an authenticated node agent.
+- The self-contained **LlmProxy Node Agent** manages Docker/vLLM runtimes on prepared x86_64 or ARM64 Linux hardware and publishes CPU, RAM, disk and NVIDIA GPU inventory.
+- Managed deployments carry their own runtime endpoint, catalog identity and agent installation identity, allowing several models on one physical server while keeping routing pools grouped strictly by requested logical model.
+- Immutable GitHub Releases publish checksummed Node Agent archives for `linux-x64` and `linux-arm64`, including the systemd unit, environment template and installer.
+- The Admin application ships an SVG favicon.
 - Admin **Users & Access** introduces a first-class Entra end-user registry with selectable **Manual** census or **Automatic** first-login provisioning, keyed by stable tenant/object ID rather than email.
 - Administrators can disable/re-enable end users. Disable blocks the personal portal and revokes all active personal API keys owned by that user's `tid + oid`; re-enable does not resurrect revoked keys.
 - The normal-user `/admin/me` surface is now **My dashboard** and includes recent request metadata in addition to personal keys, own usage and request limits.
@@ -25,6 +30,9 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Changed
 
+- Hardware terminology and deployment tooling are hardware-agnostic; DGX remains a supported example rather than the only assumed inference platform.
+- Usage & Governance and Release Notes are part of the main Admin navigation; write-only hardware/model lifecycle and user-access controls remain administrator-only.
+- Managed stop/remove disables routing before changing the remote model runtime so traffic fails safe.
 - Self-service authorization is now Entra authentication + the LlmProxy platform-user registry. The `LlmProxy.User` app role may remain assigned, but normal-user portal admission no longer depends on that role when the registry admits the user.
 - GitHub Copilot documentation now distinguishes shared provider/API-key attribution from individual developer identity and explicitly avoids IP/User-Agent/undocumented-header inference.
 - API credential rows expose whether a recovery secret is available; older non-recoverable keys can be rotated once, while a still-configured bootstrap key is backfilled automatically at startup.
