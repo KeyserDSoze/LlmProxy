@@ -41,6 +41,7 @@ const mockedApi = vi.hoisted(() => ({
   testSystemOne: vi.fn(),
   testChat: vi.fn(),
   contentLogs: vi.fn(),
+  contentLogsQuery: vi.fn(),
   contentLog: vi.fn(),
   contentLogSettings: vi.fn(),
   updateContentLogSettings: vi.fn(),
@@ -120,7 +121,8 @@ describe('admin application', () => {
     mockedApi.testChat.mockResolvedValue({ requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 20, nodeName: 'inference-01', requestBody: '{}', responseBody: '{"ok":true}' })
     mockedApi.testSystemOne.mockResolvedValue({ requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 10, requestBody: '{}', responseBody: '{"billing":true}' })
     mockedApi.contentLogs.mockResolvedValue([{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
-    mockedApi.contentLogSettings.mockResolvedValue({ retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    mockedApi.contentLogsQuery.mockResolvedValue({ items: [{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }], total: 1, page: 1, pageSize: 50 })
+    mockedApi.contentLogSettings.mockResolvedValue({ retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 4015, cleanupIntervalHours: 4 })
     mockedApi.platformUserAccessSettings.mockResolvedValue({ provisioningMode: 'manual', updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
     mockedApi.platformUsers.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 1, activeCredentialCount: 1, lastCredentialUsedAtUtc: null, requestCount30d: 12, errorCount30d: 1 }])
     mockedApi.updatePlatformUserAccessSettings.mockResolvedValue({ provisioningMode: 'automatic', updatedAtUtc: '2026-10-03T06:10:00Z', configuredTenantId: 'tenant-1' })
@@ -220,7 +222,7 @@ describe('admin application', () => {
   })
 
 
-  it('shows contextual documentation, playground and administrator-only live content logs', async () => {
+  it('shows contextual documentation, playground and administrator request audit', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
     expect(screen.getByText(/Page documentation · Dashboard/)).toBeInTheDocument()
 
@@ -230,10 +232,10 @@ describe('admin application', () => {
     expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
     expect(screen.getByLabelText('System One logical model')).toHaveValue('systemone-laya')
 
-    await user.click(screen.getByRole('button', { name: 'Content Logs' }))
-    expect(await screen.findByRole('heading', { name: 'Live request / response log' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Request Audit' }))
+    expect(await screen.findByRole('heading', { name: 'Request / response audit' })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions')).toBeInTheDocument()
-    expect(screen.getByText(/10–180 days/)).toBeInTheDocument()
+    expect(screen.getByText(/11 years/)).toBeInTheDocument()
   })
 
   it('manages end-user provisioning and access', async () => {
@@ -249,7 +251,7 @@ describe('admin application', () => {
   })
 
   it('shows the administrative audit trail', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Audit Trail' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Administrative Audit' }))
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
   })
