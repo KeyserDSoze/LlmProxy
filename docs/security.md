@@ -12,17 +12,19 @@
 
 Production control-plane and user self-service authentication use Microsoft Entra ID through OpenID Connect. Application roles are:
 
-- `LlmProxy.Admin`: full configuration access plus user self-service capabilities.
-- `LlmProxy.User`: normal inference consumer; may manage only personal API keys owned by the current Entra identity and inspect own usage.
-- `LlmProxy.Reader`: read-only operational/admin access; retained for operators and does not grant normal user self-service by itself.
+- `LlmProxy.Admin`: full configuration access and administrator bypass of the normal-user registry.
+- `LlmProxy.User`: optional normal-user app-role assignment retained for tenant policy/compatibility.
+- `LlmProxy.Reader`: read-only operational/admin access.
+
+After Entra authentication, normal-user self-service is authorized by the persisted LlmProxy platform-user registry. Administrators choose either manual census or automatic first-login registration. A disabled platform user is denied self-service even if Entra authentication itself succeeds.
 
 Production startup fails when Entra authentication is not enabled rather than silently exposing administration endpoints.
 
 An installation may additionally configure a host-local `EntraId:SuperAdmins` allow-list. Matching occurs only after successful Entra authentication in the configured tenant and grants the internal `LlmProxy.Admin` role. Plain UPN/email matching is supported for operator convenience, while `oid:<object-id>` entries are preferred because Entra object IDs are stable and user principal names can change.
 
-Personal-key ownership is based on the stable Entra `tid` + `oid` claims. Username, email and display name may be retained as non-authoritative metadata but must not be used to authorize key ownership.
+Personal-key ownership and platform-user authorization are based on the stable Entra `tid` + `oid` claims. Username, email and display name may be retained as non-authoritative metadata but must not be used to authorize access or key ownership. Disabling a normal platform user revokes that user's active personal keys; shared service credentials are outside this user boundary.
 
-See `docs/identity-api-keys.md` for the complete role, ownership and lifecycle contract.
+See `docs/identity-api-keys.md` and `docs/user-access.md` for the complete role, admission, ownership and lifecycle contract.
 
 ## Inference authentication
 
@@ -31,7 +33,7 @@ GitHub Copilot BYOK and other OpenAI-compatible clients use bearer API keys on `
 Two credential forms are supported:
 
 - **service credential**: administrator-created, with no Entra owner, suitable for shared integrations such as centrally configured Copilot or unattended applications;
-- **personal credential**: self-created by an Entra `LlmProxy.User`/`LlmProxy.Admin` and permanently associated with the creator's tenant/object identity.
+- **personal credential**: self-created by an enabled Entra-authenticated LlmProxy platform user (or administrator) and permanently associated with the creator's tenant/object identity.
 
 The bootstrap key comes from runtime configuration only and must never be committed.
 
