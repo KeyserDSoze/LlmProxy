@@ -370,6 +370,31 @@ export default function Governance() {
       </form>{users.length === 0 && <p className="muted">Register users in Users & Access before assigning personal quotas.</p>}</section>
     </div>
 
+    <div className="gridTwo">
+      <section className="panel">
+        <div className="panelTitle"><h2>Group quotas</h2><span>Shared across all governed personal/organization credentials currently attributed to the group.</span></div>
+        <table><thead><tr><th>Group</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {groupRateLimits.length === 0 ? <tr><td colSpan={6}>No group quotas configured.</td></tr> : groupRateLimits.map(policy => <tr key={policy.id}>
+            <td><strong>{policy.usageGroupName ?? groupNames.get(policy.usageGroupId) ?? policy.usageGroupId}</strong></td>
+            <td>{policy.logicalModel ?? 'All models'}</td>
+            <td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td>
+            <td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <>{formatNumber(policy.outputTokensPerWindow)} / {policy.windowSeconds}s<div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td>
+            <td>{policy.enabled ? 'Enabled' : 'Disabled'}</td>
+            <td className="actions"><button onClick={() => void toggleGroupRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteGroupRateLimit(policy)}>Delete</button></td>
+          </tr>)}
+        </tbody></table>
+      </section>
+      <section className="panel formPanel"><h2>Add group quota</h2><form onSubmit={event => void createGroupRateLimit(event)}>
+        <label>Group<select value={groupPolicyGroupId} onChange={event => setGroupPolicyGroupId(event.target.value)} required><option value="">Select group</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+        <label>Logical model<select value={groupRateModel} onChange={event => setGroupRateModel(event.target.value)}><option value="">All models</option>{models.map(model => <option key={model.id} value={model.publicName}>{model.publicName}</option>)}</select></label>
+        <label>Requests per window<input type="number" min="1" value={groupRequestsPerWindow} onChange={event => setGroupRequestsPerWindow(Number(event.target.value))} /></label>
+        <label>Window seconds<input type="number" min="1" value={groupWindowSeconds} onChange={event => setGroupWindowSeconds(Number(event.target.value))} /></label>
+        <label>Output tokens per window<input type="number" min="1" value={groupOutputTokensPerWindow} onChange={event => setGroupOutputTokensPerWindow(Number(event.target.value))} /></label>
+        <label>Max output tokens per request<input type="number" min="1" max={groupOutputTokensPerWindow} value={groupMaxOutputTokensPerRequest} onChange={event => setGroupMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
+        <button className="primary" disabled={groups.length === 0}>Add group quota</button>
+      </form></section>
+    </div>
+
     <section className="panel formPanel">
       <div className="panelTitle"><div><h2>Output-token budget</h2><span>Reserve before inference, then settle to actual output usage. Redis-enabled gateways enforce one shared budget.</span></div></div>
       {rateLimits.length === 0 ? <p className="muted">Create a rate-limit policy first; output-token budgets reuse the same credential/model scope and window.</p> : <form onSubmit={event => void applyOutputTokenBudget(event)}>
