@@ -31,8 +31,12 @@ public sealed class PlatformUserAccessAuthorizationHandler(
         }
 
         var cancellationToken = httpContextAccessor.HttpContext?.RequestAborted ?? CancellationToken.None;
+        var tenantId = NormalizeStableId(identity.TenantId);
+        var objectId = NormalizeStableId(identity.ObjectId);
+        var tenantLookup = tenantId.ToUpperInvariant();
+        var objectLookup = objectId.ToUpperInvariant();
         var user = await dbContext.PlatformUsers.SingleOrDefaultAsync(
-            item => item.TenantId == identity.TenantId && item.ObjectId == identity.ObjectId,
+            item => item.TenantId.ToUpper() == tenantLookup && item.ObjectId.ToUpper() == objectLookup,
             cancellationToken);
 
         if (user is null)
@@ -48,8 +52,8 @@ public sealed class PlatformUserAccessAuthorizationHandler(
 
             user = new PlatformUserRecord
             {
-                TenantId = identity.TenantId,
-                ObjectId = identity.ObjectId,
+                TenantId = tenantId,
+                ObjectId = objectId,
                 PrincipalName = identity.PrincipalName,
                 DisplayName = identity.DisplayName,
                 Enabled = true,
@@ -79,7 +83,7 @@ public sealed class PlatformUserAccessAuthorizationHandler(
             {
                 dbContext.ChangeTracker.Clear();
                 user = await dbContext.PlatformUsers.SingleOrDefaultAsync(
-                    item => item.TenantId == identity.TenantId && item.ObjectId == identity.ObjectId,
+                    item => item.TenantId.ToUpper() == tenantLookup && item.ObjectId.ToUpper() == objectLookup,
                     cancellationToken);
                 if (user is null)
                 {
@@ -109,4 +113,9 @@ public sealed class PlatformUserAccessAuthorizationHandler(
 
         context.Succeed(requirement);
     }
+
+    private static string NormalizeStableId(string value)
+        => Guid.TryParse(value, out var parsed)
+            ? parsed.ToString("D")
+            : value.Trim().ToLowerInvariant();
 }
