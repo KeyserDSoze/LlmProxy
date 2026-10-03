@@ -396,13 +396,24 @@ export default function Governance() {
     </div>
 
     <section className="panel formPanel">
-      <div className="panelTitle"><div><h2>Output-token budget</h2><span>Reserve before inference, then settle to actual output usage. Redis-enabled gateways enforce one shared budget.</span></div></div>
+      <div className="panelTitle"><div><h2>Credential-specific output-token budget</h2><span>Optional extra limit on one governed credential/model, composed with user and group budgets when applicable.</span></div></div>
       {rateLimits.length === 0 ? <p className="muted">Create a rate-limit policy first; output-token budgets reuse the same credential/model scope and window.</p> : <form onSubmit={event => void applyOutputTokenBudget(event)}>
         <label>Budget policy<select aria-label="Budget policy" value={budgetPolicyId} onChange={event => setBudgetPolicyId(event.target.value)} required>{rateLimits.map(policy => <option key={policy.id} value={policy.id}>{policy.credentialName ?? policy.apiCredentialId} · {policy.logicalModel ?? 'All models'} · {policy.windowSeconds}s</option>)}</select></label>
         <label>Output tokens per window<input aria-label="Output tokens per window" type="number" min="1" value={outputTokensPerWindow} onChange={event => setOutputTokensPerWindow(Number(event.target.value))} /></label>
         <label>Max output tokens per request<input aria-label="Max output tokens per request" type="number" min="1" max={outputTokensPerWindow} value={maxOutputTokensPerRequest} onChange={event => setMaxOutputTokensPerRequest(Number(event.target.value))} /></label>
         <div className="actions"><button className="primary">Apply token budget</button><button type="button" className="secondary" disabled={!budgetPolicy?.outputTokensPerWindow} onClick={() => void clearOutputTokenBudget()}>Clear token budget</button></div>
       </form>}
+    </section>
+
+    <section className="panel">
+      <div className="panelTitle"><h2>Usage by user</h2><span>Personal API-key usage resolved through stable Entra tenant/object ownership.</span></div>
+      <table><thead><tr><th>User</th><th>Group</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>
+        {userUsage.length === 0 ? <tr><td colSpan={7}>No personal user usage in this window.</td></tr> : userUsage.map(row => <tr key={`${row.tenantId}|${row.objectId}`}>
+          <td><strong>{row.displayName ?? row.principalName ?? row.objectId}</strong><div className="muted">{row.principalName ?? row.objectId}</div></td>
+          <td>{row.usageGroupId ? groupNames.get(row.usageGroupId) ?? row.usageGroupId : 'Ungrouped'}</td>
+          <td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.inputTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td>
+        </tr>)}
+      </tbody></table>
     </section>
 
     <section className="panel"><div className="panelTitle"><h2>Usage by logical model</h2><span>{usage.windowDays}-day UTC window</span></div><table><thead><tr><th>Model</th><th>Requests</th><th>Total tokens</th><th>Output tokens</th><th>Errors</th><th>Rate limited</th></tr></thead><tbody>{usage.models.map(row => <tr key={row.logicalModel}><td><strong>{row.logicalModel}</strong></td><td>{formatNumber(row.requestCount)}</td><td>{formatNumber(row.totalTokens)}</td><td>{formatNumber(row.outputTokens)}</td><td>{formatNumber(row.errorCount)}</td><td>{formatNumber(row.rateLimitedRequests)}</td></tr>)}</tbody></table></section>
