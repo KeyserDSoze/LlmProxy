@@ -339,6 +339,70 @@ public static class UsageGovernanceEndpoints
             return Results.Ok(report.Credentials);
         });
 
+        group.MapGet("/usage/users", async (
+            int? days,
+            UsageReportingReader reader,
+            GatewayDbContext dbContext,
+            CancellationToken cancellationToken) =>
+        {
+            var report = await reader.ReadAsync(days ?? 30, cancellationToken);
+            var owners = await dbContext.ApiCredentials.AsNoTracking()
+                .Where(item => item.OwnerTenantId != null && item.OwnerObjectId != null)
+                .Select(item => new
+                {
+                    item.Id,
+                    TenantId = item.OwnerTenantId!,
+                    ObjectId = item.OwnerObjectId!
+                })
+                .ToDictionaryAsync(item => item.Id, cancellationToken);
+
+            var users = await dbContext.PlatformUsers.AsNoTracking()
+                .Select(item => new
+                {
+                    item.TenantId,
+                    item.ObjectId,
+                    item.PrincipalName,
+                    item.DisplayName,
+                    item.UsageGroupId
+                })
+                .ToListAsync(cancellationToken);
+            var userLookup = users.ToDictionary(
+                item => $"{item.TenantId}|{item.ObjectId}",
+                StringComparer.OrdinalIgnoreCase);
+
+            var rows = report.Credentials
+                .Where(item => owners.ContainsKey(item.ApiCredentialId))
+                .GroupBy(item =>
+                {
+                    var owner = owners[item.ApiCredentialId];
+                    return $"{owner.TenantId}|{owner.ObjectId}";
+                }, StringComparer.OrdinalIgnoreCase)
+                .Select(grouping =>
+                {
+                    var firstCredentialId = grouping.First().ApiCredentialId;
+                    var owner = owners[firstCredentialId];
+                    userLookup.TryGetValue(grouping.Key, out var user);
+                    return new
+                    {
+                        tenantId = owner.TenantId,
+                        objectId = owner.ObjectId,
+                        principalName = user?.PrincipalName,
+                        displayName = user?.DisplayName,
+                        usageGroupId = user?.UsageGroupId,
+                        requestCount = grouping.Sum(item => item.RequestCount),
+                        errorCount = grouping.Sum(item => item.ErrorCount),
+                        inputTokens = grouping.Sum(item => item.InputTokens),
+                        outputTokens = grouping.Sum(item => item.OutputTokens),
+                        totalTokens = grouping.Sum(item => item.TotalTokens),
+                        rateLimitedRequests = grouping.Sum(item => item.RateLimitedRequests)
+                    };
+                })
+                .OrderByDescending(item => item.requestCount)
+                .ToArray();
+
+            return Results.Ok(rows);
+        });
+
         group.MapGet("/usage/models", async (
             int? days,
             UsageReportingReader reader,
