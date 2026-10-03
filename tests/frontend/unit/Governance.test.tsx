@@ -99,7 +99,7 @@ describe('Usage governance', () => {
   it('shows consolidated usage and makes historical rollup coverage explicit', async () => {
     render(<Governance />)
 
-    expect(await screen.findByRole('heading', { name: 'Usage & Governance' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Governance workspace' })).toBeInTheDocument()
     expect(screen.getAllByText('Development CRM').length).toBeGreaterThan(0)
     expect(screen.getAllByText('agic-code-fast').length).toBeGreaterThan(0)
     expect(screen.getByTestId('historical-rollup-notice')).toHaveTextContent('30 rolled-up requests + 12 raw requests')
@@ -111,7 +111,7 @@ describe('Usage governance', () => {
   it('supports long-term UTC-day reporting windows', async () => {
     const user = userEvent.setup()
     render(<Governance />)
-    await screen.findByRole('heading', { name: 'Usage & Governance' })
+    await screen.findByRole('heading', { name: 'Governance workspace' })
 
     await user.selectOptions(screen.getByLabelText('Usage window'), '365')
     await waitFor(() => expect(mockedApi.usageSummary).toHaveBeenLastCalledWith(365))
@@ -120,7 +120,7 @@ describe('Usage governance', () => {
   it('creates groups and rate-limit policies through the admin API', async () => {
     const user = userEvent.setup()
     render(<Governance />)
-    await screen.findByRole('heading', { name: 'Usage & Governance' })
+    await screen.findByRole('heading', { name: 'Governance workspace' })
     await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
     expect(screen.getByText('Copilot CRM')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Create usage group' }))
