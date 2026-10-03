@@ -83,6 +83,18 @@ call_model() {
     "http://127.0.0.1:${port}/v1/chat/completions"
 }
 
+wait_capacity_released() {
+  for attempt in {1..50}; do
+    local remaining
+    remaining="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:capacity:*' 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$remaining" == "0" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 python3 tests/backend/integration/mock_llm.py --port 3490 --prefix /full-stack --name full-stack > /tmp/llmproxy-full-stack-mock.log 2>&1 &
 MOCK_PID="$!"
 sleep 1
@@ -220,19 +232,40 @@ done
 [[ "$peer_healthy" == "true" ]] || fail_with_diagnostics "Second gateway did not observe the shared inference node as Healthy."
 
 # Rate-limit counter must be shared across both gateways.
+peer_sync_before_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
+peer_version_before_policy="$(echo "$peer_sync_before_policy" | jq -r '.lastAppliedVersion // 0')"
+
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
   -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
 policy_id="$(echo "$policy_json" | jq -r '.id')"
 echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
-sleep 1
+
+policy_converged=false
+for attempt in {1..50}; do
+  peer_sync_after_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync || true)"
+  peer_version_after_policy="$(echo "$peer_sync_after_policy" | jq -r '.lastAppliedVersion // 0' 2>/dev/null || echo 0)"
+  redis_policy_present="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HEXISTS llmproxy:rate-policies "$policy_id" 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$peer_version_after_policy" =~ ^[0-9]+$ && "$peer_version_after_policy" -gt "$peer_version_before_policy" && "$redis_policy_present" == "1" ]]; then
+    policy_converged=true
+    break
+  fi
+  sleep 0.2
+done
+[[ "$policy_converged" == "true" ]] || fail_with_diagnostics "Rate-limit policy did not converge to Redis and the peer gateway before shared-counter validation."
 
 shared1="$(call_model 8080 /tmp/full-stack-rate-a)"
+[[ "$shared1" == "200" ]] || fail_with_diagnostics "Expected first globally governed request to succeed; got ${shared1}."
+wait_capacity_released || fail_with_diagnostics "Capacity lease from first rate-limit probe did not release."
+
 shared2="$(call_model 8081 /tmp/full-stack-rate-b)"
+[[ "$shared2" == "200" ]] || fail_with_diagnostics "Expected second globally governed request to succeed; got ${shared2}."
+wait_capacity_released || fail_with_diagnostics "Capacity lease from second rate-limit probe did not release."
+
 shared3="$(call_model 8080 /tmp/full-stack-rate-c)"
-[[ "$shared1" == "200" && "$shared2" == "200" ]] || fail_with_diagnostics "Expected first two globally governed requests to succeed; got ${shared1}/${shared2}."
 [[ "$shared3" == "429" ]] || fail_with_diagnostics "Expected third request across two gateways to hit the shared Redis rate limit; got ${shared3}."
-jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded"' /tmp/full-stack-rate-c.json >/dev/null
+jq -e '.error.type == "rate_limit_error" and .error.code == "rate_limit_exceeded"' /tmp/full-stack-rate-c.json >/dev/null \
+  || fail_with_diagnostics "Expected shared rate limiter to reject the third request before capacity admission."
 
 global_counter_keys="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" --scan --pattern 'llmproxy:rate-limit:*' 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$global_counter_keys" -ge 1 ]] || fail_with_diagnostics "Expected a Redis-backed shared rate-limit counter key."
