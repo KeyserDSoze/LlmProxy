@@ -46,7 +46,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Stable Entra `tid + oid` user identity, Usage Groups, per-credential request-rate governance, aggregate Entra-user request quotas and output-token budgets.
 - Historical PostgreSQL usage rollups beyond raw-metric retention.
 - Transactional PostgreSQL -> Redis runtime-state outbox.
-- Metadata-only metrics/audit/OTEL plus a separate administrator-only, application-encrypted full-body request/response log with 10-180 day retention.
+- Metadata-only metrics/audit/OTEL plus a separate application-encrypted full-body **Request Audit**: administrators can inspect all retained calls, users can inspect only calls from their own personal API keys, and retention is configurable from 10 through 4015 days (11 years).
 - PostgreSQL backup/restore operators.
 - Automatic immutable SemVer releases from every green `main` push, with build identity, GitHub release notes, multi-arch GHCR digest evidence, SPDX SBOM and SLSA provenance.
 - Executable production environment acceptance for Linux host, direct DGX/vLLM and gateway Chat/Responses/SSE surfaces.
