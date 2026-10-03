@@ -326,7 +326,7 @@ test('admin controls automatic versus manual end-user provisioning and can disab
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true, level: 1 })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
