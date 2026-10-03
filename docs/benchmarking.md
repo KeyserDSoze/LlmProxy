@@ -1,6 +1,6 @@
 # Benchmarking and capacity profiling
 
-LlmProxy capacity must be derived from measured DGX/vLLM behavior, not from the number of licensed developers. The benchmark harness under `tests/performance/` exists to produce repeatable evidence for concurrency limits and smart-routing calibration.
+LlmProxy capacity must be derived from measured inference node/vLLM behavior, not from the number of licensed developers. The benchmark harness under `tests/performance/` exists to produce repeatable evidence for concurrency limits and smart-routing calibration.
 
 ## What we measure
 
@@ -98,7 +98,7 @@ llmproxy-benchmark-<run-id>.csv
 
 JSON is the canonical machine-readable report. CSV contains one row per concurrency level for quick spreadsheet/BI comparison.
 
-## Recommended DGX Spark test protocol
+## Recommended GPU inference hardware test protocol
 
 For each model/deployment profile:
 
@@ -115,7 +115,7 @@ Initial useful sweep candidates are `1,2,4,8,12,16`, then extend only if the mod
 
 ## Capacity profile we want to derive
 
-For each `(DGX class, provider model, runtime configuration)` we ultimately want evidence for:
+For each `(inference node class, provider model, runtime configuration)` we ultimately want evidence for:
 
 ```text
 recommended max concurrency
