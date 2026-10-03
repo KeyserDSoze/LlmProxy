@@ -73,6 +73,13 @@ export const api = {
     request<UserRateLimitPolicy>(`/api/admin/user-rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   clearUserOutputTokenBudget: (id: string) => request<void>(`/api/admin/user-rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
   deleteUserRateLimit: (id: string) => request<void>(`/api/admin/user-rate-limits/${id}`, { method: 'DELETE' }),
+  groupRateLimits: () => request<UsageGroupRateLimitPolicy[]>('/api/admin/group-rate-limits'),
+  createGroupRateLimit: (body: { usageGroupId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
+    request<UsageGroupRateLimitPolicy>('/api/admin/group-rate-limits', { method: 'POST', body: JSON.stringify(body) }),
+  updateGroupRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
+    request<UsageGroupRateLimitPolicy>(`/api/admin/group-rate-limits/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  clearGroupOutputTokenBudget: (id: string) => request<void>(`/api/admin/group-rate-limits/${id}/output-token-budget`, { method: 'DELETE' }),
+  deleteGroupRateLimit: (id: string) => request<void>(`/api/admin/group-rate-limits/${id}`, { method: 'DELETE' }),
   createRateLimit: (body: { apiCredentialId: string; logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled?: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
     request<RateLimitPolicy>('/api/admin/rate-limits', { method: 'POST', body: JSON.stringify(body) }),
   updateRateLimit: (id: string, body: { logicalModel?: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean; outputTokensPerWindow?: number | null; maxOutputTokensPerRequest?: number | null }) =>
