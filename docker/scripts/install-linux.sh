@@ -509,6 +509,31 @@ is_missing_env_value() {
   [[ -z "$value" || "$value" == CHANGE_ME* ]]
 }
 
+migrate_legacy_env_value() {
+  local legacy_key="$1"
+  local current_key="$2"
+  if ! is_missing_env_value "$current_key"; then
+    return 0
+  fi
+
+  local legacy_value
+  legacy_value="$(read_env_value "$legacy_key")"
+  if [[ -z "$legacy_value" || "$legacy_value" == CHANGE_ME* ]]; then
+    return 0
+  fi
+
+  set_env_value "$current_key" "$legacy_value"
+  log "Migrated legacy configuration $legacy_key -> $current_key."
+}
+
+migrate_legacy_inference_configuration() {
+  migrate_legacy_env_value DGX_NODE_NAME INFERENCE_NODE_NAME
+  migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS
+  migrate_legacy_env_value DGX_HARDWARE_METRICS_BASE_ADDRESS INFERENCE_NODE_HARDWARE_METRICS_BASE_ADDRESS
+  migrate_legacy_env_value DGX_NODE_WEIGHT INFERENCE_NODE_WEIGHT
+  migrate_legacy_env_value DGX_NODE_MAX_CONCURRENCY INFERENCE_NODE_MAX_CONCURRENCY
+}
+
 prompt_required_value() {
   local key="$1"
   local prompt="$2"
@@ -545,6 +570,8 @@ prepare_environment() {
     log "Preserving existing production environment: $ENV_FILE"
     chmod 0600 "$ENV_FILE"
   fi
+
+  migrate_legacy_inference_configuration
 
   if is_missing_env_value LLMPROXY_UPSTREAM_CREDENTIAL_KEY; then
     log "Generating upstream-credential encryption key for this installation."
