@@ -5,8 +5,8 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 test('admin can review grouped usage, historical rollups, rotate credentials and configure caller governance', async ({ page }) => {
-  const groups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM team', credentialCount: 1, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }]
-  const credentials = [{ id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_abcd', enabled: true, usageGroupId: 'group-1', createdAtUtc: '2026-09-14T10:00:00Z' }]
+  const groups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM team', credentialCount: 1, userCount: 1, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }]
+  const credentials = [{ id: 'credential-1', name: 'Copilot CRM', keyPrefix: 'lp_org_abcd', enabled: true, usageGroupId: 'group-1', kind: 'organization', enforceCallerGovernance: false, secretAvailable: true, createdAtUtc: '2026-09-14T10:00:00Z' }]
   const policies: Array<Record<string, unknown>> = []
   const users = [{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-09-17T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 2, activeCredentialCount: 2, lastCredentialUsedAtUtc: null, requestCount30d: 42, errorCount30d: 2 }]
   const userPolicies: Array<Record<string, unknown>> = []
@@ -34,8 +34,13 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
       models: [{ logicalModel: 'agic-code-fast', requestCount: 42, errorCount: 2, inputTokens: 1000, outputTokens: 500, totalTokens: 1500, rateLimitedRequests: 3 }]
     })
     if (request.method() === 'POST' && path === '/api/admin/api-credentials/credential-1/rotate') {
-      credentials[0].keyPrefix = 'lp_rotated'
-      return json(route, { ...credentials[0], secret: 'lp_rotated_secret_once', expiresAtUtc: null, lastUsedAtUtc: null })
+      credentials[0].keyPrefix = 'lp_org_rotated'
+      return json(route, { ...credentials[0], secret: 'lp_org_rotated_secret_once', expiresAtUtc: null, lastUsedAtUtc: null })
+    }
+    if (request.method() === 'PUT' && path === '/api/admin/api-credentials/credential-1/caller-governance') {
+      const input = request.postDataJSON() as { enabled: boolean }
+      credentials[0].enforceCallerGovernance = input.enabled
+      return json(route, { id: credentials[0].id, name: credentials[0].name, kind: 'organization', enforceCallerGovernance: input.enabled })
     }
     if (request.method() === 'POST' && path === '/api/admin/user-rate-limits') {
       const input = request.postDataJSON() as { ownerTenantId: string; ownerObjectId: string; logicalModel: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }
@@ -54,7 +59,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
     }
     if (request.method() === 'POST' && path === '/api/admin/rate-limits') {
       const input = request.postDataJSON() as { apiCredentialId: string; logicalModel: string | null; requestsPerWindow: number; windowSeconds: number; enabled: boolean }
-      const created = { id: 'rate-1', credentialName: 'Copilot CRM', keyPrefix: 'lp_rotated', outputTokensPerWindow: null, maxOutputTokensPerRequest: null, ...input, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }
+      const created = { id: 'rate-1', credentialName: 'Copilot CRM', keyPrefix: 'lp_org_rotated', ...input, createdAtUtc: '2026-09-14T10:00:00Z', updatedAtUtc: '2026-09-14T10:00:00Z' }
       policies.push(created)
       return json(route, created, 201)
     }
@@ -71,55 +76,51 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   })
 
   await page.goto('/admin/governance')
-  await expect(page.getByRole('heading', { name: 'Usage & Governance', exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Governance workspace', exact: true })).toBeVisible()
   await expect(page.getByTestId('historical-rollup-notice')).toContainText('30 rolled-up requests + 12 raw requests')
   await expect(page.getByText('Development CRM').first()).toBeVisible()
-  await expect(page.getByText('Copilot CRM').first()).toBeVisible()
+  await expect(page.getByText('agic-code-fast').first()).toBeVisible()
 
   await page.getByLabel('Usage window').selectOption('365')
-  await expect(page.getByRole('heading', { name: 'Usage by logical model' }).locator('..').getByText('365-day UTC window')).toBeVisible()
-
-  const modelSection = page.getByRole('heading', { name: 'Usage by logical model' }).locator('..').locator('..')
+  const groupUsageSection = page.getByRole('heading', { name: 'Usage by group' }).locator('..').locator('..')
+  await expect(groupUsageSection.getByText('365-day UTC window')).toBeVisible()
+  const modelSection = page.getByRole('heading', { name: 'Usage by model' }).locator('..').locator('..')
   await expect(modelSection.getByRole('row', { name: /agic-code-fast/ })).toBeVisible()
 
-  const credentialSection = page.getByRole('heading', { name: 'Usage by credential' }).locator('..').locator('..')
-  await expect(credentialSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('1,500')
-
-  await page.getByRole('button', { name: 'Rotate Copilot CRM' }).click()
-  await expect(page.getByText('Credential Copilot CRM rotated. The previous secret is now invalid.')).toBeVisible()
-  const rotatedSecret = page.getByTestId('rotated-credential-secret')
-  await expect(rotatedSecret).toContainText('lp_rotated_secret_once')
-  await expect(rotatedSecret).toContainText('will not be shown again')
-  const membershipSection = page.getByRole('heading', { name: 'Organization & personal credentials' }).locator('..').locator('..')
-  await expect(membershipSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_rotated')
+  await page.getByRole('tab', { name: /Groups & credentials/ }).click()
+  const credentialSection = page.getByRole('heading', { name: 'Credential governance' }).locator('..').locator('..')
+  const credentialRow = credentialSection.getByRole('row', { name: /Copilot CRM/ })
+  await expect(credentialRow).toContainText('ORG')
+  await expect(credentialRow).toContainText('lp_org_abcd')
   await expect(page.getByLabel('Usage group for Copilot CRM')).toHaveValue('group-1')
 
-  const credentialLimitForm = page.getByRole('heading', { name: 'Add rate limit' }).locator('..')
-  await credentialLimitForm.getByLabel('Requests per window').fill('2')
-  await credentialLimitForm.getByLabel('Window seconds').fill('60')
-  await credentialLimitForm.getByRole('button', { name: 'Add rate limit' }).click()
-  await expect(page.getByText('Rate-limit policy created and applied live.')).toBeVisible()
-  await expect(page.getByText('2 / 60s')).toBeVisible()
-  await expect(page.getByText('Not set')).toBeVisible()
+  await credentialRow.getByRole('button', { name: 'Rotate' }).click()
+  await expect(page.getByText('Credential rotated. The previous secret is invalid.')).toBeVisible()
+  const rotatedSecret = page.getByTestId('rotated-credential-secret')
+  await expect(rotatedSecret).toContainText('lp_org_rotated_secret_once')
+  await expect(credentialSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_org_rotated')
 
-  const userLimitForm = page.getByRole('heading', { name: 'Add user quota' }).locator('..')
-  await userLimitForm.getByLabel('Requests per window').fill('5')
-  await userLimitForm.getByLabel('Window seconds').fill('60')
-  await userLimitForm.getByRole('button', { name: 'Add user quota' }).click()
-  await expect(page.getByText('User rate-limit policy created and applied live across all personal keys.')).toBeVisible()
+  await page.getByLabel('Treat as governed client').check()
+  await expect(page.getByText('Organization credential opted into caller governance.')).toBeVisible()
+  await expect(page.getByLabel('Treat as governed client')).toBeChecked()
+
+  await page.getByRole('tab', { name: /Quotas/ }).click()
+  await page.getByRole('button', { name: 'Add credential limit' }).click()
+  const credentialLimitDialog = page.getByRole('dialog', { name: 'Add credential rate limit' })
+  await credentialLimitDialog.getByLabel('Requests per window').fill('2')
+  await credentialLimitDialog.getByLabel('Window seconds').fill('60')
+  await credentialLimitDialog.getByRole('button', { name: 'Add rate limit' }).click()
+  await expect(page.getByText('Credential quota created and applied live.')).toBeVisible()
+  const credentialQuotaSection = page.getByRole('heading', { name: 'Credential quotas' }).locator('..').locator('..')
+  await expect(credentialQuotaSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('2 / 60s')
+  await expect(credentialQuotaSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('100,000')
+
+  await page.getByRole('button', { name: 'Add user quota' }).click()
+  const userLimitDialog = page.getByRole('dialog', { name: 'Add user quota' })
+  await userLimitDialog.getByLabel('Requests per window').fill('5')
+  await userLimitDialog.getByLabel('Window seconds').fill('60')
+  await userLimitDialog.getByRole('button', { name: 'Add user quota' }).click()
+  await expect(page.getByText('User quota created and applied live.')).toBeVisible()
   const userLimitSection = page.getByRole('heading', { name: 'User quotas' }).locator('..').locator('..')
   await expect(userLimitSection.getByRole('row', { name: /user@example.com/ })).toContainText('5 / 60s')
-
-  const credentialBudgetSection = page.getByRole('heading', { name: 'Credential-specific output-token budget' }).locator('..').locator('..').locator('..')
-  await credentialBudgetSection.getByLabel('Output tokens per window').fill('17000')
-  await credentialBudgetSection.getByLabel('Max output tokens per request').fill('4096')
-  await credentialBudgetSection.getByRole('button', { name: 'Apply token budget' }).click()
-  await expect(page.getByText('Output-token budget updated and applied live.')).toBeVisible()
-  const rateLimitSection = page.getByRole('heading', { name: 'Rate limits' }).locator('..').locator('..')
-  await expect(rateLimitSection.getByText('17,000 tokens / 60s')).toBeVisible()
-  await expect(rateLimitSection.getByText('max 4,096 / request')).toBeVisible()
-
-  await credentialBudgetSection.getByRole('button', { name: 'Clear token budget' }).click()
-  await expect(page.getByText('Output-token budget cleared. Request-rate policy remains active.')).toBeVisible()
-  await expect(rateLimitSection.getByText('Not set')).toBeVisible()
 })
