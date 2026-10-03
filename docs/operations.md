@@ -1,4 +1,4 @@
-# Operations: Linux deployment, environment acceptance, DGX health, safe maintenance, build identity and audit
+# Operations: Linux deployment, environment acceptance, inference node health, safe maintenance, build identity and audit
 
 ## Current product baseline
 
@@ -39,7 +39,7 @@ export GHCR_USER='<github-user>'
 export GHCR_TOKEN='<package-read-token>'
 
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag sha-df3ecf7
 ```
@@ -123,7 +123,7 @@ The harness validates:
 
 1. Linux distribution/kernel/architecture metadata;
 2. Docker Engine + Docker Compose v2;
-3. direct VM -> DGX/vLLM `/health` and `/v1/models`;
+3. direct VM -> inference node/vLLM `/health` and `/v1/models`;
 4. direct vLLM Chat + Responses, streaming and non-streaming;
 5. LlmProxy `/healthz`, `/readyz`, `/v1/models`;
 6. gateway Chat + Responses, streaming and non-streaming;
@@ -154,9 +154,9 @@ The workflow:
 - uploads metadata evidence even when functional acceptance fails, then preserves the run failure;
 - removes runner-local evidence after the run.
 
-If the DGX/vLLM endpoint itself requires bearer authentication, use the manual path with `LLMPROXY_ACCEPTANCE_DGX_API_KEY` in the acceptance process environment until an approved host-secret injection mechanism is configured.
+If the inference node/vLLM endpoint itself requires bearer authentication, use the manual path with `LLMPROXY_ACCEPTANCE_inference node_API_KEY` in the acceptance process environment until an approved host-secret injection mechanism is configured.
 
-The workflow being present in the repository does not prove the production environment. A green real run requires the actual self-hosted runner, target Linux host and DGX/vLLM service.
+The workflow being present in the repository does not prove the production environment. A green real run requires the actual self-hosted runner, target Linux host and inference node/vLLM service.
 
 ## Health state model
 
@@ -190,7 +190,7 @@ Resume requires zero distributed active work and validates:
 
 The legacy direct `POST /api/admin/nodes/{nodeId}/drain` remains deprecated and must not become a maintenance bypass.
 
-## Manual DGX connection test
+## Manual inference node connection test
 
 Admin `Test` calls:
 
@@ -204,7 +204,7 @@ Service roots may include host, port and path prefix:
 http://localhost:3450/primopath
 http://10.0.0.25:8000
 http://10.0.0.25:8000/vllm
-https://dgx-01.internal:8443/inference
+https://inference-01.internal:8443/inference
 ```
 
 The manual Admin test is diagnostic; production environment acceptance and maintenance resume have stricter, separate semantics.
@@ -272,7 +272,7 @@ Audit must never contain raw inference API secrets, Entra client secrets, Cloudf
 Repository CI can validate scripts, Compose rendering, mocks and regression behavior. It cannot prove:
 
 - package/service behavior on the actual target Linux distribution;
-- VM/DGX network policy;
+- VM/inference node network policy;
 - real vLLM/model behavior and production capacity;
 - real Entra roles;
 - real Cloudflare/public DNS;
