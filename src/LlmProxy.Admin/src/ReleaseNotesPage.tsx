@@ -129,7 +129,7 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
       <div className="panelTitle"><div><h2>Host updates</h2><div className="muted">Updates run on the host agent so the operation survives the gateway container restart.</div></div><span>{updates?.agentAvailable ? 'Agent online' : 'Agent unavailable'}</span></div>
       {updateError && <div className="error updateMessage">{friendlyError(updateError)}</div>}
       {!updates && !updateError && <div className="loading updateMessage">Checking published releases and host update agent…</div>}
-      {updates && !updates.agentAvailable && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but Update now / Schedule are disabled until the host is upgraded to a release that installs the update agent.</div>}
+      {updates && !(updates?.agentAvailable ?? false) && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but Update now / Schedule are disabled until the host is upgraded to a release that installs the update agent.</div>}
       {activeJob && <div className="updateActive">
         <div><strong>{activeJob.status}: v{activeJob.version}</strong><div className="muted">Scheduled {formatDateTime(activeJob.scheduledForUtc)}{activeJob.startedAtUtc ? ` · started ${formatDateTime(activeJob.startedAtUtc)}` : ''}</div>{activeJob.error && <div className="errorText">{activeJob.error}</div>}</div>
         {canWrite && activeJob.status === 'Pending' && <button className="secondary" onClick={() => void cancelActiveUpdate()}>Cancel scheduled update</button>}
@@ -146,10 +146,10 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
           </div>
           <div className="updateControls">
             {canWrite && <>
-              <button className="primary" disabled={!updates.agentAvailable || busyVersion === release.version} onClick={() => void updateNow(release.version)}>Update now</button>
+              <button className="primary" disabled={!(updates?.agentAvailable ?? false) || busyVersion === release.version} onClick={() => void updateNow(release.version)}>Update now</button>
               <div className="scheduleRow">
                 <input aria-label={`Schedule v${release.version}`} type="datetime-local" value={scheduleTimes[release.version] ?? ''} onChange={event => setScheduleTimes(current => ({ ...current, [release.version]: event.target.value }))} />
-                <button className="secondary" disabled={!updates.agentAvailable || busyVersion === release.version} onClick={() => void schedule(release.version)}>Schedule</button>
+                <button className="secondary" disabled={!(updates?.agentAvailable ?? false) || busyVersion === release.version} onClick={() => void schedule(release.version)}>Schedule</button>
               </div>
             </>}
             {!canWrite && <span className="muted">Administrator write access is required to launch an update.</span>}
