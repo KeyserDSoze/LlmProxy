@@ -68,6 +68,9 @@ sleep 1
 
 export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="ci-test-pepper"
+# System One legacy bootstrap imports its upstream bearer into the managed node catalog,
+# so the integration fixture must provide the same stable encryption key required in production.
+export LLMPROXY_UPSTREAM_CREDENTIAL_KEY="00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
 export INFERENCE_NODE_NAME="inference-local-primary"
