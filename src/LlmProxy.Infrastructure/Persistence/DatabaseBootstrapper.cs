@@ -106,6 +106,56 @@ public sealed class DatabaseBootstrapper(
             });
         }
 
+        if (!await dbContext.UserAccessSettings.AnyAsync(cancellationToken))
+        {
+            dbContext.UserAccessSettings.Add(new UserAccessSettingsRecord
+            {
+                Id = UserAccessSettingsRecord.SingletonId,
+                ProvisioningMode = UserAccessSettingsRecord.ManualMode,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            });
+        }
+
+        var existingUsers = await dbContext.PlatformUsers
+            .AsNoTracking()
+            .Select(item => new { item.TenantId, item.ObjectId })
+            .ToListAsync(cancellationToken);
+        var existingUserKeys = existingUsers
+            .Select(item => $"{item.TenantId}|{item.ObjectId}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var ownedCredentials = await dbContext.ApiCredentials.AsNoTracking()
+            .Where(item => item.OwnerTenantId != null && item.OwnerObjectId != null)
+            .GroupBy(item => new { item.OwnerTenantId, item.OwnerObjectId })
+            .Select(grouping => new
+            {
+                TenantId = grouping.Key.OwnerTenantId!,
+                ObjectId = grouping.Key.OwnerObjectId!,
+                PrincipalName = grouping.Max(item => item.OwnerPrincipalName),
+                CreatedAtUtc = grouping.Min(item => item.CreatedAtUtc),
+                LastSeenAtUtc = grouping.Max(item => item.LastUsedAtUtc)
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var owner in ownedCredentials)
+        {
+            if (!existingUserKeys.Add($"{owner.TenantId}|{owner.ObjectId}"))
+            {
+                continue;
+            }
+
+            dbContext.PlatformUsers.Add(new PlatformUserRecord
+            {
+                TenantId = owner.TenantId,
+                ObjectId = owner.ObjectId,
+                PrincipalName = owner.PrincipalName,
+                Enabled = true,
+                ProvisioningSource = "migration",
+                CreatedAtUtc = owner.CreatedAtUtc,
+                LastSeenAtUtc = owner.LastSeenAtUtc
+            });
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var credentialSnapshots = (await dbContext.ApiCredentials.AsNoTracking().ToListAsync(cancellationToken))
