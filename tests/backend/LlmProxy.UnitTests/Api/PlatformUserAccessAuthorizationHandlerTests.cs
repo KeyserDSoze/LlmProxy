@@ -18,7 +18,7 @@ public sealed class PlatformUserAccessAuthorizationHandlerTests
             Id = UserAccessSettingsRecord.SingletonId,
             ProvisioningMode = UserAccessSettingsRecord.AutomaticMode
         });
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var httpContext = new DefaultHttpContext();
         var principal = CreateUser("tenant-1", "object-1", "user@example.com");
@@ -33,7 +33,7 @@ public sealed class PlatformUserAccessAuthorizationHandlerTests
         await handler.HandleAsync(authorization);
 
         Assert.True(authorization.HasSucceeded);
-        var user = await dbContext.PlatformUsers.SingleAsync();
+        var user = await dbContext.PlatformUsers.SingleAsync(TestContext.Current.CancellationToken);
         Assert.Equal("tenant-1", user.TenantId);
         Assert.Equal("object-1", user.ObjectId);
         Assert.Equal("user@example.com", user.PrincipalName);
@@ -52,7 +52,7 @@ public sealed class PlatformUserAccessAuthorizationHandlerTests
             Id = UserAccessSettingsRecord.SingletonId,
             ProvisioningMode = UserAccessSettingsRecord.ManualMode
         });
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var principal = CreateUser("tenant-1", "object-missing", "missing@example.com");
         var httpContext = new DefaultHttpContext { User = principal };
@@ -86,7 +86,7 @@ public sealed class PlatformUserAccessAuthorizationHandlerTests
             ProvisioningSource = "admin",
             DisabledAtUtc = DateTimeOffset.UtcNow
         });
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var principal = CreateUser("tenant-1", "object-disabled", "disabled@example.com");
         var httpContext = new DefaultHttpContext { User = principal };
