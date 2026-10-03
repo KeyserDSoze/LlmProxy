@@ -33,7 +33,7 @@ Options:
 
 Secrets are intentionally not accepted as command-line flags. The gateway API
 key is read from LLMPROXY_ACCEPTANCE_API_KEY or LLM_PROXY_API_KEY in the env
-file. Optional inference node bearer auth is read from LLMPROXY_ACCEPTANCE_inference node_API_KEY.
+file. Optional inference node bearer auth is read from LLMPROXY_ACCEPTANCE_INFERENCE_NODE_API_KEY.
 EOF
 }
 
@@ -126,7 +126,7 @@ if [[ -z "$PROVIDER_MODEL" ]]; then
 fi
 
 API_KEY="${LLMPROXY_ACCEPTANCE_API_KEY:-$(read_env_value LLM_PROXY_API_KEY)}"
-inference node_API_KEY="${LLMPROXY_ACCEPTANCE_inference node_API_KEY:-}"
+INFERENCE_NODE_API_KEY="${LLMPROXY_ACCEPTANCE_INFERENCE_NODE_API_KEY:-}"
 
 for pair in \
   "gateway URL:$GATEWAY_URL" \
@@ -279,19 +279,19 @@ http_probe() {
   record_check "$outcome" "$name" "$url" "$http_status" "$content_type" "$ttfb" "$total" "$detail"
 }
 
-CHAT_inference node="$TMP_DIR/chat-dgx.json"
-CHAT_inference node_STREAM="$TMP_DIR/chat-inference-stream.json"
-RESP_inference node="$TMP_DIR/resp-dgx.json"
-RESP_inference node_STREAM="$TMP_DIR/resp-inference-stream.json"
+CHAT_INFERENCE_NODE="$TMP_DIR/chat-inference-node.json"
+CHAT_INFERENCE_NODE_STREAM="$TMP_DIR/chat-inference-stream.json"
+RESP_INFERENCE_NODE="$TMP_DIR/resp-inference-node.json"
+RESP_INFERENCE_NODE_STREAM="$TMP_DIR/resp-inference-stream.json"
 CHAT_GATEWAY="$TMP_DIR/chat-gateway.json"
 CHAT_GATEWAY_STREAM="$TMP_DIR/chat-gateway-stream.json"
 RESP_GATEWAY="$TMP_DIR/resp-gateway.json"
 RESP_GATEWAY_STREAM="$TMP_DIR/resp-gateway-stream.json"
 
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_inference node"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_inference node_STREAM"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_inference node"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:true}' > "$RESP_inference node_STREAM"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_INFERENCE_NODE"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_INFERENCE_NODE_STREAM"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_INFERENCE_NODE"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:true}' > "$RESP_INFERENCE_NODE_STREAM"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_GATEWAY"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_GATEWAY_STREAM"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_GATEWAY"
@@ -300,12 +300,12 @@ chmod 600 "$TMP_DIR"/*.json
 
 # vLLM's canonical /health endpoint intentionally returns an empty Response on
 # success, so acceptance validates its HTTP status only rather than requiring JSON.
-http_probe "inference-health" GET "$INFERENCE_NODE_URL/health" "$inference node_API_KEY" "" "" ""
-http_probe "inference-models" GET "$INFERENCE_NODE_URL/v1/models" "$inference node_API_KEY" "" "application/json" "$PROVIDER_MODEL"
-http_probe "inference-chat" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$inference node_API_KEY" "$CHAT_inference node" "application/json" ""
-http_probe "inference-chat-stream" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$inference node_API_KEY" "$CHAT_inference node_STREAM" "text/event-stream" ""
-http_probe "inference-responses" POST "$INFERENCE_NODE_URL/v1/responses" "$inference node_API_KEY" "$RESP_inference node" "application/json" ""
-http_probe "inference-responses-stream" POST "$INFERENCE_NODE_URL/v1/responses" "$inference node_API_KEY" "$RESP_inference node_STREAM" "text/event-stream" ""
+http_probe "inference-health" GET "$INFERENCE_NODE_URL/health" "$INFERENCE_NODE_API_KEY" "" "" ""
+http_probe "inference-models" GET "$INFERENCE_NODE_URL/v1/models" "$INFERENCE_NODE_API_KEY" "" "application/json" "$PROVIDER_MODEL"
+http_probe "inference-chat" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$INFERENCE_NODE_API_KEY" "$CHAT_INFERENCE_NODE" "application/json" ""
+http_probe "inference-chat-stream" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$INFERENCE_NODE_API_KEY" "$CHAT_INFERENCE_NODE_STREAM" "text/event-stream" ""
+http_probe "inference-responses" POST "$INFERENCE_NODE_URL/v1/responses" "$INFERENCE_NODE_API_KEY" "$RESP_INFERENCE_NODE" "application/json" ""
+http_probe "inference-responses-stream" POST "$INFERENCE_NODE_URL/v1/responses" "$INFERENCE_NODE_API_KEY" "$RESP_INFERENCE_NODE_STREAM" "text/event-stream" ""
 
 http_probe "gateway-health" GET "$GATEWAY_URL/healthz" "" "" "application/json" ""
 http_probe "gateway-readiness" GET "$GATEWAY_URL/readyz" "" "" "application/json" ""
@@ -348,7 +348,7 @@ if [[ -n "$API_KEY" ]] && grep -Fq "$API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; th
   echo "Acceptance evidence unexpectedly contains the gateway API key." >&2
   exit 6
 fi
-if [[ -n "$inference node_API_KEY" ]] && grep -Fq "$inference node_API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; then
+if [[ -n "$INFERENCE_NODE_API_KEY" ]] && grep -Fq "$INFERENCE_NODE_API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; then
   echo "Acceptance evidence unexpectedly contains the inference node API key." >&2
   exit 6
 fi
