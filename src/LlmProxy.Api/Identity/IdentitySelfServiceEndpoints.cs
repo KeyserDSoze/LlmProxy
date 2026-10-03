@@ -247,6 +247,198 @@ public static class IdentitySelfServiceEndpoints
             return Results.Ok(requests);
         });
 
+        group.MapGet("/content-logs", async (
+            int? page,
+            int? pageSize,
+            string? surface,
+            string? model,
+            Guid? apiCredentialId,
+            string? status,
+            DateTimeOffset? fromUtc,
+            DateTimeOffset? toUtc,
+            Guid? requestId,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var credentialIds = await dbContext.ApiCredentials.AsNoTracking()
+                .Where(item => item.OwnerTenantId == identity.TenantId && item.OwnerObjectId == identity.ObjectId)
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? 50, 1, 100);
+            var query = dbContext.InferenceContentLogs.AsNoTracking()
+                .Where(item => item.ApiCredentialId != null && credentialIds.Contains(item.ApiCredentialId.Value));
+
+            if (!string.IsNullOrWhiteSpace(surface))
+            {
+                var normalizedSurface = surface.Trim();
+                query = query.Where(item => item.Surface == normalizedSurface);
+            }
+
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                var normalizedModel = model.Trim().ToLower();
+                query = query.Where(item => item.LogicalModel != null && item.LogicalModel.ToLower().Contains(normalizedModel));
+            }
+
+            if (apiCredentialId is Guid selectedCredentialId)
+            {
+                if (!credentialIds.Contains(selectedCredentialId))
+                {
+                    return Results.Ok(new
+                    {
+                        items = Array.Empty<object>(),
+                        total = 0,
+                        page = currentPage,
+                        pageSize = size
+                    });
+                }
+
+                query = query.Where(item => item.ApiCredentialId == selectedCredentialId);
+            }
+
+            if (string.Equals(status, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(item => item.StatusCode >= 200 && item.StatusCode < 300);
+            }
+            else if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(item => item.StatusCode < 200 || item.StatusCode >= 300);
+            }
+            else if (int.TryParse(status, out var exactStatusCode))
+            {
+                query = query.Where(item => item.StatusCode == exactStatusCode);
+            }
+
+            if (fromUtc is not null)
+            {
+                query = query.Where(item => item.StartedAtUtc >= fromUtc.Value);
+            }
+
+            if (toUtc is not null)
+            {
+                query = query.Where(item => item.StartedAtUtc <= toUtc.Value);
+            }
+
+            if (requestId is Guid selectedRequestId)
+            {
+                query = query.Where(item => item.RequestId == selectedRequestId);
+            }
+
+            var total = await query.CountAsync(cancellationToken);
+            var rows = await query
+                .OrderByDescending(item => item.StartedAtUtc)
+                .Skip((currentPage - 1) * size)
+                .Take(size)
+                .Select(item => new
+                {
+                    item.Id,
+                    item.RequestId,
+                    item.StartedAtUtc,
+                    item.CompletedAtUtc,
+                    item.Surface,
+                    item.Method,
+                    item.Path,
+                    item.LogicalModel,
+                    item.ApiCredentialId,
+                    item.StatusCode,
+                    item.RequestContentType,
+                    item.ResponseContentType
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                items = rows,
+                total,
+                page = currentPage,
+                pageSize = size
+            });
+        });
+
+        group.MapGet("/content-logs/{id:long}", async (
+            long id,
+            GatewayDbContext dbContext,
+            SensitiveDataProtector protector,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var credentialIds = await dbContext.ApiCredentials.AsNoTracking()
+                .Where(item => item.OwnerTenantId == identity.TenantId && item.OwnerObjectId == identity.ObjectId)
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+
+            var row = await dbContext.InferenceContentLogs
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    item => item.Id == id &&
+                            item.ApiCredentialId != null &&
+                            credentialIds.Contains(item.ApiCredentialId.Value),
+                    cancellationToken);
+            if (row is null)
+            {
+                return Results.NotFound();
+            }
+
+            var metric = await dbContext.RequestMetrics
+                .AsNoTracking()
+                .SingleOrDefaultAsync(item => item.RequestId == row.RequestId, cancellationToken);
+
+            string requestBody;
+            string responseBody;
+            try
+            {
+                requestBody = protector.Unprotect(row.RequestBodyCiphertext, $"content-log:{row.RequestId}:request");
+                responseBody = protector.Unprotect(row.ResponseBodyCiphertext, $"content-log:{row.RequestId}:response");
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                return Results.Problem(
+                    "The content log could not be decrypted with the configured Authentication:ApiKeyPepper.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            httpContext.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new
+            {
+                row.Id,
+                row.RequestId,
+                row.StartedAtUtc,
+                row.CompletedAtUtc,
+                row.Surface,
+                row.Method,
+                row.Path,
+                row.LogicalModel,
+                row.ApiCredentialId,
+                row.StatusCode,
+                row.RequestContentType,
+                row.ResponseContentType,
+                requestBody,
+                responseBody,
+                deploymentId = metric?.DeploymentId,
+                nodeId = metric?.NodeId,
+                usageGroupId = metric?.UsageGroupId,
+                attemptCount = metric?.AttemptCount,
+                isStreaming = metric?.IsStreaming,
+                timeToFirstByteMilliseconds = metric?.TimeToFirstByteMilliseconds,
+                inputTokens = metric?.InputTokens,
+                outputTokens = metric?.OutputTokens,
+                totalTokens = metric?.TotalTokens,
+                errorCode = metric?.ErrorCode
+            });
+        });
+
         group.MapGet("/rate-limits", async (
             GatewayDbContext dbContext,
             HttpContext httpContext,
