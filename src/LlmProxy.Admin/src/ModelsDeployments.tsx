@@ -65,7 +65,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar modelExplainer">
-      <div><h2>Models & deployments</h2><p><strong>Logical models</strong> are stable client-facing names such as <span className="mono">agic-code-fast</span>. They hide provider/runtime identifiers and can point to the same model deployed on one or many inference nodes.</p></div>
+      <div><h2>Logical model topology</h2><p><strong>Logical models</strong> are stable client-facing names such as <span className="mono">agic-code-fast</span>. They hide provider/runtime identifiers and can point to the same model deployed on one or many inference nodes.</p></div>
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error">{error}</div>}

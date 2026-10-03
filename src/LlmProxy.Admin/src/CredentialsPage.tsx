@@ -28,7 +28,7 @@ export default function CredentialsPage({ credentials, canWrite, refresh }: { cr
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar">
-      <div><h2>API credentials</h2><p className="muted">Credential scope is explicit: organization keys are shared workloads, personal keys belong to one Entra identity, and Usage Groups add governance without owning the key.</p></div>
+      <div><h2>Credential inventory</h2><p className="muted">Credential scope is explicit: organization keys are shared workloads, personal keys belong to one Entra identity, and Usage Groups add governance without owning the key.</p></div>
       {canWrite && <button className="primary" onClick={() => setCreateOpen(true)}>Create organization key</button>}
     </section>
     <section className="scopeLegend"><div><span className="scopeBadge scope-org">ORG</span><strong> Organization</strong><p>Created by administrators for shared integrations. Administrators can reveal recoverable secrets, rotate and revoke.</p></div><div><span className="scopeBadge scope-personal">PERSONAL</span><strong> Personal</strong><p>Owned by a stable Entra user identity. Users manage their own keys in <a href="/admin/me">My dashboard</a>.</p></div><div><span className="scopeBadge">GROUP</span><strong> Usage Group</strong><p>A governance/accounting assignment. It does not change who owns the API key.</p></div></section>
