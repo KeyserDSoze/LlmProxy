@@ -90,6 +90,7 @@ export const api = {
   deleteRateLimit: (id: string) => request<void>(`/api/admin/rate-limits/${id}`, { method: 'DELETE' }),
   usageSummary: (days = 30) => request<UsageReport>(`/api/admin/usage/summary?days=${days}`),
   usageUsers: (days = 30) => request<UserUsageSummary[]>(`/api/admin/usage/users?days=${days}`),
+  updateCredentialCallerGovernance: (id: string, enabled: boolean) => request<{ id: string; name: string; kind: string; enforceCallerGovernance: boolean }>(`/api/admin/api-credentials/${id}/caller-governance`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
