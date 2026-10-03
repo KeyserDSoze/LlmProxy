@@ -227,6 +227,7 @@ app.MapPlatformUserGroupEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
+app.MapCredentialGovernanceAdminEndpoints(entraEnabled);
 app.MapApiCredentialSecretAdminEndpoints(entraEnabled);
 app.MapContentLogsAdminEndpoints(entraEnabled);
 app.MapTestingAdminEndpoints(entraEnabled);
