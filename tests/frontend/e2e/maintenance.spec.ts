@@ -7,7 +7,7 @@ async function json(route: Route, body: unknown, status = 200) {
 async function installMaintenanceApi(page: Page) {
   const node = {
     id: 'node-maintenance',
-    name: 'dgx-maintenance',
+    name: 'inference-maintenance',
     baseAddress: 'http://10.0.0.31:8000/vllm',
     hardwareMetricsBaseAddress: null,
     weight: 1,
@@ -95,12 +95,12 @@ async function installMaintenanceApi(page: Page) {
   }
 }
 
-test('DGX node controls use safe maintenance drain and validated resume', async ({ page }) => {
+test('inference node controls use safe maintenance drain and validated resume', async ({ page }) => {
   const state = await installMaintenanceApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'DGX Nodes' }).click()
+  await page.getByRole('button', { name: 'Inference Nodes' }).click()
 
-  const row = page.getByRole('row').filter({ hasText: 'dgx-maintenance' })
+  const row = page.getByRole('row').filter({ hasText: 'inference-maintenance' })
   await row.getByRole('button', { name: 'Drain' }).click()
   await expect(row.getByText('Draining', { exact: true })).toBeVisible()
   expect(state.wasLegacyDrainCalled()).toBe(false)
