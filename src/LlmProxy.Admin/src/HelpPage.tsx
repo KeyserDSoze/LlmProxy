@@ -74,7 +74,7 @@ export default function HelpPage({ models }: { models: Model[] }) {
       <ol className="docSteps">
         <li><strong>Authentication:</strong> the client API key is HMAC-verified against the in-memory credential cache.</li>
         <li><strong>Governance:</strong> user/key/model rate limits and output-token budgets can reject a request before inference.</li>
-        <li><strong>Routing:</strong> the logical model is resolved to healthy enabled deployments. The selected strategy chooses an eligible DGX deployment.</li>
+        <li><strong>Routing:</strong> the logical model is resolved to healthy enabled deployments. The selected strategy chooses an eligible inference-node deployment.</li>
         <li><strong>Capacity admission:</strong> node/deployment concurrency is acquired locally or through Redis. Saturation returns <code>429 capacity_exhausted</code> before the request reaches vLLM.</li>
         <li><strong>Upstream inference:</strong> the public model name is rewritten to the provider model and the request is proxied. Infrastructure failures may fail over to another deployment.</li>
         <li><strong>Observability:</strong> metadata/TTFT/token metrics feed routing and reports. Administrator-only payload logs keep the exact request and response encrypted at rest.</li>
