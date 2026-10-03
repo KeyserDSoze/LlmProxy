@@ -27,7 +27,7 @@ export default function UserManagement() {
 
     <section className="panel">
       <div className="panelTitle">
-        <h2>User management</h2>
+        <h2>User inventory</h2>
         <span>Entra identities known through personal API-key ownership</span>
       </div>
       <table>
