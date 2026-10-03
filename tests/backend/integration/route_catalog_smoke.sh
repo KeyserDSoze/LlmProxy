@@ -42,10 +42,10 @@ export LLM_PROXY_API_KEY="route-catalog-test-key"
 export LLM_PROXY_API_KEY_PEPPER="route-catalog-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-route-catalog"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3480/route-catalog"
-export DGX_NODE_WEIGHT="1"
-export DGX_NODE_MAX_CONCURRENCY="4"
+export INFERENCE_NODE_NAME="inference-route-catalog"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3480/route-catalog"
+export INFERENCE_NODE_WEIGHT="1"
+export INFERENCE_NODE_MAX_CONCURRENCY="4"
 export PUBLIC_MODEL_NAME="agic-code-fast"
 export PROVIDER_MODEL_NAME="bootstrap-model"
 export ROUTING_STRATEGY="WeightedLeastLoaded"
@@ -63,7 +63,7 @@ wait_ready
 healthy=false
 for attempt in {1..30}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-route-catalog" and .status == "Healthy")) | length == 1' >/dev/null; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-route-catalog" and .status == "Healthy")) | length == 1' >/dev/null; then
     healthy=true
     break
   fi
@@ -71,8 +71,8 @@ for attempt in {1..30}; do
 done
 [[ "$healthy" == "true" ]] || fail_with_diagnostics "Bootstrap node did not become Healthy before PostgreSQL outage test."
 
-node_id="$(echo "$nodes_json" | jq -r 'map(select(.name == "dgx-route-catalog"))[0].id')"
-node_base_address="$(echo "$nodes_json" | jq -r 'map(select(.name == "dgx-route-catalog"))[0].baseAddress')"
+node_id="$(echo "$nodes_json" | jq -r 'map(select(.name == "inference-route-catalog"))[0].id')"
+node_base_address="$(echo "$nodes_json" | jq -r 'map(select(.name == "inference-route-catalog"))[0].baseAddress')"
 catalog_before="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
 version_before="$(echo "$catalog_before" | jq -r '.version')"
 echo "$catalog_before" | jq -e '.provider == "in-memory" and .version >= 1 and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
@@ -80,7 +80,7 @@ echo "$catalog_before" | jq -e '.provider == "in-memory" and .version >= 1 and .
 # Mutate durable configuration after startup. The successful SaveChanges must publish
 # the new node snapshot immediately into the route catalog before the admin call returns.
 curl --fail --silent -X PUT -H 'Content-Type: application/json' \
-  -d "{\"name\":\"dgx-route-catalog\",\"baseAddress\":\"${node_base_address}\",\"weight\":2,\"maxConcurrency\":4}" \
+  -d "{\"name\":\"inference-route-catalog\",\"baseAddress\":\"${node_base_address}\",\"weight\":2,\"maxConcurrency\":4}" \
   "http://127.0.0.1:8080/api/admin/nodes/${node_id}" >/dev/null
 catalog_after_mutation="$(curl --fail --silent http://127.0.0.1:8080/api/admin/routing/catalog)"
 echo "$catalog_after_mutation" | jq -e --argjson previous "$version_before" '.version > $previous and .nodeCount == 1 and .modelCount == 1 and .deploymentCount == 1' >/dev/null
