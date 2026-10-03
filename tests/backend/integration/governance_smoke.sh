@@ -118,6 +118,19 @@ call_budget_model() {
     http://127.0.0.1:8080/v1/chat/completions
 }
 
+# Organization credentials are exempt from caller-specific governance by default.
+exempt1="$(call_model /tmp/governance-org-exempt-1)"
+exempt2="$(call_model /tmp/governance-org-exempt-2)"
+exempt3="$(call_model /tmp/governance-org-exempt-3)"
+[[ "$exempt1" == "200" && "$exempt2" == "200" && "$exempt3" == "200" ]] || fail_with_diagnostics "Organization credential should ignore caller quota by default; got ${exempt1}/${exempt2}/${exempt3}."
+
+curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance" >/dev/null
+
+governed_credential="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governance/credentials)"
+echo "$governed_credential" | jq -e --arg credential "$credential_id" 'map(select(.id == $credential and .kind == "organization" and .enforceCallerGovernance == true)) | length == 1' >/dev/null
+
 status1="$(call_model /tmp/governance-request-1)"
 status2="$(call_model /tmp/governance-request-2)"
 status3="$(call_model /tmp/governance-request-3)"
