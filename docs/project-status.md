@@ -119,7 +119,7 @@ Canonical first-install script:
 docker/scripts/install-linux.sh
 ```
 
-It supports Docker official repository installation on Debian, Ubuntu, Fedora, CentOS and RHEL, controlled package-manager fallbacks for common `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families, preservation of existing working Docker + Compose v2, protected host-owned config, generated initial secrets, optional GHCR login, DGX precheck and invocation of the canonical `docker/scripts/deploy.sh`.
+It supports Docker official repository installation on Debian, Ubuntu, Fedora, CentOS and RHEL, controlled package-manager fallbacks for common `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk` families, preservation of existing working Docker + Compose v2, protected host-owned config, generated initial secrets, optional GHCR login, inference node precheck and invocation of the canonical `docker/scripts/deploy.sh`.
 
 Production host state:
 
@@ -152,7 +152,7 @@ Self-hosted Actions path:
 .github/workflows/environment-acceptance.yml
 ```
 
-The harness records Linux/Docker/Compose metadata and validates direct VM -> DGX/vLLM plus LlmProxy gateway surfaces:
+The harness records Linux/Docker/Compose metadata and validates direct VM -> inference node/vLLM plus LlmProxy gateway surfaces:
 
 ```text
 /health or /healthz + /readyz
@@ -172,7 +172,7 @@ summary.md
 checks.tsv
 ```
 
-Request bodies/prompts, source code, generated output, response bodies and API/bearer secrets are temporary only and are not copied into evidence. A final guard rejects evidence containing the gateway or optional DGX bearer value.
+Request bodies/prompts, source code, generated output, response bodies and API/bearer secrets are temporary only and are not copied into evidence. A final guard rejects evidence containing the gateway or optional inference node bearer value.
 
 The GitHub Actions workflow:
 
@@ -186,7 +186,7 @@ The GitHub Actions workflow:
 - preserves a failed acceptance result after uploading available metadata evidence;
 - deletes runner-local evidence afterward.
 
-Repository CI proves the script and workflow repository path without pretending to prove the physical environment. The first real run on the target VM/DGX remains **EXTERNAL**.
+Repository CI proves the script and workflow repository path without pretending to prove the physical environment. The first real run on the target VM/inference node remains **EXTERNAL**.
 
 ## Supply-chain release evidence — DONE / VALIDATED
 
@@ -290,8 +290,8 @@ The immediate step is validating the first automatically generated `v0.0.x` rele
 1. get green CI + Full Stack on the exact `0.2.0-preview.8` source and validate tagged multi-architecture publication/release assets;
 2. install/update/rollback the candidate on the actual ARM64 GB10 host;
 2. install/validate the `llmproxy-prod` self-hosted GitHub Actions runner;
-3. execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM and retain the metadata evidence artifact;
-4. run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
+3. execute `.github/workflows/environment-acceptance.yml` against the real VM + inference node/vLLM and retain the metadata evidence artifact;
+4. run real inference node benchmark sweeps + representative Copilot load and apply measured Capacity Profiles;
 5. validate real Entra Admin/User/Reader roles, personal-key self-service, aggregate user request quotas and Cloudflare/public hostname;
 6. validate GitHub Copilot BYOK end-to-end;
 7. choose customer backup destination/encryption/retention and PostgreSQL/Redis/observability HA/storage;
