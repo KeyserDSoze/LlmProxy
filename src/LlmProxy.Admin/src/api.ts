@@ -1,5 +1,5 @@
 import type { ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
-import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
+import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -112,6 +112,21 @@ export const api = {
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
   contentLogs: (take = 100) => request<ContentLogSummary[]>('/api/admin/content-logs?take=' + take),
+  contentLogsQuery: (params: { page?: number; pageSize?: number; model?: string; surface?: string; apiCredentialId?: string; ownerTenantId?: string; ownerObjectId?: string; status?: string; fromUtc?: string; toUtc?: string; requestId?: string }) => {
+    const query = new URLSearchParams()
+    if (params.page) query.set('page', String(params.page))
+    if (params.pageSize) query.set('pageSize', String(params.pageSize))
+    if (params.model) query.set('model', params.model)
+    if (params.surface) query.set('surface', params.surface)
+    if (params.apiCredentialId) query.set('apiCredentialId', params.apiCredentialId)
+    if (params.ownerTenantId) query.set('ownerTenantId', params.ownerTenantId)
+    if (params.ownerObjectId) query.set('ownerObjectId', params.ownerObjectId)
+    if (params.status && params.status !== 'all') query.set('status', params.status)
+    if (params.fromUtc) query.set('fromUtc', params.fromUtc)
+    if (params.toUtc) query.set('toUtc', params.toUtc)
+    if (params.requestId) query.set('requestId', params.requestId)
+    return request<ContentLogPage>(`/api/admin/content-logs/query?${query.toString()}`)
+  },
   contentLog: (id: number) => request<ContentLogDetail>('/api/admin/content-logs/' + id),
   contentLogSettings: () => request<ContentLogSettings>('/api/admin/content-logs/settings'),
   updateContentLogSettings: (retentionDays: number) => request<ContentLogSettings>('/api/admin/content-logs/settings', { method: 'PUT', body: JSON.stringify({ retentionDays }) }),
