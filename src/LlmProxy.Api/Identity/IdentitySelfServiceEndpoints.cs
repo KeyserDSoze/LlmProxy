@@ -58,7 +58,8 @@ public static class IdentitySelfServiceEndpoints
                     item.CreatedAtUtc,
                     item.ExpiresAtUtc,
                     item.LastUsedAtUtc,
-                    item.UsageGroupId
+                    item.UsageGroupId,
+                    item.EnforceCallerGovernance
                 })
                 .ToListAsync(cancellationToken);
 
@@ -83,6 +84,13 @@ public static class IdentitySelfServiceEndpoints
                 return Results.BadRequest(new { error = "ExpiresAtUtc must be in the future." });
             }
 
+            var tenantLookup = identity.TenantId.ToUpperInvariant();
+            var objectLookup = identity.ObjectId.ToUpperInvariant();
+            var userGroupId = await dbContext.PlatformUsers.AsNoTracking()
+                .Where(item => item.TenantId.ToUpper() == tenantLookup && item.ObjectId.ToUpper() == objectLookup)
+                .Select(item => item.UsageGroupId)
+                .SingleAsync(cancellationToken);
+
             var secret = ApiKeyHasher.GenerateSecret();
             var credential = new ApiCredential(
                 request.Name,
@@ -92,6 +100,10 @@ public static class IdentitySelfServiceEndpoints
                 identity.TenantId,
                 identity.ObjectId,
                 identity.PrincipalName);
+            if (userGroupId is Guid groupId)
+            {
+                credential.AssignUsageGroup(groupId);
+            }
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
