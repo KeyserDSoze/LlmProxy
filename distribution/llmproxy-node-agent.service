@@ -1,0 +1,17 @@
+[Unit]
+Description=LlmProxy Node Agent
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/llmproxy-node-agent
+EnvironmentFile=/etc/llmproxy/node-agent.env
+ExecStart=/opt/llmproxy-node-agent/LlmProxy.NodeAgent
+Restart=always
+RestartSec=3
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
