@@ -70,10 +70,10 @@ export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="ci-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-local-primary"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
-export DGX_NODE_WEIGHT="1"
-export DGX_NODE_MAX_CONCURRENCY="4"
+export INFERENCE_NODE_NAME="inference-local-primary"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
+export INFERENCE_NODE_WEIGHT="1"
+export INFERENCE_NODE_MAX_CONCURRENCY="4"
 export ROUTING_STRATEGY="WeightedRoundRobin"
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="2"
@@ -169,7 +169,7 @@ systemone_test="$(curl --fail --silent -H 'Content-Type: application/json' -d '{
 echo "$systemone_test" | jq -e '.success == true and .statusCode == 200 and (.responseBody | fromjson | .served_by) == "classifier" and (.responseBody | fromjson | .state.document) == "admin classifier test"' >/dev/null
 
 chat_test="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"model":"agic-code-fast","systemPrompt":"You are concise.","userPrompt":"admin model test","maxTokens":64,"temperature":0.1}' http://127.0.0.1:8080/api/admin/testing/chat)"
-echo "$chat_test" | jq -e '.success == true and .statusCode == 200 and .logicalModel == "agic-code-fast" and .nodeName == "dgx-local-primary" and (.responseBody | fromjson | .served_by) == "primary"' >/dev/null
+echo "$chat_test" | jq -e '.success == true and .statusCode == 200 and .logicalModel == "agic-code-fast" and .nodeName == "inference-local-primary" and (.responseBody | fromjson | .served_by) == "primary"' >/dev/null
 
 bootstrap_credential="$(curl --fail --silent http://127.0.0.1:8080/api/admin/api-credentials | jq -c 'map(select(.name == "Bootstrap / GitHub Copilot")) | first')"
 bootstrap_credential_id="$(echo "$bootstrap_credential" | jq -r '.id')"
@@ -209,7 +209,7 @@ echo "$chat_content_log" | jq -e '.responseBody | fromjson | .served_by == "prim
 curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":30}' http://127.0.0.1:8080/api/admin/content-logs/settings >/dev/null
 
 model_id="$(curl --fail --silent http://127.0.0.1:8080/api/admin/models | jq -r '.[0].id')"
-node2_json="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"dgx-local-alternate","baseAddress":"http://host.docker.internal:3451/altropath","weight":3,"maxConcurrency":4}' http://127.0.0.1:8080/api/admin/nodes)"
+node2_json="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"inference-local-alternate","baseAddress":"http://host.docker.internal:3451/altropath","weight":3,"maxConcurrency":4}' http://127.0.0.1:8080/api/admin/nodes)"
 node2_id="$(echo "$node2_json" | jq -r '.id')"
 
 curl --fail --silent -H 'Content-Type: application/json' -d "{\"nodeId\":\"${node2_id}\",\"modelId\":\"${model_id}\",\"weight\":1,\"maxConcurrency\":4}" http://127.0.0.1:8080/api/admin/deployments >/dev/null
