@@ -102,11 +102,13 @@ POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
 GET  /api/me/requests?take=50
+GET  /api/me/content-logs
+GET  /api/me/content-logs/{id}
 ```
 
 The server derives ownership exclusively from the authenticated Entra principal. A caller cannot submit another tenant/object ID in a request body.
 
-List/rotate/revoke operations filter by both credential ID and the current `(tid, oid)` pair. A credential owned by another user therefore behaves as not found rather than exposing ownership information.
+List/rotate/revoke operations filter by both credential ID and the current `(tid, oid)` pair. A credential owned by another user therefore behaves as not found rather than exposing ownership information. Request-audit self-service follows the same rule: list queries are restricted to content-log rows linked to the caller's personal credential IDs, and a direct detail request for a non-owned row returns not found. Shared organization credentials have no user owner and are therefore excluded from self-service payload inspection.
 
 ## User provisioning and suspension
 
@@ -150,7 +152,7 @@ Bearer API key
 
 For a personal credential, the runtime credential snapshot also contains `OwnerTenantId` and `OwnerObjectId`. Durable request telemetry continues to persist `ApiCredentialId`; user attribution is resolved through the credential owner instead of duplicating mutable user metadata on every request row.
 
-This preserves the usage-telemetry privacy rule: request metrics and usage rollups do not persist prompts, source code, generated output or raw secrets. Full request/response bodies, when enabled by the product contract, live only in the separate administrator-only encrypted content-log store and are governed by its independent 10-180 day retention.
+This preserves the usage-telemetry privacy rule: request metrics and usage rollups do not persist prompts, source code, generated output or raw secrets. Full request/response bodies live only in the separate application-encrypted request-audit store. Administrators can inspect all retained entries; a normal user can inspect only entries attributable to that user's personal credentials. Its independent retention defaults to 30 days and is administrator-configurable from 10 through 4015 days (11 x 365 days).
 
 ## Usage, groups and limits
 
