@@ -165,4 +165,24 @@ public sealed class RequestRateLimiterTests
         Assert.Equal(userPolicyId, userRejected.Policy?.Id);
     }
 
+    [Fact]
+    public async Task Organization_credential_with_caller_governance_off_does_not_consume_credential_policy()
+    {
+        var credentialId = Guid.NewGuid();
+        var policyId = Guid.NewGuid();
+        var limiter = new RequestRateLimiter();
+        limiter.ReplacePolicies([new RateLimitPolicySnapshot(policyId, credentialId, null, 1, 60, true)]);
+        var now = DateTimeOffset.UtcNow;
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, false, now, cancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, false, now.AddSeconds(1), cancellationToken)).Allowed);
+        Assert.True((await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, true, now.AddSeconds(2), cancellationToken)).Allowed);
+
+        var rejected = await limiter.TryAcquireAsync(credentialId, "agic-code", null, null, null, true, now.AddSeconds(3), cancellationToken);
+
+        Assert.False(rejected.Allowed);
+        Assert.Equal(policyId, rejected.Policy?.Id);
+    }
+
 }
