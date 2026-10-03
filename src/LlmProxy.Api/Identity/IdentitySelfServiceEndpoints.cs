@@ -259,21 +259,59 @@ public static class IdentitySelfServiceEndpoints
 
             var tenantId = identity.TenantId.ToUpperInvariant();
             var objectId = identity.ObjectId.ToUpperInvariant();
-            var policies = await dbContext.UserRateLimitPolicies.AsNoTracking()
+            var user = await dbContext.PlatformUsers.AsNoTracking()
+                .SingleAsync(
+                    item => item.TenantId.ToUpper() == tenantId && item.ObjectId.ToUpper() == objectId,
+                    cancellationToken);
+
+            var userPolicies = await dbContext.UserRateLimitPolicies.AsNoTracking()
                 .Where(item => item.OwnerTenantId.ToUpper() == tenantId && item.OwnerObjectId.ToUpper() == objectId)
                 .OrderBy(item => item.LogicalModel)
-                .Select(item => new
-                {
-                    item.Id,
-                    item.LogicalModel,
-                    item.RequestsPerWindow,
-                    item.WindowSeconds,
-                    item.Enabled,
-                    item.UpdatedAtUtc
-                })
                 .ToListAsync(cancellationToken);
 
-            return Results.Ok(policies);
+            var groupPolicies = user.UsageGroupId is Guid usageGroupId
+                ? await dbContext.UsageGroupRateLimitPolicies.AsNoTracking()
+                    .Where(item => item.UsageGroupId == usageGroupId)
+                    .OrderBy(item => item.LogicalModel)
+                    .ToListAsync(cancellationToken)
+                : [];
+
+            var groupName = user.UsageGroupId is Guid groupId
+                ? await dbContext.UsageGroups.AsNoTracking()
+                    .Where(item => item.Id == groupId)
+                    .Select(item => item.Name)
+                    .SingleOrDefaultAsync(cancellationToken)
+                : null;
+
+            var rows = new List<object>();
+            rows.AddRange(userPolicies.Select(item => (object)new
+            {
+                item.Id,
+                scope = "user",
+                scopeName = identity.PrincipalName ?? identity.ObjectId,
+                item.LogicalModel,
+                item.RequestsPerWindow,
+                item.WindowSeconds,
+                item.OutputTokensPerWindow,
+                item.MaxOutputTokensPerRequest,
+                item.Enabled,
+                item.UpdatedAtUtc
+            }));
+            rows.AddRange(groupPolicies.Select(item => (object)new
+            {
+                item.Id,
+                scope = "group",
+                scopeName = groupName ?? item.UsageGroupId.ToString(),
+                item.LogicalModel,
+                item.RequestsPerWindow,
+                item.WindowSeconds,
+                item.OutputTokensPerWindow,
+                item.MaxOutputTokensPerRequest,
+                item.Enabled,
+                item.UpdatedAtUtc
+            }));
+
+            return Results.Ok(rows);
         });
 
         group.MapGet("/usage", async (
