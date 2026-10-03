@@ -112,7 +112,14 @@ jobs:
 
           VERSION="$(bash docker/scripts/validate-release-version.sh)"
           RELEASE_DIR="$(mktemp -d)"
-          bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
+          DUMMY_UPDATE_AGENT_X64="$(mktemp)"
+          DUMMY_UPDATE_AGENT_ARM64="$(mktemp)"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_X64"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_ARM64"
+          chmod 0755 "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+          UPDATE_AGENT_X64_BINARY="$DUMMY_UPDATE_AGENT_X64" \
+          UPDATE_AGENT_ARM64_BINARY="$DUMMY_UPDATE_AGENT_ARM64" \
+            bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
           (
             cd "$RELEASE_DIR"
             sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
@@ -123,10 +130,12 @@ jobs:
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-plan.json" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-update-agent.sh" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-update-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-arm64/LlmProxy.UpdateAgent" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
           tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
-          rm -rf "$RELEASE_DIR"
+          rm -rf "$RELEASE_DIR" "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
