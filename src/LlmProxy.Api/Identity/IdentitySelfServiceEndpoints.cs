@@ -91,7 +91,7 @@ public static class IdentitySelfServiceEndpoints
                 .Select(item => item.UsageGroupId)
                 .SingleAsync(cancellationToken);
 
-            var secret = ApiKeyHasher.GenerateSecret();
+            var secret = ApiKeyHasher.GenerateSecret("lp_usr_");
             var credential = new ApiCredential(
                 request.Name,
                 ApiKeyHasher.GetPrefix(secret),
@@ -152,7 +152,7 @@ public static class IdentitySelfServiceEndpoints
             }
 
             var previousKeyPrefix = credential.KeyPrefix;
-            var secret = ApiKeyHasher.GenerateSecret();
+            var secret = ApiKeyHasher.GenerateSecret("lp_usr_");
             credential.Rotate(ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret));
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));

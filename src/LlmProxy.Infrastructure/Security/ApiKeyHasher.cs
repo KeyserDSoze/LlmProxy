@@ -31,8 +31,8 @@ public sealed class ApiKeyHasher
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(secret)));
     }
 
-    public static string GenerateSecret()
-        => $"lp_{Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()}";
+    public static string GenerateSecret(string prefix = "lp_")
+        => $"{prefix}{Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()}";
 
     public static string GetPrefix(string secret)
         => secret[..Math.Min(secret.Length, 15)];

@@ -4,6 +4,21 @@ Last reviewed: **2026-10-03**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
+## Administrator UX consolidation — IMPLEMENTED / VALIDATION IN PROGRESS
+
+The current source consolidates the administrator experience around compact task surfaces:
+
+- Inference Nodes defaults to active nodes; add-node and upstream-credential workflows are dialogs, while disabled idle nodes can be deleted safely.
+- Hardware is split into Telemetry, Physical capacity and Benchmark profiles tabs; endpoint/profile creation no longer occupies the default page.
+- Model & Hardware separates inventory from model deployment and exposes the management-agent installer directly.
+- Models and Deployments are one bidirectional workspace for model → nodes and node → models, including quick deploy to another/all active nodes and routing enable/disable.
+- API Credentials makes organization vs personal ownership explicit, retains administrator secret reveal/rotate/revoke, and new/rotated keys use `lp_org_` / `lp_usr_` prefixes.
+- Request Metrics has a server-side filtered/paginated request browser beginning with the newest 20 requests.
+- Playground, Usage & Governance, and Users & Access use tabs, with creation/configuration actions opened on demand in dialogs.
+- Routing, Dashboard, Audit Trail, Help & Endpoints and the existing Release Notes/Updates workflow intentionally keep their current behavior for this increment.
+
+Validation required before marking DONE: exact-head frontend/backend CI, distributed Full Stack acceptance and automatic immutable release publication.
+
 ## End-user provisioning / suspension — IMPLEMENTED, VALIDATION IN PROGRESS
 
 The current PR now also adds a first-class platform-user registry and a new **Users & Access** administrator screen.

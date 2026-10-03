@@ -1,14 +1,18 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import Governance from './Governance'
-import Hardware from './Hardware'
-import ModelHardware from './ModelHardware'
+import GovernanceExperience from './GovernanceExperience'
+import HardwareExperience from './HardwareExperience'
+import ModelHardwareExperience from './ModelHardwareExperience'
+import NodesPage from './NodesPage'
+import ModelsDeployments from './ModelsDeployments'
+import CredentialsPage from './CredentialsPage'
+import MetricsPage from './MetricsPage'
 import ReleaseNotesPage from './ReleaseNotesPage'
 import ContentLogs from './ContentLogs'
 import HelpPage from './HelpPage'
 import PageDocumentation from './PageDocumentation'
-import Playground from './Playground'
-import UsersAccess from './UsersAccess'
+import PlaygroundExperience from './PlaygroundExperience'
+import UsersAccessExperience from './UsersAccessExperience'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
 export type View = 'dashboard' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
@@ -134,8 +138,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <NavItem icon="nodes" active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
           <NavItem icon="hardware" active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
           {canWrite && <NavItem icon="control" active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
-          <NavItem icon="models" active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
-          <NavItem icon="deployments" active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
+          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => setView('models')}>Models & Deployments</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
           <NavItem icon="metrics" active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
@@ -165,20 +168,19 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
             {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
-            {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
-            {view === 'hardware' && <Hardware nodes={nodes} hardware={hardware} refresh={refresh} />}
-            {view === 'model-management' && canWrite && <ModelHardware nodes={nodes} canWrite={canWrite} refresh={refresh} />}
-            {view === 'models' && <Models models={models} refresh={refresh} />}
-            {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
+            {view === 'nodes' && <NodesPage nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {view === 'hardware' && <HardwareExperience nodes={nodes} hardware={hardware} refresh={refresh} />}
+            {view === 'model-management' && canWrite && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {(view === 'models' || view === 'deployments') && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
-            {view === 'credentials' && <Credentials credentials={credentials} canWrite={canWrite} refresh={refresh} />}
-            {view === 'users' && canWrite && <UsersAccess />}
-            {view === 'metrics' && <Metrics metrics={metrics} summary={metricsSummary} nodeNames={nodeNames} credentialNames={credentialNames} />}
-            {view === 'playground' && canWrite && <Playground models={models} />}
+            {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
+            {view === 'users' && canWrite && <UsersAccessExperience />}
+            {view === 'metrics' && <MetricsPage summary={metricsSummary} nodes={nodes} credentials={credentials} />}
+            {view === 'playground' && canWrite && <PlaygroundExperience models={models} />}
             {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
             {view === 'help' && <HelpPage models={models} />}
-            {view === 'governance' && <Governance />}
+            {view === 'governance' && <GovernanceExperience />}
             {view === 'releases' && <ReleaseNotesPage embedded canWrite={canWrite} />}
           </>
         )}
@@ -587,7 +589,7 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

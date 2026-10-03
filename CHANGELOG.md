@@ -8,6 +8,11 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Admin **Request Metrics** now starts with the newest 20 requests and provides server-side pagination plus model, node, credential and success/error filters.
+- Disabled, idle inference nodes can be deleted safely from Admin; deletion removes their deployments transactionally and is rejected while the node is enabled or still serving active requests.
+- Newly created or rotated API-key secrets use scope-aware prefixes: `lp_org_` for organization credentials and `lp_usr_` for personal credentials. Existing keys keep working unchanged until rotation.
+- The Model & Hardware page exposes the Node Agent installer directly for download.
+
 - Admin **Release Notes & Updates** shows the installed version and subsequent immutable GitHub Releases, exposes the per-release operator command/update plan, and supports **Update now**, scheduled updates, cancellation of pending work and recent job status.
 - A persistent, bearer-authenticated **LlmProxy Update Agent** runs on the Linux control-plane host outside the gateway container so update jobs survive container replacement/restart.
 - Every immutable release publishes `llmproxy-update-plan.json`; the default plan uses the normal versioned installer, while releases that require special host changes can opt into a checksum-verified bundled `distribution/update.sh` procedure instead of accepting arbitrary UI shell commands.
@@ -32,6 +37,11 @@ The project follows Semantic Versioning from the first formal preview release on
 - The release publication workflow is reusable and is invoked directly after tag allocation, avoiding reliance on workflow recursion from a `GITHUB_TOKEN`-created tag.
 
 ### Changed
+
+- Admin information architecture was compacted around task-focused tabs and action dialogs: Inference Nodes, Hardware, Model & Hardware, Playground, Usage & Governance, and Users & Access no longer keep every creation/configuration form expanded on the page.
+- **Models** and **Deployments** are now one bidirectional workspace: operators can inspect model → nodes or node → models, publish logical aliases, deploy to another/all active nodes, and enable/disable routing participation without switching between overlapping pages.
+- API Credentials now labels organization vs personal ownership explicitly, explains Usage Group as governance rather than ownership, and keeps administrator reveal/rotate/revoke controls in the same table.
+- Logical-model documentation now explains the distinction between client-facing logical aliases and provider/runtime model identifiers.
 
 - Hardware terminology and deployment tooling are hardware-agnostic; DGX remains a supported example rather than the only assumed inference platform.
 - Usage & Governance and Release Notes are part of the main Admin navigation; write-only hardware/model lifecycle and user-access controls remain administrator-only.

@@ -30,7 +30,7 @@ public static class CredentialRotationAdminEndpoints
             }
 
             var previousKeyPrefix = credential.KeyPrefix;
-            var secret = ApiKeyHasher.GenerateSecret();
+            var secret = ApiKeyHasher.GenerateSecret(credential.IsPersonal ? "lp_usr_" : "lp_org_");
             credential.Rotate(ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret));
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));

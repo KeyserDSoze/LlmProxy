@@ -30,9 +30,10 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 
 - DONE: Entra plumbing with Admin/User/Reader roles.
 - DONE: React admin control plane plus `/admin/me` personal-key user portal.
-- CANDIDATE: first-class platform-user registry with administrator-selectable manual census or automatic first-login provisioning.
-- CANDIDATE: administrator user disable/re-enable; disable blocks self-service and revokes active personal API keys.
-- CANDIDATE: user dashboard recent request history from personal credentials.
+- DONE: task-focused Admin UX with tabs/dialogs for long configuration pages and a unified Models & Deployments workspace.
+- DONE: first-class platform-user registry with administrator-selectable manual census or automatic first-login provisioning.
+- DONE: administrator user disable/re-enable; disable blocks self-service and revokes active personal API keys.
+- DONE: user dashboard recent request history from personal credentials.
 - DONE: HMAC-hashed DB-backed service and Entra-owned personal credentials + runtime cache.
 - DONE: stable `tid+oid` ownership, rotation/revocation and audit.
 - DONE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
@@ -45,6 +46,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 ## M4 — Observability — DONE FOR CURRENT MVP / PRODUCTION STORAGE EVOLUTION REMAINS
 
 - DONE: request/status/duration/TTFT/token/attempt metrics.
+- DONE: paginated/filterable administrator request browser with server-side model/node/credential/status filtering.
 - DONE: vLLM pressure + optional DCGM telemetry.
 - DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
 - DONE: trace correlation and capacity-lease-loss evidence.

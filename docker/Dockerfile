@@ -33,5 +33,6 @@ LABEL org.opencontainers.image.title="LlmProxy" \
 EXPOSE 8080
 COPY --from=api-build /app/publish ./
 COPY --from=admin-build /admin/dist ./wwwroot/admin
+COPY distribution/install-node-agent.sh ./wwwroot/admin/downloads/install-node-agent.sh
 USER $APP_UID
 ENTRYPOINT ["dotnet", "LlmProxy.Api.dll"]

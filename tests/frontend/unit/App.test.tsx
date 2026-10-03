@@ -17,6 +17,7 @@ const mockedApi = vi.hoisted(() => ({
   deployments: vi.fn(),
   apiCredentials: vi.fn(),
   metrics: vi.fn(),
+  metricsQuery: vi.fn(),
   metricsSummary: vi.fn(),
   audit: vi.fn(),
   createNode: vi.fn(),
@@ -28,6 +29,7 @@ const mockedApi = vi.hoisted(() => ({
   drainNode: vi.fn(),
   enableNode: vi.fn(),
   disableNode: vi.fn(),
+  deleteNode: vi.fn(),
   createModel: vi.fn(),
   createDeployment: vi.fn(),
   updateDeployment: vi.fn(),
@@ -127,6 +129,15 @@ describe('admin application', () => {
       attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 120,
       inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null
     }])
+    mockedApi.metricsQuery.mockResolvedValue({
+      items: [{
+        id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
+        deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
+        attemptCount: 2, isStreaming: true, upstreamHeaderMilliseconds: 38, timeToFirstByteMilliseconds: 120,
+        inputTokens: 17, outputTokens: 6, totalTokens: 23, errorCode: null
+      }],
+      total: 1, page: 1, pageSize: 20
+    })
     mockedApi.metricsSummary.mockResolvedValue({
       windowHours: 24, sinceUtc: '2026-09-08T10:00:00Z', requestCount: 125, successCount: 124, errorCount: 1, successRatePercent: 99.2,
       p50DurationMilliseconds: 900, p95DurationMilliseconds: 1800, p50TimeToFirstByteMilliseconds: 120, p95TimeToFirstByteMilliseconds: 350,
@@ -173,6 +184,7 @@ describe('admin application', () => {
     expect(screen.getByText('261 W')).toBeInTheDocument()
     expect(screen.getByText('Routing isolation')).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Configure telemetry endpoint' }))
     const input = screen.getByLabelText('Hardware metrics service root')
     await user.clear(input)
     await user.type(input, 'http://10.0.0.21:9400/new-dcgm')
@@ -199,8 +211,9 @@ describe('admin application', () => {
   it('shows inference observability by model, node and request', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
-    expect(screen.getByText('Chat Completions · SSE')).toBeInTheDocument()
+    expect(await screen.findByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
+    expect(mockedApi.metricsQuery).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 20, status: 'all' }))
   })
 
 
@@ -210,6 +223,7 @@ describe('admin application', () => {
 
     await user.click(screen.getByRole('button', { name: 'Playground' }))
     expect(screen.getByRole('heading', { name: 'Model chat test' })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'System One classifier' }))
     expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Content Logs' }))
@@ -221,9 +235,10 @@ describe('admin application', () => {
   it('manages end-user provisioning and access', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
     await user.click(screen.getByRole('button', { name: 'Users & Access' }))
-    expect(await screen.findByRole('heading', { name: 'User provisioning policy' })).toBeInTheDocument()
-    expect(screen.getByText('Example User')).toBeInTheDocument()
+    expect(await screen.findByText('Example User')).toBeInTheDocument()
     expect(screen.getByText('12', { exact: true })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Provisioning & identity' }))
+    expect(screen.getByRole('heading', { name: 'User provisioning policy' })).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Provisioning mode'), 'automatic')
     await user.click(screen.getByRole('button', { name: 'Save provisioning mode' }))
     expect(mockedApi.updatePlatformUserAccessSettings).toHaveBeenCalledWith('automatic')

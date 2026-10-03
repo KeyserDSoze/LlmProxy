@@ -97,6 +97,16 @@ export const api = {
   usageUsers: (days = 30) => request<UserUsageSummary[]>(`/api/admin/usage/users?days=${days}`),
   updateCredentialCallerGovernance: (id: string, enabled: boolean) => request<{ id: string; name: string; kind: string; enforceCallerGovernance: boolean }>(`/api/admin/api-credentials/${id}/caller-governance`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   metrics: (take = 100) => request<RequestMetric[]>(`/api/admin/metrics?take=${take}`),
+  metricsQuery: (params: { page?: number; pageSize?: number; model?: string; nodeId?: string; apiCredentialId?: string; status?: string }) => {
+    const query = new URLSearchParams()
+    if (params.page) query.set('page', String(params.page))
+    if (params.pageSize) query.set('pageSize', String(params.pageSize))
+    if (params.model) query.set('model', params.model)
+    if (params.nodeId) query.set('nodeId', params.nodeId)
+    if (params.apiCredentialId) query.set('apiCredentialId', params.apiCredentialId)
+    if (params.status && params.status !== 'all') query.set('status', params.status)
+    return request<{ items: RequestMetric[]; total: number; page: number; pageSize: number }>(`/api/admin/metrics/query?${query.toString()}`)
+  },
   metricsSummary: (hours = 24) => request<MetricsSummary>(`/api/admin/metrics/summary?hours=${hours}`),
   audit: (take = 100) => request<AuditEvent[]>('/api/admin/audit?take=' + take),
   contentLogs: (take = 100) => request<ContentLogSummary[]>('/api/admin/content-logs?take=' + take),
@@ -134,6 +144,7 @@ export const api = {
     await request<void>(`/api/admin/nodes/${id}/enable`, { method: 'POST' })
   },
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
+  deleteNode: (id: string) => request<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' }),
   createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
   createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number }) =>

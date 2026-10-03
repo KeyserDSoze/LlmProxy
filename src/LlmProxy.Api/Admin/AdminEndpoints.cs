@@ -267,6 +267,39 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
+        var deleteNode = group.MapDelete("/nodes/{id:guid}", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            IRequestLoadTracker loadTracker,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var node = await dbContext.Nodes.FindAsync([id], cancellationToken);
+            if (node is null) return Results.NotFound();
+            if (node.Enabled)
+            {
+                return Results.Conflict(new { error = "Disable the node before deleting it." });
+            }
+
+            if (loadTracker.GetNodeActive(id) > 0)
+            {
+                return Results.Conflict(new { error = "The node still has active requests. Wait for it to become idle before deleting it." });
+            }
+
+            var deployments = await dbContext.Deployments
+                .Where(deployment => deployment.NodeId == id)
+                .ToListAsync(cancellationToken);
+            dbContext.Deployments.RemoveRange(deployments);
+            dbContext.Nodes.Remove(node);
+            AddAudit(dbContext, httpContext, "node.delete", "node", node.Id.ToString(), new
+            {
+                node.Name,
+                deploymentCount = deployments.Count
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.NoContent();
+        });
+
         group.MapGet("/models", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Models.AsNoTracking().OrderBy(model => model.PublicName).ToListAsync(cancellationToken)));
 
@@ -355,6 +388,9 @@ public static class AdminEndpoints
                 item.LastUsedAtUtc,
                 item.UsageGroupId,
                 item.EnforceCallerGovernance,
+                item.OwnerTenantId,
+                item.OwnerObjectId,
+                item.OwnerPrincipalName,
                 kind = item.IsPersonal ? "personal" : "organization",
                 secretAvailable = item.SecretCiphertext != null
             }).ToListAsync(cancellationToken)));
@@ -367,7 +403,7 @@ public static class AdminEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var secret = ApiKeyHasher.GenerateSecret();
+            var secret = ApiKeyHasher.GenerateSecret("lp_org_");
             var credential = new ApiCredential(request.Name, ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret), request.ExpiresAtUtc);
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
@@ -423,6 +459,60 @@ public static class AdminEndpoints
             return Results.Ok(rows);
         });
 
+        group.MapGet("/metrics/query", async (
+            int? page,
+            int? pageSize,
+            string? model,
+            Guid? nodeId,
+            Guid? apiCredentialId,
+            string? status,
+            GatewayDbContext dbContext,
+            CancellationToken cancellationToken) =>
+        {
+            var currentPage = Math.Max(page ?? 1, 1);
+            var size = Math.Clamp(pageSize ?? 20, 1, 200);
+            var query = dbContext.RequestMetrics.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                query = query.Where(metric => metric.LogicalModel.Contains(model));
+            }
+
+            if (nodeId is Guid selectedNodeId)
+            {
+                query = query.Where(metric => metric.NodeId == selectedNodeId);
+            }
+
+            if (apiCredentialId is Guid selectedCredentialId)
+            {
+                query = query.Where(metric => metric.ApiCredentialId == selectedCredentialId);
+            }
+
+            if (string.Equals(status, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(metric => metric.StatusCode >= 200 && metric.StatusCode < 400);
+            }
+            else if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(metric => metric.StatusCode >= 400);
+            }
+
+            var total = await query.CountAsync(cancellationToken);
+            var items = await query
+                .OrderByDescending(metric => metric.StartedAtUtc)
+                .Skip((currentPage - 1) * size)
+                .Take(size)
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(new
+            {
+                items,
+                total,
+                page = currentPage,
+                pageSize = size
+            });
+        });
+
         group.MapGet("/audit", async (int? take, GatewayDbContext dbContext, CancellationToken cancellationToken) =>
         {
             var size = Math.Clamp(take ?? 100, 1, 500);
@@ -446,6 +536,7 @@ public static class AdminEndpoints
                 drainNode,
                 enableNode,
                 disableNode,
+                deleteNode,
                 createModel,
                 createDeployment,
                 updateDeployment,

@@ -45,6 +45,17 @@ public sealed class ApiKeyHasherTests
         Assert.True(secret.Length > 32);
     }
 
+    [Theory]
+    [InlineData("lp_org_")]
+    [InlineData("lp_usr_")]
+    public void Generated_secret_can_expose_the_credential_scope_in_its_prefix(string prefix)
+    {
+        var secret = ApiKeyHasher.GenerateSecret(prefix);
+
+        Assert.StartsWith(prefix, secret, StringComparison.Ordinal);
+        Assert.True(secret.Length > prefix.Length + 32);
+    }
+
     private static ApiKeyHasher CreateHasher(string pepper, string environment)
     {
         var configuration = new ConfigurationBuilder()

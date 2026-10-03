@@ -554,3 +554,27 @@ Fixed the public browser path:
 - authorization middleware returns plain 401/403 for `/api/*` instead of issuing an OIDC redirect inside fetch;
 - frontend differentiates unauthenticated 401 from authenticated-but-forbidden 403;
 - documented `http://llmproxy:8080` as the Cloudflare origin and `https://<host>/signin-oidc` as the Entra Web redirect URI.
+
+## 2026-10-03 — Administrator UX consolidation — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Refactored the Admin control plane to reduce page length and remove overlapping workflows without changing routing semantics.
+
+Implemented:
+
+- active/disabled Inference Node tabs, add/credential dialogs, and safe deletion for disabled idle nodes;
+- Hardware tabs for telemetry, physical capacity and benchmark profiles, with configuration in dialogs;
+- Model & Hardware inventory/deploy tabs and direct Node Agent installer download;
+- unified Models & Deployments workspace with model-centric and node-centric views plus rapid deployment/routing controls;
+- explicit organization/personal API-key scope, administrator secret recovery controls, and scope-aware `lp_org_` / `lp_usr_` prefixes for new/rotated secrets;
+- paginated/filterable request-metrics API and Admin request browser, defaulting to the newest 20 rows;
+- tabbed Playground, Usage & Governance, and Users & Access, moving create/configure forms into dialogs;
+- contextual documentation, unit/e2e coverage and release notes updated with the same product increment.
+
+Compatibility notes:
+
+- existing `lp_` keys remain valid; the scoped prefix is adopted only by newly created or rotated credentials;
+- the original `GET /api/admin/metrics?take=` contract remains available while the UI uses `GET /api/admin/metrics/query`;
+- the legacy Deployments view identifier resolves to the unified Models & Deployments workspace;
+- Routing behavior is intentionally unchanged.
+
+Validation is not claimed until the exact resulting `main` SHA completes CI/Full Stack and the automatic immutable release workflow.

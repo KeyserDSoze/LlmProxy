@@ -34,7 +34,7 @@ const mockedApi = vi.hoisted(() => ({
 
 vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
 
-import Governance from '../../../src/LlmProxy.Admin/src/Governance'
+import Governance from '../../../src/LlmProxy.Admin/src/GovernanceExperience'
 
 const group = {
   id: 'group-1', name: 'Development CRM', description: 'CRM team',
@@ -101,10 +101,10 @@ describe('Usage governance', () => {
 
     expect(await screen.findByRole('heading', { name: 'Usage & Governance' })).toBeInTheDocument()
     expect(screen.getAllByText('Development CRM').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Copilot CRM').length).toBeGreaterThan(0)
     expect(screen.getAllByText('agic-code-fast').length).toBeGreaterThan(0)
     expect(screen.getByTestId('historical-rollup-notice')).toHaveTextContent('30 rolled-up requests + 12 raw requests')
-    expect(screen.getByText(/raw request metrics 90d · daily usage rollups 730d/)).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Groups & credentials/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Quotas/ })).toBeInTheDocument()
     expect(mockedApi.usageSummary).toHaveBeenCalledWith(30)
   })
 
@@ -120,6 +120,10 @@ describe('Usage governance', () => {
   it('creates groups and rate-limit policies through the admin API', async () => {
     const user = userEvent.setup()
     render(<Governance />)
+    await screen.findByRole('heading', { name: 'Usage & Governance' })
+    await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
+    expect(screen.getByText('Copilot CRM')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Create usage group' }))
     await screen.findByRole('heading', { name: 'Create usage group' })
 
     await user.type(screen.getByPlaceholderText('Development CRM'), 'Platform')
@@ -128,7 +132,9 @@ describe('Usage governance', () => {
 
     await waitFor(() => expect(mockedApi.createUsageGroup).toHaveBeenCalledWith({ name: 'Platform', description: 'Platform developers' }))
 
-    const credentialLimitForm = screen.getByRole('heading', { name: 'Add rate limit' }).closest('section')!
+    await user.click(screen.getByRole('tab', { name: /Quotas/ }))
+    await user.click(screen.getByRole('button', { name: 'Add credential limit' }))
+    const credentialLimitForm = screen.getByRole('dialog', { name: 'Add credential rate limit' })
     const requests = credentialLimitForm.querySelector('input[type="number"]') as HTMLInputElement
     await user.clear(requests)
     await user.type(requests, '2')

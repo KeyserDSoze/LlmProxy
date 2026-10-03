@@ -77,6 +77,18 @@ The encrypted recovery value is not published to Redis/runtime credential snapsh
 
 A raw personal or service API key must never be written to audit, request metrics, full-body content logs, OTEL, generic application logs or runtime-state payloads.
 
+### Scope-aware display prefixes
+
+New credentials make ownership scope visible in the secret itself without changing the authentication primitive:
+
+```text
+lp_org_...   administrator-created organization credential
+lp_usr_...   Entra-owned personal credential
+```
+
+The display prefix is informational; authentication still hashes the complete raw secret with the deployment pepper. Existing historical `lp_...` credentials remain valid and are not rewritten. Rotating an existing credential adopts the prefix for its current ownership type. Usage Group membership is deliberately not encoded in the prefix because a group is governance/accounting metadata and can change independently from credential ownership.
+
+
 ## Self-service endpoints
 
 When Entra is enabled, an authenticated normal user may call these endpoints only when the platform-user registry admits the stable `tid + oid` identity. Administrators bypass the normal-user registry:
