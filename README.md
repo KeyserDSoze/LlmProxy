@@ -40,8 +40,8 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Health hysteresis and safe drain/resume maintenance.
 - Distributed physical-capacity admission with Redis leases.
 - HMAC-backed bearer credentials with administrator-recoverable encrypted secret copies for newly created/rotated keys.
-- Entra-owned personal API keys with self-service lifecycle and per-key usage attribution.
-- Usage Groups, per-credential request-rate governance, aggregate Entra-user request quotas and output-token budgets.
+- Entra-authenticated end-user dashboard with automatic or administrator-censused user provisioning, central disable/re-enable, personal API keys, recent calls and own usage.
+- Stable Entra `tid + oid` user identity, Usage Groups, per-credential request-rate governance, aggregate Entra-user request quotas and output-token budgets.
 - Historical PostgreSQL usage rollups beyond raw-metric retention.
 - Transactional PostgreSQL -> Redis runtime-state outbox.
 - Metadata-only metrics/audit/OTEL plus a separate administrator-only, application-encrypted full-body request/response log with 10-180 day retention.
