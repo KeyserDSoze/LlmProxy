@@ -28,6 +28,19 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
   const [busyVersion, setBusyVersion] = useState<string | null>(null)
   const [scheduleTimes, setScheduleTimes] = useState<Record<string, string>>({})
 
+  async function refreshProduct() {
+    try {
+      const response = await fetch('/api/admin/product', { credentials: 'same-origin' })
+      if (response.status === 401) throw new Error('AUTH_REQUIRED')
+      if (response.status === 403) throw new Error('FORBIDDEN')
+      if (!response.ok) throw new Error(await response.text() || `${response.status} ${response.statusText}`)
+      setProduct(await response.json() as ProductReleaseInfo)
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
   async function refreshUpdates() {
     try {
       setUpdates(await api.productUpdates())
@@ -38,16 +51,13 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
   }
 
   useEffect(() => {
-    fetch('/api/admin/product', { credentials: 'same-origin' })
-      .then(async response => {
-        if (response.status === 401) throw new Error('AUTH_REQUIRED')
-        if (response.status === 403) throw new Error('FORBIDDEN')
-        if (!response.ok) throw new Error(await response.text() || `${response.status} ${response.statusText}`)
-        return response.json() as Promise<ProductReleaseInfo>
-      })
-      .then(setProduct)
-      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+    void refreshProduct()
     void refreshUpdates()
+    const timer = window.setInterval(() => {
+      void refreshProduct()
+      void refreshUpdates()
+    }, 5000)
+    return () => window.clearInterval(timer)
   }, [])
 
   const availableUpdates = useMemo(
