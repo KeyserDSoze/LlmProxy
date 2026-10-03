@@ -119,6 +119,8 @@ describe('admin application', () => {
     mockedApi.platformUserAccessSettings.mockResolvedValue({ provisioningMode: 'manual', updatedAtUtc: '2026-10-03T06:00:00Z', configuredTenantId: 'tenant-1' })
     mockedApi.platformUsers.mockResolvedValue([{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-10-03T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 1, activeCredentialCount: 1, lastCredentialUsedAtUtc: null, requestCount30d: 12, errorCount30d: 1 }])
     mockedApi.updatePlatformUserAccessSettings.mockResolvedValue({ provisioningMode: 'automatic', updatedAtUtc: '2026-10-03T06:10:00Z', configuredTenantId: 'tenant-1' })
+    mockedApi.usageGroups.mockResolvedValue([{ id: 'group-1', name: 'Development CRM', description: 'CRM team', createdAtUtc: '2026-10-03T06:00:00Z', updatedAtUtc: '2026-10-03T06:00:00Z', credentialCount: 1, userCount: 1 }])
+    mockedApi.assignPlatformUserUsageGroup.mockResolvedValue(undefined)
     mockedApi.metrics.mockResolvedValue([{
       id: 1, requestId: 'req-1', startedAtUtc: '2026-09-09T10:02:00Z', logicalModel: 'agic-code-fast', surface: 'chat_completions',
       deploymentId: 'deployment-1', nodeId: 'node-1', apiCredentialId: null, statusCode: 200, durationMilliseconds: 1040,
