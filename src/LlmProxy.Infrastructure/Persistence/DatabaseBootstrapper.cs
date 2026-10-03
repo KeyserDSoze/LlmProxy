@@ -174,7 +174,12 @@ public sealed class DatabaseBootstrapper(
             .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
         var userRatePolicySnapshots = (await dbContext.UserRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
             .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
-        var ratePolicySnapshots = credentialRatePolicySnapshots.Concat(userRatePolicySnapshots).ToArray();
+        var groupRatePolicySnapshots = (await dbContext.UsageGroupRateLimitPolicies.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(RateLimitPolicyRuntimeStateInterceptor.ToSnapshot);
+        var ratePolicySnapshots = credentialRatePolicySnapshots
+            .Concat(userRatePolicySnapshots)
+            .Concat(groupRatePolicySnapshots)
+            .ToArray();
         requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
         runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);
     }
