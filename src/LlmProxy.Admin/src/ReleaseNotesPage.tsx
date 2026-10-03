@@ -131,7 +131,7 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
       {!updates && !updateError && <div className="loading updateMessage">Checking published releases and host update agent…</div>}
       {updates && !(updates?.agentAvailable ?? false) && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but Update now / Schedule are disabled until the host is upgraded to a release that installs the update agent.</div>}
       {activeJob && <div className="updateActive">
-        <div><strong>{activeJob.status}: v{activeJob.version}</strong><div className="muted">Scheduled {formatDateTime(activeJob.scheduledForUtc)}{activeJob.startedAtUtc ? ` · started ${formatDateTime(activeJob.startedAtUtc)}` : ''}</div>{activeJob.error && <div className="errorText">{activeJob.error}</div>}</div>
+        <div><strong>{activeJob.status}: v{activeJob.version}</strong><div className="muted">Scheduled {formatDateTime(activeJob.scheduledForUtc)}{activeJob.startedAtUtc ? ` · started ${formatDateTime(activeJob.startedAtUtc)}` : ''}{activeJob.currentStep ? ` · applying v${activeJob.currentStep}` : ''}</div>{activeJob.upgradePath?.length ? <div className="muted">Upgrade path: {activeJob.upgradePath.map(version => `v${version}`).join(' → ')}</div> : null}{activeJob.error && <div className="errorText">{activeJob.error}</div>}</div>
         {canWrite && activeJob.status === 'Pending' && <button className="secondary" onClick={() => void cancelActiveUpdate()}>Cancel scheduled update</button>}
       </div>}
 
@@ -142,6 +142,7 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
             <div>{release.title}</div>
             <div className="muted">Published {formatDateTime(release.publishedAtUtc)} · {release.updateTitle}</div>
             <p>{release.updateDescription}</p>
+            <div className="muted">Upgrade path: {upgradePathTo(updates?.releases ?? [], release.version).map(version => `v${version}`).join(' → ')}</div>
             <code className="updateCommand">{release.operatorCommand}</code>
           </div>
           <div className="updateControls">
@@ -192,4 +193,24 @@ function friendlyError(value: string) {
   if (value === 'AUTH_REQUIRED') return 'Authentication is required.'
   if (value === 'FORBIDDEN') return 'Administrator write access is required.'
   return value
+}
+
+function upgradePathTo(releases: ProductUpdateOverview['releases'], target: string) {
+  const targetParts = semverParts(target)
+  if (!targetParts) return [target]
+  return releases
+    .filter(release => release.isNewer)
+    .filter(release => {
+      const parts = semverParts(release.version)
+      return parts !== null && compareSemver(parts, targetParts) <= 0
+    })
+    .sort((left, right) => compareSemver(semverParts(left.version)!, semverParts(right.version)!))
+    .map(release => release.version)
+}
+function semverParts(value: string): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value)
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
+}
+function compareSemver(left: [number, number, number], right: [number, number, number]) {
+  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
 }
