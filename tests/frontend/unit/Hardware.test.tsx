@@ -16,13 +16,13 @@ vi.mock('../../../src/LlmProxy.Admin/src/api', () => ({ api: mockedApi }))
 import Hardware from '../../../src/LlmProxy.Admin/src/Hardware'
 
 const node = {
-  id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: null,
+  id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: null,
   enabled: true, status: 'Healthy', weight: 1, maxConcurrency: 4,
   consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
 }
 
 const capacity = {
-  nodes: [{ id: 'node-1', name: 'dgx-01', maxConcurrency: 4, activeRequests: 1, remaining: 3 }],
+  nodes: [{ id: 'node-1', name: 'inference-01', maxConcurrency: 4, activeRequests: 1, remaining: 3 }],
   deployments: [{
     id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, maxConcurrency: 2,
     effectiveMaxConcurrency: 2, activeRequests: 1, recommendedMaxConcurrency: null,
@@ -31,7 +31,7 @@ const capacity = {
   }]
 }
 
-describe('DGX capacity administration', () => {
+describe('Inference node capacity administration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     capacity.deployments[0].effectiveMaxConcurrency = 2
@@ -57,7 +57,7 @@ describe('DGX capacity administration', () => {
     const refresh = vi.fn().mockResolvedValue(undefined)
     render(<Hardware nodes={[node]} hardware={[]} refresh={refresh} />)
 
-    expect(await screen.findByRole('heading', { name: 'Physical DGX capacity' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Physical node capacity' })).toBeInTheDocument()
     expect(screen.getByText('HTTP 429 · Retry-After: 1')).toBeInTheDocument()
     expect(screen.getByText('Deployment active limit: 2')).toBeInTheDocument()
 

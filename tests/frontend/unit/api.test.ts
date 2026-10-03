@@ -74,7 +74,7 @@ describe('admin api client', () => {
     }))
 
     await api.createNode({
-      name: 'dgx-02',
+      name: 'inference-02',
       baseAddress: 'http://10.0.0.22:8000',
       weight: 1,
       maxConcurrency: 4
@@ -84,7 +84,7 @@ describe('admin api client', () => {
       method: 'POST',
       headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        name: 'dgx-02',
+        name: 'inference-02',
         baseAddress: 'http://10.0.0.22:8000',
         weight: 1,
         maxConcurrency: 4

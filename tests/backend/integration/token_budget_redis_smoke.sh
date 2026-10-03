@@ -35,10 +35,10 @@ export RUNTIME_METRICS_ENABLED=false
 export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
 export BOOTSTRAP_ENABLED=true
-export DGX_NODE_NAME=dgx-token-budget
-export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3492/token-budget
-export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=4
+export INFERENCE_NODE_NAME=inference-token-budget
+export INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3492/token-budget
+export INFERENCE_NODE_WEIGHT=1
+export INFERENCE_NODE_MAX_CONCURRENCY=4
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -111,7 +111,7 @@ wait_http http://127.0.0.1:8080/readyz 60 || fail_with_diagnostics "Primary gate
 healthy=false
 for attempt in {1..40}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes || true)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-token-budget" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-token-budget" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     healthy=true
     break
   fi
@@ -177,7 +177,7 @@ wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Token-budget
 peer_healthy=false
 for attempt in {1..40}; do
   peer_nodes="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
-  if echo "$peer_nodes" | jq -e 'map(select(.name == "dgx-token-budget" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$peer_nodes" | jq -e 'map(select(.name == "inference-token-budget" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     peer_healthy=true
     break
   fi

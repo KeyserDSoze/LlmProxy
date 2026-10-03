@@ -45,4 +45,4 @@ For streaming requests TTFT means the first actual output delta rather than mere
 
 Do not point high concurrency levels at production unintentionally. Start low, benchmark one model at a time and watch vLLM plus DCGM telemetry. The CI pipeline compiles and unit-tests the benchmark harness but does **not** execute load against any inference endpoint.
 
-Representative production-capacity runs belong on the target LAN close to the gateway/DGX so Internet latency is not mixed into the inference baseline unless that external path is intentionally what is being measured.
+Representative production-capacity runs belong on the target LAN close to the gateway/inference node so Internet latency is not mixed into the inference baseline unless that external path is intentionally what is being measured.
