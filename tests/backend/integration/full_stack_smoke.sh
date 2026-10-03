@@ -239,13 +239,14 @@ policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' 
   -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
 policy_id="$(echo "$policy_json" | jq -r '.id')"
+policy_redis_field="${policy_id//-/}"
 echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
 
 policy_converged=false
 for attempt in {1..50}; do
   peer_sync_after_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync || true)"
   peer_version_after_policy="$(echo "$peer_sync_after_policy" | jq -r '.lastAppliedVersion // 0' 2>/dev/null || echo 0)"
-  redis_policy_present="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HEXISTS llmproxy:rate-policies "$policy_id" 2>/dev/null | tr -d '\r' || true)"
+  redis_policy_present="$("${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" HEXISTS llmproxy:rate-policies "$policy_redis_field" 2>/dev/null | tr -d '\r' || true)"
   if [[ "$peer_version_after_policy" =~ ^[0-9]+$ && "$peer_version_after_policy" -gt "$peer_version_before_policy" && "$redis_policy_present" == "1" ]]; then
     policy_converged=true
     break
