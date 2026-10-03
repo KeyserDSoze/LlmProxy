@@ -23,10 +23,10 @@ GitHub Copilot / OpenAI-compatible clients
                           |
                           | private LAN
                           v
-                    DGX Spark / vLLM
+                    GPU inference hardware / vLLM
 ```
 
-The DGX nodes do not run LlmProxy. They expose OpenAI-compatible vLLM service roots reachable from the Linux host.
+The inference nodes do not run LlmProxy. They expose OpenAI-compatible vLLM service roots reachable from the Linux host.
 
 ## 2. Preferred path: install a new Linux host automatically
 
@@ -111,7 +111,7 @@ export GHCR_USER='<github-user>'
 export GHCR_TOKEN='<token-with-package-read-access>'
 
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag main
 ```
@@ -134,10 +134,10 @@ detect distro + architecture
        -> random initial LlmProxy API credential
        -> random stable API-key HMAC pepper
        -> random Grafana admin password
-  -> apply GHCR/image/DGX/model inputs
+  -> apply GHCR/image/inference node/model inputs
   -> optional docker login to GHCR
-  -> call DGX /health
-  -> call DGX /v1/models
+  -> call inference node /health
+  -> call inference node /v1/models
   -> invoke docker/scripts/deploy.sh
        -> stage runtime assets
        -> docker compose config
@@ -158,7 +158,7 @@ Host/config preparation without starting containers:
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --prepare-only \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
@@ -167,27 +167,27 @@ Require preinstalled Docker:
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --skip-docker-install \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
-Skip DGX precheck only for deliberate staged provisioning:
+Skip inference node precheck only for deliberate staged provisioning:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
-  --skip-dgx-check \
-  --dgx-url http://10.0.0.21:8000 \
+  --skip-node-check \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>'
 ```
 
-Do not use `--skip-dgx-check` as a normal production shortcut.
+Do not use `--skip-node-check` as a normal production shortcut.
 
 Non-interactive provisioning:
 
 ```bash
 sudo -E bash docker/scripts/install-linux.sh \
   --non-interactive \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag sha-abcdef1
 ```
@@ -225,7 +225,7 @@ If host policy forbids package installation by the repository script, install th
 - `curl` or `wget`;
 - `openssl` for local secret generation when needed;
 - outbound HTTPS to GitHub/GHCR and, when used, Cloudflare;
-- private-network reachability to every DGX/vLLM service root.
+- private-network reachability to every inference node/vLLM service root.
 
 Verify:
 
@@ -269,11 +269,11 @@ LLM_PROXY_API_KEY=...
 LLM_PROXY_API_KEY_PEPPER=...
 GRAFANA_ADMIN_PASSWORD=...
 LLMPROXY_UPSTREAM_CREDENTIAL_KEY=<stable-32-byte-hex-key>
-DGX_NODE_BASE_ADDRESS=http://10.0.0.21:8000
+INFERENCE_NODE_BASE_ADDRESS=http://10.0.0.21:8000
 PROVIDER_MODEL_NAME=<exact-vllm-model-id>
 ```
 
-`DGX_NODE_BASE_ADDRESS` is deliberately a `CHANGE_ME` placeholder in the production template. This prevents a copied template from accidentally passing deployment validation against an example IP.
+`INFERENCE_NODE_BASE_ADDRESS` is deliberately a `CHANGE_ME` placeholder in the production template. This prevents a copied template from accidentally passing deployment validation against an example IP.
 
 The production template is intentionally incomplete until identity is configured. The application itself refuses `Production` startup without Entra, and `deploy.sh` now rejects that state before touching containers. Set:
 
@@ -289,7 +289,7 @@ GRAFANA_BIND_ADDRESS=127.0.0.1
 
 For private no-Entra acceptance before the real tenant is available, use the Development/full-stack acceptance path rather than representing that host as production.
 
-## 7. DGX/vLLM connectivity
+## 7. inference node/vLLM connectivity
 
 From the Linux host verify the complete service root before deployment:
 
@@ -306,7 +306,7 @@ http://10.0.0.21:8000/vllm
 
 LlmProxy derives `/health`, `/v1/models`, `/v1/chat/completions` and `/v1/responses` from that complete root.
 
-### Same-host llama.cpp / DGX Spark
+### Same-host llama.cpp / GPU inference hardware
 
 When llama.cpp runs on the same Linux host as Docker, do not leave it bound only to `127.0.0.1`. Bind it to the Docker bridge gateway so the LlmProxy container can reach it without exposing the runtime on all LAN interfaces:
 
@@ -315,7 +315,7 @@ DOCKER_HOST_GATEWAY="$(docker network inspect bridge --format '{{(index .IPAM.Co
 llama-server --host "$DOCKER_HOST_GATEWAY" --port 8080 --api-key llama-local ...
 ```
 
-Configure `DGX_NODE_BASE_ADDRESS=http://host.docker.internal:8080`. For first installation, pass `DGX_UPSTREAM_BEARER_TOKEN=llama-local` in the installer environment; it is encrypted into the node and removed from the long-lived container environment after bootstrap.
+Configure `INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:8080`. For first installation, pass `INFERENCE_NODE_UPSTREAM_BEARER_TOKEN=llama-local` in the installer environment; it is encrypted into the node and removed from the long-lived container environment after bootstrap.
 
 ## 8. Manual private-LAN deployment / later updates
 
@@ -371,7 +371,7 @@ http://<linux-host>:8080/admin/
 
 Validate:
 
-1. initial DGX node exists;
+1. initial inference node exists;
 2. `Test connection` succeeds;
 3. `/health` and `/v1/models` are reachable;
 4. logical model points to the intended provider model;
@@ -379,7 +379,7 @@ Validate:
 6. Grafana receives metrics/traces/logs;
 7. `GET /api/admin/runtime-sync` reports healthy Redis/outbox state.
 
-Do not calibrate production concurrency from defaults. Apply Capacity Profiles only after benchmark evidence from the intended model/DGX combination.
+Do not calibrate production concurrency from defaults. Apply Capacity Profiles only after benchmark evidence from the intended model/inference node combination.
 
 ## 10. Enable Entra before public administration
 
@@ -537,8 +537,8 @@ Repository CI validates:
 Environment-specific acceptance still includes:
 
 - actual distro/version package-repository behavior on the target host;
-- real DGX Spark/vLLM/model benchmark calibration;
-- representative multi-DGX coding load;
+- real GPU inference hardware/vLLM/model benchmark calibration;
+- representative multi-node coding load;
 - real Entra app/role assignment;
 - real Cloudflare hostname/tunnel routing;
 - GitHub Copilot BYOK end-to-end;
