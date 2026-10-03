@@ -36,7 +36,7 @@ Set-Content -Path $EnvFile -Value $content -NoNewline
 
 Write-Host "Full-stack environment prepared: docker/.env.full"
 Write-Host "Internal PostgreSQL, Redis and OpenTelemetry service URLs are injected automatically by Compose."
-Write-Host "Before startup, edit operator-specific values such as DGX_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME."
+Write-Host "Before startup, edit operator-specific values such as INFERENCE_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME."
 Write-Host "If GHCR is private, authenticate first with: docker login ghcr.io"
 
 if ($Start) {
