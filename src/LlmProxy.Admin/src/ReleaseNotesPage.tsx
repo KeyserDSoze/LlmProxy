@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import PageDocumentation from './PageDocumentation'
-import type { ProductUpdateOverview } from './types'
+import type { ProductUpdateOverview, ProductUpdatePolicy } from './types'
 
 type ProductRelease = {
   version: string
@@ -20,12 +20,27 @@ type ProductReleaseInfo = {
   releases: ProductRelease[]
 }
 
+type PolicyDraft = Pick<ProductUpdatePolicy, 'mode' | 'timeZoneId' | 'localHour' | 'localMinute' | 'dayOfWeek' | 'dayOfMonth'>
+
+function defaultPolicy(): PolicyDraft {
+  return {
+    mode: 'manual',
+    timeZoneId: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    localHour: 2,
+    localMinute: 0,
+    dayOfWeek: 0,
+    dayOfMonth: 1
+  }
+}
+
 export default function ReleaseNotesPage({ embedded = false, canWrite = false }: { embedded?: boolean; canWrite?: boolean }) {
   const [product, setProduct] = useState<ProductReleaseInfo | null>(null)
   const [updates, setUpdates] = useState<ProductUpdateOverview | null>(null)
+  const [policy, setPolicy] = useState<PolicyDraft>(defaultPolicy)
   const [error, setError] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [busyVersion, setBusyVersion] = useState<string | null>(null)
+  const [policyBusy, setPolicyBusy] = useState(false)
   const [scheduleTimes, setScheduleTimes] = useState<Record<string, string>>({})
 
   async function refreshProduct() {
@@ -43,7 +58,18 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
 
   async function refreshUpdates() {
     try {
-      setUpdates(await api.productUpdates())
+      const next = await api.productUpdates()
+      setUpdates(next)
+      if (next.policy) {
+        setPolicy({
+          mode: next.policy.mode,
+          timeZoneId: next.policy.timeZoneId,
+          localHour: next.policy.localHour,
+          localMinute: next.policy.localMinute,
+          dayOfWeek: next.policy.dayOfWeek,
+          dayOfMonth: next.policy.dayOfMonth
+        })
+      }
       setUpdateError(null)
     } catch (reason) {
       setUpdateError(reason instanceof Error ? reason.message : String(reason))
@@ -64,9 +90,10 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
     () => updates?.releases.filter(release => release.isNewer) ?? [],
     [updates]
   )
+  const latest = availableUpdates[0]
 
   async function updateNow(version: string) {
-    if (!window.confirm(`Update LlmProxy to v${version} now? The gateway will restart during deployment.`)) return
+    if (!window.confirm(`Update LlmProxy to v${version} now? Every intermediate release will be applied in order and the gateway will restart during deployment.`)) return
     setBusyVersion(version)
     try {
       await api.scheduleProductUpdate({ version, force: true })
@@ -89,7 +116,6 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
       setUpdateError('The scheduled date/time is invalid.')
       return
     }
-
     setBusyVersion(version)
     try {
       await api.scheduleProductUpdate({ version, scheduledForUtc: date.toISOString(), force: false })
@@ -98,6 +124,19 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
       setUpdateError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusyVersion(null)
+    }
+  }
+
+  async function savePolicy() {
+    setPolicyBusy(true)
+    setUpdateError(null)
+    try {
+      await api.updateProductUpdatePolicy(policy)
+      await refreshUpdates()
+    } catch (reason) {
+      setUpdateError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setPolicyBusy(false)
     }
   }
 
@@ -122,7 +161,7 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
 
   return <div className={cls}>
     {!embedded && <><div className="releaseHeader">
-      <div><span className="releaseEyebrow">{product.product} · {product.channel}</span><h1>Release notes</h1><p>Versions, immutable update plans and administrator-controlled deployment.</p></div>
+      <div><span className="releaseEyebrow">{product.product} · {product.channel}</span><h1>Release notes</h1><p>Versions, safe upgrade chains and administrator-controlled deployment.</p></div>
       <a className="secondary releaseBack" href="/admin/">Back to Admin</a>
     </div><PageDocumentation page="releases" /></>}
     {embedded && <div className="muted">{product.product} · {product.channel}</div>}
@@ -136,10 +175,43 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
     </section>
 
     <section className="panel updatePanel">
-      <div className="panelTitle"><div><h2>Host updates</h2><div className="muted">Updates run on the host agent so the operation survives the gateway container restart.</div></div><span>{updates?.agentAvailable ? 'Agent online' : 'Agent unavailable'}</span></div>
+      <div className="panelTitle"><div><h2>Host updates</h2><div className="muted">A target release is expanded into every intermediate stable version, so custom migrations cannot be skipped.</div></div><span>{updates?.agentAvailable ? 'Agent online' : 'Agent unavailable'}</span></div>
       {updateError && <div className="error updateMessage">{friendlyError(updateError)}</div>}
       {!updates && !updateError && <div className="loading updateMessage">Checking published releases and host update agent…</div>}
-      {updates && !(updates?.agentAvailable ?? false) && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but Update now / Schedule are disabled until the host is upgraded to a release that installs the update agent.</div>}
+      {updates && !updates.agentAvailable && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but automatic, immediate and scheduled updates are disabled until the agent is available.</div>}
+
+      {updates?.policy && <div className="panel formPanel">
+        <div className="panelTitle"><div><h3>Automatic update policy</h3><span>Always targets the latest published stable release and applies intermediate versions in ascending order.</span></div><span>{policyLabel(updates.policy.mode)}</span></div>
+        <div className="gridTwo">
+          <label>Policy<select aria-label="Automatic update policy" value={policy.mode} onChange={event => setPolicy(current => ({ ...current, mode: event.target.value as PolicyDraft['mode'] }))}>
+            <option value="manual">Manual only</option>
+            <option value="asap">ASAP · check every 5 minutes</option>
+            <option value="nightly">Nightly</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select></label>
+          <label>Time zone<input aria-label="Update time zone" value={policy.timeZoneId} onChange={event => setPolicy(current => ({ ...current, timeZoneId: event.target.value }))} /></label>
+        </div>
+        {policy.mode !== 'manual' && policy.mode !== 'asap' && <div className="gridTwo">
+          <label>Local time<input aria-label="Automatic update time" type="time" value={timeValue(policy.localHour, policy.localMinute)} onChange={event => {
+            const [hour, minute] = event.target.value.split(':').map(Number)
+            setPolicy(current => ({ ...current, localHour: hour, localMinute: minute }))
+          }} /></label>
+          {policy.mode === 'weekly' && <label>Day of week<select aria-label="Automatic update weekday" value={policy.dayOfWeek} onChange={event => setPolicy(current => ({ ...current, dayOfWeek: Number(event.target.value) }))}>
+            {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, index) => <option value={index} key={day}>{day}</option>)}
+          </select></label>}
+          {policy.mode === 'monthly' && <label>Day of month<input aria-label="Automatic update month day" type="number" min={1} max={31} value={policy.dayOfMonth} onChange={event => setPolicy(current => ({ ...current, dayOfMonth: Number(event.target.value) }))} /></label>}
+        </div>}
+        <div className="statusGrid">
+          <div><span>Latest target</span><strong>{latest ? `v${latest.version}` : 'Already latest'}</strong></div>
+          <div><span>Last check</span><strong>{formatDateTime(updates.policy.lastCheckedAtUtc)}</strong></div>
+          <div><span>Last auto-scheduled</span><strong>{updates.policy.lastScheduledVersion ? `v${updates.policy.lastScheduledVersion}` : '—'}</strong></div>
+          <div><span>Last scheduling time</span><strong>{formatDateTime(updates.policy.lastScheduledAtUtc)}</strong></div>
+        </div>
+        {updates.policy.lastError && <div className="errorText">{updates.policy.lastError}</div>}
+        {canWrite && <div className="modalActions"><button className="primary" disabled={policyBusy || !updates.agentAvailable} onClick={() => void savePolicy()}>{policyBusy ? 'Saving…' : 'Save automatic update policy'}</button></div>}
+      </div>}
+
       {activeJob && <div className="updateActive">
         <div><strong>{activeJob.status}: v{activeJob.version}</strong><div className="muted">Scheduled {formatDateTime(activeJob.scheduledForUtc)}{activeJob.startedAtUtc ? ` · started ${formatDateTime(activeJob.startedAtUtc)}` : ''}{activeJob.currentStep ? ` · applying v${activeJob.currentStep}` : ''}</div>{activeJob.upgradePath?.length ? <div className="muted">Upgrade path: {activeJob.upgradePath.map(version => `v${version}`).join(' → ')}</div> : null}{activeJob.error && <div className="errorText">{activeJob.error}</div>}</div>
         {canWrite && activeJob.status === 'Pending' && <button className="secondary" onClick={() => void cancelActiveUpdate()}>Cancel scheduled update</button>}
@@ -152,15 +224,15 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
             <div>{release.title}</div>
             <div className="muted">Published {formatDateTime(release.publishedAtUtc)} · {release.updateTitle}</div>
             <p>{release.updateDescription}</p>
-            <div className="muted">Upgrade path: {upgradePathTo(updates?.releases ?? [], release.version).map(version => `v${version}`).join(' → ')}</div>
+            <div className="muted">Safe upgrade path: {upgradePathTo(updates?.releases ?? [], release.version).map(version => `v${version}`).join(' → ')}</div>
             <code className="updateCommand">{release.operatorCommand}</code>
           </div>
           <div className="updateControls">
             {canWrite && <>
-              <button className="primary" disabled={!(updates?.agentAvailable ?? false) || busyVersion === release.version} onClick={() => void updateNow(release.version)}>Update now</button>
+              <button className="primary" disabled={!updates?.agentAvailable || busyVersion === release.version} onClick={() => void updateNow(release.version)}>Update now</button>
               <div className="scheduleRow">
                 <input aria-label={`Schedule v${release.version}`} type="datetime-local" value={scheduleTimes[release.version] ?? ''} onChange={event => setScheduleTimes(current => ({ ...current, [release.version]: event.target.value }))} />
-                <button className="secondary" disabled={!(updates?.agentAvailable ?? false) || busyVersion === release.version} onClick={() => void schedule(release.version)}>Schedule</button>
+                <button className="secondary" disabled={!updates?.agentAvailable || busyVersion === release.version} onClick={() => void schedule(release.version)}>Schedule once</button>
               </div>
             </>}
             {!canWrite && <span className="muted">Administrator write access is required to launch an update.</span>}
@@ -186,6 +258,10 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
   </div>
 }
 
+function policyLabel(mode: ProductUpdatePolicy['mode']) {
+  return ({ manual: 'Manual', asap: 'ASAP · 5 min', nightly: 'Nightly', weekly: 'Weekly', monthly: 'Monthly' } as const)[mode]
+}
+function timeValue(hour: number, minute: number) { return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` }
 function formatDate(value: string) {
   const date = value.includes('T') ? new Date(value) : new Date(`${value}T00:00:00Z`)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
@@ -204,7 +280,6 @@ function friendlyError(value: string) {
   if (value === 'FORBIDDEN') return 'Administrator write access is required.'
   return value
 }
-
 function upgradePathTo(releases: ProductUpdateOverview['releases'], target: string) {
   const targetParts = semverParts(target)
   if (!targetParts) return [target]

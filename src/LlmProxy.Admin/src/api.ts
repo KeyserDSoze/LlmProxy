@@ -1,4 +1,4 @@
-import type { ModelManagementOverview, ProductUpdateOverview, UpdateJobStatus } from './types'
+import type { ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -33,6 +33,8 @@ export const api = {
   productUpdates: () => request<ProductUpdateOverview>('/api/admin/updates'),
   scheduleProductUpdate: (body: { version: string; scheduledForUtc?: string | null; force?: boolean }) =>
     request<UpdateJobStatus>('/api/admin/updates', { method: 'POST', body: JSON.stringify(body) }),
+  updateProductUpdatePolicy: (body: Pick<ProductUpdatePolicy, 'mode' | 'timeZoneId' | 'localHour' | 'localMinute' | 'dayOfWeek' | 'dayOfMonth'>) =>
+    request<ProductUpdatePolicy>('/api/admin/updates/policy', { method: 'PUT', body: JSON.stringify(body) }),
   cancelProductUpdate: (id: string) => request<void>(`/api/admin/updates/${id}`, { method: 'DELETE' }),
   overview: () => request<Overview>('/api/admin/overview'),
   routing: () => request<RoutingSettings>('/api/admin/routing'),
@@ -115,7 +117,7 @@ export const api = {
   updateContentLogSettings: (retentionDays: number) => request<ContentLogSettings>('/api/admin/content-logs/settings', { method: 'PUT', body: JSON.stringify({ retentionDays }) }),
   runContentLogRetention: () => request<ContentLogCleanupResult>('/api/admin/content-logs/retention/run', { method: 'POST' }),
   systemOneStatus: () => request<SystemOneStatus>('/api/admin/testing/systemone'),
-  testSystemOne: (payload: unknown) => request<AdminTestResult>('/api/admin/testing/systemone', { method: 'POST', body: JSON.stringify({ payload }) }),
+  testSystemOne: (payload: unknown, model?: string | null) => request<AdminTestResult>('/api/admin/testing/systemone', { method: 'POST', body: JSON.stringify({ payload, model }) }),
   testChat: (body: { model: string; userPrompt: string; systemPrompt?: string | null; maxTokens?: number; temperature?: number }) =>
     request<AdminTestResult>('/api/admin/testing/chat', { method: 'POST', body: JSON.stringify(body) }),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number; upstreamBearerToken?: string | null }) =>
@@ -145,7 +147,7 @@ export const api = {
   },
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
   deleteNode: (id: string) => request<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' }),
-  createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean }) =>
+  createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean; surface?: 'OpenAi' | 'SystemOne' }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
   createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number }) =>
     request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),

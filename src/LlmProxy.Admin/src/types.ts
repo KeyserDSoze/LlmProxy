@@ -133,6 +133,7 @@ export type Model = {
   providerModelName: string
   supportsStreaming: boolean
   supportsTools: boolean
+  surface: 'OpenAi' | 'SystemOne'
   enabled: boolean
 }
 
@@ -418,6 +419,8 @@ export type SystemOneStatus = {
   apiKeyConfigured: boolean
   timeoutSeconds: number
   configurationError?: string | null
+  models?: string[]
+  defaultModel?: string | null
 }
 
 export type AdminTestResult = {
@@ -657,9 +660,24 @@ export type AvailableProductRelease = {
   operatorCommand: string
 }
 
+export type ProductUpdatePolicy = {
+  mode: 'manual' | 'asap' | 'nightly' | 'weekly' | 'monthly'
+  timeZoneId: string
+  localHour: number
+  localMinute: number
+  dayOfWeek: number
+  dayOfMonth: number
+  lastCheckedAtUtc?: string | null
+  lastScheduledAtUtc?: string | null
+  lastScheduledVersion?: string | null
+  lastError?: string | null
+  updatedAtUtc: string
+}
+
 export type ProductUpdateOverview = {
   currentVersion: string
   agentAvailable: boolean
+  policy: ProductUpdatePolicy
   agent?: {
     installedVersion?: string | null
     activeJob?: UpdateJobStatus | null
