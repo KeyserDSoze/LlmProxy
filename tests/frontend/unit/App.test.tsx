@@ -186,7 +186,7 @@ describe('admin application', () => {
   it('shows administrator-only user management in the navigation', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
     await user.click(screen.getByRole('button', { name: 'User Management' }))
-    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'User inventory' })).toBeInTheDocument()
     expect(screen.getByText('user@example.com')).toBeInTheDocument()
   })
 
