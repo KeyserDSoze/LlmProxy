@@ -595,3 +595,10 @@ Implemented on the post-v0.0.14 development head:
 - added update-schedule and route-surface unit coverage and refreshed frontend E2E contracts.
 
 Validation is intentionally not claimed until the exact final main SHA completes the repository CI/full-stack gate and the immutable release workflow.
+
+
+### 2026-10-03 — Credential runtime-cache race found by governance acceptance
+
+The Docker/PostgreSQL governance smoke exposed a real local-L1 race: background credential-usage persistence can update `LastUsedAtUtc` from an entity loaded before an administrator changes caller governance. The credential cache interceptor previously republished every modified credential, so that non-runtime timestamp write could restore a stale `EnforceCallerGovernance` (or other runtime snapshot field) in memory even though PostgreSQL contained the newer value.
+
+The interceptor now republishes only when runtime-significant credential fields change (hash, enabled/expiry, ownership, usage group or caller-governance). Usage timestamps remain durable/observable but cannot mutate authentication/governance runtime state. The existing governance smoke is the regression acceptance: the first two governed calls must succeed and the third must be rejected immediately after enabling caller governance.

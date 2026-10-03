@@ -9,6 +9,17 @@ namespace LlmProxy.Infrastructure.Security;
 public sealed class ApiCredentialCacheSaveChangesInterceptor(
     IApiCredentialCache credentialCache) : SaveChangesInterceptor
 {
+    private static readonly HashSet<string> RuntimeCredentialProperties =
+    [
+        nameof(ApiCredential.KeyHash),
+        nameof(ApiCredential.Enabled),
+        nameof(ApiCredential.ExpiresAtUtc),
+        nameof(ApiCredential.UsageGroupId),
+        nameof(ApiCredential.OwnerTenantId),
+        nameof(ApiCredential.OwnerObjectId),
+        nameof(ApiCredential.EnforceCallerGovernance)
+    ];
+
     private sealed record PendingChanges(IReadOnlyList<ApiCredentialSnapshot> Upserts, IReadOnlyList<Guid> Removes);
     private readonly ConditionalWeakTable<DbContext, PendingChanges> _pending = new();
 
@@ -52,13 +63,24 @@ public sealed class ApiCredentialCacheSaveChangesInterceptor(
         var removes = new List<Guid>();
         foreach (var entry in dbContext.ChangeTracker.Entries<ApiCredential>())
         {
-            if (entry.State is EntityState.Added or EntityState.Modified) upserts.Add(ApiCredentialSnapshot.From(entry.Entity));
-            else if (entry.State == EntityState.Deleted) removes.Add(entry.Entity.Id);
+            if (entry.State == EntityState.Added ||
+                entry.State == EntityState.Modified && HasRuntimeCredentialChange(entry))
+            {
+                upserts.Add(ApiCredentialSnapshot.From(entry.Entity));
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                removes.Add(entry.Entity.Id);
+            }
         }
 
         _pending.Remove(dbContext);
         if (upserts.Count > 0 || removes.Count > 0) _pending.Add(dbContext, new PendingChanges(upserts, removes));
     }
+
+    private static bool HasRuntimeCredentialChange(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<ApiCredential> entry)
+        => entry.Properties.Any(property =>
+            property.IsModified && RuntimeCredentialProperties.Contains(property.Metadata.Name));
 
     private void Publish(DbContext? dbContext)
     {

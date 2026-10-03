@@ -165,6 +165,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Fixed
 
+- API credential usage timestamps no longer republish stale runtime snapshots, preventing a concurrent `LastUsedAtUtc` write from reverting caller-governance, ownership, group, enablement or expiry state in the local inference cache.
+
 - DGX `/health` acceptance now matches canonical vLLM behavior: a successful bodyless status response is accepted without incorrectly requiring JSON or a content type.
 
 ### Security
