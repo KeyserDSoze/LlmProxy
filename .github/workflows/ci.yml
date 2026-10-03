@@ -82,6 +82,8 @@ jobs:
         run: |
           set -euo pipefail
           bash docker/scripts/install-linux.sh --validate-only
+          bash docker/scripts/install-linux.sh --validate-only --skip-dgx-check >/dev/null
+          bash docker/scripts/install-linux.sh --validate-only --dgx-url http://127.0.0.1:8000 >/dev/null
           bash docker/scripts/install-linux.sh --help >/dev/null
           bash docker/scripts/environment-acceptance.sh --validate-only
           bash docker/scripts/environment-acceptance.sh --help >/dev/null
