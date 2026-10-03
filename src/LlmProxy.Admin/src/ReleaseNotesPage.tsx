@@ -18,7 +18,7 @@ type ProductReleaseInfo = {
   releases: ProductRelease[]
 }
 
-export default function ReleaseNotesPage() {
+export default function ReleaseNotesPage({ embedded = false }: { embedded?: boolean }) {
   const [product, setProduct] = useState<ProductReleaseInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,28 +34,18 @@ export default function ReleaseNotesPage() {
       .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
   }, [])
 
-  if (error === 'AUTH_REQUIRED') {
-    return <div className="releasePage"><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
-  }
+  const cls = embedded ? 'stack' : 'releasePage'
+  if (error === 'AUTH_REQUIRED') return <div className={cls}><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
+  if (error === 'FORBIDDEN') return <div className={cls}><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
+  if (error) return <div className={cls}><div className="error">{error}</div></div>
+  if (!product) return <div className={cls}><div className="loading">Loading release notes…</div></div>
 
-  if (error === 'FORBIDDEN') {
-    return <div className="releasePage"><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
-  }
-
-  if (error) return <div className="releasePage"><div className="error">{error}</div></div>
-  if (!product) return <div className="releasePage"><div className="loading">Loading release notes…</div></div>
-
-  return <div className="releasePage">
-    <div className="releaseHeader">
-      <div>
-        <span className="releaseEyebrow">{product.product} · {product.channel}</span>
-        <h1>Release notes</h1>
-        <p>What changed in the product, grouped by version.</p>
-      </div>
+  return <div className={cls}>
+    {!embedded && <><div className="releaseHeader">
+      <div><span className="releaseEyebrow">{product.product} · {product.channel}</span><h1>Release notes</h1><p>What changed in the product, grouped by version.</p></div>
       <a className="secondary releaseBack" href="/admin/">Back to Admin</a>
-    </div>
-
-    <PageDocumentation page="releases" />
+    </div><PageDocumentation page="releases" /></>}
+    {embedded && <div className="muted">{product.product} · {product.channel}</div>}
 
     <section className="cards cardsFive">
       <div className="metric"><span>Current version</span><strong>{product.version}</strong></div>
@@ -67,16 +57,8 @@ export default function ReleaseNotesPage() {
 
     <div className="stack">
       {product.releases.map(release => <section className="panel releaseCard" key={release.version}>
-        <div className="panelTitle">
-          <div><h2>v{release.version} · {release.title}</h2><div className="muted">Released {formatDate(release.releasedOn)}</div></div>
-          <span>{release.version === product.version ? 'Current' : 'Previous'}</span>
-        </div>
-        <div className="releaseSections">
-          {Object.entries(release.sections).map(([section, items]) => <div className="releaseSection" key={section}>
-            <h3>{section}</h3>
-            <ul>{items.map(item => <li key={item}>{item}</li>)}</ul>
-          </div>)}
-        </div>
+        <div className="panelTitle"><div><h2>v{release.version} · {release.title}</h2><div className="muted">Released {formatDate(release.releasedOn)}</div></div><span>{release.version === product.version ? 'Current' : 'Previous'}</span></div>
+        <div className="releaseSections">{Object.entries(release.sections).map(([section, items]) => <div className="releaseSection" key={section}><h3>{section}</h3><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></div>)}</div>
       </section>)}
     </div>
   </div>
@@ -86,7 +68,6 @@ function formatDate(value: string) {
   const date = new Date(`${value}T00:00:00Z`)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
-
 function shortRevision(value?: string | null) {
   if (!value) return 'local / unknown'
   return value.length > 12 ? value.slice(0, 12) : value

@@ -112,6 +112,8 @@ export type Node = {
   name: string
   baseAddress: string
   hardwareMetricsBaseAddress?: string | null
+  managementBaseAddress?: string | null
+  hasManagementCredential?: boolean
   hasUpstreamCredential?: boolean
   enabled: boolean
   status: string
@@ -141,6 +143,9 @@ export type Deployment = {
   enabled: boolean
   weight: number
   maxConcurrency?: number | null
+  runtimeBaseAddress?: string | null
+  catalogModelId?: string | null
+  managedInstallationId?: string | null
   recommendedMaxConcurrency?: number | null
   benchmarkP95TtftMilliseconds?: number | null
   benchmarkP95DurationMilliseconds?: number | null
@@ -533,4 +538,94 @@ export type UserUsageSummary = {
   outputTokens: number
   totalTokens: number
   rateLimitedRequests: number
+}
+
+
+export type DeployableModel = {
+  id: string
+  displayName: string
+  providerModelName: string
+  family: string
+  license: string
+  sourceUrl: string
+  parameterBillions: number
+  contextTokens: number
+  precision: string
+  minimumGpuMemoryGiB: number
+  recommendedGpuMemoryGiB: number
+  minimumSystemMemoryGiB: number
+  recommendedSystemMemoryGiB: number
+  diskGiB: number
+  minimumGpuCount: number
+  recommendedGpuCount: number
+  supportsStreaming: boolean
+  supportsTools: boolean
+  tags: string[]
+  notes: string
+}
+
+export type ModelCompatibility = {
+  status: 'unknown' | 'insufficient' | 'tight' | 'fits'
+  summary: string
+  reasons: string[]
+  suggestedTensorParallelSize: number
+}
+
+export type GpuInventory = {
+  name: string
+  memoryTotalGiB: number
+  memoryFreeGiB: number
+  driverVersion?: string | null
+  computeCapability?: string | null
+}
+
+export type HardwareInventory = {
+  hostname: string
+  operatingSystem?: string | null
+  architecture?: string | null
+  cpuLogicalCores: number
+  systemMemoryTotalGiB: number
+  systemMemoryAvailableGiB: number
+  diskTotalGiB: number
+  diskAvailableGiB: number
+  gpus?: GpuInventory[] | null
+  runtime?: string | null
+  runtimeVersion?: string | null
+}
+
+export type ManagedModelState = {
+  installationId: string
+  catalogModelId?: string | null
+  providerModelName?: string | null
+  status: string
+  runtimeBaseAddress?: string | null
+  port?: number | null
+  error?: string | null
+}
+
+export type ManagedInstallation = {
+  id: string
+  modelId: string
+  logicalModel?: string | null
+  providerModelName?: string | null
+  catalogModelId?: string | null
+  managedInstallationId?: string | null
+  runtimeBaseAddress?: string | null
+  enabled: boolean
+  agentStatus: string
+  agentState?: ManagedModelState | null
+}
+
+export type ModelManagementOverview = {
+  node: {
+    id: string
+    name: string
+    managementBaseAddress?: string | null
+    hasManagementCredential: boolean
+  }
+  agentAvailable: boolean
+  agentError?: string | null
+  hardware?: HardwareInventory | null
+  catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility }>
+  installations: ManagedInstallation[]
 }

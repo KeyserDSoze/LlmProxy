@@ -8,12 +8,13 @@ const route = window.location.pathname.replace(/\/+$/, '')
 const governanceRoute = route.endsWith('/admin/governance')
 const releasesRoute = route.endsWith('/admin/releases')
 const usersRoute = route.endsWith('/admin/users')
+const modelManagementRoute = route.endsWith('/admin/model-management')
 const userRoute = route.endsWith('/admin/me')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {userRoute
       ? <UserPortal />
-      : <App initialView={releasesRoute ? 'releases' : governanceRoute ? 'governance' : usersRoute ? 'users' : 'dashboard'} />}
+      : <App initialView={releasesRoute ? 'releases' : governanceRoute ? 'governance' : usersRoute ? 'users' : modelManagementRoute ? 'model-management' : 'dashboard'} />}
   </StrictMode>
 )

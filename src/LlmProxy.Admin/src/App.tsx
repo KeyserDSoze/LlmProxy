@@ -1,6 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import Governance from './Governance'
 import Hardware from './Hardware'
+import ModelHardware from './ModelHardware'
+import ReleaseNotesPage from './ReleaseNotesPage'
 import ContentLogs from './ContentLogs'
 import HelpPage from './HelpPage'
 import PageDocumentation from './PageDocumentation'
@@ -8,7 +11,7 @@ import Playground from './Playground'
 import UsersAccess from './UsersAccess'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-type View = 'dashboard' | 'nodes' | 'hardware' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help'
+export type View = 'dashboard' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -58,8 +61,8 @@ const emptyMetricsSummary: MetricsSummary = {
   byNode: []
 }
 
-export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
+  const [view, setView] = useState<View>(initialView)
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
   const [routingTuning, setRoutingTuning] = useState<RoutingTuningSettings>(emptyRoutingTuning)
@@ -128,8 +131,9 @@ export default function App() {
         </div>
         <nav>
           <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>DGX Nodes</NavItem>
-          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>DGX Hardware</NavItem>
+          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
+          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
+          {canWrite && <NavItem active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
           <NavItem active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
           <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
           <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
@@ -140,6 +144,10 @@ export default function App() {
           {canWrite && <NavItem active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
           <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
           <NavItem active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
+          <div className="navSecondary">
+            <NavItem active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
+            <NavItem active={view === 'releases'} onClick={() => setView('releases')}>Release Notes</NavItem>
+          </div>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
       </aside>
@@ -159,6 +167,7 @@ export default function App() {
             {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
             {view === 'nodes' && <Nodes nodes={nodes} refresh={refresh} />}
             {view === 'hardware' && <Hardware nodes={nodes} hardware={hardware} refresh={refresh} />}
+            {view === 'model-management' && canWrite && <ModelHardware nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'models' && <Models models={models} refresh={refresh} />}
             {view === 'deployments' && <Deployments deployments={deployments} nodes={nodes} models={models} nodeNames={nodeNames} modelNames={modelNames} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
@@ -169,6 +178,8 @@ export default function App() {
             {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
             {view === 'help' && <HelpPage models={models} />}
+            {view === 'governance' && <Governance />}
+            {view === 'releases' && <ReleaseNotesPage embedded />}
           </>
         )}
       </main>
@@ -268,7 +279,7 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
         <p className="mono">Responses: {result.responsesUrl}</p>
       </div>)}
     </section>
-    <section className="panel formPanel"><h2>Add DGX node</h2><form onSubmit={submit}>
+    <section className="panel formPanel"><h2>Add inference node</h2><form onSubmit={submit}>
       <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="dgx-02" /></label>
       <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
       <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
@@ -432,7 +443,7 @@ function Deployments({ deployments, nodes, models, nodeNames, modelNames, refres
     await refresh()
   }
   return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → DGX</span></div>
+    <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → hardware</span></div>
       <table><thead><tr><th>Model</th><th>Node</th><th>Weight</th><th>Concurrency</th><th>State</th></tr></thead><tbody>
         {deployments.map(deployment => <tr key={deployment.id}><td><strong>{modelNames.get(deployment.modelId) ?? deployment.modelId}</strong></td><td>{nodeNames.get(deployment.nodeId) ?? deployment.nodeId}</td><td>{deployment.weight}</td><td>{deployment.maxConcurrency ?? 'node default'}</td><td>{deployment.enabled ? 'Enabled' : 'Disabled'}</td></tr>)}
       </tbody></table>
@@ -498,7 +509,7 @@ function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: Re
           {summary.byModel.map(item => <tr key={item.logicalModel}><td><strong>{item.logicalModel}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.averageTimeToFirstByteMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
         </tbody></table>
       </section>
-      <section className="panel"><div className="panelTitle"><h2>By DGX node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
+      <section className="panel"><div className="panelTitle"><h2>By inference node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
         <table><thead><tr><th>Node</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>P95 duration</th><th>Output tokens</th></tr></thead><tbody>
           {summary.byNode.map(item => <tr key={item.nodeId}><td><strong>{nodeNames.get(item.nodeId) ?? short(item.nodeId)}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.p95DurationMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
         </tbody></table>
@@ -536,7 +547,7 @@ function Audit({ events }: { events: AuditEvent[] }) {
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'DGX nodes', hardware: 'DGX hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'inference nodes', hardware: 'hardware hardware', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

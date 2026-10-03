@@ -1,3 +1,4 @@
+import type { ModelManagementOverview } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -145,5 +146,17 @@ export const api = {
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
   rotateApiCredential: (id: string) => request<CreatedApiCredential>('/api/admin/api-credentials/' + id + '/rotate', { method: 'POST' }),
   revealApiCredential: (id: string) => request<RevealedApiCredential>('/api/admin/api-credentials/' + id + '/secret'),
-  revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' })
+  revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' }),
+  modelManagementOverview: (nodeId: string) =>
+    request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
+  configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
+    request<{ id: string; managementBaseAddress?: string | null; hasManagementCredential: boolean }>(`/api/admin/model-management/nodes/${nodeId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
+  installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[] }) =>
+    request<unknown>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install`, { method: 'POST', body: JSON.stringify(body) }),
+  startManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
+  stopManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/stop`, { method: 'POST' }),
+  removeManagedDeployment: (deploymentId: string) =>
+    request<void>(`/api/admin/model-management/deployments/${deploymentId}`, { method: 'DELETE' })
 }

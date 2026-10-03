@@ -51,7 +51,7 @@ public sealed record RouteDeploymentSnapshot(
     bool Enabled,
     int Weight,
     int? MaxConcurrency,
-    string? RuntimeBaseAddress)
+    string? RuntimeBaseAddress = null)
 {
     public static RouteDeploymentSnapshot From(ModelDeployment deployment)
         => new(
