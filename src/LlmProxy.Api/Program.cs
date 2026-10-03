@@ -38,6 +38,9 @@ builder.AddLlmProxyOpenTelemetry();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ReleaseDiscoveryService>();
+builder.Services.AddSingleton<UpdateAgentClient>();
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
@@ -131,6 +134,13 @@ builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpa
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30));
+builder.Services.AddHttpClient("github-releases", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LlmProxy-ReleaseDiscovery/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+});
+builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
@@ -247,6 +257,7 @@ app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
 app.MapGovernanceCredentialEndpoints(entraEnabled);
 app.MapDataRetentionAdminEndpoints(entraEnabled);
 app.MapProductReleaseAdminEndpoints(entraEnabled);
+app.MapProductUpdateAdminEndpoints(entraEnabled);
 
 if (entraEnabled)
 {
