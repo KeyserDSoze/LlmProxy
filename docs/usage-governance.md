@@ -210,9 +210,11 @@ POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
 GET  /api/me/requests?take=50
+GET  /api/me/content-logs
+GET  /api/me/content-logs/{id}
 ```
 
-Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from self-service request bodies. User admission uses stable `tid + oid`, not email. Disabling a platform user revokes active personal keys and blocks self-service until re-enabled.
+Ownership is derived from the authenticated Entra principal; owner IDs are never accepted from self-service request bodies. User admission uses stable `tid + oid`, not email. Request-audit self-service is restricted to content-log rows linked to personal credentials owned by that same identity; shared/organization credentials and another user's payloads are not visible. Disabling a platform user revokes active personal keys and blocks self-service until re-enabled.
 
 ## Admin API
 
@@ -263,7 +265,7 @@ Administrative mutations are audited. Secrets and prompt/output content are excl
 
 ## React control plane
 
-`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, credential request-rate policies, aggregate Entra-user request limits and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle, own usage and read-only user request-limit visibility.
+`/admin/governance` exposes Usage KPIs, Usage Groups, credential-to-group assignment, credential rotation, credential request-rate policies, aggregate Entra-user request limits and output-token budgets. `/admin/me` is the normal-user portal for personal key lifecycle, own usage, read-only user request-limit visibility and owner-scoped exact request/response audit.
 
 Credential administration UI behavior:
 
@@ -277,7 +279,7 @@ Credential administration UI behavior:
 
 ## Usage metrics and reporting
 
-Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where upstream reports them. Full request/response payloads are stored only in the separate encrypted administrator content-log store; bearer/API secrets and request headers are excluded.
+Request metrics remain metadata-only and include credential/group/model/status/timing plus observed input/output/total tokens where upstream reports them. Full request/response payloads are stored only in the separate application-encrypted Request Audit store. Administrators can inspect all retained rows; normal users can inspect only rows attributable to their own personal API keys. Bearer/API secrets and request headers are excluded.
 
 Usage aggregation is PostgreSQL-side and reports by Usage Group, credential and logical model. Current raw request retention is 90 days by default; optional long-term rollups remain future work.
 
