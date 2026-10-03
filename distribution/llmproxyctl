@@ -175,7 +175,7 @@ case "$cmd" in
     # Existing protected-node provider credentials are intentionally not recoverable from
     # host configuration. First install validates the runtime directly; updates reuse the
     # persisted encrypted node credential and rely on post-deploy readiness.
-    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-dgx-check "${update_args[@]}"
+    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check "${update_args[@]}"
     ;;
   rollback)
     require_root

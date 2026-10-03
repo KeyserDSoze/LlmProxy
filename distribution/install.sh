@@ -48,7 +48,7 @@ cp -a "$ROOT_DIR/." "$RELEASE_DIR.tmp/"
 rm -rf "$RELEASE_DIR"
 mv "$RELEASE_DIR.tmp" "$RELEASE_DIR"
 
-# The existing installer owns host preparation, secret generation, DGX checks and deployment.
+# The existing installer owns host preparation, secret generation, inference node checks and deployment.
 # Pin the application image to the exact release version represented by this bundle.
 release_log "Starting host preparation and deployment"
 LLMPROXY_INSTALL_DIR="$INSTALL_DIR" \
