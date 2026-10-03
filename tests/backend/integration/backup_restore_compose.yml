@@ -36,7 +36,7 @@ services:
       HardwareMetrics__Enabled: "false"
       Retention__Enabled: "false"
       Bootstrap__Enabled: "true"
-      Bootstrap__NodeName: dgx-backup-restore
+      Bootstrap__NodeName: inference-backup-restore
       Bootstrap__NodeBaseAddress: http://host.docker.internal:3494/backup-restore
       Bootstrap__NodeWeight: "1"
       Bootstrap__NodeMaxConcurrency: "4"
