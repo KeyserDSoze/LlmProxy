@@ -1,5 +1,6 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Routing;
 
@@ -79,7 +80,7 @@ public sealed class RoutingCapacityTests
         public Task<IReadOnlyList<DeploymentCandidate>> GetCandidatesAsync(string publicModelName, CancellationToken cancellationToken)
             => Task.FromResult(candidates);
 
-        public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken, ModelSurface? surface = null)
             => Task.FromResult<IReadOnlyList<PublicModel>>([]);
     }
 }

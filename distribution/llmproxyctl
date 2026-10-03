@@ -94,6 +94,90 @@ set_env_value() {
   rm -f "$tmp"
 }
 
+installed_version() {
+  if [[ -L "$CURRENT_LINK" && -f "$CURRENT_LINK/VERSION" ]]; then
+    tr -d '[:space:]' < "$CURRENT_LINK/VERSION"
+    return
+  fi
+  read_env LLMPROXY_IMAGE_TAG
+}
+
+version_lt() {
+  local left="$1" right="$2"
+  [[ "$left" != "$right" && "$(printf '%s\n%s\n' "$left" "$right" | sort -V | head -n 1)" == "$left" ]]
+}
+
+version_le() {
+  local left="$1" right="$2"
+  [[ "$left" == "$right" || "$(printf '%s\n%s\n' "$left" "$right" | sort -V | head -n 1)" == "$left" ]]
+}
+
+resolve_update_path() {
+  local target="$1"
+  local current
+  current="$(installed_version)"
+  if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$target" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Safe multi-release update requires stable SemVer versions (current=$current target=$target)." >&2
+    return 1
+  fi
+  if [[ "$current" == "$target" ]]; then
+    printf '%s\n' "$target"
+    return 0
+  fi
+  if ! version_lt "$current" "$target"; then
+    echo "Update target v$target must be newer than installed v$current. Use rollback for an older installed release." >&2
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required to resolve the complete safe update chain." >&2
+    return 1
+  fi
+
+  local repository="${LLMPROXY_GITHUB_REPOSITORY:-KeyserDSoze/LlmProxy}"
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  local page=1 count tag version_value
+  local tmp
+  tmp="$(mktemp)"
+  : > "$tmp"
+
+  while (( page <= 20 )); do
+    local page_file
+    page_file="$(mktemp)"
+    local curl_args=(--fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors --retry-max-time 300 --connect-timeout 15
+      -H "Accept: application/vnd.github+json"
+      -H "X-GitHub-Api-Version: 2022-11-28")
+    if [[ -n "$token" ]]; then
+      curl_args+=(-H "Authorization: Bearer $token")
+    fi
+    if ! curl "${curl_args[@]}" "https://api.github.com/repos/$repository/releases?per_page=100&page=$page" -o "$page_file"; then
+      rm -f "$page_file" "$tmp"
+      echo "Could not resolve published releases; refusing to skip an unknown intermediate update." >&2
+      return 1
+    fi
+    count="$(jq 'length' "$page_file")"
+    jq -r '.[] | select(.draft != true and .prerelease != true) | .tag_name | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$page_file" >> "$tmp"
+    rm -f "$page_file"
+    (( count < 100 )) && break
+    page=$((page + 1))
+  done
+
+  local -a path=()
+  while IFS= read -r tag; do
+    version_value="${tag#v}"
+    if version_lt "$current" "$version_value" && version_le "$version_value" "$target"; then
+      path+=("$version_value")
+    fi
+  done < <(sort -Vu "$tmp")
+  rm -f "$tmp"
+
+  if [[ "${#path[@]}" -eq 0 || "${path[-1]}" != "$target" ]]; then
+    echo "Target v$target is not a published stable release or the complete upgrade chain could not be resolved." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${path[@]}"
+}
+
 cmd="${1:-help}"
 shift || true
 
@@ -172,10 +256,22 @@ case "$cmd" in
       echo "Bootstrap helper is missing: $BOOTSTRAP" >&2
       exit 2
     fi
+    # Resolve every published stable release between the installed version and the target.
+    # This makes manual jumps obey the same migration/custom-plan ordering as Admin/auto-update.
+    mapfile -t upgrade_path < <(resolve_update_path "$version")
+    if [[ "${#upgrade_path[@]}" -eq 0 ]]; then
+      echo "Could not resolve a safe update path to v$version." >&2
+      exit 3
+    fi
+    printf 'Safe update path: %s\n' "$(printf 'v%s → ' "${upgrade_path[@]}" | sed 's/ → $//')"
+
     # Existing protected-node provider credentials are intentionally not recoverable from
-    # host configuration. First install validates the runtime directly; updates reuse the
-    # persisted encrypted node credential and rely on post-deploy readiness.
-    exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check --non-interactive --upgrade "${update_args[@]}"
+    # host configuration. Each step reuses persisted encrypted credentials and validates
+    # gateway readiness before the next immutable release is attempted.
+    for step in "${upgrade_path[@]}"; do
+      printf '\nApplying LlmProxy v%s...\n' "$step"
+      "$BOOTSTRAP" --version "$step" --skip-docker-install --skip-node-check --non-interactive --upgrade "${update_args[@]}"
+    done
     ;;
   rollback)
     require_root

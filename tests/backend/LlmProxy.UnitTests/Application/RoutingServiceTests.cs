@@ -1,5 +1,6 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Routing;
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 
 namespace LlmProxy.UnitTests.Application;
@@ -72,7 +73,7 @@ public sealed class RoutingServiceTests
             return Task.FromResult(candidates);
         }
 
-        public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken, ModelSurface? surface = null)
             => Task.FromResult<IReadOnlyList<PublicModel>>([]);
     }
 

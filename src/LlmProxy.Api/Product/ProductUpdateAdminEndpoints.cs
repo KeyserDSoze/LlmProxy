@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.Product;
 
@@ -19,13 +20,12 @@ public static class ProductUpdateAdminEndpoints
         group.MapGet("", async (
             ReleaseDiscoveryService releases,
             UpdateAgentClient agent,
+            GatewayDbContext dbContext,
             CancellationToken cancellationToken) =>
         {
             var product = ProductReleaseCatalog.GetInfo();
             var available = await releases.GetAvailableAsync(product.Version, cancellationToken);
             var status = await agent.TryGetStatusAsync(cancellationToken);
-            await using var scope = endpoints.ServiceProvider.CreateAsyncScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
             var policy = await dbContext.ProductUpdatePolicies.AsNoTracking()
                 .SingleAsync(item => item.Id == ProductUpdatePolicyRecord.SingletonId, cancellationToken);
             return Results.Ok(new
@@ -121,7 +121,7 @@ public static class ProductUpdateAdminEndpoints
             policy.LocalMinute = request.LocalMinute;
             policy.DayOfWeek = request.DayOfWeek;
             policy.DayOfMonth = request.DayOfMonth;
-            policy.LastCheckedAtUtc = null;
+            policy.LastCheckedAtUtc = mode == ProductUpdatePolicyRecord.AsapMode ? null : DateTimeOffset.UtcNow;
             policy.LastError = null;
             policy.UpdatedAtUtc = DateTimeOffset.UtcNow;
 

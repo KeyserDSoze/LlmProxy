@@ -14,6 +14,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
   const [providerModelName, setProviderModelName] = useState('')
   const [surface, setSurface] = useState<Surface>('OpenAi')
   const [nodeId, setNodeId] = useState('')
+  const [runtimeBaseAddress, setRuntimeBaseAddress] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +31,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
     setDeployModel(model)
     const used = new Set((deploymentsByModel.get(model.id) ?? []).map(item => item.nodeId))
     setNodeId(activeNodes.find(node => !used.has(node.id))?.id ?? '')
+    setRuntimeBaseAddress('')
     setMessage(null); setError(null)
   }
 
@@ -54,7 +56,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
   async function deploy(event: FormEvent) {
     event.preventDefault(); if (!deployModel || !nodeId) return
     setBusy('deploy'); setError(null)
-    try { await api.createDeployment({ nodeId, modelId: deployModel.id, weight: 1 }); setDeployModel(null); setMessage('Deployment created and available to routing.'); await refresh() }
+    try { await api.createDeployment({ nodeId, modelId: deployModel.id, weight: 1, runtimeBaseAddress: runtimeBaseAddress.trim() || null }); setDeployModel(null); setMessage('Deployment created and available to routing.'); await refresh() }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
@@ -135,7 +137,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
     </Modal>
 
     <Modal open={Boolean(deployModel)} title={`Deploy · ${deployModel?.publicName ?? ''}`} description="Create a routing deployment on another active node." onClose={() => setDeployModel(null)}>
-      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy'}>Create deployment</button></div></form>
+      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root (optional)<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy'}>Create deployment</button></div></form>
     </Modal>
 
     <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>

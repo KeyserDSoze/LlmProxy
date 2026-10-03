@@ -157,7 +157,8 @@ public sealed class DatabaseBootstrapper(
                     node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(legacyApiKey));
                 }
 
-                var desiredPublicName = configuration["SystemOne:DefaultModel"] ?? "systemone-default";
+                var configuredPublicName = configuration["SystemOne:DefaultModel"];
+                var desiredPublicName = string.IsNullOrWhiteSpace(configuredPublicName) ? "systemone-default" : configuredPublicName.Trim();
                 var publicName = desiredPublicName;
                 for (var suffix = 2; await dbContext.Models.AnyAsync(item => item.PublicName == publicName, cancellationToken); suffix++)
                 {
@@ -166,7 +167,9 @@ public sealed class DatabaseBootstrapper(
 
                 var classifier = new ModelDefinition(
                     publicName,
-                    configuration["SystemOne:ProviderModelName"] ?? "systemone-classifier",
+                    string.IsNullOrWhiteSpace(configuration["SystemOne:ProviderModelName"])
+                        ? "systemone-classifier"
+                        : configuration["SystemOne:ProviderModelName"]!.Trim(),
                     supportsStreaming: false,
                     supportsTools: false,
                     surface: ModelSurface.SystemOne);

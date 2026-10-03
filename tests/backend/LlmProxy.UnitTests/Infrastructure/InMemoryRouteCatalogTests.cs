@@ -179,4 +179,33 @@ public sealed class InMemoryRouteCatalogTests
         Assert.Equal("a-model", models[0].PublicName);
         Assert.Equal("z-model", models[1].PublicName);
     }
+    [Fact]
+    public async Task Public_models_and_candidates_keep_OpenAi_and_SystemOne_surfaces_separate()
+    {
+        var nodeId = Guid.NewGuid();
+        var openAiId = Guid.NewGuid();
+        var systemOneId = Guid.NewGuid();
+        var catalog = new InMemoryRouteCatalog();
+
+        catalog.Replace(
+            [new RouteNodeSnapshot(nodeId, "shared-runtime", "http://runtime:8000", true, NodeStatus.Healthy, 1, 8)],
+            [
+                new RouteModelSnapshot(openAiId, "chat-model", "provider-chat", true, true, true, ModelSurface.OpenAi),
+                new RouteModelSnapshot(systemOneId, "classifier-model", "provider-classifier", true, false, false, ModelSurface.SystemOne)
+            ],
+            [
+                new RouteDeploymentSnapshot(Guid.NewGuid(), nodeId, openAiId, true, 1, 4),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), nodeId, systemOneId, true, 1, 4)
+            ]);
+
+        var openAiModels = await catalog.GetPublicModelsAsync(CancellationToken.None, ModelSurface.OpenAi);
+        var systemOneModels = await catalog.GetPublicModelsAsync(CancellationToken.None, ModelSurface.SystemOne);
+        var systemOneCandidate = Assert.Single(await catalog.GetCandidatesAsync("classifier-model", CancellationToken.None));
+
+        Assert.Equal("chat-model", Assert.Single(openAiModels).PublicName);
+        Assert.Equal("classifier-model", Assert.Single(systemOneModels).PublicName);
+        Assert.Equal(ModelSurface.SystemOne, systemOneCandidate.Surface);
+    }
+
+
 }

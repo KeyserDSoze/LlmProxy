@@ -6,6 +6,7 @@ using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Security;
+using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.Admin;
 
@@ -25,17 +26,45 @@ public static class TestingAdminEndpoints
 
         group.MapGet("/systemone", async (
             IDeploymentCatalog catalog,
+            GatewayDbContext dbContext,
             IConfiguration configuration,
             CancellationToken cancellationToken) =>
         {
             var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.SystemOne);
+            var modelIds = await dbContext.Models.AsNoTracking()
+                .Where(item => item.Enabled && item.Surface == ModelSurface.SystemOne)
+                .Select(item => item.Id)
+                .ToArrayAsync(cancellationToken);
+            var topology = await dbContext.Deployments.AsNoTracking()
+                .Where(item => item.Enabled && modelIds.Contains(item.ModelId))
+                .Join(
+                    dbContext.Nodes.AsNoTracking().Where(item => item.Enabled),
+                    deployment => deployment.NodeId,
+                    node => node.Id,
+                    (deployment, node) => new
+                    {
+                        deployment.RuntimeBaseAddress,
+                        node.BaseAddress,
+                        node.UpstreamBearerTokenCiphertext
+                    })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var baseAddress = topology is null
+                ? null
+                : string.IsNullOrWhiteSpace(topology.RuntimeBaseAddress) ? topology.BaseAddress : topology.RuntimeBaseAddress;
+            string? upstreamEndpoint = null;
+            if (!string.IsNullOrWhiteSpace(baseAddress))
+            {
+                upstreamEndpoint = InferenceEndpoint.Combine(baseAddress, SystemOnePath).ToString();
+            }
+
             return Results.Ok(new
             {
                 enabled = models.Count > 0,
-                baseAddress = (string?)null,
-                upstreamEndpoint = (string?)null,
+                baseAddress,
+                upstreamEndpoint,
                 publicEndpoint = SystemOnePath,
-                apiKeyConfigured = false,
+                apiKeyConfigured = !string.IsNullOrWhiteSpace(topology?.UpstreamBearerTokenCiphertext),
                 timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300),
                 configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
                 models = models.Select(item => item.PublicName).ToArray(),

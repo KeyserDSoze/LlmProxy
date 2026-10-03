@@ -149,7 +149,7 @@ export const api = {
   deleteNode: (id: string) => request<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' }),
   createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean; surface?: 'OpenAi' | 'SystemOne' }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
-  createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number }) =>
+  createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number; runtimeBaseAddress?: string | null }) =>
     request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),
   updateDeployment: (id: string, body: { weight: number; maxConcurrency?: number | null; enabled: boolean }) =>
     request<Deployment>(`/api/admin/deployments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
