@@ -159,6 +159,23 @@ public static class UserRateLimitAdminEndpoints
                 policy.Enabled
             };
             policy.Update(logicalModel, request.RequestsPerWindow, request.WindowSeconds, request.Enabled);
+            if (request.OutputTokensPerWindow.HasValue || request.MaxOutputTokensPerRequest.HasValue)
+            {
+                if (!request.OutputTokensPerWindow.HasValue || !request.MaxOutputTokensPerRequest.HasValue)
+                {
+                    return Results.BadRequest(new { error = "Output token budget fields must be supplied together." });
+                }
+
+                try
+                {
+                    policy.SetOutputTokenBudget(request.OutputTokensPerWindow.Value, request.MaxOutputTokensPerRequest.Value);
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(new { error = exception.Message });
+                }
+            }
+
             AddAudit(dbContext, httpContext, "user_rate_limit.update", policy, new
             {
                 before,
