@@ -40,6 +40,7 @@ public sealed class UpdateAgentClient(
 
     public async Task<UpdateJobStatus> ScheduleAsync(
         ScheduleProductUpdateRequest requestBody,
+        IReadOnlyList<string> upgradePath,
         CancellationToken cancellationToken)
     {
         EnsureConfigured();
@@ -48,7 +49,8 @@ public sealed class UpdateAgentClient(
         {
             version = requestBody.Version,
             scheduledForUtc = requestBody.ScheduledForUtc,
-            force = requestBody.Force
+            force = requestBody.Force,
+            versions = upgradePath
         });
         var client = httpClientFactory.CreateClient("update-agent");
         using var response = await client.SendAsync(request, cancellationToken);
@@ -102,7 +104,9 @@ public sealed record UpdateJobStatus(
     DateTimeOffset? StartedAtUtc = null,
     DateTimeOffset? CompletedAtUtc = null,
     string? Error = null,
-    int? ExitCode = null);
+    int? ExitCode = null,
+    IReadOnlyList<string>? UpgradePath = null,
+    string? CurrentStep = null);
 
 public sealed record ScheduleProductUpdateRequest(
     string Version,
