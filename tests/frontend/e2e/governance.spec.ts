@@ -100,7 +100,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   await expect(rotatedSecret).toContainText('lp_org_rotated_secret_once')
   await expect(credentialSection.getByRole('row', { name: /Copilot CRM/ })).toContainText('lp_org_rotated')
 
-  await page.getByLabel('Treat as governed client').check()
+  await page.getByLabel('Treat as governed client').click()
   await expect(page.getByText('Organization credential opted into caller governance.')).toBeVisible()
   await expect(page.getByLabel('Treat as governed client')).toBeChecked()
 
