@@ -193,6 +193,48 @@ public static class IdentitySelfServiceEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/requests", async (
+            int? take,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var credentialIds = await dbContext.ApiCredentials.AsNoTracking()
+                .Where(item => item.OwnerTenantId == identity.TenantId && item.OwnerObjectId == identity.ObjectId)
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+            var size = Math.Clamp(take ?? 50, 1, 200);
+
+            var requests = await dbContext.RequestMetrics.AsNoTracking()
+                .Where(item => item.ApiCredentialId != null && credentialIds.Contains(item.ApiCredentialId.Value))
+                .OrderByDescending(item => item.StartedAtUtc)
+                .Take(size)
+                .Select(item => new
+                {
+                    item.RequestId,
+                    item.StartedAtUtc,
+                    item.LogicalModel,
+                    item.Surface,
+                    item.StatusCode,
+                    item.DurationMilliseconds,
+                    item.IsStreaming,
+                    item.TimeToFirstByteMilliseconds,
+                    item.InputTokens,
+                    item.OutputTokens,
+                    item.TotalTokens,
+                    item.ErrorCode,
+                    item.ApiCredentialId
+                })
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(requests);
+        });
+
         group.MapGet("/rate-limits", async (
             GatewayDbContext dbContext,
             HttpContext httpContext,
