@@ -184,6 +184,14 @@ credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governan
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available for distributed coordination smoke."
 
+# Organization credentials are caller-governance exempt by default. This test intentionally opts
+# the bootstrap organization key in before validating shared cross-replica caller limits.
+credential_governance="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' \
+  "http://127.0.0.1:8080/api/admin/api-credentials/${credential_id}/caller-governance")"
+echo "$credential_governance" | jq -e '.kind == "organization" and .enforceCallerGovernance == true' >/dev/null \
+  || fail_with_diagnostics "Bootstrap organization credential could not be opted into caller governance."
+
 # Start a second gateway against the same PostgreSQL, Redis and inference node runtime.
 if ! docker run -d --name "$PEER_NAME" \
   --network llmproxy-full_default \
