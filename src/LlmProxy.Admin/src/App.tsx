@@ -464,7 +464,7 @@ function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCrede
     await refresh()
   }
   return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Inference API credentials</h2><span>Encrypted recovery for administrators</span></div>
+    <section className="panel"><div className="panelTitle"><h2>Organization API credentials</h2><span>Admin-created shared/workload keys · caller quotas off by default</span></div>
       <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Secret</th><th>Action</th></tr></thead><tbody>
         {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable' : 'Rotate once'}</td><td className="actions">
           {canWrite && item.secretAvailable && <button onClick={() => void reveal(item.id)}>Reveal / copy</button>}
@@ -473,9 +473,9 @@ function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCrede
         </td></tr>)}
       </tbody></table>
     </section>
-    <section className="panel formPanel"><h2>Create credential</h2><form onSubmit={submit}>
+    <section className="panel formPanel"><h2>Create organization credential</h2><p className="muted">Use this for shared integrations such as GitHub Copilot. Admins who need a personal key use <a href="/admin/me">My dashboard</a>; normal users can create only their own personal keys.</p><form onSubmit={submit}>
       <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="GitHub Copilot Production" /></label>
-      <button className="primary">Generate API key</button>
+      <button className="primary">Generate organization API key</button>
     </form>
       {created && <div className="secretBox"><strong>API key available to administrators</strong><p>The authentication hash is one-way; this recoverable copy is stored application-encrypted at rest. Reveals are audited.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
     </section>
