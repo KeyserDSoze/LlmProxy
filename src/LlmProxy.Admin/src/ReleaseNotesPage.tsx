@@ -17,7 +17,7 @@ type ProductReleaseInfo = {
   releases: ProductRelease[]
 }
 
-export default function ReleaseNotesPage() {
+export default function ReleaseNotesPage({ embedded = false }: { embedded?: boolean }) {
   const [product, setProduct] = useState<ProductReleaseInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,25 +34,27 @@ export default function ReleaseNotesPage() {
   }, [])
 
   if (error === 'AUTH_REQUIRED') {
-    return <div className="releasePage"><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
+    return <div className={embedded ? undefined : 'releasePage'}><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
   }
 
   if (error === 'FORBIDDEN') {
-    return <div className="releasePage"><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
+    return <div className={embedded ? undefined : 'releasePage'}><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
   }
 
-  if (error) return <div className="releasePage"><div className="error">{error}</div></div>
-  if (!product) return <div className="releasePage"><div className="loading">Loading release notes…</div></div>
+  if (error) return <div className={embedded ? undefined : 'releasePage'}><div className="error">{error}</div></div>
+  if (!product) return <div className={embedded ? undefined : 'releasePage'}><div className="loading">Loading release notes…</div></div>
 
-  return <div className="releasePage">
-    <div className="releaseHeader">
+  return <div className={embedded ? 'stack' : 'releasePage'}>
+    {!embedded && <div className="releaseHeader">
       <div>
         <span className="releaseEyebrow">{product.product} · {product.channel}</span>
         <h1>Release notes</h1>
         <p>What changed in the product, grouped by version.</p>
       </div>
       <a className="secondary releaseBack" href="/admin/">Back to Admin</a>
-    </div>
+    </div>}
+
+    {embedded && <div className="muted">{product.product} · {product.channel} · build {shortRevision(product.buildRevision)}</div>}
 
     <section className="cards cardsFive">
       <div className="metric"><span>Current version</span><strong>{product.version}</strong></div>
