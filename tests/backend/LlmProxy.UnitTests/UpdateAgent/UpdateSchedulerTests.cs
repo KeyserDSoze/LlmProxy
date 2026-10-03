@@ -30,7 +30,7 @@ public sealed class UpdateSchedulerTests
                 CancellationToken.None);
 
             Assert.Equal("Pending", first.Status);
-            Assert.Equal(["0.0.7", "0.0.8", "0.0.9"], first.UpgradePath);
+            Assert.Equal(new[] { "0.0.7", "0.0.8", "0.0.9" }, first.UpgradePath);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 scheduler.ScheduleAsync(
@@ -42,7 +42,7 @@ public sealed class UpdateSchedulerTests
                 CancellationToken.None);
 
             Assert.Equal("0.0.10", replacement.Version);
-            Assert.Equal(["0.0.10"], replacement.UpgradePath);
+            Assert.Equal(new[] { "0.0.10" }, replacement.UpgradePath);
 
             var snapshot = await scheduler.GetSnapshotAsync(CancellationToken.None);
             Assert.Equal(replacement.Id, snapshot.ActiveJob?.Id);
