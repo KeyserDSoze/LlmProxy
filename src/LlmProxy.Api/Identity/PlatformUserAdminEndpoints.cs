@@ -164,11 +164,13 @@ public static class PlatformUserAdminEndpoints
                 });
             }
 
-            tenantId = tenantId.Trim();
-            var objectId = request.ObjectId.Trim();
+            tenantId = NormalizeStableId(tenantId);
+            var objectId = NormalizeStableId(request.ObjectId);
+            var tenantLookup = tenantId.ToUpperInvariant();
+            var objectLookup = objectId.ToUpperInvariant();
 
             var existing = await dbContext.PlatformUsers.SingleOrDefaultAsync(
-                item => item.TenantId == tenantId && item.ObjectId == objectId,
+                item => item.TenantId.ToUpper() == tenantLookup && item.ObjectId.ToUpper() == objectLookup,
                 cancellationToken);
             if (existing is not null)
             {
@@ -223,9 +225,13 @@ public static class PlatformUserAdminEndpoints
             user.Enabled = false;
             user.DisabledAtUtc = DateTimeOffset.UtcNow;
 
+            var tenantLookup = user.TenantId.ToUpperInvariant();
+            var objectLookup = user.ObjectId.ToUpperInvariant();
             var credentials = await dbContext.ApiCredentials
-                .Where(item => item.OwnerTenantId == user.TenantId &&
-                               item.OwnerObjectId == user.ObjectId &&
+                .Where(item => item.OwnerTenantId != null &&
+                               item.OwnerObjectId != null &&
+                               item.OwnerTenantId.ToUpper() == tenantLookup &&
+                               item.OwnerObjectId.ToUpper() == objectLookup &&
                                item.Enabled)
                 .ToListAsync(cancellationToken);
             foreach (var credential in credentials)
@@ -281,6 +287,10 @@ public static class PlatformUserAdminEndpoints
     }
 
     private static string Key(string tenantId, string objectId) => $"{tenantId}|{objectId}";
+    private static string NormalizeStableId(string value)
+        => Guid.TryParse(value, out var parsed)
+            ? parsed.ToString("D")
+            : value.Trim().ToLowerInvariant();
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void AddAudit(
