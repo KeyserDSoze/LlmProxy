@@ -45,9 +45,13 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   })
   await page.route('**/api/me/rate-limits', route => json(route, [{
     id: 'user-rate-1',
+    scope: 'user',
+    scopeName: 'user@example.com',
     logicalModel: null,
     requestsPerWindow: 300,
     windowSeconds: 60,
+    outputTokensPerWindow: 100000,
+    maxOutputTokensPerRequest: 4096,
     enabled: true,
     updatedAtUtc: '2026-09-21T09:00:00Z'
   }]))
@@ -97,7 +101,7 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   await expect(page.getByText('Example User')).toBeVisible()
   await expect(page.getByText('Project Alpha', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('30d requests').locator('..').getByText('12', { exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'My request limits' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My limits' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'My recent calls' })).toBeVisible()
   await expect(page.getByText('agic-code-fast', { exact: true })).toBeVisible()
   await expect(page.getByText('300', { exact: true }).first()).toBeVisible()
