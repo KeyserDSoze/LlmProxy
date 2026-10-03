@@ -62,6 +62,14 @@ export default function HelpPage({ models }: { models: Model[] }) {
     </section>
 
     <section className="panel formPanel">
+      <div className="panelTitle tuningTitle"><h2>GitHub Copilot / custom-model attribution</h2><span>What LlmProxy can identify</span></div>
+      <p>GitHub Copilot organization/enterprise custom models are configured with a provider API key and made available to members. GitHub's public BYOK/custom-model contract does not document a guaranteed end-user identity header (email, GitHub user ID or Entra object ID) on each OpenAI-compatible provider request.</p>
+      <p>Therefore, when the organization uses one shared LlmProxy API key, LlmProxy can attribute the live request to that API credential/usage group, but it must not guess the individual developer from IP, User-Agent or undocumented headers.</p>
+      <p>GitHub exposes separate Copilot usage-metrics reports with per-user <code>user_id</code> and <code>user_login</code> fields. Those reports are useful for adoption/aggregate reporting, but they are not a documented request-by-request identity signal that can be correlated deterministically to this gateway call.</p>
+      <p>Deterministic LlmProxy per-user attribution requires either one personal LlmProxy key per user/client configuration or a trusted component that authenticates the person and injects a signed identity token/header under a contract we control.</p>
+    </section>
+
+    <section className="panel formPanel">
       <div className="panelTitle tuningTitle"><h2>How LlmProxy processes a request</h2><span>Control-plane overview</span></div>
       <ol className="docSteps">
         <li><strong>Authentication:</strong> the client API key is HMAC-verified against the in-memory credential cache.</li>
