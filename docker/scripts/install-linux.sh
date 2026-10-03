@@ -6,7 +6,7 @@ INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
 ENV_FILE=""
 IMAGE_TAG="${LLMPROXY_IMAGE_TAG:-main}"
 GHCR_OWNER_VALUE="${GHCR_OWNER:-keyserdsoze}"
-DGX_URL_VALUE="${DGX_NODE_BASE_ADDRESS:-}"
+INFERENCE_NODE_URL_VALUE="${INFERENCE_NODE_BASE_ADDRESS:-}"
 PROVIDER_MODEL_VALUE="${PROVIDER_MODEL_NAME:-}"
 SUPER_ADMINS_VALUE=""
 SUPER_ADMINS_PROVIDED=false
@@ -16,7 +16,7 @@ if [[ "${ENTRA_SUPER_ADMINS+x}" == "x" ]]; then
 fi
 COMPOSE_VERSION="${DOCKER_COMPOSE_VERSION:-v5.5.0}"
 PREPARE_ONLY=false
-SKIP_DGX_CHECK=false
+SKIP_NODE_CHECK=false
 SKIP_DOCKER_INSTALL=false
 NON_INTERACTIVE=false
 VALIDATE_ONLY=false
@@ -32,11 +32,11 @@ Options:
   --install-dir DIR       Persistent deployment directory (default: /opt/llmproxy)
   --image-tag TAG         GHCR image tag to deploy (default: main)
   --ghcr-owner OWNER      GHCR owner (default: keyserdsoze)
-  --dgx-url URL           Initial DGX/vLLM service root
+  --node-url URL           Initial inference node/vLLM service root
   --provider-model MODEL  Exact provider model id exposed by vLLM
   --super-admins USERS    Comma/semicolon-separated Entra principals granted LlmProxy.Admin
   --prepare-only          Install host prerequisites and create config, but do not deploy
-  --skip-dgx-check        Skip /health and /v1/models checks against the initial DGX
+  --skip-node-check        Skip /health and /v1/models checks against the initial inference node
   --skip-docker-install   Require Docker + Compose to already be installed
   --non-interactive       Never prompt; required values must be supplied by flags/env/file
   --validate-only         Validate installer/repository compatibility without changing host
@@ -46,7 +46,7 @@ Optional environment variables:
   GHCR_USER / GHCR_TOKEN            Login to a private GHCR package without storing the token
   ENTRA_ENABLED / ENTRA_TENANT_ID / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET
   ENTRA_SUPER_ADMINS                  Optional admin principals; same semantics as --super-admins
-  DGX_UPSTREAM_BEARER_TOKEN        Optional one-time llama.cpp/vLLM bearer; never written to .env by the installer
+  INFERENCE_NODE_UPSTREAM_BEARER_TOKEN        Optional one-time llama.cpp/vLLM bearer; never written to .env by the installer
   CLOUDFLARE_TUNNEL_TOKEN           Enables the Cloudflare profile only when Entra is enabled
   DOCKER_COMPOSE_VERSION            Manual Compose fallback version (default: v5.5.0)
 
@@ -71,8 +71,8 @@ while [[ $# -gt 0 ]]; do
       GHCR_OWNER_VALUE="${2:?--ghcr-owner requires a value}"
       shift 2
       ;;
-    --dgx-url)
-      DGX_URL_VALUE="${2:?--dgx-url requires a value}"
+    --node-url)
+      INFERENCE_NODE_URL_VALUE="${2:?--node-url requires a value}"
       shift 2
       ;;
     --provider-model)
@@ -92,8 +92,8 @@ while [[ $# -gt 0 ]]; do
       PREPARE_ONLY=true
       shift
       ;;
-    --skip-dgx-check)
-      SKIP_DGX_CHECK=true
+    --skip-node-check)
+      SKIP_NODE_CHECK=true
       shift
       ;;
     --skip-docker-install)
@@ -546,8 +546,8 @@ prepare_environment() {
   set_env_value GHCR_OWNER "$GHCR_OWNER_VALUE"
   set_env_value LLMPROXY_IMAGE_TAG "$IMAGE_TAG"
 
-  if [[ -n "$DGX_URL_VALUE" ]]; then
-    set_env_value DGX_NODE_BASE_ADDRESS "$DGX_URL_VALUE"
+  if [[ -n "$INFERENCE_NODE_URL_VALUE" ]]; then
+    set_env_value INFERENCE_NODE_BASE_ADDRESS "$INFERENCE_NODE_URL_VALUE"
   fi
   if [[ -n "$PROVIDER_MODEL_VALUE" ]]; then
     set_env_value PROVIDER_MODEL_NAME "$PROVIDER_MODEL_VALUE"
@@ -572,13 +572,13 @@ prepare_environment() {
   fi
 
   if [[ "$PREPARE_ONLY" != "true" ]]; then
-    prompt_required_value DGX_NODE_BASE_ADDRESS "DGX/vLLM service root (for example http://10.0.0.21:8000)" || true
+    prompt_required_value INFERENCE_NODE_BASE_ADDRESS "inference node/vLLM service root (for example http://10.0.0.21:8000)" || true
     prompt_required_value PROVIDER_MODEL_NAME "Exact provider model id exposed by vLLM" || true
 
-    if is_missing_env_value DGX_NODE_BASE_ADDRESS || is_missing_env_value PROVIDER_MODEL_NAME; then
+    if is_missing_env_value INFERENCE_NODE_BASE_ADDRESS || is_missing_env_value PROVIDER_MODEL_NAME; then
       cat >&2 <<EOF
-Production configuration still needs DGX_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME.
-Edit $ENV_FILE or rerun with --dgx-url and --provider-model.
+Production configuration still needs INFERENCE_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME.
+Edit $ENV_FILE or rerun with --node-url and --provider-model.
 EOF
       exit 9
     fi
@@ -605,7 +605,7 @@ login_ghcr_if_configured() {
 
 probe_url() {
   local url="$1"
-  local bearer="${DGX_UPSTREAM_BEARER_TOKEN:-}"
+  local bearer="${INFERENCE_NODE_UPSTREAM_BEARER_TOKEN:-}"
   if have curl; then
     local args=(--fail --silent --show-error --max-time 8)
     if [[ -n "$bearer" ]]; then
@@ -624,12 +624,12 @@ probe_url() {
 }
 
 check_dgx() {
-  if [[ "$SKIP_DGX_CHECK" == "true" ]]; then
-    warn "Skipping initial DGX/vLLM reachability check by request."
+  if [[ "$SKIP_NODE_CHECK" == "true" ]]; then
+    warn "Skipping initial inference node/vLLM reachability check by request."
     return 0
   fi
   local root probe_root gateway
-  root="$(read_env_value DGX_NODE_BASE_ADDRESS)"
+  root="$(read_env_value INFERENCE_NODE_BASE_ADDRESS)"
   root="${root%/}"
   probe_root="$root"
 
@@ -642,7 +642,7 @@ check_dgx() {
     probe_root="${root/host.docker.internal/$gateway}"
     log "Checking same-host inference through Docker host gateway $gateway (configured root remains $root)"
   else
-    log "Checking DGX/vLLM connectivity at $root"
+    log "Checking inference node/vLLM connectivity at $root"
   fi
 
   if ! probe_url "$probe_root/health" || ! probe_url "$probe_root/v1/models"; then
@@ -655,7 +655,7 @@ Bind llama-server to the Docker bridge gateway (currently $gateway), for example
   llama-server --host $gateway --port 8080 --api-key '<secret>' ...
 
 Keep LlmProxy configured with:
-  DGX_NODE_BASE_ADDRESS=http://host.docker.internal:8080
+  INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:8080
 EOF
     fi
     exit 11
@@ -701,9 +701,9 @@ LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
 LLMPROXY_ENV_FILE="$ENV_FILE" \
   bash "$ROOT_DIR/docker/scripts/deploy.sh" "$IMAGE_TAG"
 
-if [[ -n "${DGX_UPSTREAM_BEARER_TOKEN:-}" ]]; then
+if [[ -n "${INFERENCE_NODE_UPSTREAM_BEARER_TOKEN:-}" ]]; then
   log "Removing the one-time upstream bearer from the long-lived container environment after encrypted bootstrap."
-  unset DGX_UPSTREAM_BEARER_TOKEN
+  unset INFERENCE_NODE_UPSTREAM_BEARER_TOKEN
   LLMPROXY_DEPLOY_DIR="$INSTALL_DIR" \
   LLMPROXY_ENV_FILE="$ENV_FILE" \
     bash "$ROOT_DIR/docker/scripts/deploy.sh" "$IMAGE_TAG"
