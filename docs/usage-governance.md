@@ -13,7 +13,7 @@ OpenAI-compatible inference request
   -> output-token budget reservation when configured
   -> aggregate user + credential request-rate admission
   -> logical-model routing + physical-capacity admission
-  -> DGX / vLLM
+  -> inference node / vLLM
   -> output-token budget settlement
   -> metadata-only usage metric / reporting
 ```
@@ -24,7 +24,7 @@ Caller governance remains distinct from infrastructure admission:
 request-rate policy exceeded       -> 429 rate_limit_exceeded
 output-token budget exceeded       -> 429 token_budget_exceeded
 output-budget coordinator unsafe   -> 503 token_budget_coordination_unavailable
-physical DGX saturated             -> 429 capacity_exhausted
+physical node saturated             -> 429 capacity_exhausted
 capacity coordinator unavailable   -> 503 capacity_coordination_unavailable
 active capacity lease unsafe       -> 503/abort capacity_lease_lost
 no operational backend             -> 503 no_healthy_deployment
