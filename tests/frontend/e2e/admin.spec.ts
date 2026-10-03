@@ -240,7 +240,7 @@ test('admin can inspect health, observability, add a path-prefixed node and test
 })
 
 test('hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Hardware' }).click()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Hardware', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Hardware', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
