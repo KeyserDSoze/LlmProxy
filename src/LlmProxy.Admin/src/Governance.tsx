@@ -333,7 +333,7 @@ export default function Governance() {
 
     <div className="gridTwo">
       <section className="panel">
-        <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from DGX capacity backpressure.</span></div>
+        <div className="panelTitle"><h2>Rate limits</h2><span>Caller governance; distinct from inference-node capacity backpressure.</span></div>
         <table><thead><tr><th>Credential</th><th>Model</th><th>Request limit</th><th>Output-token budget</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rateLimits.length === 0 ? <tr><td colSpan={6}>No rate limits configured.</td></tr> : rateLimits.map(policy => <tr key={policy.id}><td><strong>{policy.credentialName ?? policy.apiCredentialId}</strong><div className="muted mono">{policy.keyPrefix}</div></td><td>{policy.logicalModel ?? 'All models'}</td><td>{formatNumber(policy.requestsPerWindow)} / {policy.windowSeconds}s</td><td>{policy.outputTokensPerWindow && policy.maxOutputTokensPerRequest ? <><strong>{formatNumber(policy.outputTokensPerWindow)} tokens / {policy.windowSeconds}s</strong><div className="muted">max {formatNumber(policy.maxOutputTokensPerRequest)} / request</div></> : 'Not set'}</td><td>{policy.enabled ? 'Enabled' : 'Disabled'}</td><td className="actions"><button onClick={() => void toggleRateLimit(policy)}>{policy.enabled ? 'Disable' : 'Enable'}</button><button onClick={() => void deleteRateLimit(policy)}>Delete</button></td></tr>)}</tbody></table>
       </section>
       <section className="panel formPanel"><h2>Add rate limit</h2><form onSubmit={event => void createRateLimit(event)}>
