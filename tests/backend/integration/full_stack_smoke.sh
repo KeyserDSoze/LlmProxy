@@ -35,10 +35,10 @@ export RUNTIME_METRICS_ENABLED=false
 export HARDWARE_METRICS_ENABLED=false
 export RETENTION_ENABLED=false
 export BOOTSTRAP_ENABLED=true
-export DGX_NODE_NAME=dgx-full-stack
-export DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3490/full-stack
-export DGX_NODE_WEIGHT=1
-export DGX_NODE_MAX_CONCURRENCY=1
+export INFERENCE_NODE_NAME=inference-full-stack
+export INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3490/full-stack
+export INFERENCE_NODE_WEIGHT=1
+export INFERENCE_NODE_MAX_CONCURRENCY=1
 export PUBLIC_MODEL_NAME=agic-code-fast
 export PROVIDER_MODEL_NAME=bootstrap-model
 
@@ -102,7 +102,7 @@ wait_http http://127.0.0.1:9090/-/ready 60 || fail_with_diagnostics "Prometheus 
 healthy=false
 for attempt in {1..40}; do
   nodes_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes || true)"
-  if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$nodes_json" | jq -e 'map(select(.name == "inference-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     healthy=true
     break
   fi
@@ -172,7 +172,7 @@ credential_json="$(curl --fail --silent http://127.0.0.1:8080/api/admin/governan
 credential_id="$(echo "$credential_json" | jq -r '.[0].id')"
 [[ -n "$credential_id" && "$credential_id" != "null" ]] || fail_with_diagnostics "Bootstrap credential was not available for distributed coordination smoke."
 
-# Start a second gateway against the same PostgreSQL, Redis and DGX runtime.
+# Start a second gateway against the same PostgreSQL, Redis and inference node runtime.
 if ! docker run -d --name "$PEER_NAME" \
   --network llmproxy-full_default \
   --add-host host.docker.internal:host-gateway \
@@ -211,7 +211,7 @@ wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Second LlmPr
 peer_healthy=false
 for attempt in {1..40}; do
   peer_nodes="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
-  if echo "$peer_nodes" | jq -e 'map(select(.name == "dgx-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+  if echo "$peer_nodes" | jq -e 'map(select(.name == "inference-full-stack" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
     peer_healthy=true
     break
   fi
@@ -242,7 +242,7 @@ curl --fail --silent -X DELETE "http://127.0.0.1:8080/api/admin/rate-limits/${po
 docker restart "$PEER_NAME" >/dev/null
 wait_http http://127.0.0.1:8081/readyz 60 || fail_with_diagnostics "Second gateway did not recover after rate-policy removal."
 
-# Hold the single physical DGX slot on gateway A. Gateway B must observe the same Redis lease and reject.
+# Hold the single physical inference node slot on gateway A. Gateway B must observe the same Redis lease and reject.
 curl --silent --no-buffer \
   -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
   -H 'Content-Type: application/json' \
@@ -254,7 +254,7 @@ sleep 0.15
 capacity_status="$(call_model 8081 /tmp/full-stack-capacity-b)"
 if [[ "$capacity_status" != "429" ]]; then
   wait "$stream_pid" || true
-  fail_with_diagnostics "Expected peer gateway to honor the shared DGX capacity lease; got ${capacity_status}."
+  fail_with_diagnostics "Expected peer gateway to honor the shared inference node capacity lease; got ${capacity_status}."
 fi
 jq -e '.error.type == "rate_limit_error" and .error.code == "capacity_exhausted"' /tmp/full-stack-capacity-b.json >/dev/null
 
@@ -350,4 +350,4 @@ done
 [[ "$lease_loss_trace_recorded" == "true" ]] \
   || fail_with_diagnostics "Expected capacity_lease_lost to be visible in Tempo trace $loss_trace_id."
 
-echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed DGX capacity leases and lease-loss cancellation are operational."
+echo "Full-stack smoke passed: PostgreSQL, Redis runtime sync, explicit application spans, OTLP observability, cross-gateway rate limits, distributed inference node capacity leases and lease-loss cancellation are operational."
