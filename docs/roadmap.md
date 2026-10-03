@@ -44,7 +44,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: task-focused Admin UX with tabs/dialogs for long configuration pages and a unified Models & Deployments workspace.
 - DONE: first-class platform-user registry with administrator-selectable manual census or automatic first-login provisioning.
 - DONE: administrator user disable/re-enable; disable blocks self-service and revokes active personal API keys.
-- DONE: user dashboard recent request history from personal credentials.
+- DONE: user dashboard recent request history plus owner-scoped exact request/response audit from personal credentials.
 - DONE: HMAC-hashed DB-backed service and Entra-owned personal credentials + runtime cache.
 - DONE: stable `tid+oid` ownership, rotation/revocation and audit.
 - DONE: administrator-recoverable encrypted copies for newly created/rotated client API keys with audited reveal/copy; authentication remains HMAC-only.
@@ -61,9 +61,9 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: vLLM pressure + optional DCGM telemetry.
 - DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
 - DONE: trace correlation and capacity-lease-loss evidence.
-- DONE: administrator-only encrypted full request/response content logs for Chat Completions, Responses and System One.
-- DONE: live 2-second content-log UI, exact payload inspection and correlation to request metrics.
-- DONE: content-log retention configurable 10-180 days with four-hour cleanup.
+- DONE: encrypted full request/response audit for Chat Completions, Responses and System One, with global Admin inspection and stable `tid+oid` owner-scoped user self-inspection.
+- DONE: paginated/filterable Admin Request Audit with optional 2-second live refresh, exact payload inspection and correlation to request metrics.
+- DONE: request-audit retention administrator-configurable 10-4015 days (11 years) with four-hour cleanup.
 - DONE: Admin model/System One Playground and classifier configuration visibility.
 - PLANNED/EXTERNAL: customer-specific HA/object-storage/retention choices.
 
@@ -150,7 +150,7 @@ Shared Copilot credentials are not individual user identity. Never infer users f
 - DONE: pending outbox never retention-deleted.
 - DONE: daily rollup-before-delete compaction with PostgreSQL advisory lock.
 - DONE: manual/background cleanup, idempotent rerun and Docker smoke proof.
-- DONE: encrypted full-body content-log retention defaults to 30 days, is bounded to 10-180 days and is automatically cleaned every four hours.
+- DONE: encrypted full-body request-audit retention defaults to 30 days, is bounded to 10-4015 days (11 years) and is automatically cleaned every four hours.
 
 ## M11 — Distributed runtime state / HA — DONE FOR CURRENT MVP
 
