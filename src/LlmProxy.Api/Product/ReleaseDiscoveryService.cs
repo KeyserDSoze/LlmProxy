@@ -44,7 +44,8 @@ public sealed class ReleaseDiscoveryService(
                 plan.Mode,
                 plan.Title,
                 plan.Description,
-                plan.RequiresHostRestart);
+                plan.RequiresHostRestart,
+                (plan.OperatorCommand ?? "sudo -E llmproxyctl update {version}").Replace("{version}", item.Version!, StringComparison.Ordinal));
         }));
 
         var result = plans
@@ -110,14 +111,16 @@ public sealed record ReleaseUpdatePlan(
     string Mode,
     string Title,
     string Description,
-    bool RequiresHostRestart)
+    bool RequiresHostRestart,
+    string? OperatorCommand)
 {
     public static ReleaseUpdatePlan LegacyDefault { get; } = new(
         1,
         "standard",
         "Standard immutable update",
         "Uses the versioned LlmProxy installer. This release predates explicit update-plan metadata.",
-        false);
+        false,
+        "sudo -E llmproxyctl update {version}");
 }
 
 public sealed record AvailableProductRelease(
@@ -129,4 +132,5 @@ public sealed record AvailableProductRelease(
     string UpdateMode,
     string UpdateTitle,
     string UpdateDescription,
-    bool RequiresHostRestart);
+    bool RequiresHostRestart,
+    string OperatorCommand);
