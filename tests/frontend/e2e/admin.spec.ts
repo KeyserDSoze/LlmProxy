@@ -38,7 +38,7 @@ async function json(route: Route, body: unknown, status = 200) {
 
 async function installAdminApi(page: Page) {
   const nodes: NodeRecord[] = [{
-    id: 'node-1', name: 'dgx-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
+    id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm', weight: 1, maxConcurrency: 4, enabled: true, status: 'Healthy',
     lastHealthCheckUtc: '2026-09-09T10:00:00Z', lastHealthyAtUtc: '2026-09-09T10:00:00Z', lastHealthLatencyMilliseconds: 9, lastHealthError: null,
     consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0
   }]
@@ -73,6 +73,8 @@ async function installAdminApi(page: Page) {
     const request = route.request()
     const path = new URL(request.url()).pathname
 
+    if (request.method() === 'GET' && path === '/api/admin/identity/me') return json(route, { tenantId: 'tenant-1', objectId: 'admin-1', principalName: 'admin@example.com', displayName: 'Admin', roles: ['LlmProxy.Admin'], isAdmin: true })
+    if (request.method() === 'GET' && path === '/api/admin/identity/users') return json(route, [{ tenantId: 'tenant-1', objectId: 'user-1', principalName: 'user@example.com', credentialCount: 2, activeCredentialCount: 1, lastUsedAtUtc: '2026-09-09T10:00:00Z', firstCredentialCreatedAtUtc: '2026-09-01T10:00:00Z' }])
     if (request.method() === 'GET' && path === '/api/admin/overview') return json(route, { nodes: { total: nodes.length, healthy: nodes.filter(item => item.status === 'Healthy').length, degraded: 0, unhealthy: 0, draining: 0 }, models: 1, deployments: deployments.length, activeRequests: 0, requestsToday: 12 })
     if (request.method() === 'GET' && path === '/api/admin/routing') return json(route, { strategy: routingStrategy, supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     if (request.method() === 'GET' && path === '/api/admin/routing/tuning') return json(route, tuning)
@@ -167,22 +169,22 @@ async function installAdminApi(page: Page) {
 test('admin can inspect health, observability, add a path-prefixed node and test it', async ({ page }) => {
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
-  await expect(page.getByText('dgx-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
-  await page.getByRole('button', { name: 'DGX Nodes' }).click()
-  await page.getByLabel('Name').fill('dgx-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
-  const row = page.getByRole('row').filter({ hasText: 'dgx-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: dgx-02')).toBeVisible()
+  await expect(page.getByText('inference-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
+  await page.getByRole('button', { name: 'Inference Nodes' }).click()
+  await page.getByLabel('Name').fill('inference-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
+  const row = page.getByRole('row').filter({ hasText: 'inference-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: inference-02')).toBeVisible()
 })
 
-test('DGX hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'DGX Hardware' }).click()
-  await expect(page.getByRole('heading', { name: 'DGX hardware', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'DGX hardware telemetry' })).toBeVisible()
+test('hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Hardware' }).click()
+  await expect(page.getByRole('heading', { name: 'Hardware', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Hardware telemetry' })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
   await expect(page.getByText('4.0 GiB used · 25.0%')).toBeVisible()
   await expect(page.getByRole('cell', { name: '67 °C' })).toBeVisible()
   await expect(page.getByText('261 W')).toBeVisible()
   await expect(page.getByText('Routing isolation')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Physical DGX capacity' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Physical node capacity' })).toBeVisible()
   await expect(page.getByText('HTTP 429 · Retry-After: 1')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Benchmark capacity profiles' })).toBeVisible()
 
@@ -213,6 +215,15 @@ test('routing strategy, smart tuning and live vLLM pressure are editable', async
 
 test('audit trail is visible to administrators', async ({ page }) => {
   await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Audit Trail' }).click(); await expect(page.getByRole('heading', { name: 'Audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+})
+
+test('administrator navigation exposes user management and release notes at the end', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/')
+  await expect(page.getByRole('button', { name: 'User Management' })).toBeVisible()
+  await page.getByRole('button', { name: 'User Management' }).click()
+  await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible()
+  await expect(page.getByText('user@example.com')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Release Notes/ })).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
