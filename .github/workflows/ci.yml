@@ -101,7 +101,9 @@ jobs:
           grep -F 'AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new' distribution/install-update-agent.sh >/dev/null
           grep -F 'mv -f "$AGENT_TEMP" "$AGENT_TARGET"' distribution/install-update-agent.sh >/dev/null
           test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
-          grep -F 'exec "$BOOTSTRAP" --version "$version" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'resolve_update_path "$version"' distribution/llmproxyctl >/dev/null
+          grep -F '"$BOOTSTRAP" --version "$step" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'refusing to skip an unknown intermediate update' distribution/llmproxyctl >/dev/null
           grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
           bash -n distribution/build-release-bundle.sh
           grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
