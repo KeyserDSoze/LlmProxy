@@ -54,12 +54,16 @@ public sealed class UpdateAgentClient(
         });
         var client = httpClientFactory.CreateClient("update-agent");
         using var response = await client.SendAsync(request, cancellationToken);
-        var result = await response.Content.ReadFromJsonAsync<UpdateJobStatus>(cancellationToken);
-        if (!response.IsSuccessStatusCode || result is null)
+        if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Update agent rejected the request with HTTP {(int)response.StatusCode}.");
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Update agent rejected the request with HTTP {(int)response.StatusCode}" +
+                (string.IsNullOrWhiteSpace(detail) ? "." : $": {detail}"));
         }
-        return result;
+
+        return await response.Content.ReadFromJsonAsync<UpdateJobStatus>(cancellationToken)
+            ?? throw new InvalidOperationException("Update agent returned an empty response.");
     }
 
     public async Task<bool> CancelAsync(Guid id, CancellationToken cancellationToken)
