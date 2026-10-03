@@ -70,6 +70,16 @@ export default function UsersAccess() {
     }
   }
 
+  async function changeGroup(user: PlatformUser, usageGroupId: string) {
+    try {
+      await api.assignPlatformUserUsageGroup(user.id, usageGroupId || null)
+      setMessage('User group updated. Personal API keys now inherit the same group for new requests; historical usage remains unchanged.')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function toggle(user: PlatformUser) {
     try {
       if (user.enabled) {
