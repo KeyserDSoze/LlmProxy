@@ -165,7 +165,8 @@ async function installAdminApi(page: Page) {
     if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null, models: ['systemone-laya'], defaultModel: 'systemone-laya' })
     if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
     if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, logicalModel: 'systemone-laya', providerModel: 'convaiinnovations/laya', deploymentId: 'deployment-systemone', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
-    if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
+    if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 4015, cleanupIntervalHours: 4 })
+    if (request.method() === 'GET' && path === '/api/admin/content-logs/query') return json(route, { items: [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }], total: 1, page: 1, pageSize: 50 })
     if (request.method() === 'GET' && path === '/api/admin/content-logs') return json(route, [{ id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
     if (request.method() === 'GET' && path === '/api/admin/content-logs/1') return json(route, { id: 1, requestId: 'request-1', startedAtUtc: '2026-09-09T10:03:00Z', completedAtUtc: '2026-09-09T10:03:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200, requestBody: '{"model":"agic-code-fast"}', responseBody: '{"ok":true}', nodeId: 'node-1', attemptCount: 1, timeToFirstByteMilliseconds: 49, errorCode: null })
     if (request.method() === 'PUT' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: (request.postDataJSON() as { retentionDays: number }).retentionDays, updatedAtUtc: '2026-09-09T10:06:00Z', minimumRetentionDays: 10, maximumRetentionDays: 180, cleanupIntervalHours: 4 })
@@ -300,8 +301,8 @@ test('admin playground tests models and System One and full-body logs are inspec
   await page.getByRole('button', { name: 'Run classifier test' }).click()
   await expect(page.getByRole('strong').filter({ hasText: /^systemone-laya$/ })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Content Logs' }).click()
-  await expect(page.getByRole('heading', { name: 'Live request / response log' })).toBeVisible()
+  await page.getByRole('button', { name: 'Request Audit' }).click()
+  await expect(page.getByRole('heading', { name: 'Request / response audit' })).toBeVisible()
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
   await expect(page.getByText('agic-code-fast', { exact: true }).nth(1)).toBeVisible()
@@ -325,7 +326,7 @@ test('admin controls automatic versus manual end-user provisioning and can disab
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Audit Trail' }).click(); await expect(page.getByRole('heading', { name: 'Audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
