@@ -53,7 +53,7 @@ public sealed class InMemoryRouteCatalog : IRouteCatalog
                 deployment.Id,
                 node.Id,
                 node.Name,
-                node.BaseAddress,
+                deployment.RuntimeBaseAddress ?? node.BaseAddress,
                 model.Id,
                 model.PublicName,
                 model.ProviderModelName,

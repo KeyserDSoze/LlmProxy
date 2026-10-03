@@ -44,6 +44,9 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("BenchmarkSource").HasMaxLength(500).HasColumnType("character varying(500)");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<int?>("MaxConcurrency").HasColumnType("integer");
+            b.Property<string>("RuntimeBaseAddress").HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<string>("CatalogModelId").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<string>("ManagedInstallationId").HasMaxLength(300).HasColumnType("character varying(300)");
             b.Property<Guid>("ModelId").HasColumnType("uuid");
             b.Property<Guid>("NodeId").HasColumnType("uuid");
             b.Property<int?>("RecommendedMaxConcurrency").HasColumnType("integer");
@@ -143,6 +146,8 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("ConsecutiveHealthSuccesses").HasColumnType("integer");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<string>("HardwareMetricsBaseAddress").HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<string>("ManagementBaseAddress").HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<string>("ManagementBearerTokenCiphertext").HasMaxLength(4096).HasColumnType("character varying(4096)");
             b.Property<DateTimeOffset?>("LastHealthCheckUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("LastHealthError").HasMaxLength(1000).HasColumnType("character varying(1000)");
             b.Property<long?>("LastHealthLatencyMilliseconds").HasColumnType("bigint");

@@ -40,6 +40,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.BaseAddress).HasMaxLength(500).IsRequired();
             entity.Property(x => x.UpstreamBearerTokenCiphertext).HasMaxLength(4096);
             entity.Property(x => x.HardwareMetricsBaseAddress).HasMaxLength(500);
+            entity.Property(x => x.ManagementBaseAddress).HasMaxLength(500);
+            entity.Property(x => x.ManagementBearerTokenCiphertext).HasMaxLength(4096);
             entity.Property(x => x.LastHealthError).HasMaxLength(1000);
             entity.HasIndex(x => x.Name).IsUnique();
         });
@@ -58,6 +60,9 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.ToTable("deployments");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.BenchmarkSource).HasMaxLength(500);
+            entity.Property(x => x.RuntimeBaseAddress).HasMaxLength(500);
+            entity.Property(x => x.CatalogModelId).HasMaxLength(200);
+            entity.Property(x => x.ManagedInstallationId).HasMaxLength(300);
             entity.HasIndex(x => new { x.NodeId, x.ModelId }).IsUnique();
             entity.HasOne<InferenceNode>().WithMany().HasForeignKey(x => x.NodeId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<ModelDefinition>().WithMany().HasForeignKey(x => x.ModelId).OnDelete(DeleteBehavior.Cascade);
