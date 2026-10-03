@@ -31,7 +31,8 @@ public static class UsageGovernanceEndpoints
                     item.Description,
                     item.CreatedAtUtc,
                     item.UpdatedAtUtc,
-                    credentialCount = dbContext.ApiCredentials.Count(credential => credential.UsageGroupId == item.Id)
+                    credentialCount = dbContext.ApiCredentials.Count(credential => credential.UsageGroupId == item.Id),
+                    userCount = dbContext.PlatformUsers.Count(user => user.UsageGroupId == item.Id)
                 })
                 .ToListAsync(cancellationToken);
             return Results.Ok(rows);
