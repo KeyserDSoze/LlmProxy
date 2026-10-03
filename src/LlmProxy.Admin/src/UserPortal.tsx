@@ -249,7 +249,7 @@ export default function UserPortal() {
           <table><thead><tr><th>Credential</th><th>Requests</th><th>Errors</th><th>Input tokens</th><th>Output tokens</th><th>Rate limited</th></tr></thead><tbody>
             {usage.credentials.map(item => <tr key={item.apiCredentialId}><td><strong>{item.name}</strong><div className="muted mono">{item.keyPrefix}…</div></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatNumber(item.inputTokens)}</td><td>{formatNumber(item.outputTokens)}</td><td>{formatNumber(item.rateLimitedRequests)}</td></tr>)}
           </tbody></table>
-          <p className="muted">User request limits apply across all personal keys; credential/model limits may also apply. Output-token budgets remain credential scoped. Currency spend limits require an explicit pricing or chargeback model.</p>
+          <p className="muted">Personal keys always participate in caller governance. User, group and optional credential/model policies compose together; the most restrictive output cap applies per request.</p>
         </section>}
       </>}
     </main>
