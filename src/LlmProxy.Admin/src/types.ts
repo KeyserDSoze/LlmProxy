@@ -470,3 +470,28 @@ export type ContentLogCleanupResult = {
   cutoffUtc: string
   deletedLogs: number
 }
+
+
+export type PlatformUserAccessSettings = {
+  provisioningMode: 'automatic' | 'manual'
+  updatedAtUtc: string
+  configuredTenantId?: string | null
+}
+
+export type PlatformUser = {
+  id: string
+  tenantId: string
+  objectId: string
+  principalName?: string | null
+  displayName?: string | null
+  enabled: boolean
+  provisioningSource: 'automatic' | 'admin' | 'migration' | string
+  createdAtUtc: string
+  lastSeenAtUtc?: string | null
+  disabledAtUtc?: string | null
+  credentialCount: number
+  activeCredentialCount: number
+  lastCredentialUsedAtUtc?: string | null
+  requestCount30d: number
+  errorCount30d: number
+}
