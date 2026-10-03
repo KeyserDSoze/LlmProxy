@@ -35,9 +35,9 @@ export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="ci-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-hardware-test"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
-export DGX_HARDWARE_METRICS_BASE_ADDRESS=""
+export INFERENCE_NODE_NAME="inference-hardware-test"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3450/primopath"
+export INFERENCE_NODE_HARDWARE_METRICS_BASE_ADDRESS=""
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="1"
 export HEALTH_UNHEALTHY_AFTER_FAILURES="2"
@@ -141,4 +141,4 @@ node_cleared="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq 
 echo "$node_cleared" | jq -e '.hardwareMetricsBaseAddress == null' >/dev/null
 curl --fail --silent http://127.0.0.1:8080/api/admin/hardware | jq -e --arg id "$node_id" 'map(select(.nodeId == $id)) | length == 0' >/dev/null
 
-echo "DGX hardware telemetry smoke suite passed: path-prefixed DCGM metrics, aggregation, audit, health isolation and explicit disable verified."
+echo "inference hardware telemetry smoke suite passed: path-prefixed DCGM metrics, aggregation, audit, health isolation and explicit disable verified."
