@@ -126,27 +126,27 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brandMark">LP</div>
+          <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
           <div><strong>LlmProxy</strong><span>AI Gateway</span></div>
         </div>
         <nav>
-          <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
-          <NavItem active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
-          {canWrite && <NavItem active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
-          <NavItem active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
-          <NavItem active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
-          <NavItem active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
-          <NavItem active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
-          {canWrite && <NavItem active={view === 'users'} onClick={() => setView('users')}>Users & Access</NavItem>}
-          <NavItem active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
-          {canWrite && <NavItem active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
-          {canWrite && <NavItem active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
-          <NavItem active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
-          <NavItem active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
+          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
+          <NavItem icon="nodes" active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
+          <NavItem icon="hardware" active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
+          {canWrite && <NavItem icon="control" active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
+          <NavItem icon="models" active={view === 'models'} onClick={() => setView('models')}>Models</NavItem>
+          <NavItem icon="deployments" active={view === 'deployments'} onClick={() => setView('deployments')}>Deployments</NavItem>
+          <NavItem icon="routing" active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
+          <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
+          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
+          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
+          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => setView('logs')}>Content Logs</NavItem>}
+          <NavItem icon="audit" active={view === 'audit'} onClick={() => setView('audit')}>Audit Trail</NavItem>
+          <NavItem icon="help" active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
           <div className="navSecondary">
-            <NavItem active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
-            <NavItem active={view === 'releases'} onClick={() => setView('releases')}>Release Notes</NavItem>
+            <NavItem icon="governance" active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
+            {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => setView('users')}>Users & Access</NavItem>}
+            <ProductNavItem active={view === 'releases'} onClick={() => setView('releases')} />
           </div>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
@@ -280,7 +280,7 @@ function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void>
       </div>)}
     </section>
     <section className="panel formPanel"><h2>Add inference node</h2><form onSubmit={submit}>
-      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="dgx-02" /></label>
+      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="inference-02" /></label>
       <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
       <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
       <label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={e => setMaxConcurrency(Number(e.target.value))} /></label>
@@ -546,8 +546,48 @@ function Audit({ events }: { events: AuditEvent[] }) {
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
-function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button className={active ? 'active' : ''} onClick={onClick}>{children}</button> }
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware telemetry', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Release notes' } as const)[view] }
+type NavIconName = 'dashboard' | 'nodes' | 'hardware' | 'control' | 'models' | 'deployments' | 'routing' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases'
+
+function NavItem({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: NavIconName; children: React.ReactNode }) {
+  return <button className={active ? 'active' : ''} onClick={onClick}><NavIcon name={icon} /><span>{children}</span></button>
+}
+
+function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/admin/product', { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() as Promise<{ version: string }> : null)
+      .then(product => { if (!cancelled && product) setVersion(product.version) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  return <NavItem icon="releases" active={active} onClick={onClick}>{version ? `v${version} · Release Notes` : 'Release Notes'}</NavItem>
+}
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const paths: Record<NavIconName, React.ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    nodes: <><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.3 10.8 15.6 7.2M8.3 13.2l7.3 3.6" /></>,
+    hardware: <><rect x="5" y="5" width="14" height="14" rx="2" /><rect x="9" y="9" width="6" height="6" rx="1" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></>,
+    control: <><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></>,
+    models: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></>,
+    deployments: <><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5" /></>,
+    routing: <><path d="M5 5v4a3 3 0 0 0 3 3h8" /><path d="m13 9 3 3-3 3" /><path d="M5 19v-3a4 4 0 0 1 4-4" /></>,
+    key: <><circle cx="8" cy="12" r="4" /><path d="M12 12h9M17 12v3M20 12v2" /></>,
+    metrics: <><path d="M4 20V10M10 20V4M16 20v-7M22 20V7" /></>,
+    play: <path d="m8 5 11 7-11 7V5Z" />,
+    logs: <><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 11h6M9 15h6" /></>,
+    audit: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    help: <><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.3 1-1.3 1.7M12 17h.01" /></>,
+    governance: <><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-5" /></>,
+    users: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20a6 6 0 0 1 12 0M14 16a5 5 0 0 1 7 4" /></>,
+    releases: <><path d="M4 5h10l6 6-9 9-7-7V5Z" /><circle cx="9" cy="10" r="1.5" /></>
+  }
+  return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
+}
+
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware telemetry', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
