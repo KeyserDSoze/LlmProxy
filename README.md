@@ -1,14 +1,14 @@
 # LlmProxy
 
-Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
+Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA inference node infrastructure.
 
 > Immutable distribution releases are generated automatically from validated `main` pushes, starting at `v0.0.1`. The legacy `0.2.0-preview.*` values remain source-history metadata, not the automatic GitHub Release counter.
 
 ## What this product is
 
-LlmProxy is the control and governance boundary between AI clients and a physical inference fleet. Clients see one stable OpenAI-compatible endpoint and logical model names; the gateway resolves credentials/policies, selects an eligible DGX/model deployment, enforces distributed admission/governance and streams the response.
+LlmProxy is the control and governance boundary between AI clients and a physical inference fleet. Clients see one stable OpenAI-compatible endpoint and logical model names; the gateway resolves credentials/policies, selects an eligible inference node/model deployment, enforces distributed admission/governance and streams the response.
 
-The supported Linux production topology is intentionally single-host for the control plane while DGX/vLLM remains on the private LAN:
+The supported Linux production topology is intentionally single-host for the control plane while inference node/vLLM remains on the private LAN:
 
 ```text
 GitHub Copilot / OpenAI-compatible clients
@@ -25,7 +25,7 @@ GitHub Copilot / OpenAI-compatible clients
                         |
                         | private LAN
                         v
-                  DGX Spark / vLLM
+                  GPU inference hardware / vLLM
 ```
 
 PostgreSQL is durable truth, Redis provides shared runtime/coordination state, and local RAM remains the request-path configuration L1.
@@ -35,7 +35,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - OpenAI-compatible `/v1/models`, Chat Completions and Responses APIs.
 - Optional authenticated `/v1/systemone` proxy for Jev-compatible decision/classification runtimes such as Laya.
 - Incremental SSE streaming and cancellation.
-- Logical public model aliases with internal DGX/provider model identifiers.
+- Logical public model aliases with internal inference node/provider model identifiers.
 - Weighted least loaded, round robin and weighted round robin routing.
 - Health hysteresis and safe drain/resume maintenance.
 - Distributed physical-capacity admission with Redis leases.
@@ -47,7 +47,7 @@ PostgreSQL is durable truth, Redis provides shared runtime/coordination state, a
 - Metadata-only metrics/audit/OTEL; prompts/source/generated content are excluded by default.
 - PostgreSQL backup/restore operators.
 - Automatic immutable SemVer releases from every green `main` push, with build identity, GitHub release notes, multi-arch GHCR digest evidence, SPDX SBOM and SLSA provenance.
-- Executable production environment acceptance for Linux host, direct DGX/vLLM and gateway Chat/Responses/SSE surfaces.
+- Executable production environment acceptance for Linux host, direct inference node/vLLM and gateway Chat/Responses/SSE surfaces.
 
 ## Repository structure
 
@@ -67,7 +67,7 @@ For the distributed Redis/observability development/demo bundle use:
 
 ```bash
 bash docker/scripts/full-stack-init.sh
-# edit docker/.env.full, especially DGX_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME
+# edit docker/.env.full, especially INFERENCE_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME
 docker compose --env-file docker/.env.full -f docker/docker-compose.full.yml up -d
 ```
 
@@ -102,12 +102,12 @@ export ENTRA_CLIENT_ID='<client-id>'
 export ENTRA_CLIENT_SECRET='<client-secret>'
 
 sudo -E bash docker/scripts/install-linux.sh \
-  --dgx-url http://10.0.0.21:8000 \
+  --node-url http://10.0.0.21:8000 \
   --provider-model '<exact-vllm-model-id>' \
   --image-tag sha-df3ecf7
 ```
 
-`docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks DGX `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
+`docker/scripts/install-linux.sh` detects the distro/package manager, installs or preserves Docker Engine, ensures Docker Compose v2, prepares `/opt/llmproxy`, generates initial production secrets, optionally logs into GHCR, checks inference node `/health` and `/v1/models`, then invokes the canonical full-stack deployment.
 
 Docker official repositories are used for Debian, Ubuntu, Fedora, CentOS and RHEL. Common derivative/other distributions can use `apt`, `dnf`/`yum`, `zypper`, `pacman` or `apk`; when Compose v2 is missing the installer has a CLI-plugin fallback. Existing Docker installations are preserved.
 
@@ -161,7 +161,7 @@ sudo -E bash docker/scripts/environment-acceptance.sh
 It validates:
 
 - Linux/Docker/Compose host prerequisites;
-- direct VM -> DGX/vLLM `/health`, `/v1/models`, Chat, Responses and SSE;
+- direct VM -> inference node/vLLM `/health`, `/v1/models`, Chat, Responses and SSE;
 - LlmProxy `/healthz`, `/readyz`, `/v1/models`, Chat, Responses and SSE;
 - exact provider model and logical public model visibility.
 
@@ -181,16 +181,16 @@ After the `llmproxy-prod` self-hosted runner is installed, the same acceptance i
 
 The workflow accepts no API-key inputs. It reads the protected host configuration, uploads only `summary.md` and `checks.tsv` as a short-lived Actions artifact, and removes the runner-local evidence afterward.
 
-This proves connectivity and functional compatibility. It does **not** establish production concurrency; real DGX/model Capacity Profiles still require benchmark evidence.
+This proves connectivity and functional compatibility. It does **not** establish production concurrency; real inference node/model Capacity Profiles still require benchmark evidence.
 
-## DGX service roots
+## inference node service roots
 
 A node stores the complete inference service root, including optional path prefix:
 
 ```text
 http://10.0.0.25:8000
 http://10.0.0.25:8000/vllm
-https://dgx-01.internal:8443/inference
+https://inference-01.internal:8443/inference
 ```
 
 LlmProxy derives:
@@ -287,7 +287,7 @@ ENTRA_CLIENT_ID
 ENTRA_CLIENT_SECRET
 CLOUDFLARE_TUNNEL_TOKEN
 SYSTEM_ONE_API_KEY
-LLMPROXY_ACCEPTANCE_DGX_API_KEY
+LLMPROXY_ACCEPTANCE_inference node_API_KEY
 ```
 
 Use `docker/.env.production.example` as the manual production template; the Linux installer creates the equivalent host-owned file automatically when it does not already exist.
@@ -298,7 +298,7 @@ Start with:
 
 - `docs/release-installation.md` — immutable GitHub Release bundle, bootstrap, `llmproxyctl`, update and rollback.
 - `docs/linux-production-deployment.md` — canonical zero-to-running Linux production runbook.
-- `docs/environment-acceptance.md` — production host/DGX/gateway acceptance and evidence rules.
+- `docs/environment-acceptance.md` — production host/inference node/gateway acceptance and evidence rules.
 - `docs/deployment.md` — deployment contract and automation summary.
 - `docs/full-stack.md` — Redis + observability bundle details.
 - `docs/operations.md` — health, maintenance, release identity and audit.
@@ -313,8 +313,8 @@ Start with:
 Repository automation cannot replace environment validation for:
 
 - actual package/repository behavior on the chosen Linux distro/version;
-- real DGX Spark/vLLM/model acceptance and benchmark sweeps;
-- representative multi-DGX coding load;
+- real GPU inference hardware/vLLM/model acceptance and benchmark sweeps;
+- representative multi-node coding load;
 - real Entra app/role setup;
 - real Cloudflare hostname/tunnel routing;
 - GitHub Copilot BYOK end-to-end;
