@@ -7,11 +7,11 @@ This document defines the identity, authorization, API-key and user-request-quot
 LlmProxy supports two distinct credential types:
 
 ```text
-service credential   created/administered by LlmProxy administrators; no Entra owner
-personal credential  created by an authenticated Entra user; permanently bound to that Entra identity
+organization credential  created/administered by LlmProxy administrators; no Entra owner
+personal credential      created by an authenticated Entra user; permanently bound to that Entra identity
 ```
 
-Existing GitHub Copilot/shared integration credentials remain valid service credentials. Personal credentials add self-service without changing the `/v1/*` bearer contract.
+Organization credentials are intended for shared workloads such as GitHub Copilot. Administrators create organization credentials through the Admin API/UI and can also create their own personal credentials through `/admin/me`. Normal users can create only personal credentials owned by their own stable Entra identity.
 
 ## Entra roles and platform-user admission
 
@@ -60,7 +60,7 @@ OwnerObjectId
 OwnerPrincipalName   optional display/audit metadata
 ```
 
-Tenant and object ID are both present or both absent. Existing service credentials therefore remain distinguishable without a schema-breaking migration.
+Tenant and object ID are both present or both absent. Credentials without an Entra owner are organization credentials. Personal credentials are always caller-governed; organization credentials are caller-quota exempt by default and may be opted into normal caller governance only by an administrator.
 
 ## API-key storage
 
@@ -107,6 +107,7 @@ GET  /api/admin/users
 POST /api/admin/users
 POST /api/admin/users/{id}/disable
 POST /api/admin/users/{id}/enable
+PUT  /api/admin/users/{id}/usage-group
 ```
 
 Manual is the default provisioning mode. Automatic mode creates an enabled normal user on first successful Entra portal access. Disabling a user blocks `/api/me/*` and `/admin/me` and revokes all currently active personal API keys for the same `tid + oid`. Re-enabling portal access does not resurrect revoked keys.
@@ -120,7 +121,7 @@ GET /api/admin/identity/api-credentials
 GET /api/admin/identity/users
 ```
 
-The existing `/api/admin/api-credentials` lifecycle remains the administration path for service credentials and broad supervision. Administrators retain the ability to revoke/rotate credentials through the existing admin contract. Administrators (not read-only operators) may also reveal an encrypted recovery copy through `GET /api/admin/api-credentials/{id}/secret` when `secretAvailable=true`.
+The existing `/api/admin/api-credentials` lifecycle is the administration path for organization credentials and broad supervision. `PUT /api/admin/api-credentials/{id}/caller-governance` lets an administrator opt an organization key into or out of caller-specific limits; personal keys cannot opt out. Administrators retain the ability to revoke/rotate credentials through the existing admin contract. Administrators (not read-only operators) may also reveal an encrypted recovery copy through `GET /api/admin/api-credentials/{id}/secret` when `secretAvailable=true`.
 
 ## Request attribution
 
@@ -139,31 +140,23 @@ For a personal credential, the runtime credential snapshot also contains `OwnerT
 
 This preserves the usage-telemetry privacy rule: request metrics and usage rollups do not persist prompts, source code, generated output or raw secrets. Full request/response bodies, when enabled by the product contract, live only in the separate administrator-only encrypted content-log store and are governed by its independent 10-180 day retention.
 
-## Usage and limits
+## Usage, groups and limits
 
-Credential/model-scoped governance remains supported:
+A platform user may belong to zero or one current Usage Group. Group assignment is administrator-controlled. The assignment is copied to the user's personal credentials so request-time telemetry keeps the existing historical `UsageGroupId` snapshot even if the user later changes group.
 
-```text
-requests per time window
-output tokens per time window
-maximum output tokens per request
-```
-
-Starting with `0.2.0-preview.7`, administrators may also configure **aggregate user request-rate policies** keyed by stable Entra `(tid, oid)`, optionally scoped to one logical model. These limits span all personal API keys owned by the user.
-
-Request admission uses:
+For a governed personal credential, caller policy composition is:
 
 ```text
-applicable user request policy
-AND
-applicable credential request policy
+applicable user policy
+AND applicable usage-group policy
+AND applicable credential policy
 ```
 
-The fixed-window counters are acquired atomically: if either applicable request policy rejects, neither counter is incremented. Redis-enabled deployments coordinate the counters across gateway replicas; Redis-disabled deployments use the local in-memory store.
+Each scope may define request-count limits and optional output-token budgets, optionally narrowed to one logical model. Request counters are acquired together with existing atomic AND semantics. Output-token reservations are applied to every applicable budget; the effective per-request output cap is the smallest applicable maximum.
 
-The personal portal and `GET /api/me/rate-limits` expose user request-limit metadata read-only. Only administrators configure user policies.
+An administrator-created **organization credential** defaults to `EnforceCallerGovernance=false`. In that mode user/group/credential caller quotas are not applied, which is the expected default for shared workloads such as centrally configured GitHub Copilot. Authentication, model routing, health/capacity admission and other platform-wide infrastructure protections still apply. An administrator may explicitly enable caller governance on that organization credential; any credential-specific and assigned-group policies then become applicable.
 
-Output-token budgets remain credential/model scoped in this increment.
+The personal portal and `GET /api/me/rate-limits` expose the current user's effective user/group request and token policies read-only. Only administrators configure these policies.
 
 ### Monetary/spend limit
 
@@ -186,7 +179,7 @@ Authorization: Bearer <LlmProxy personal key>
 
 Do not commit it to source control, container images, scripts or CI logs.
 
-For unattended/shared production applications, ownership is an open architectural choice. Long-lived automation should generally not depend on an employee's personal key. The supported current option is an administrator-created service credential. A future option may use Entra service principals/workload identity to obtain or broker application credentials.
+For unattended/shared production applications, use an administrator-created organization credential rather than an employee's personal key. Organization credentials are caller-quota exempt by default but may be opted into governance when the workload should behave like a governed client. A future option may use Entra service principals/workload identity to obtain or broker application credentials.
 
 ## Open decisions
 
