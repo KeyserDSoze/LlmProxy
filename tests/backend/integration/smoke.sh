@@ -128,6 +128,40 @@ echo "$primary_response" | jq -e '.usage.total_tokens == 18' >/dev/null
 admin_session="$(curl --fail --silent http://127.0.0.1:8080/api/admin/session)"
 echo "$admin_session" | jq -e '.canWrite == true' >/dev/null
 
+user_access_settings="$(curl --fail --silent http://127.0.0.1:8080/api/admin/users/settings)"
+echo "$user_access_settings" | jq -e '.provisioningMode == "manual"' >/dev/null
+
+automatic_user_access="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"provisioningMode":"automatic"}' http://127.0.0.1:8080/api/admin/users/settings)"
+echo "$automatic_user_access" | jq -e '.provisioningMode == "automatic"' >/dev/null
+curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"provisioningMode":"manual"}' http://127.0.0.1:8080/api/admin/users/settings >/dev/null
+
+platform_user="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"tenantId":"tenant-smoke","objectId":"object-smoke","principalName":"user-smoke@example.com","displayName":"Smoke User","enabled":true}' http://127.0.0.1:8080/api/admin/users)"
+platform_user_id="$(echo "$platform_user" | jq -r '.id')"
+echo "$platform_user" | jq -e '.tenantId == "tenant-smoke" and .objectId == "object-smoke" and .enabled == true and .provisioningSource == "admin"' >/dev/null
+
+user_credential="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"User suspension smoke"}' http://127.0.0.1:8080/api/admin/api-credentials)"
+user_credential_id="$(echo "$user_credential" | jq -r '.id')"
+user_credential_secret="$(echo "$user_credential" | jq -r '.secret')"
+
+"${COMPOSE[@]}" exec -T postgres psql -U llmproxy -d llmproxy -v ON_ERROR_STOP=1 -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='object-smoke', \"OwnerPrincipalName\"='user-smoke@example.com' WHERE \"Id\"='${user_credential_id}';" >/dev/null
+
+curl --fail --silent -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models >/dev/null
+
+curl --fail --silent -X POST "http://127.0.0.1:8080/api/admin/users/${platform_user_id}/disable" >/dev/null
+disabled_user_key_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models)"
+if [[ "$disabled_user_key_status" != "401" ]]; then
+  fail_with_diagnostics "Expected disabled user's personal API key to return 401, got ${disabled_user_key_status}."
+fi
+
+platform_users="$(curl --fail --silent http://127.0.0.1:8080/api/admin/users)"
+echo "$platform_users" | jq -e --arg id "$platform_user_id" 'map(select(.id == $id and .enabled == false and .activeCredentialCount == 0)) | length == 1' >/dev/null
+
+curl --fail --silent -X POST "http://127.0.0.1:8080/api/admin/users/${platform_user_id}/enable" >/dev/null
+reenabled_old_key_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -H "Authorization: Bearer ${user_credential_secret}" http://127.0.0.1:8080/v1/models)"
+if [[ "$reenabled_old_key_status" != "401" ]]; then
+  fail_with_diagnostics "Expected re-enabled user to keep the previously revoked API key invalid, got ${reenabled_old_key_status}."
+fi
+
 systemone_status="$(curl --fail --silent http://127.0.0.1:8080/api/admin/testing/systemone)"
 echo "$systemone_status" | jq -e '.enabled == true and .apiKeyConfigured == true and .publicEndpoint == "/v1/systemone" and .timeoutSeconds == 5 and (.upstreamEndpoint | contains("3452/classifier/v1/systemone"))' >/dev/null
 
@@ -270,6 +304,10 @@ echo "$audit_json" | jq -e 'map(.action) | index("routing.update") != null' >/de
 echo "$audit_json" | jq -e 'map(.action) | index("routing.tuning.update") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("credential.secret.reveal") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.action) | index("content_log.retention.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.provisioning_mode.update") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.create") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.disable") != null' >/dev/null
+echo "$audit_json" | jq -e 'map(.action) | index("user.enable") != null' >/dev/null
 echo "$audit_json" | jq -e 'map(.actor) | index("local-admin") != null' >/dev/null
 
 curl --fail --silent http://127.0.0.1:8080/api/admin/overview | grep --quiet 'activeRequests'
