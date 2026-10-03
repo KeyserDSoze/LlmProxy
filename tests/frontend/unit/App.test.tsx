@@ -235,7 +235,7 @@ describe('admin application', () => {
     await user.click(screen.getByRole('button', { name: 'Request Audit' }))
     expect(await screen.findByRole('heading', { name: 'Request / response audit' })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions')).toBeInTheDocument()
-    expect(screen.getByText(/11 years/)).toBeInTheDocument()
+    expect(screen.getByText(/Allowed .*11 years/)).toBeInTheDocument()
   })
 
   it('manages end-user provisioning and access', async () => {
