@@ -587,7 +587,7 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware telemetry', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Logical models', deployments: 'Model deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Full-body content logs', audit: 'Audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
