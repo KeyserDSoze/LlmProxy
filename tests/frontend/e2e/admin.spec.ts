@@ -221,7 +221,7 @@ test('administrator navigation exposes user management and release notes at the 
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('button', { name: 'User Management' })).toBeVisible()
   await page.getByRole('button', { name: 'User Management' }).click()
-  await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'User inventory' })).toBeVisible()
   await expect(page.getByText('user@example.com')).toBeVisible()
   await expect(page.getByRole('button', { name: /Release Notes/ })).toBeVisible()
 })
