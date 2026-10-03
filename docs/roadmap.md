@@ -10,14 +10,14 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: repository-first handover discipline.
 - DONE: SemVer identity, changelog and Admin release-notes page.
 
-## M1 — Copilot -> gateway -> one DGX — REPOSITORY DONE / EXTERNAL ACCEPTANCE REMAINS
+## M1 — Copilot -> gateway -> one inference node — REPOSITORY DONE / EXTERNAL ACCEPTANCE REMAINS
 
 - DONE: logical models, `/v1/models`, Chat Completions + SSE, Responses compatibility.
 - DONE: bearer/API-key auth from runtime L1.
 - DONE: route/model/deployment runtime catalog.
 - EXTERNAL: real GitHub Copilot BYOK through target public endpoint.
 
-## M2 — Multi-DGX — DONE FOR CURRENT MVP
+## M2 — Multi-node — DONE FOR CURRENT MVP
 
 - DONE: node/model/deployment administration and health hysteresis.
 - DONE: weighted least loaded / round robin / weighted round robin.
@@ -50,33 +50,33 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: benchmark harness + audited capacity apply workflow.
 - DONE: Redis lease renewal/recovery and proactive safety watchdog.
 - DONE: maintenance marker participates in atomic Redis admission.
-- EXTERNAL: real DGX benchmark profiles + representative Copilot load.
+- EXTERNAL: real inference node benchmark profiles + representative Copilot load.
 
 ## M6 — Operator onboarding / Linux deployability — REPOSITORY DONE / EXTERNAL HOST ACCEPTANCE REMAINS
 
 - DONE: development quickstart and distributed full-stack Compose bundle.
 - DONE: canonical production topology is the Redis-enabled full stack.
-- DONE: dedicated production env template with explicit secret/DGX placeholders.
+- DONE: dedicated production env template with explicit secret/inference node placeholders.
 - DONE: `docker/scripts/install-linux.sh` prepares a new host and invokes the canonical production deploy path.
 - DONE: Docker official repository path for Debian, Ubuntu, Fedora, CentOS and RHEL.
 - DONE: common distro-package fallbacks for `apt`, `dnf`/`yum`, `zypper`, `pacman` and `apk`, plus Compose CLI-plugin fallback.
 - DONE: preserve existing working Docker + Compose installations and existing `/opt/llmproxy/.env`.
 - DONE: generate initial PostgreSQL/Redis/API-key/pepper/Grafana secrets without printing them.
 - DONE: optional GHCR login without persisting the package token into application config.
-- DONE: DGX `/health` + `/v1/models` precheck before normal first deployment.
+- DONE: inference node `/health` + `/v1/models` precheck before normal first deployment.
 - DONE: production runtime assets staged under `/opt/llmproxy/runtime` instead of runner workspace.
 - DONE: manual deployment and GitHub Actions deployment share `docker/scripts/deploy.sh`.
 - DONE: production preflight validates placeholders, Production environment, Compose rendering and Entra-before-public-Cloudflare rule.
 - DONE: deployment requires `/healthz` + `/readyz` before success.
 - DONE: PostgreSQL backup/restore Bash + PowerShell operators with clean-target proof.
 - DONE: full Linux production runbook including installer, Entra/Cloudflare, backup, update and rollback.
-- DONE: executable `docker/scripts/environment-acceptance.sh` for host, direct DGX/vLLM and gateway functional acceptance.
+- DONE: executable `docker/scripts/environment-acceptance.sh` for host, direct inference node/vLLM and gateway functional acceptance.
 - DONE: metadata-only `summary.md` + `checks.tsv` acceptance evidence with secret-content guard.
 - DONE: canonical bodyless vLLM `/health` handled as status-only acceptance.
-- DONE: CI smoke exercises Chat/Responses streaming and non-streaming through direct/mock DGX and gateway surfaces.
+- DONE: CI smoke exercises Chat/Responses streaming and non-streaming through direct/mock inference node and gateway surfaces.
 - DONE: `.github/workflows/environment-acceptance.yml` for manual production acceptance on the `llmproxy-prod` self-hosted runner; no API-key dispatch inputs; short-lived metadata artifact only.
 - EXTERNAL: execute installer on the chosen production distro/version and record package/service behavior.
-- EXTERNAL: execute the acceptance workflow against the real VM + DGX/vLLM.
+- EXTERNAL: execute the acceptance workflow against the real VM + inference node/vLLM.
 - EXTERNAL: production Cloudflare Tunnel + self-hosted runner operational/reboot proof.
 - EXTERNAL: customer backup destination, encryption and retention schedule.
 
@@ -190,8 +190,8 @@ image digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53
 
 1. Validate the first automatically generated `v0.0.x` GitHub Releases, including multi-architecture assets.
 2. Install/update/rollback the latest exact `0.0.x` release on the ARM64 GB10 target; keep `sha-7e1534c` as the pre-autorelease fallback checkpoint until target-host acceptance is green.
-2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + DGX/vLLM.
-3. Run real DGX benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
+2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real VM + inference node/vLLM.
+3. Run real inference node benchmark sweeps + representative Copilot load and apply measured Capacity Profiles.
 4. Validate real Entra Admin/User/Reader login + personal-key self-service + aggregate user request quotas, then Cloudflare + GitHub Copilot BYOK end-to-end.
 5. Define customer-specific PostgreSQL/Redis/observability HA/storage and scheduled-backup destination/encryption/retention.
 6. Expand remaining quota semantics only with explicit tokenizer/pricing requirements.
