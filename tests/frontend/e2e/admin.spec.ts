@@ -306,7 +306,7 @@ test('admin playground tests models and System One and full-body logs are inspec
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
   await expect(page.getByText('agic-code-fast', { exact: true }).nth(1)).toBeVisible()
-  await expect(page.getByText(/automatic every 4h/)).toBeVisible()
+  await expect(page.getByText(/automatic cleanup every 4h/)).toBeVisible()
 })
 
 
@@ -326,7 +326,7 @@ test('admin controls automatic versus manual end-user provisioning and can disab
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
