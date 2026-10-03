@@ -172,6 +172,24 @@ public sealed partial class UpdateScheduler(
             };
         }
 
+        await _gate.WaitAsync(stoppingToken);
+        try
+        {
+            Archive(completed);
+            _activeJob = null;
+            await SaveLockedAsync(stoppingToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        if (string.Equals(completed.Status, "Succeeded", StringComparison.Ordinal))
+        {
+            RequestSelfRestart();
+        }
+    }
+
     private async Task ExecuteVersionAsync(string version, CancellationToken stoppingToken)
     {
         var startInfo = new ProcessStartInfo(options.BootstrapPath)
@@ -224,16 +242,29 @@ public sealed partial class UpdateScheduler(
         }
     }
 
-        await _gate.WaitAsync(stoppingToken);
+    private void RequestSelfRestart()
+    {
         try
         {
-            Archive(completed);
-            _activeJob = null;
-            await SaveLockedAsync(stoppingToken);
+            var startInfo = new ProcessStartInfo("systemd-run")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("--quiet");
+            startInfo.ArgumentList.Add("--collect");
+            startInfo.ArgumentList.Add($"--unit=llmproxy-update-agent-refresh-{Guid.NewGuid():N}");
+            startInfo.ArgumentList.Add("--on-active=2s");
+            startInfo.ArgumentList.Add("systemctl");
+            startInfo.ArgumentList.Add("restart");
+            startInfo.ArgumentList.Add("llmproxy-update-agent.service");
+            _ = Process.Start(startInfo);
         }
-        finally
+        catch (Exception exception)
         {
-            _gate.Release();
+            logger.LogWarning(
+                exception,
+                "Update completed but the Update Agent could not schedule its own service restart. The new binary will load on the next service restart.");
         }
     }
 
@@ -264,7 +295,7 @@ public sealed partial class UpdateScheduler(
                 await SaveLockedAsync(cancellationToken);
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "Could not read persisted update-agent state; starting with empty state.");
             _activeJob = null;
@@ -332,6 +363,7 @@ public sealed partial class UpdateScheduler(
             }
             previous = parsed;
         }
+
         return path;
     }
 
