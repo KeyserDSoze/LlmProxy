@@ -59,7 +59,7 @@ The tuning profile contains:
 | `degradedNodePenalty` | penalty for a degraded node | 0.35 |
 | `unknownNodePenalty` | penalty while node health is still unknown | 0.10 |
 
-These are conservative bootstrap values, not claims about DGX Spark capacity. They must be calibrated from representative Copilot traffic and real model/concurrency benchmarks.
+These are conservative bootstrap values, not claims about GPU inference hardware capacity. They must be calibrated from representative Copilot traffic and real model/concurrency benchmarks.
 
 Updates are range-validated, persisted first, audited as `routing.tuning.update`, then published to the in-memory selector. A container restart reloads the persisted profile.
 
@@ -108,7 +108,7 @@ A node address is a complete HTTP(S) service root. Examples:
 http://localhost:3450/primopath
 http://127.0.0.1:8000
 http://10.0.0.25:8000/vllm
-https://dgx-01.internal:8443/inference
+https://inference-01.internal:8443/inference
 ```
 
 LlmProxy appends OpenAI/vLLM paths while preserving any prefix:
@@ -129,4 +129,4 @@ The probe reports the resolved root and URLs for `/health`, `/v1/models`, `/v1/c
 
 ## Hardware telemetry boundary
 
-NVIDIA/DCGM hardware telemetry is intentionally separate from vLLM runtime telemetry. GPU utilization, memory, temperature and power are initially operational diagnostics only. Do not add them to the routing score until real DGX Spark benchmarks establish thresholds that improve throughput/latency rather than merely reacting to noisy utilization samples.
+NVIDIA/DCGM hardware telemetry is intentionally separate from vLLM runtime telemetry. GPU utilization, memory, temperature and power are initially operational diagnostics only. Do not add them to the routing score until real GPU inference hardware benchmarks establish thresholds that improve throughput/latency rather than merely reacting to noisy utilization samples.
