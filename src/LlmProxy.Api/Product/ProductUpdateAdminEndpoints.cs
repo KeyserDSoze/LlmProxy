@@ -54,13 +54,20 @@ public static class ProductUpdateAdminEndpoints
                 });
             }
 
+            var upgradePath = available
+                .Where(item => item.IsNewer && Version.TryParse(item.Version, out var parsed) && Version.TryParse(target.Version, out var targetVersion) && parsed <= targetVersion)
+                .OrderBy(item => Version.Parse(item.Version))
+                .Select(item => item.Version)
+                .ToArray();
+
             try
             {
-                var job = await agent.ScheduleAsync(request with { Version = target.Version }, cancellationToken);
+                var job = await agent.ScheduleAsync(request with { Version = target.Version }, upgradePath, cancellationToken);
                 AddAudit(dbContext, httpContext, "product.update.schedule", job.Id.ToString(), new
                 {
                     target.Version,
                     target.UpdateMode,
+                    upgradePath,
                     job.ScheduledForUtc,
                     request.Force
                 });
