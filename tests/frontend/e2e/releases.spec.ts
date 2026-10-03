@@ -5,6 +5,25 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 test('release notes page exposes the current product version and versioned patch-note history', async ({ page }) => {
+  await page.route('**/api/admin/updates', route => json(route, {
+    currentVersion: '0.0.6',
+    agentAvailable: true,
+    agent: { installedVersion: '0.0.6', activeJob: null, recentJobs: [] },
+    releases: [
+      {
+        version: '0.0.7',
+        title: 'LlmProxy 0.0.7',
+        publishedAtUtc: '2026-10-03T16:00:00Z',
+        releaseUrl: 'https://github.com/KeyserDSoze/LlmProxy/releases/tag/v0.0.7',
+        isNewer: true,
+        updateMode: 'standard',
+        updateTitle: 'Standard immutable update',
+        updateDescription: 'Uses the versioned LlmProxy installer.',
+        requiresHostRestart: false,
+        operatorCommand: 'sudo -E llmproxyctl update 0.0.7'
+      }
+    ]
+  }))
   await page.route('**/api/admin/product', route => json(route, {
     product: 'LlmProxy',
     version: '0.2.0-preview.7',
@@ -87,4 +106,8 @@ test('release notes page exposes the current product version and versioned patch
   await expect(page.getByRole('heading', { name: /Historical usage rollups/ })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Initial versioned preview baseline/ })).toBeVisible()
   await expect(page.getByText('abcdef123456')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Host updates' })).toBeVisible()
+  await expect(page.getByText('v0.0.7', { exact: true })).toBeVisible()
+  await expect(page.getByText('Standard update')).toBeVisible()
+  await expect(page.getByText('sudo -E llmproxyctl update 0.0.7')).toBeVisible()
 })
