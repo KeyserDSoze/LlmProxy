@@ -1,4 +1,5 @@
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Routing;
 

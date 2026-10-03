@@ -110,10 +110,13 @@ describe('admin application', () => {
     mockedApi.setNodeUpstreamCredential.mockResolvedValue({ id: 'node-1', hasUpstreamCredential: true })
     mockedApi.clearNodeUpstreamCredential.mockResolvedValue(undefined)
     mockedApi.updateNodeHardwareMetrics.mockResolvedValue({ id: 'node-1', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm' })
-    mockedApi.models.mockResolvedValue([{ id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, enabled: true }])
+    mockedApi.models.mockResolvedValue([
+      { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
+      { id: 'model-systemone', publicName: 'systemone-laya', providerModelName: 'convaiinnovations/laya', supportsStreaming: false, supportsTools: false, surface: 'SystemOne', enabled: true }
+    ])
     mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
     mockedApi.apiCredentials.mockResolvedValue([])
-    mockedApi.systemOneStatus.mockResolvedValue({ enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null })
+    mockedApi.systemOneStatus.mockResolvedValue({ enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null, models: ['systemone-laya'], defaultModel: 'systemone-laya' })
     mockedApi.testChat.mockResolvedValue({ requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 20, nodeName: 'inference-01', requestBody: '{}', responseBody: '{"ok":true}' })
     mockedApi.testSystemOne.mockResolvedValue({ requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 10, requestBody: '{}', responseBody: '{"billing":true}' })
     mockedApi.contentLogs.mockResolvedValue([{ id: 1, requestId: 'req-log-1', startedAtUtc: '2026-09-09T10:02:00Z', completedAtUtc: '2026-09-09T10:02:01Z', surface: 'chat_completions', method: 'POST', path: '/v1/chat/completions', logicalModel: 'agic-code-fast', apiCredentialId: null, statusCode: 200 }])
@@ -225,6 +228,7 @@ describe('admin application', () => {
     expect(screen.getByRole('heading', { name: 'Model chat test' })).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'System One classifier' }))
     expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
+    expect(screen.getByLabelText('System One logical model')).toHaveValue('systemone-laya')
 
     await user.click(screen.getByRole('button', { name: 'Content Logs' }))
     expect(await screen.findByRole('heading', { name: 'Live request / response log' })).toBeInTheDocument()
