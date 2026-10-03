@@ -179,6 +179,17 @@ If the update fails or remains in readiness checks, inspect the persistent insta
 sudo tail -f /var/log/llmproxy/latest-install.log
 ```
 
+If an older installed `llmproxyctl` fails with `Unknown option: --skip-dgx-check`, it is using the legacy update flag while the target release expects the hardware-neutral name. For release `0.0.6`, bypass the old wrapper once and invoke the installed bootstrap helper with the current flag:
+
+```bash
+sudo -E /usr/local/lib/llmproxy/bootstrap.sh \
+  --version 0.0.6 \
+  --skip-docker-install \
+  --skip-node-check
+```
+
+After that succeeds, release `0.0.6` installs the current `llmproxyctl`, so subsequent updates use `--skip-node-check` automatically. Newer installers also accept the legacy `--skip-dgx-check` and `--dgx-url` spellings as deprecated compatibility aliases.
+
 For rollback to a release already installed locally:
 
 ```bash
