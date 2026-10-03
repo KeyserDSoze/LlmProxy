@@ -71,7 +71,7 @@ Redis/OTEL full stack   SUCCESS
 
 The Docker integration smoke explicitly exercised the administrator System One classifier diagnostic against the classifier mock, the administrator model-chat diagnostic through normal routing/capacity admission, bootstrap API-key reveal, encrypted full-body request/response inspection and the 10-180 day retention boundary. Promotion to `main` still requires the final documentation-only head to re-pass CI; the automatic release train then requires a green `main` CI for the exact merge SHA before publication.
 
-## Administrator release update orchestration — IMPLEMENTED, VALIDATION IN PROGRESS
+## Administrator release update orchestration — DONE / VALIDATED
 
 The current feature branch adds self-service control-plane update management for administrators:
 
@@ -86,7 +86,19 @@ The current feature branch adds self-service control-plane update management for
 
 Focused contract: `docs/update-management.md`.
 
-This increment requires exact-head CI before promotion to `main`.
+Validation evidence:
+
+```text
+validated feature head         301bb179c6b848dd245f30c185b923b09491792c
+PR #5 CI                       37138750752 SUCCESS
+Backend build/unit             SUCCESS
+Frontend build/Vitest          SUCCESS
+Playwright E2E                 SUCCESS
+Docker/PostgreSQL integration  SUCCESS
+Redis/OTEL/Grafana full stack  SUCCESS
+```
+
+The final documentation-status commit must itself re-pass CI before promotion to `main`.
 
 ## Current validated product baseline
 
