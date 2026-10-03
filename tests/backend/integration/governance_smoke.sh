@@ -183,11 +183,16 @@ user_key_b_id="$(echo "$user_key_b_json" | jq -r '.id')"
 user_key_a_secret="$(echo "$user_key_a_json" | jq -r '.secret')"
 user_key_b_secret="$(echo "$user_key_b_json" | jq -r '.secret')"
 
+platform_user_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d "{\"tenantId\":\"tenant-smoke\",\"objectId\":\"user-smoke\",\"principalName\":\"smoke@example.com\",\"displayName\":\"Smoke User\",\"usageGroupId\":\"${group_id}\"}" \
+  http://127.0.0.1:8080/api/admin/users)"
+platform_user_id="$(echo "$platform_user_json" | jq -r '.id')"
+
 "${COMPOSE[@]}" exec -T postgres psql \
   -U "${POSTGRES_USER:-llmproxy}" \
   -d "${POSTGRES_DB:-llmproxy}" \
   -v ON_ERROR_STOP=1 \
-  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='user-smoke', \"OwnerPrincipalName\"='smoke@example.com' WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
+  -c "UPDATE api_credentials SET \"OwnerTenantId\"='tenant-smoke', \"OwnerObjectId\"='user-smoke', \"OwnerPrincipalName\"='smoke@example.com', \"UsageGroupId\"='${group_id}', \"EnforceCallerGovernance\"=TRUE WHERE \"Id\" IN ('${user_key_a_id}', '${user_key_b_id}');" >/dev/null
 
 # Direct SQL is test-only setup; restart rebuilds the credential L1 from PostgreSQL so ownership is present on the inference path.
 "${COMPOSE[@]}" restart llmproxy >/dev/null
