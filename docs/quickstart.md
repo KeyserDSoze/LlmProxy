@@ -33,7 +33,7 @@ Browser / curl / client OpenAI-compatible
              | LAN / host
              v
       vLLM / mock inference
-      DGX Spark o test server
+      GPU inference hardware o test server
 ```
 
 Per il primo test puoi lasciare **Entra ID disabilitato** e usare una semplice API key di sviluppo. Entra diventa obbligatorio solo quando avvii LlmProxy con `ASPNETCORE_ENVIRONMENT=Production`.
@@ -223,10 +223,10 @@ ASPNETCORE_ENVIRONMENT=Development
 ENTRA_ENABLED=false
 
 BOOTSTRAP_ENABLED=true
-DGX_NODE_NAME=dgx-01
-DGX_NODE_BASE_ADDRESS=http://10.0.0.21:8000
-DGX_NODE_WEIGHT=1
-DGX_NODE_MAX_CONCURRENCY=4
+INFERENCE_NODE_NAME=inference-01
+INFERENCE_NODE_BASE_ADDRESS=http://10.0.0.21:8000
+INFERENCE_NODE_WEIGHT=1
+INFERENCE_NODE_MAX_CONCURRENCY=4
 
 PUBLIC_MODEL_NAME=agic-code-fast
 PROVIDER_MODEL_NAME=MODEL_ID_ESPOSTO_DA_VLLM
@@ -256,7 +256,7 @@ Il client non deve conoscere il model ID fisico.
 
 ---
 
-## 7. Collegare un DGX/vLLM reale
+## 7. Collegare un inference node/vLLM reale
 
 Dalla VM verifica prima il runtime direttamente:
 
@@ -265,7 +265,7 @@ curl -f http://10.0.0.21:8000/health
 curl -f http://10.0.0.21:8000/v1/models | jq
 ```
 
-Il valore `DGX_NODE_BASE_ADDRESS` è la **service root completa**. Sono validi per esempio:
+Il valore `INFERENCE_NODE_BASE_ADDRESS` è la **service root completa**. Sono validi per esempio:
 
 ```text
 http://10.0.0.21:8000
@@ -287,7 +287,7 @@ LlmProxy aggiunge automaticamente:
 
 ---
 
-## 8. Provare senza DGX usando il mock repository
+## 8. Provare senza inference node usando il mock repository
 
 Se non hai ancora vLLM disponibile, puoi usare il mock HTTP usato dalla CI.
 
@@ -303,14 +303,14 @@ Dalla root della repository:
 python3 tests/backend/integration/mock_llm.py \
   --port 3450 \
   --prefix /primopath \
-  --name mock-dgx-01
+  --name mock-inference-01
 ```
 
 Lascia quel terminale aperto e modifica `.env.quickstart`:
 
 ```env
-DGX_NODE_NAME=mock-dgx-01
-DGX_NODE_BASE_ADDRESS=http://host.docker.internal:3450/primopath
+INFERENCE_NODE_NAME=mock-inference-01
+INFERENCE_NODE_BASE_ADDRESS=http://host.docker.internal:3450/primopath
 PUBLIC_MODEL_NAME=agic-code-fast
 PROVIDER_MODEL_NAME=bootstrap-model
 HARDWARE_METRICS_ENABLED=false
@@ -684,7 +684,7 @@ Per una prova LAN iniziale senza HTTPS pubblico continua invece in Development/E
 
 PostgreSQL non viene pubblicato sulla rete host dal quickstart.
 
-### DGX/vLLM
+### inference node/vLLM
 
 La VM deve poter raggiungere la service root configurata, ad esempio:
 
@@ -744,7 +744,7 @@ docker compose \
   logs --tail=200 llmproxy
 ```
 
-Verifica che `DGX_NODE_BASE_ADDRESS` sia la service root e **non** l'URL completo di `/v1/chat/completions`.
+Verifica che `INFERENCE_NODE_BASE_ADDRESS` sia la service root e **non** l'URL completo di `/v1/chat/completions`.
 
 ## 26. PostgreSQL non è ready
 
@@ -801,7 +801,7 @@ Prima prova Linux:
 
 Dopo questo smoke test puoi passare a:
 
-1. vLLM reale su DGX Spark;
+1. vLLM reale su GPU inference hardware;
 2. DCGM hardware telemetry;
 3. HTTPS/Cloudflare Tunnel;
 4. Entra ID;
@@ -812,7 +812,7 @@ Dopo questo smoke test puoi passare a:
 ## Documenti successivi
 
 - `docs/deployment.md` — deployment production-oriented.
-- `docs/dgx-vllm.md` — contratto DGX/vLLM e service root.
+- `docs/inference-runtime.md` — contratto inference node/vLLM e service root.
 - `docs/security.md` — trust boundaries, Entra e secret handling.
 - `docs/github-copilot.md` — integrazione GitHub Copilot.
 - `docs/operations.md` — gestione operativa.
