@@ -202,7 +202,9 @@ export default function Governance() {
       logicalModel: policy.logicalModel ?? null,
       requestsPerWindow: policy.requestsPerWindow,
       windowSeconds: policy.windowSeconds,
-      enabled: !policy.enabled
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
     })
     setMessage(`User rate-limit policy ${policy.enabled ? 'disabled' : 'enabled'} live.`)
     await refresh()
@@ -211,6 +213,41 @@ export default function Governance() {
   async function deleteUserRateLimit(policy: UserRateLimitPolicy) {
     await api.deleteUserRateLimit(policy.id)
     setMessage('User rate-limit policy removed.')
+    await refresh()
+  }
+
+  async function createGroupRateLimit(event: FormEvent) {
+    event.preventDefault()
+    if (!groupPolicyGroupId) return
+    await api.createGroupRateLimit({
+      usageGroupId: groupPolicyGroupId,
+      logicalModel: groupRateModel || null,
+      requestsPerWindow: groupRequestsPerWindow,
+      windowSeconds: groupWindowSeconds,
+      enabled: true,
+      outputTokensPerWindow: groupOutputTokensPerWindow,
+      maxOutputTokensPerRequest: groupMaxOutputTokensPerRequest
+    })
+    setMessage('Group request and output-token quota created and applied live.')
+    await refresh()
+  }
+
+  async function toggleGroupRateLimit(policy: UsageGroupRateLimitPolicy) {
+    await api.updateGroupRateLimit(policy.id, {
+      logicalModel: policy.logicalModel ?? null,
+      requestsPerWindow: policy.requestsPerWindow,
+      windowSeconds: policy.windowSeconds,
+      enabled: !policy.enabled,
+      outputTokensPerWindow: policy.outputTokensPerWindow,
+      maxOutputTokensPerRequest: policy.maxOutputTokensPerRequest
+    })
+    setMessage(`Group quota ${policy.enabled ? 'disabled' : 'enabled'} live.`)
+    await refresh()
+  }
+
+  async function deleteGroupRateLimit(policy: UsageGroupRateLimitPolicy) {
+    await api.deleteGroupRateLimit(policy.id)
+    setMessage('Group quota removed.')
     await refresh()
   }
 
