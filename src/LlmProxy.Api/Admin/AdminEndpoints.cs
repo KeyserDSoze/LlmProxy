@@ -350,6 +350,8 @@ public static class AdminEndpoints
                 item.ExpiresAtUtc,
                 item.LastUsedAtUtc,
                 item.UsageGroupId,
+                item.EnforceCallerGovernance,
+                kind = item.IsPersonal ? "personal" : "organization",
                 secretAvailable = item.SecretCiphertext != null
             }).ToListAsync(cancellationToken)));
 
@@ -370,7 +372,9 @@ public static class AdminEndpoints
             {
                 credential.Name,
                 credential.KeyPrefix,
-                credential.ExpiresAtUtc
+                credential.ExpiresAtUtc,
+                kind = "organization",
+                credential.EnforceCallerGovernance
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(new
@@ -380,6 +384,8 @@ public static class AdminEndpoints
                 credential.KeyPrefix,
                 credential.CreatedAtUtc,
                 credential.ExpiresAtUtc,
+                kind = "organization",
+                credential.EnforceCallerGovernance,
                 secretAvailable = true,
                 secret
             });
