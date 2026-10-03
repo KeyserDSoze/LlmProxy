@@ -640,6 +640,8 @@ export type UpdateJobStatus = {
   completedAtUtc?: string | null
   error?: string | null
   exitCode?: number | null
+  upgradePath?: string[] | null
+  currentStep?: string | null
 }
 
 export type AvailableProductRelease = {
