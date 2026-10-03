@@ -51,6 +51,7 @@ GET  /api/admin/users
 POST /api/admin/users
 POST /api/admin/users/{id}/disable
 POST /api/admin/users/{id}/enable
+PUT  /api/admin/users/{id}/usage-group
 ```
 
 Provisioning mode update:
@@ -73,11 +74,25 @@ Manual registration:
   "objectId": "<entra-user-object-id>",
   "principalName": "user@example.com",
   "displayName": "Example User",
+  "usageGroupId": "<optional-usage-group-id>",
   "enabled": true
 }
 ```
 
 When `tenantId` is omitted, the configured `EntraId:TenantId` is used.
+
+## User groups
+
+The existing **Usage Group** entity is also the end-user grouping boundary. A platform user may have zero or one current group. Administrators assign the group in **Users & Access**.
+
+When the group changes:
+
+1. the platform-user row is updated;
+2. all of that user's personal API credentials receive the same current `UsageGroupId`;
+3. new personal keys inherit the user's current group;
+4. historical request metrics keep the group snapshot captured when the request happened.
+
+This gives administrators group-level usage reporting and group-level request/output-token quotas without rewriting history.
 
 ## Disable semantics
 
@@ -99,7 +114,7 @@ Administrator/super-admin access is not controlled by the normal-user registry.
 - stable Entra identity metadata;
 - personal API-key lifecycle;
 - 30-day request/token/error usage;
-- applicable aggregate user request limits;
+- applicable user and group request/output-token limits;
 - latest request metadata from the user's personal credentials.
 
 Recent-call rows expose metadata such as time, logical model, surface, HTTP status, duration, TTFT, token counts and error code. Full prompt/response payload inspection remains administrator-only in Content Logs.
