@@ -42,10 +42,10 @@ export LLM_PROXY_API_KEY="dev-change-me"
 export LLM_PROXY_API_KEY_PEPPER="capacity-test-pepper"
 export ENTRA_ENABLED="false"
 export BOOTSTRAP_ENABLED="true"
-export DGX_NODE_NAME="dgx-capacity"
-export DGX_NODE_BASE_ADDRESS="http://host.docker.internal:3460/capacity"
-export DGX_NODE_WEIGHT="1"
-export DGX_NODE_MAX_CONCURRENCY="1"
+export INFERENCE_NODE_NAME="inference-capacity"
+export INFERENCE_NODE_BASE_ADDRESS="http://host.docker.internal:3460/capacity"
+export INFERENCE_NODE_WEIGHT="1"
+export INFERENCE_NODE_MAX_CONCURRENCY="1"
 export ROUTING_STRATEGY="WeightedLeastLoaded"
 export HEALTH_INTERVAL_SECONDS="1"
 export HEALTH_HEALTHY_AFTER_SUCCESSES="1"
@@ -77,7 +77,7 @@ applied_capacity="$(curl --fail --silent http://127.0.0.1:8080/api/admin/capacit
 echo "$applied_capacity" | jq -e '.deployments[0].maxConcurrency == 1 and .deployments[0].recommendedMaxConcurrency == 1' >/dev/null
 
 # A recommendation can be stored as evidence even when it is above the physical node ceiling,
-# but explicit apply must refuse to overcommit the DGX.
+# but explicit apply must refuse to overcommit the inference node.
 curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"recommendedMaxConcurrency":2,"p95TtftMilliseconds":300,"p95DurationMilliseconds":4000,"sustainableOutputTokensPerSecond":100,"benchmarkSource":"benchmark-results/too-high.json","measuredAtUtc":"2026-09-13T07:05:00Z"}' "http://127.0.0.1:8080/api/admin/deployments/${deployment_id}/capacity-profile" >/dev/null
 apply_too_high_status="$(curl --silent --output /tmp/capacity-apply-too-high.json --write-out '%{http_code}' -X POST "http://127.0.0.1:8080/api/admin/deployments/${deployment_id}/capacity-profile/apply")"
 if [[ "$apply_too_high_status" != "400" ]]; then
@@ -93,7 +93,7 @@ persisted_capacity="$(curl --fail --silent http://127.0.0.1:8080/api/admin/capac
 echo "$persisted_capacity" | jq -e '.deployments[0].recommendedMaxConcurrency == 1 and .deployments[0].benchmarkSource == "benchmark-results/capacity-smoke.json" and .deployments[0].benchmarkP95TtftMilliseconds == 420' >/dev/null
 
 # Hold the only physical node slot with a real SSE request. A concurrent request must be rejected
-# locally by LlmProxy instead of being forwarded to the already-saturated DGX.
+# locally by LlmProxy instead of being forwarded to the already-saturated inference node.
 curl --silent --no-buffer \
   -H 'Authorization: Bearer dev-change-me' \
   -H 'Content-Type: application/json' \
