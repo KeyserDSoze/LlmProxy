@@ -63,6 +63,36 @@ type PersonalRequest = {
   apiCredentialId?: string | null
 }
 
+type PersonalContentLogSummary = {
+  id: number
+  requestId: string
+  startedAtUtc: string
+  completedAtUtc: string
+  surface: string
+  method: string
+  path: string
+  logicalModel?: string | null
+  apiCredentialId?: string | null
+  statusCode: number
+}
+
+type PersonalContentLogDetail = PersonalContentLogSummary & {
+  requestBody: string
+  responseBody: string
+  nodeId?: string | null
+  attemptCount?: number | null
+  timeToFirstByteMilliseconds?: number | null
+  totalTokens?: number | null
+  errorCode?: string | null
+}
+
+type PersonalContentLogPage = {
+  items: PersonalContentLogSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 type PersonalUsage = {
   windowDays: number
   sinceUtc: string
@@ -103,6 +133,15 @@ export default function UserPortal() {
   const [usage, setUsage] = useState<PersonalUsage | null>(null)
   const [rateLimits, setRateLimits] = useState<PersonalRateLimit[]>([])
   const [requests, setRequests] = useState<PersonalRequest[]>([])
+  const [auditResult, setAuditResult] = useState<PersonalContentLogPage>({ items: [], total: 0, page: 1, pageSize: 20 })
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditPageSize, setAuditPageSize] = useState(20)
+  const [auditModel, setAuditModel] = useState('')
+  const [auditSurface, setAuditSurface] = useState('')
+  const [auditCredentialId, setAuditCredentialId] = useState('')
+  const [auditStatus, setAuditStatus] = useState<'all' | 'success' | 'error'>('all')
+  const [selectedAudit, setSelectedAudit] = useState<PersonalContentLogDetail | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
   const [name, setName] = useState('')
   const [created, setCreated] = useState<CreatedCredential | null>(null)
   const [loading, setLoading] = useState(true)
@@ -136,6 +175,41 @@ export default function UserPortal() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true)
+    try {
+      const query = new URLSearchParams({
+        page: String(auditPage),
+        pageSize: String(auditPageSize)
+      })
+      if (auditModel) query.set('model', auditModel)
+      if (auditSurface) query.set('surface', auditSurface)
+      if (auditCredentialId) query.set('apiCredentialId', auditCredentialId)
+      if (auditStatus !== 'all') query.set('status', auditStatus)
+      setAuditResult(await request<PersonalContentLogPage>(`/api/me/content-logs?${query.toString()}`))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message !== 'AUTH_REQUIRED' && message !== 'FORBIDDEN') setError(message)
+    } finally {
+      setAuditLoading(false)
+    }
+  }, [auditPage, auditPageSize, auditModel, auditSurface, auditCredentialId, auditStatus])
+
+  useEffect(() => {
+    if (loading || authRequired || !identity) return
+    const timer = window.setTimeout(() => void loadAudit(), 150)
+    return () => window.clearTimeout(timer)
+  }, [loadAudit, loading, authRequired, identity])
+
+  async function openAudit(id: number) {
+    try {
+      setSelectedAudit(await request<PersonalContentLogDetail>(`/api/me/content-logs/${id}`))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   async function createCredential(event: FormEvent) {
     event.preventDefault()
@@ -221,6 +295,45 @@ export default function UserPortal() {
           </tbody></table>
         </section>
 
+        <section className="panel">
+          <div className="panelTitle"><div><h2>My request audit</h2><span>Exact retained request/response payloads from your personal API keys only.</span></div><button className="secondary" onClick={() => void loadAudit()}>Refresh</button></div>
+          <div className="filterBar">
+            <label>Credential<select aria-label="Filter my request audit by credential" value={auditCredentialId} onChange={event => { setAuditCredentialId(event.target.value); setAuditPage(1) }}><option value="">All my credentials</option>{credentials.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label>Model<input aria-label="Filter my request audit by model" value={auditModel} onChange={event => { setAuditModel(event.target.value); setAuditPage(1) }} placeholder="agic-code-fast" /></label>
+            <label>Surface<select aria-label="Filter my request audit by surface" value={auditSurface} onChange={event => { setAuditSurface(event.target.value); setAuditPage(1) }}><option value="">All surfaces</option><option value="chat_completions">Chat Completions</option><option value="responses">Responses</option><option value="systemone">System One</option></select></label>
+            <label>Status<select aria-label="Filter my request audit by status" value={auditStatus} onChange={event => { setAuditStatus(event.target.value as 'all' | 'success' | 'error'); setAuditPage(1) }}><option value="all">All</option><option value="success">Success</option><option value="error">Errors</option></select></label>
+            <label>Rows<select aria-label="My request audit page size" value={auditPageSize} onChange={event => { setAuditPageSize(Number(event.target.value)); setAuditPage(1) }}><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+          </div>
+          <div className="tableScroll"><table><thead><tr><th>Time</th><th>Credential</th><th>Model</th><th>Surface</th><th>Status</th><th>Request ID</th><th>Action</th></tr></thead><tbody>
+            {auditResult.items.map(item => <tr key={item.id}>
+              <td>{formatDate(item.startedAtUtc)}</td>
+              <td>{credentials.find(credential => credential.id === item.apiCredentialId)?.name ?? '—'}</td>
+              <td><strong>{item.logicalModel ?? '—'}</strong></td>
+              <td>{friendlySurface(item.surface)}</td>
+              <td>{item.statusCode}</td>
+              <td className="mono">{short(item.requestId)}</td>
+              <td><button className="secondary" onClick={() => void openAudit(item.id)}>Inspect</button></td>
+            </tr>)}
+            {!auditLoading && auditResult.items.length === 0 && <tr><td colSpan={7} className="muted">No retained request/response payloads match these filters.</td></tr>}
+            {auditLoading && <tr><td colSpan={7} className="muted">Loading your request audit…</td></tr>}
+          </tbody></table></div>
+          <div className="pagination"><span>{auditResult.total === 0 ? '0 requests' : `${(auditResult.page - 1) * auditResult.pageSize + 1}–${Math.min(auditResult.page * auditResult.pageSize, auditResult.total)} of ${auditResult.total}`}</span><div className="actions"><button disabled={auditPage <= 1 || auditLoading} onClick={() => setAuditPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {auditPage} / {Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize))}</span><button disabled={auditPage >= Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize)) || auditLoading} onClick={() => setAuditPage(current => current + 1)}>Next</button></div></div>
+        </section>
+
+        {selectedAudit && <section className="panel formPanel">
+          <div className="panelTitle"><div><h2>My request detail</h2><span>{friendlySurface(selectedAudit.surface)} · HTTP {selectedAudit.statusCode}</span></div><button className="secondary" onClick={() => setSelectedAudit(null)}>Close</button></div>
+          <div className="statusGrid">
+            <div><span>Request ID</span><strong className="mono">{selectedAudit.requestId}</strong></div>
+            <div><span>Model</span><strong>{selectedAudit.logicalModel ?? '—'}</strong></div>
+            <div><span>Attempts</span><strong>{selectedAudit.attemptCount ?? '—'}</strong></div>
+            <div><span>TTFT</span><strong>{selectedAudit.timeToFirstByteMilliseconds == null ? '—' : selectedAudit.timeToFirstByteMilliseconds + ' ms'}</strong></div>
+            <div><span>Tokens</span><strong>{selectedAudit.totalTokens ?? '—'}</strong></div>
+            <div><span>Error</span><strong className="mono">{selectedAudit.errorCode ?? '—'}</strong></div>
+          </div>
+          <PayloadBlock title="Request body" body={selectedAudit.requestBody} />
+          <PayloadBlock title="Response body" body={selectedAudit.responseBody} />
+        </section>}
+
         <div className="gridTwo">
           <section className="panel">
             <div className="panelTitle"><h2>Personal credentials</h2><span>{credentials.length} keys</span></div>
@@ -255,6 +368,17 @@ export default function UserPortal() {
     </main>
   </div>
 }
+
+function PayloadBlock({ title, body }: { title: string; body: string }) {
+  return <div className="payloadBlock">
+    <div className="payloadHeader"><h3>{title}</h3><button className="secondary" onClick={() => void navigator.clipboard.writeText(body)}>Copy</button></div>
+    <pre className="payload">{pretty(body)}</pre>
+  </div>
+}
+
+function pretty(value: string) { try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value } }
+function friendlySurface(value: string) { return ({ chat_completions: 'Chat Completions', responses: 'Responses', systemone: 'System One' } as Record<string,string>)[value] ?? value }
+function short(value: string) { return value.length > 18 ? value.slice(0, 14) + '…' : value }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>
