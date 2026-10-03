@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTALL_DIR="${LLMPROXY_INSTALL_DIR:-/opt/llmproxy}"
 ENV_FILE="${LLMPROXY_ENV_FILE:-$INSTALL_DIR/.env}"
 GATEWAY_URL="${LLMPROXY_ACCEPTANCE_GATEWAY_URL:-}"
-DGX_URL="${LLMPROXY_ACCEPTANCE_DGX_URL:-}"
+INFERENCE_NODE_URL="${LLMPROXY_ACCEPTANCE_INFERENCE_NODE_URL:-}"
 PUBLIC_MODEL="${LLMPROXY_ACCEPTANCE_PUBLIC_MODEL:-}"
 PROVIDER_MODEL="${LLMPROXY_ACCEPTANCE_PROVIDER_MODEL:-}"
 EVIDENCE_DIR="${LLMPROXY_ACCEPTANCE_EVIDENCE_DIR:-}"
@@ -23,7 +23,7 @@ API secrets are never copied into the evidence bundle.
 Options:
   --env-file FILE        Production env file (default: /opt/llmproxy/.env)
   --gateway-url URL      LlmProxy service root (default from env, localhost)
-  --dgx-url URL          DGX/vLLM service root (default: DGX_NODE_BASE_ADDRESS)
+  --node-url URL          inference node/vLLM service root (default: INFERENCE_NODE_BASE_ADDRESS)
   --public-model MODEL   Logical public model (default: PUBLIC_MODEL_NAME)
   --provider-model MODEL Provider/vLLM model id (default: PROVIDER_MODEL_NAME)
   --evidence-dir DIR     Evidence output directory
@@ -33,7 +33,7 @@ Options:
 
 Secrets are intentionally not accepted as command-line flags. The gateway API
 key is read from LLMPROXY_ACCEPTANCE_API_KEY or LLM_PROXY_API_KEY in the env
-file. Optional DGX bearer auth is read from LLMPROXY_ACCEPTANCE_DGX_API_KEY.
+file. Optional inference node bearer auth is read from LLMPROXY_ACCEPTANCE_INFERENCE_NODE_API_KEY.
 EOF
 }
 
@@ -47,8 +47,8 @@ while [[ $# -gt 0 ]]; do
       GATEWAY_URL="${2:?--gateway-url requires a value}"
       shift 2
       ;;
-    --dgx-url)
-      DGX_URL="${2:?--dgx-url requires a value}"
+    --node-url)
+      INFERENCE_NODE_URL="${2:?--node-url requires a value}"
       shift 2
       ;;
     --public-model)
@@ -115,8 +115,8 @@ if [[ -z "$GATEWAY_URL" ]]; then
   gateway_port="$(read_env_value LLMPROXY_PORT)"
   GATEWAY_URL="http://127.0.0.1:${gateway_port:-8080}"
 fi
-if [[ -z "$DGX_URL" ]]; then
-  DGX_URL="$(read_env_value DGX_NODE_BASE_ADDRESS)"
+if [[ -z "$INFERENCE_NODE_URL" ]]; then
+  INFERENCE_NODE_URL="$(read_env_value INFERENCE_NODE_BASE_ADDRESS)"
 fi
 if [[ -z "$PUBLIC_MODEL" ]]; then
   PUBLIC_MODEL="$(read_env_value PUBLIC_MODEL_NAME)"
@@ -126,11 +126,11 @@ if [[ -z "$PROVIDER_MODEL" ]]; then
 fi
 
 API_KEY="${LLMPROXY_ACCEPTANCE_API_KEY:-$(read_env_value LLM_PROXY_API_KEY)}"
-DGX_API_KEY="${LLMPROXY_ACCEPTANCE_DGX_API_KEY:-}"
+INFERENCE_NODE_API_KEY="${LLMPROXY_ACCEPTANCE_INFERENCE_NODE_API_KEY:-}"
 
 for pair in \
   "gateway URL:$GATEWAY_URL" \
-  "DGX URL:$DGX_URL" \
+  "inference node URL:$INFERENCE_NODE_URL" \
   "public model:$PUBLIC_MODEL" \
   "provider model:$PROVIDER_MODEL" \
   "gateway API key:$API_KEY"; do
@@ -143,7 +143,7 @@ for pair in \
 done
 
 GATEWAY_URL="${GATEWAY_URL%/}"
-DGX_URL="${DGX_URL%/}"
+INFERENCE_NODE_URL="${INFERENCE_NODE_URL%/}"
 
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [[ -z "$EVIDENCE_DIR" ]]; then
@@ -279,19 +279,19 @@ http_probe() {
   record_check "$outcome" "$name" "$url" "$http_status" "$content_type" "$ttfb" "$total" "$detail"
 }
 
-CHAT_DGX="$TMP_DIR/chat-dgx.json"
-CHAT_DGX_STREAM="$TMP_DIR/chat-dgx-stream.json"
-RESP_DGX="$TMP_DIR/resp-dgx.json"
-RESP_DGX_STREAM="$TMP_DIR/resp-dgx-stream.json"
+CHAT_INFERENCE_NODE="$TMP_DIR/chat-inference-node.json"
+CHAT_INFERENCE_NODE_STREAM="$TMP_DIR/chat-inference-stream.json"
+RESP_INFERENCE_NODE="$TMP_DIR/resp-inference-node.json"
+RESP_INFERENCE_NODE_STREAM="$TMP_DIR/resp-inference-stream.json"
 CHAT_GATEWAY="$TMP_DIR/chat-gateway.json"
 CHAT_GATEWAY_STREAM="$TMP_DIR/chat-gateway-stream.json"
 RESP_GATEWAY="$TMP_DIR/resp-gateway.json"
 RESP_GATEWAY_STREAM="$TMP_DIR/resp-gateway-stream.json"
 
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_DGX"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_DGX_STREAM"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_DGX"
-jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:true}' > "$RESP_DGX_STREAM"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_INFERENCE_NODE"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_INFERENCE_NODE_STREAM"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_INFERENCE_NODE"
+jq -n --arg model "$PROVIDER_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:true}' > "$RESP_INFERENCE_NODE_STREAM"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:false}' > "$CHAT_GATEWAY"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,messages:[{role:"user",content:"Reply with exactly OK."}],max_tokens:8,stream:true}' > "$CHAT_GATEWAY_STREAM"
 jq -n --arg model "$PUBLIC_MODEL" '{model:$model,input:"Reply with exactly OK.",max_output_tokens:8,stream:false}' > "$RESP_GATEWAY"
@@ -300,12 +300,12 @@ chmod 600 "$TMP_DIR"/*.json
 
 # vLLM's canonical /health endpoint intentionally returns an empty Response on
 # success, so acceptance validates its HTTP status only rather than requiring JSON.
-http_probe "dgx-health" GET "$DGX_URL/health" "$DGX_API_KEY" "" "" ""
-http_probe "dgx-models" GET "$DGX_URL/v1/models" "$DGX_API_KEY" "" "application/json" "$PROVIDER_MODEL"
-http_probe "dgx-chat" POST "$DGX_URL/v1/chat/completions" "$DGX_API_KEY" "$CHAT_DGX" "application/json" ""
-http_probe "dgx-chat-stream" POST "$DGX_URL/v1/chat/completions" "$DGX_API_KEY" "$CHAT_DGX_STREAM" "text/event-stream" ""
-http_probe "dgx-responses" POST "$DGX_URL/v1/responses" "$DGX_API_KEY" "$RESP_DGX" "application/json" ""
-http_probe "dgx-responses-stream" POST "$DGX_URL/v1/responses" "$DGX_API_KEY" "$RESP_DGX_STREAM" "text/event-stream" ""
+http_probe "inference-health" GET "$INFERENCE_NODE_URL/health" "$INFERENCE_NODE_API_KEY" "" "" ""
+http_probe "inference-models" GET "$INFERENCE_NODE_URL/v1/models" "$INFERENCE_NODE_API_KEY" "" "application/json" "$PROVIDER_MODEL"
+http_probe "inference-chat" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$INFERENCE_NODE_API_KEY" "$CHAT_INFERENCE_NODE" "application/json" ""
+http_probe "inference-chat-stream" POST "$INFERENCE_NODE_URL/v1/chat/completions" "$INFERENCE_NODE_API_KEY" "$CHAT_INFERENCE_NODE_STREAM" "text/event-stream" ""
+http_probe "inference-responses" POST "$INFERENCE_NODE_URL/v1/responses" "$INFERENCE_NODE_API_KEY" "$RESP_INFERENCE_NODE" "application/json" ""
+http_probe "inference-responses-stream" POST "$INFERENCE_NODE_URL/v1/responses" "$INFERENCE_NODE_API_KEY" "$RESP_INFERENCE_NODE_STREAM" "text/event-stream" ""
 
 http_probe "gateway-health" GET "$GATEWAY_URL/healthz" "" "" "application/json" ""
 http_probe "gateway-readiness" GET "$GATEWAY_URL/readyz" "" "" "application/json" ""
@@ -327,7 +327,7 @@ finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- Docker server: $DOCKER_SERVER"
   echo "- Docker Compose: $COMPOSE_VERSION"
   echo "- Gateway root: $GATEWAY_URL"
-  echo "- DGX root: $DGX_URL"
+  echo "- inference node root: $INFERENCE_NODE_URL"
   echo "- Logical model: $PUBLIC_MODEL"
   echo "- Provider model: $PROVIDER_MODEL"
   echo "- Result: $([[ "$FAILURES" -eq 0 ]] && echo PASS || echo FAIL)"
@@ -348,8 +348,8 @@ if [[ -n "$API_KEY" ]] && grep -Fq "$API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; th
   echo "Acceptance evidence unexpectedly contains the gateway API key." >&2
   exit 6
 fi
-if [[ -n "$DGX_API_KEY" ]] && grep -Fq "$DGX_API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; then
-  echo "Acceptance evidence unexpectedly contains the DGX API key." >&2
+if [[ -n "$INFERENCE_NODE_API_KEY" ]] && grep -Fq "$INFERENCE_NODE_API_KEY" "$SUMMARY_FILE" "$CHECKS_FILE"; then
+  echo "Acceptance evidence unexpectedly contains the inference node API key." >&2
   exit 6
 fi
 

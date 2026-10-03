@@ -4,7 +4,7 @@
 
 LlmProxy intentionally starts with one bounded context: **AI Inference Gateway**.
 
-The gateway owns logical model publication, DGX node registration, model deployments, request routing, runtime health, inference credentials and operational telemetry. The system is deployed as one application process plus PostgreSQL. This keeps transactional boundaries and operations simple while preserving clean internal layers.
+The gateway owns logical model publication, inference node registration, model deployments, request routing, runtime health, inference credentials and operational telemetry. The system is deployed as one application process plus PostgreSQL. This keeps transactional boundaries and operations simple while preserving clean internal layers.
 
 ## Layering
 
@@ -44,12 +44,12 @@ LlmProxy VM
         |
         v
 Private network
-  |-- DGX Spark 01 -> vLLM
-  |-- DGX Spark 02 -> vLLM
-  `-- DGX Spark N  -> vLLM
+  |-- GPU inference hardware 01 -> vLLM
+  |-- GPU inference hardware 02 -> vLLM
+  `-- GPU inference hardware N  -> vLLM
 ```
 
-No DGX runtime should be directly exposed to the Internet. The gateway is the policy enforcement and observability point.
+No inference node runtime should be directly exposed to the Internet. The gateway is the policy enforcement and observability point.
 
 ## Logical model abstraction
 
@@ -58,9 +58,9 @@ Clients use logical names rather than physical model identifiers.
 ```text
 agic-code-fast
    |
-   +-- deployment A -> DGX01 -> provider model X
-   +-- deployment B -> DGX02 -> provider model X
-   `-- deployment C -> DGX03 -> provider model X
+   +-- deployment A -> inference node01 -> provider model X
+   +-- deployment B -> inference node02 -> provider model X
+   `-- deployment C -> inference node03 -> provider model X
 ```
 
 Changing the provider model behind `agic-code-fast` does not require changing GitHub Copilot configuration.
@@ -89,4 +89,4 @@ The gateway does not buffer generated output. Upstream vLLM responses are reques
 
 ## Product evolution
 
-The architecture deliberately leaves the inference runtime behind a port. vLLM is the initial target, but a future deployment may point to another OpenAI-compatible runtime, a larger DGX platform or a cloud provider without changing the public client contract.
+The architecture deliberately leaves the inference runtime behind a port. vLLM is the initial target, but a future deployment may point to another OpenAI-compatible runtime, a larger inference node platform or a cloud provider without changing the public client contract.
