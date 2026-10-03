@@ -186,7 +186,7 @@ revealed_bootstrap="$(curl --fail --silent "http://127.0.0.1:8080/api/admin/api-
 echo "$revealed_bootstrap" | jq -e '.secret == "dev-change-me" and .keyPrefix == "dev-change-me"' >/dev/null
 
 content_log_settings="$(curl --fail --silent http://127.0.0.1:8080/api/admin/content-logs/settings)"
-echo "$content_log_settings" | jq -e '.retentionDays == 30 and .minimumRetentionDays == 10 and .maximumRetentionDays == 180 and .cleanupIntervalHours == 4' >/dev/null
+echo "$content_log_settings" | jq -e '.retentionDays == 30 and .minimumRetentionDays == 10 and .maximumRetentionDays == 4015 and .cleanupIntervalHours == 4' >/dev/null
 
 invalid_retention_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":9}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
 if [[ "$invalid_retention_status" != "400" ]]; then
@@ -195,6 +195,16 @@ fi
 
 updated_content_log_settings="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":10}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
 echo "$updated_content_log_settings" | jq -e '.retentionDays == 10 and .cleanupIntervalHours == 4' >/dev/null
+
+maximum_content_log_settings="$(curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":4015}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
+echo "$maximum_content_log_settings" | jq -e '.retentionDays == 4015 and .maximumRetentionDays == 4015' >/dev/null
+
+too_long_retention_status="$(curl --silent --output /dev/null --write-out '%{http_code}' -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":4016}' http://127.0.0.1:8080/api/admin/content-logs/settings)"
+if [[ "$too_long_retention_status" != "400" ]]; then
+  fail_with_diagnostics "Expected request-audit retention 4016 days to be rejected with 400, got ${too_long_retention_status}."
+fi
+
+curl --fail --silent -X PUT -H 'Content-Type: application/json' -d '{"retentionDays":10}' http://127.0.0.1:8080/api/admin/content-logs/settings >/dev/null
 
 content_logs_ready=false
 for attempt in {1..40}; do
