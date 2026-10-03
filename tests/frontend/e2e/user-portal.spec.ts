@@ -72,6 +72,47 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
     apiCredentialId: 'credential-1'
   }]))
 
+  await page.route('**/api/me/content-logs**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/me/content-logs/1') {
+      return json(route, {
+        id: 1,
+        requestId: 'request-1',
+        startedAtUtc: '2026-09-17T08:00:00Z',
+        completedAtUtc: '2026-09-17T08:00:01Z',
+        surface: 'chat_completions',
+        method: 'POST',
+        path: '/v1/chat/completions',
+        logicalModel: 'agic-code-fast',
+        apiCredentialId: 'credential-1',
+        statusCode: 200,
+        requestBody: '{"model":"agic-code-fast","messages":[{"role":"user","content":"hello from user audit"}]}',
+        responseBody: '{"choices":[{"message":{"content":"owned response"}}]}',
+        attemptCount: 1,
+        timeToFirstByteMilliseconds: 110,
+        totalTokens: 15,
+        errorCode: null
+      })
+    }
+    return json(route, {
+      items: [{
+        id: 1,
+        requestId: 'request-1',
+        startedAtUtc: '2026-09-17T08:00:00Z',
+        completedAtUtc: '2026-09-17T08:00:01Z',
+        surface: 'chat_completions',
+        method: 'POST',
+        path: '/v1/chat/completions',
+        logicalModel: 'agic-code-fast',
+        apiCredentialId: 'credential-1',
+        statusCode: 200
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 20
+    })
+  })
+
   await page.route('**/api/me/usage?days=30', route => json(route, {
     windowDays: 30,
     sinceUtc: '2026-08-19T00:00:00Z',
@@ -103,8 +144,13 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   await expect(page.getByText('30d requests').locator('..').getByText('12', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'My limits' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'My recent calls' })).toBeVisible()
-  await expect(page.getByText('agic-code-fast', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My request audit' })).toBeVisible()
+  await expect(page.getByText('agic-code-fast', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('300', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Inspect' }).click()
+  await expect(page.getByRole('heading', { name: 'My request detail' })).toBeVisible()
+  await expect(page.getByText(/hello from user audit/)).toBeVisible()
+  await expect(page.getByText(/owned response/)).toBeVisible()
 
   await page.getByPlaceholder('Project Alpha / Development').fill('Development')
   await page.getByRole('button', { name: 'Generate API key' }).click()
