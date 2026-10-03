@@ -13,17 +13,17 @@ personal credential  created by an authenticated Entra user; permanently bound t
 
 Existing GitHub Copilot/shared integration credentials remain valid service credentials. Personal credentials add self-service without changing the `/v1/*` bearer contract.
 
-## Entra roles
+## Entra roles and platform-user admission
 
-The application roles are:
+The Entra application roles remain:
 
 ```text
-LlmProxy.Admin   full product administration + self-service
-LlmProxy.User    normal product user; personal API-key and own-usage self-service
-LlmProxy.Reader  read-only operational/admin visibility; retained for operators
+LlmProxy.Admin   full product administration
+LlmProxy.User    optional normal-user app-role assignment
+LlmProxy.Reader  read-only operational/admin visibility
 ```
 
-`LlmProxy.User` is intentionally different from `LlmProxy.Reader`: a Reader is an operator with read access to the administrative control plane, while a User is a consumer of the inference service.
+Normal-user portal admission is now controlled by the LlmProxy platform-user registry after Entra authentication, rather than requiring the `LlmProxy.User` role on every user. The administrator selects either automatic first-login registration or manual census. Stable `tid + oid` remains the authorization identity; email/UPN is metadata only. See `docs/user-access.md`.
 
 ### Installer-configured super administrators
 
@@ -79,7 +79,7 @@ A raw personal or service API key must never be written to audit, request metric
 
 ## Self-service endpoints
 
-When Entra is enabled, `LlmProxy.Admin` and `LlmProxy.User` may call:
+When Entra is enabled, an authenticated normal user may call these endpoints only when the platform-user registry admits the stable `tid + oid` identity. Administrators bypass the normal-user registry:
 
 ```http
 GET  /api/me
@@ -89,15 +89,31 @@ POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
+GET  /api/me/requests?take=50
 ```
 
 The server derives ownership exclusively from the authenticated Entra principal. A caller cannot submit another tenant/object ID in a request body.
 
 List/rotate/revoke operations filter by both credential ID and the current `(tid, oid)` pair. A credential owned by another user therefore behaves as not found rather than exposing ownership information.
 
+## User provisioning and suspension
+
+Administrator-only user-access endpoints are:
+
+```http
+GET  /api/admin/users/settings
+PUT  /api/admin/users/settings
+GET  /api/admin/users
+POST /api/admin/users
+POST /api/admin/users/{id}/disable
+POST /api/admin/users/{id}/enable
+```
+
+Manual is the default provisioning mode. Automatic mode creates an enabled normal user on first successful Entra portal access. Disabling a user blocks `/api/me/*` and `/admin/me` and revokes all currently active personal API keys for the same `tid + oid`. Re-enabling portal access does not resurrect revoked keys.
+
 ## Administrator visibility
 
-Administrators/read-only operators can inspect identity attribution through:
+Administrators/read-only operators can inspect credential-derived identity attribution through:
 
 ```http
 GET /api/admin/identity/api-credentials
@@ -183,8 +199,8 @@ Before extending governance beyond the current increment, decide:
 5. whether aggregate **output-token** budgets should also exist at user scope and how they interact with credential budgets;
 6. the monetary/chargeback model required for spend limits;
 7. whether unattended applications remain on service API keys or move to an Entra workload-identity flow;
-8. whether a disabled/deleted Entra account should trigger automatic key revocation and how directory reconciliation would be performed.
+8. whether Microsoft Graph/directory reconciliation should automatically disable LlmProxy users whose Entra account is disabled/deleted; local administrator disable already revokes active personal keys.
 
 ## External acceptance
 
-Repository tests validate ownership invariants and claim resolution without calling Entra. Real acceptance still requires an actual app registration with roles `LlmProxy.Admin`, `LlmProxy.User` and (if used) `LlmProxy.Reader`, plus browser login and end-to-end self-service/inference tests in the target tenant.
+Repository tests validate ownership invariants and claim resolution without calling Entra. Real acceptance still requires an actual app registration and browser login in the target tenant. Validate Admin/Reader roles, both manual and automatic platform-user provisioning, user disable/re-enable, personal-key revocation, user dashboard calls and end-to-end inference.
