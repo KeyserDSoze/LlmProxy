@@ -1,6 +1,6 @@
 # Development log
 
-## 2026-10-03 — Administrator scheduled/self-service updates — CANDIDATE
+## 2026-10-03 — Administrator scheduled/self-service updates — DONE / VALIDATED
 
 Added a release-aware control-plane update path designed to survive replacement of the LlmProxy gateway container.
 
@@ -26,7 +26,19 @@ Security/reliability boundary:
 
 Focused contract: `docs/update-management.md`.
 
-Validation is in progress on PR #5. Do not promote/release this increment until backend, frontend/Playwright, Docker/PostgreSQL and distributed Full Stack CI are green.
+Validation evidence:
+
+```text
+validated feature head         301bb179c6b848dd245f30c185b923b09491792c
+PR #5 CI                       37138750752 SUCCESS
+Backend build/unit             SUCCESS
+Frontend build/Vitest          SUCCESS
+Playwright E2E                 SUCCESS
+Docker/PostgreSQL integration  SUCCESS
+Redis/OTEL/Grafana full stack  SUCCESS
+```
+
+The final documentation-status commit must itself re-pass CI before merge. A green `main` CI is still required by the automatic immutable release gate before the new distribution version is published.
 
 ## 2026-10-03 — Configurable end-user provisioning and suspension — CANDIDATE
 
