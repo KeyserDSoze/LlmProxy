@@ -56,7 +56,7 @@ wait_node_healthy() {
   for attempt in {1..50}; do
     local nodes_json
     nodes_json="$(curl --fail --silent "http://127.0.0.1:${port}/api/admin/nodes" || true)"
-    if echo "$nodes_json" | jq -e 'map(select(.name == "dgx-backup-restore" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
+    if echo "$nodes_json" | jq -e 'map(select(.name == "inference-backup-restore" and .status == "Healthy")) | length == 1' >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -93,7 +93,7 @@ if ! "${COMPOSE[@]}" up -d; then
   fail_with_diagnostics "Source backup/restore stack failed to start."
 fi
 wait_http http://127.0.0.1:8084/readyz 60 || fail_with_diagnostics "Source gateway did not become ready."
-wait_node_healthy 8084 || fail_with_diagnostics "Source DGX route did not become Healthy."
+wait_node_healthy 8084 || fail_with_diagnostics "Source inference node route did not become Healthy."
 
 # Create durable state that is not part of bootstrap so restore correctness is observable.
 group_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
@@ -168,7 +168,7 @@ COMPOSE_FILE="$COMPOSE_FILE" RESTORE_START_GATEWAY=true \
   bash docker/scripts/postgres-restore.sh "$BACKUP_FILE" --confirm-destructive
 
 wait_http http://127.0.0.1:8084/readyz 60 || fail_with_diagnostics "Restored gateway did not become ready."
-wait_node_healthy 8084 || fail_with_diagnostics "Restored route catalog did not recover healthy DGX state."
+wait_node_healthy 8084 || fail_with_diagnostics "Restored route catalog did not recover healthy inference node state."
 
 restored_status="$(call_model 8084 "$credential_secret" /tmp/backup-restore-restored)"
 [[ "$restored_status" == "200" ]] || fail_with_diagnostics "Preserved API credential failed after clean-target restore; got ${restored_status}."
