@@ -1,5 +1,24 @@
 # Development log
 
+## 2026-10-04 — Request audit visibility and long retention — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Expanded the existing encrypted full-body content-log subsystem into an explicit **Request Audit** product surface.
+
+Implemented:
+
+- Admin navigation now separates **Request Audit** (inference request/response payloads) from **Administrative Audit** (configuration and sensitive-control actions).
+- Admin Request Audit uses a server-side paginated query with filters for user owner, API credential, logical model, surface, HTTP success/error, exact request ID and time range.
+- exact request/response detail remains decrypted only on demand and returned with `Cache-Control: no-store`.
+- admitted Entra users can list and inspect request-audit payloads through `/api/me/content-logs*`, but only when the row is linked to a personal API credential owned by the same stable `tid + oid`.
+- organization/shared credentials and other users' payloads are excluded from self-service; direct non-owned detail lookup returns not found.
+- **My dashboard** now exposes **My request audit** with credential/model/surface/status filters and exact-body inspection.
+- administrator retention bounds changed from 10-180 days to 10-4015 days (11 x 365), retaining the existing 30-day default and four-hour cleanup cadence.
+- frontend/backend integration fixtures and focused security/retention/identity documentation were updated for the new contract.
+
+Security invariants remain unchanged for secrets: request headers, Authorization values, plaintext API keys and upstream bearer credentials are not persisted in the request-audit store; ordinary metrics/audit/OTEL remain metadata-only.
+
+Validation is still required on the exact resulting main SHA. Do not mark this increment DONE until backend, frontend/Vitest, Playwright, Docker/PostgreSQL and distributed Full Stack CI are green.
+
 ## 2026-10-03 — Administrator scheduled/self-service updates — DONE / VALIDATED
 
 Added a release-aware control-plane update path designed to survive replacement of the LlmProxy gateway container.
