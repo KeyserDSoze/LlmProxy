@@ -23,6 +23,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<RoutingTuningPolicy> RoutingTuningPolicies => Set<RoutingTuningPolicy>();
     public DbSet<RequestMetricRecord> RequestMetrics => Set<RequestMetricRecord>();
     public DbSet<InferenceContentLogRecord> InferenceContentLogs => Set<InferenceContentLogRecord>();
+    public DbSet<RequestAuditSummaryRecord> RequestAuditSummaries => Set<RequestAuditSummaryRecord>();
     public DbSet<ContentLogSettingsRecord> ContentLogSettings => Set<ContentLogSettingsRecord>();
     public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
@@ -172,6 +173,21 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasIndex(x => x.RequestId).IsUnique();
             entity.HasIndex(x => x.StartedAtUtc);
             entity.HasIndex(x => new { x.Surface, x.StartedAtUtc });
+            entity.HasOne(x => x.Summary)
+                .WithOne()
+                .HasForeignKey<RequestAuditSummaryRecord>(x => x.ContentLogId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RequestAuditSummaryRecord>(entity =>
+        {
+            entity.ToTable("request_audit_summaries");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.SummaryCiphertext).HasColumnType("text").IsRequired();
+            entity.Property(x => x.LogicalModel).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.GeneratedBy).HasMaxLength(320).IsRequired();
+            entity.HasIndex(x => x.ContentLogId).IsUnique();
+            entity.HasIndex(x => x.UpdatedAtUtc);
         });
 
         modelBuilder.Entity<ContentLogSettingsRecord>(entity =>
@@ -179,6 +195,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.ToTable("content_log_settings");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.SummarySystemPrompt).HasColumnType("text").IsRequired();
+            entity.Property(x => x.SummaryDefaultLogicalModel).HasMaxLength(160);
         });
 
         modelBuilder.Entity<PlatformUserRecord>(entity =>
