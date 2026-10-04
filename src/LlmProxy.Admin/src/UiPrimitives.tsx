@@ -8,10 +8,11 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
   </div>
 }
 
-export function Modal({ open, title, description, onClose, children }: { open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ open, title, description, onClose, children, className }: { open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode; className?: string }) {
   if (!open) return null
+  const panelClassName = className ? `modalPanel ${className}` : 'modalPanel'
   return <div className="modalBackdrop" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) onClose() }}>
-    <section className="modalPanel" role="dialog" aria-modal="true" aria-label={title}>
+    <section className={panelClassName} role="dialog" aria-modal="true" aria-label={title}>
       <div className="modalHeader">
         <div><h2>{title}</h2>{description && <p>{description}</p>}</div>
         <button type="button" className="iconButton" aria-label={`Close ${title}`} onClick={onClose}>×</button>
