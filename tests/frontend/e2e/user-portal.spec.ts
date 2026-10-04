@@ -148,9 +148,11 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   await expect(page.getByText('agic-code-fast', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('300', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: 'Inspect' }).click()
-  await expect(page.getByRole('heading', { name: 'My request detail' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'My request detail' })).toBeVisible()
   await expect(page.getByText(/hello from user audit/)).toBeVisible()
   await expect(page.getByText(/owned response/)).toBeVisible()
+  await page.getByRole('button', { name: 'Close My request detail' }).click()
+  await expect(page.getByRole('dialog', { name: 'My request detail' })).toBeHidden()
 
   await page.getByPlaceholder('Project Alpha / Development').fill('Development')
   await page.getByRole('button', { name: 'Generate API key' }).click()
