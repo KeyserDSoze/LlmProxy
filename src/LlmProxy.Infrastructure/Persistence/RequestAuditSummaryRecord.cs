@@ -28,7 +28,4 @@ public sealed class RequestAuditSummaryRecord
 
     public DateTimeOffset GeneratedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
-
-    [ForeignKey(nameof(ContentLogId))]
-    public InferenceContentLogRecord ContentLog { get; set; } = null!;
 }
