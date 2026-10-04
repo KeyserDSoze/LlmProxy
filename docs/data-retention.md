@@ -158,12 +158,12 @@ Full request/response payload logging is intentionally separate from `request_me
 Defaults and bounds:
 
 ```text
-default retention      30 days
-minimum retention      10 days
-maximum retention    4015 days (11 x 365)
-cleanup cadence         4 hours
-storage                 PostgreSQL, application-encrypted ciphertext
-global read              LlmProxy.Admin only
+default retention        30 days
+minimum retention        10 days
+maximum retention      4015 days (11 x 365)
+cleanup cadence           4 hours
+storage                   PostgreSQL, application-encrypted ciphertext
+global read               LlmProxy.Admin only
 self-service read         owner-scoped personal credentials only
 ```
 
@@ -171,6 +171,7 @@ Administrator endpoints:
 
 ```http
 GET  /api/admin/content-logs
+GET  /api/admin/content-logs/query
 GET  /api/admin/content-logs/{id}
 GET  /api/admin/content-logs/settings
 PUT  /api/admin/content-logs/settings
@@ -194,4 +195,39 @@ GET /api/me/content-logs/{id}
 
 These endpoints derive identity from the authenticated Entra principal and return only rows whose `ApiCredentialId` belongs to a personal credential owned by the same stable `tid + oid`. Supplying another user's credential ID yields no rows, and direct detail access to a non-owned row returns not found. Organization/shared credentials are not exposed through self-service. Decrypted detail responses use `Cache-Control: no-store`.
 
-This retention does not change request-metric/rollup/audit/outbox retention. Full-body content is excluded from telemetry rollups and OTEL export.
+### Administrator request-audit summaries
+
+A retained content log may have one administrator-only persisted summary in `request_audit_summaries`.
+
+```text
+summary storage           PostgreSQL, application-encrypted ciphertext
+summary cardinality       max 1 current summary per content-log row
+summary read/generate     LlmProxy.Admin / AdminWrite only
+summary retention         exactly bounded by parent content-log retention
+summary deletion          ON DELETE CASCADE with the parent content log
+```
+
+Summary policy is stored on the singleton content-log settings row and includes:
+
+```text
+SummarySystemPrompt
+SummaryDefaultLogicalModel
+SummaryDefaultNodeId
+```
+
+Administrator endpoints:
+
+```http
+GET  /api/admin/content-logs/summary-settings
+PUT  /api/admin/content-logs/summary-settings
+GET  /api/admin/content-logs/{id}/summary
+POST /api/admin/content-logs/{id}/summary
+```
+
+Generating a new summary for an entry that already has one replaces the saved summary. The summary content is encrypted before persistence and decrypted only for authorized Admin responses, which use `Cache-Control: no-store`. The system prompt is administrator-only configuration and is never exposed by `/api/me`.
+
+There is intentionally no independent summary-retention setting: when the parent `inference_content_logs` row is removed by the 10–4015-day full-body retention policy, the related summary is removed in the same database relationship. A summary therefore cannot become a long-lived surrogate copy of deleted request/response content.
+
+Browser JSON/Markdown exports are produced from an already-authorized decrypted detail and are not persisted as additional server-side records. Once downloaded, those files are plaintext on the operator device and fall outside server retention enforcement.
+
+This retention does not change request-metric/rollup/audit/outbox retention. Full-body content and request-summary plaintext are excluded from telemetry rollups and OTEL export.
