@@ -227,6 +227,9 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
         {
             b.Property<int>("Id").HasColumnType("integer");
             b.Property<int>("RetentionDays").HasColumnType("integer");
+            b.Property<string>("SummaryDefaultLogicalModel").HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<Guid?>("SummaryDefaultNodeId").HasColumnType("uuid");
+            b.Property<string>("SummarySystemPrompt").IsRequired().HasColumnType("text");
             b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
             b.HasKey("Id");
             b.ToTable("content_log_settings");
@@ -253,6 +256,23 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("StartedAtUtc");
             b.HasIndex("Surface", "StartedAtUtc");
             b.ToTable("inference_content_logs");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RequestAuditSummaryRecord", b =>
+        {
+            b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+            b.Property<long>("ContentLogId").HasColumnType("bigint");
+            b.Property<Guid?>("DeploymentId").HasColumnType("uuid");
+            b.Property<DateTimeOffset>("GeneratedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("GeneratedBy").IsRequired().HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<string>("LogicalModel").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<Guid?>("NodeId").HasColumnType("uuid");
+            b.Property<string>("SummaryCiphertext").IsRequired().HasColumnType("text");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.HasIndex("ContentLogId").IsUnique();
+            b.HasIndex("UpdatedAtUtc");
+            b.ToTable("request_audit_summaries");
         });
 
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.PlatformUserRecord", b =>
@@ -405,12 +425,26 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RequestAuditSummaryRecord", b =>
+        {
+            b.HasOne("LlmProxy.Infrastructure.Persistence.InferenceContentLogRecord", null)
+                .WithOne("Summary")
+                .HasForeignKey("LlmProxy.Infrastructure.Persistence.RequestAuditSummaryRecord", "ContentLogId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.PlatformUserRecord", b =>
         {
             b.HasOne("LlmProxy.Domain.Governance.UsageGroup", null)
                 .WithMany()
                 .HasForeignKey("UsageGroupId")
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.InferenceContentLogRecord", b =>
+        {
+            b.Navigation("Summary");
         });
 #pragma warning restore 612, 618
     }
