@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import UserPortal from './UserPortal'
 import './styles.css'
+import './requestAudit.css'
 
 const route = window.location.pathname.replace(/\/+$/, '')
 const governanceRoute = route.endsWith('/admin/governance')
