@@ -45,15 +45,36 @@ Authenticated requests to:
 
 are captured at the HTTP gateway boundary. Request and response payloads are stored as AES-GCM ciphertext derived from the deployment API-key pepper and bound to request-specific purposes.
 
-The Admin UI exposes this as **Request Audit**. It supports server-side paging and filters for user ownership, credential, logical model, surface, status, request ID and time range, with optional two-second live refresh. Selecting a row loads/decrypts the detail and shows request/response bodies, correlated node/deployment/attempt/TTFT/token data when a request metric exists, and copy controls.
+The Admin UI exposes this as **Request Audit**. It supports server-side paging and filters for user ownership, credential, logical model, surface, status, request ID and time range, with optional two-second live refresh. Live refresh keeps the existing table height stable: the refresh state is shown as a compact spinner beside the pagination count rather than by inserting/removing a loading table row.
 
-Global request-audit APIs require `LlmProxy.Admin`. Configured super admins receive that role through the existing claims transformation. `LlmProxy.Reader` cannot read payload logs. A separate normal-user self-service surface under `/api/me/content-logs*` permits an admitted user to inspect only rows linked to personal credentials owned by the same stable Entra `tid + oid`; other users' rows and organization/shared credentials are excluded.
+Selecting **Inspect** opens the request detail in a modal instead of expanding the page. The modal shows request/response bodies plus correlated node/deployment/attempt/TTFT/token metadata when a request metric exists. Authorized operators can copy individual payloads or download a complete audit export as JSON or Markdown. Export is performed in the browser from the already-authorized decrypted detail; the server does not create a second plaintext export copy.
+
+Global request-audit APIs require `LlmProxy.Admin`. Configured super admins receive that role through the existing claims transformation. `LlmProxy.Reader` cannot read payload logs. A separate normal-user self-service surface under `/api/me/content-logs*` permits an admitted user to inspect only rows linked to personal credentials owned by the same stable Entra `tid + oid`; other users' rows and organization/shared credentials are excluded. The normal-user detail also uses the same modal/export UX, but no administrator summary controls are exposed.
 
 Headers are not copied into the payload store. In particular client `Authorization` and upstream bearer credentials are never persisted there.
+
+## Administrator AI summaries
+
+Each retained Request Audit entry may have one persisted administrator-only summary. The summary is stored in `request_audit_summaries` as application-encrypted ciphertext and is linked one-to-one to the corresponding `inference_content_logs` row.
+
+The Request Audit page exposes **Summary** next to **Inspect**:
+
+- if no summary exists, clicking the button generates one, saves it, then opens the summary modal;
+- if a summary already exists, the saved summary opens without calling an LLM;
+- the summary modal can **Regenerate summary**, optionally overriding the model and node for that run;
+- regeneration replaces the saved summary for that audit entry, so every administrator sees the latest persisted result.
+
+Summary generation is a control-plane action available only to `LlmProxy.Admin` / `AdminWrite`. It uses the same logical-model deployment catalog, routing service and capacity gate as normal inference. An administrator can configure a default OpenAI-compatible logical model and optionally pin a default node. With no node pin, normal routing chooses a healthy eligible deployment. A manual or default node is accepted only when the selected logical model is deployed there.
+
+The administrator-only summary policy is stored with the content-log settings and includes the editable system prompt, default logical model and optional node. The default prompt treats the original request/response as untrusted data and asks for an extremely short operational summary containing only the **project type** and **work done**, without inventing missing context or exposing credentials. The prompt is never returned through normal-user APIs.
+
+Generated summaries are returned with `Cache-Control: no-store`, and generation/regeneration plus summary-policy changes are recorded in the administrative audit without storing plaintext summary content there.
 
 ## Content-log retention
 
 Retention is administrator-controlled from 10 through 4015 days (11 x 365 days), default 30. A hosted cleanup worker runs at startup and every four hours. A manual cleanup action is also available from the UI and is audited. Decrypted detail responses use `Cache-Control: no-store`.
+
+Request-audit summaries do not have an independent longer lifetime: their foreign key uses cascade deletion, so a summary disappears when its parent full-body Request Audit row is deleted by retention.
 
 This is independent from request-metric/usage-rollup retention.
 
