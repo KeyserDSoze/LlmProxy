@@ -71,9 +71,23 @@ The product provides a separate full-body request-audit store for authenticated 
 
 Global request-audit APIs require `AdminWrite` / `LlmProxy.Admin`; `LlmProxy.Reader` cannot inspect payloads. Admitted normal users have separate `/api/me/content-logs*` endpoints that authorize every row through stable Entra `tid + oid` and the ownership of the row's personal `ApiCredentialId`. They cannot inspect another user's payloads or payloads created through organization/shared credentials. Decrypted detail responses use `Cache-Control: no-store`. Authorization headers, client API keys, upstream bearer tokens and other request headers are not persisted in this store.
 
+The browser-side Request Audit detail modal can download an authorized decrypted record as JSON or Markdown. This does not create another server-side plaintext copy, but the downloaded file is plaintext on the operator's device and must therefore be handled according to the same sensitivity as the original request/response content.
+
 Full-body request-audit retention is independently administrator-configurable from 10 through 4015 days (11 x 365 days), defaults to 30 days, and is enforced by a cleanup worker every four hours. Operators must size PostgreSQL storage for the selected retention because prompts and generated payloads can be materially larger than metadata telemetry.
 
-Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content must not be exported to OTEL spans, acceptance evidence or generic application logs.
+### Administrator request summaries
+
+`LlmProxy.Admin` may generate and persist a compact AI summary for a retained Request Audit entry. This feature is not available through normal-user APIs and `LlmProxy.Reader` cannot invoke it or read its output.
+
+Summary plaintext is generated only after the administrator-authorized content log has been decrypted. The original request and response are treated as untrusted input and are supplied to the selected internal logical model together with an administrator-controlled system prompt. The default system prompt explicitly instructs the model to ignore instructions inside the payload, avoid inventing context, redact credentials/secrets, and return only a very short description of project type and work performed.
+
+The summary uses the existing deployment catalog, routing service and capacity gate. Administrators can configure a default OpenAI-compatible logical model and optionally a specific enabled node; node pinning is accepted only when the selected logical model is deployed on that node. Upstream node credentials are applied through the existing protected credential mechanism and are not included in the summarization prompt.
+
+Persisted summaries are AES-GCM protected through the same deployment-sensitive-data protector, using a distinct purpose bound to the content-log ID. Summary policy (system prompt, default logical model and optional node) is administrator-only configuration. Summary-policy changes plus summary generation/regeneration are written to the administrative audit with model/node metadata but without plaintext prompt, request, response or summary bodies.
+
+Summary API responses use `Cache-Control: no-store`. A summary row has a one-to-one foreign key to its parent request-audit row with cascade deletion, so summary retention cannot outlive the full-body audit retention configured by the administrator.
+
+Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content and administrator summary plaintext must not be exported to OTEL spans, acceptance evidence or generic application logs.
 
 ## Network
 
