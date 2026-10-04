@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import PageDocumentation from './PageDocumentation'
+import RequestAuditDetailModal from './RequestAuditDetail'
+import './requestAudit.css'
 
 type Identity = {
   tenantId: string
@@ -74,14 +76,21 @@ type PersonalContentLogSummary = {
   logicalModel?: string | null
   apiCredentialId?: string | null
   statusCode: number
+  requestContentType?: string | null
+  responseContentType?: string | null
 }
 
 type PersonalContentLogDetail = PersonalContentLogSummary & {
   requestBody: string
   responseBody: string
+  deploymentId?: string | null
   nodeId?: string | null
+  usageGroupId?: string | null
   attemptCount?: number | null
+  isStreaming?: boolean | null
   timeToFirstByteMilliseconds?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
   totalTokens?: number | null
   errorCode?: string | null
 }
@@ -239,6 +248,10 @@ export default function UserPortal() {
     await refresh()
   }
 
+  const selectedCredential = selectedAudit?.apiCredentialId
+    ? credentials.find(item => item.id === selectedAudit.apiCredentialId)
+    : undefined
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brandMark">LP</div><div><strong>LlmProxy</strong><span>User portal</span></div></div>
@@ -315,24 +328,17 @@ export default function UserPortal() {
               <td><button className="secondary" onClick={() => void openAudit(item.id)}>Inspect</button></td>
             </tr>)}
             {!auditLoading && auditResult.items.length === 0 && <tr><td colSpan={7} className="muted">No retained request/response payloads match these filters.</td></tr>}
-            {auditLoading && <tr><td colSpan={7} className="muted">Loading your request audit…</td></tr>}
           </tbody></table></div>
-          <div className="pagination"><span>{auditResult.total === 0 ? '0 requests' : `${(auditResult.page - 1) * auditResult.pageSize + 1}–${Math.min(auditResult.page * auditResult.pageSize, auditResult.total)} of ${auditResult.total}`}</span><div className="actions"><button disabled={auditPage <= 1 || auditLoading} onClick={() => setAuditPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {auditPage} / {Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize))}</span><button disabled={auditPage >= Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize)) || auditLoading} onClick={() => setAuditPage(current => current + 1)}>Next</button></div></div>
+          <div className="pagination"><span className="paginationStatus"><span>{auditResult.total === 0 ? '0 requests' : `${(auditResult.page - 1) * auditResult.pageSize + 1}–${Math.min(auditResult.page * auditResult.pageSize, auditResult.total)} of ${auditResult.total}`}</span><span className={auditLoading ? 'miniSpinner' : 'miniSpinner idle'} aria-label={auditLoading ? 'Refreshing my request audit' : undefined} /></span><div className="actions"><button disabled={auditPage <= 1 || auditLoading} onClick={() => setAuditPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {auditPage} / {Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize))}</span><button disabled={auditPage >= Math.max(1, Math.ceil(auditResult.total / auditResult.pageSize)) || auditLoading} onClick={() => setAuditPage(current => current + 1)}>Next</button></div></div>
         </section>
 
-        {selectedAudit && <section className="panel formPanel">
-          <div className="panelTitle"><div><h2>My request detail</h2><span>{friendlySurface(selectedAudit.surface)} · HTTP {selectedAudit.statusCode}</span></div><button className="secondary" onClick={() => setSelectedAudit(null)}>Close</button></div>
-          <div className="statusGrid">
-            <div><span>Request ID</span><strong className="mono">{selectedAudit.requestId}</strong></div>
-            <div><span>Model</span><strong>{selectedAudit.logicalModel ?? '—'}</strong></div>
-            <div><span>Attempts</span><strong>{selectedAudit.attemptCount ?? '—'}</strong></div>
-            <div><span>TTFT</span><strong>{selectedAudit.timeToFirstByteMilliseconds == null ? '—' : selectedAudit.timeToFirstByteMilliseconds + ' ms'}</strong></div>
-            <div><span>Tokens</span><strong>{selectedAudit.totalTokens ?? '—'}</strong></div>
-            <div><span>Error</span><strong className="mono">{selectedAudit.errorCode ?? '—'}</strong></div>
-          </div>
-          <PayloadBlock title="Request body" body={selectedAudit.requestBody} />
-          <PayloadBlock title="Response body" body={selectedAudit.responseBody} />
-        </section>}
+        <RequestAuditDetailModal
+          detail={selectedAudit}
+          title="My request detail"
+          onClose={() => setSelectedAudit(null)}
+          userLabel={identity?.displayName ?? identity?.principalName}
+          credentialLabel={selectedCredential?.name}
+        />
 
         <div className="gridTwo">
           <section className="panel">
@@ -369,14 +375,6 @@ export default function UserPortal() {
   </div>
 }
 
-function PayloadBlock({ title, body }: { title: string; body: string }) {
-  return <div className="payloadBlock">
-    <div className="payloadHeader"><h3>{title}</h3><button className="secondary" onClick={() => void navigator.clipboard.writeText(body)}>Copy</button></div>
-    <pre className="payload">{pretty(body)}</pre>
-  </div>
-}
-
-function pretty(value: string) { try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value } }
 function friendlySurface(value: string) { return ({ chat_completions: 'Chat Completions', responses: 'Responses', systemone: 'System One' } as Record<string,string>)[value] ?? value }
 function short(value: string) { return value.length > 18 ? value.slice(0, 14) + '…' : value }
 
