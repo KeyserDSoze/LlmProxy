@@ -9,8 +9,9 @@ import type { ApiCredential, ContentLogDetail, ContentLogPage, ContentLogSetting
 type StatusFilter = 'all' | 'success' | 'error'
 type AuditedContentLogSummary = ContentLogPage['items'][number] & RequestAuditSummaryState
 
-export default function ContentLogs({ credentials, nodes, models }: { credentials: ApiCredential[]; nodes: Node[]; models: Model[] }) {
+export default function ContentLogs({ credentials, nodes, models: providedModels }: { credentials: ApiCredential[]; nodes: Node[]; models?: Model[] }) {
   const [result, setResult] = useState<ContentLogPage>({ items: [], total: 0, page: 1, pageSize: 50 })
+  const [availableModels, setAvailableModels] = useState<Model[]>(providedModels ?? [])
   const [settings, setSettings] = useState<ContentLogSettings | null>(null)
   const [retentionDays, setRetentionDays] = useState(30)
   const [summarySettings, setSummarySettings] = useState<RequestAuditSummarySettings | null>(null)
@@ -39,7 +40,7 @@ export default function ContentLogs({ credentials, nodes, models }: { credential
   const credentialNames = useMemo(() => new Map(credentials.map(item => [item.id, item.name])), [credentials])
   const credentialById = useMemo(() => new Map(credentials.map(item => [item.id, item])), [credentials])
   const nodeNames = useMemo(() => new Map(nodes.map(item => [item.id, item.name])), [nodes])
-  const openAiModels = useMemo(() => models.filter(item => item.enabled && item.surface === 'OpenAi'), [models])
+  const openAiModels = useMemo(() => availableModels.filter(item => item.enabled && item.surface === 'OpenAi'), [availableModels])
   const owners = useMemo(() => {
     const byKey = new Map<string, { key: string; tenantId: string; objectId: string; label: string }>()
     for (const credential of credentials) {
@@ -90,9 +91,10 @@ export default function ContentLogs({ credentials, nodes, models }: { credential
 
   const loadSettings = useCallback(async () => {
     try {
-      const [nextRetention, nextSummary] = await Promise.all([
+      const [nextRetention, nextSummary, nextModels] = await Promise.all([
         api.contentLogSettings(),
-        requestAuditApi.summarySettings()
+        requestAuditApi.summarySettings(),
+        api.models()
       ])
       setSettings(nextRetention)
       setRetentionDays(nextRetention.retentionDays)
@@ -100,12 +102,16 @@ export default function ContentLogs({ credentials, nodes, models }: { credential
       setSummarySystemPrompt(nextSummary.systemPrompt)
       setSummaryDefaultModel(nextSummary.defaultLogicalModel ?? '')
       setSummaryDefaultNodeId(nextSummary.defaultNodeId ?? '')
+      setAvailableModels(nextModels)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }, [])
 
+  useEffect(() => {
+    if (providedModels) setAvailableModels(providedModels)
+  }, [providedModels])
   useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 150)
@@ -295,7 +301,7 @@ export default function ContentLogs({ credentials, nodes, models }: { credential
 
     <RequestAuditSummaryModal
       summary={selectedSummary}
-      models={models}
+      models={availableModels}
       nodes={nodes}
       busy={summaryRegenerating}
       onClose={() => setSelectedSummary(null)}
