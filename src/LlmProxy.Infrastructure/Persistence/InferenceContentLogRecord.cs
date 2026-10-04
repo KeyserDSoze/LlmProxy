@@ -16,4 +16,5 @@ public sealed class InferenceContentLogRecord
     public string? ResponseContentType { get; set; }
     public string RequestBodyCiphertext { get; set; } = string.Empty;
     public string ResponseBodyCiphertext { get; set; } = string.Empty;
+    public RequestAuditSummaryRecord? Summary { get; set; }
 }
