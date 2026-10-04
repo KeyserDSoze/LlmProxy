@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { ApiCredential, ContentLogDetail, ContentLogPage, ContentLogSettings, Node } from './types'
+import RequestAuditDetailModal from './RequestAuditDetail'
+import RequestAuditSummaryModal from './RequestAuditSummaryModal'
+import { requestAuditApi } from './requestAuditApi'
+import type { RequestAuditSummary, RequestAuditSummarySettings, RequestAuditSummaryState } from './requestAuditTypes'
+import type { ApiCredential, ContentLogDetail, ContentLogPage, ContentLogSettings, Model, Node } from './types'
 
 type StatusFilter = 'all' | 'success' | 'error'
+type AuditedContentLogSummary = ContentLogPage['items'][number] & RequestAuditSummaryState
 
-export default function ContentLogs({ credentials, nodes }: { credentials: ApiCredential[]; nodes: Node[] }) {
+export default function ContentLogs({ credentials, nodes, models }: { credentials: ApiCredential[]; nodes: Node[]; models: Model[] }) {
   const [result, setResult] = useState<ContentLogPage>({ items: [], total: 0, page: 1, pageSize: 50 })
   const [settings, setSettings] = useState<ContentLogSettings | null>(null)
   const [retentionDays, setRetentionDays] = useState(30)
+  const [summarySettings, setSummarySettings] = useState<RequestAuditSummarySettings | null>(null)
+  const [summarySystemPrompt, setSummarySystemPrompt] = useState('')
+  const [summaryDefaultModel, setSummaryDefaultModel] = useState('')
+  const [summaryDefaultNodeId, setSummaryDefaultNodeId] = useState('')
   const [selected, setSelected] = useState<ContentLogDetail | null>(null)
+  const [selectedSummary, setSelectedSummary] = useState<RequestAuditSummary | null>(null)
+  const [summaryLoadingId, setSummaryLoadingId] = useState<number | null>(null)
+  const [summaryRegenerating, setSummaryRegenerating] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [model, setModel] = useState('')
@@ -27,6 +39,7 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
   const credentialNames = useMemo(() => new Map(credentials.map(item => [item.id, item.name])), [credentials])
   const credentialById = useMemo(() => new Map(credentials.map(item => [item.id, item])), [credentials])
   const nodeNames = useMemo(() => new Map(nodes.map(item => [item.id, item.name])), [nodes])
+  const openAiModels = useMemo(() => models.filter(item => item.enabled && item.surface === 'OpenAi'), [models])
   const owners = useMemo(() => {
     const byKey = new Map<string, { key: string; tenantId: string; objectId: string; label: string }>()
     for (const credential of credentials) {
@@ -77,9 +90,16 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
 
   const loadSettings = useCallback(async () => {
     try {
-      const next = await api.contentLogSettings()
-      setSettings(next)
-      setRetentionDays(next.retentionDays)
+      const [nextRetention, nextSummary] = await Promise.all([
+        api.contentLogSettings(),
+        requestAuditApi.summarySettings()
+      ])
+      setSettings(nextRetention)
+      setRetentionDays(nextRetention.retentionDays)
+      setSummarySettings(nextSummary)
+      setSummarySystemPrompt(nextSummary.systemPrompt)
+      setSummaryDefaultModel(nextSummary.defaultLogicalModel ?? '')
+      setSummaryDefaultNodeId(nextSummary.defaultNodeId ?? '')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -102,10 +122,44 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
 
   async function openLog(id: number) {
     try {
+      setSelectedSummary(null)
       setSelected(await api.contentLog(id))
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function openSummary(log: AuditedContentLogSummary) {
+    setSummaryLoadingId(log.id)
+    try {
+      setSelected(null)
+      const next = log.hasSummary
+        ? await requestAuditApi.summary(log.id)
+        : await requestAuditApi.generateSummary(log.id)
+      setSelectedSummary(next)
+      setError(null)
+      if (!log.hasSummary) await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSummaryLoadingId(null)
+    }
+  }
+
+  async function regenerateSummary(logicalModel?: string | null, nodeId?: string | null) {
+    if (!selectedSummary) return
+    setSummaryRegenerating(true)
+    try {
+      const next = await requestAuditApi.generateSummary(selectedSummary.contentLogId, { logicalModel, nodeId })
+      setSelectedSummary(next)
+      setMessage('A new administrator summary was generated and saved for this request audit.')
+      setError(null)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSummaryRegenerating(false)
     }
   }
 
@@ -115,6 +169,24 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
       setSettings(next)
       setRetentionDays(next.retentionDays)
       setMessage('Request-audit retention updated to ' + next.retentionDays + ' days. Automatic cleanup runs every ' + next.cleanupIntervalHours + ' hours.')
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function saveSummarySettings() {
+    try {
+      const next = await requestAuditApi.updateSummarySettings({
+        systemPrompt: summarySystemPrompt,
+        defaultLogicalModel: summaryDefaultModel || null,
+        defaultNodeId: summaryDefaultNodeId || null
+      })
+      setSummarySettings(next)
+      setSummarySystemPrompt(next.systemPrompt)
+      setSummaryDefaultModel(next.defaultLogicalModel ?? '')
+      setSummaryDefaultNodeId(next.defaultNodeId ?? '')
+      setMessage('Administrator request-summary policy updated.')
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -143,6 +215,9 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
     setPage(1)
   }
 
+  const selectedCredential = selected?.apiCredentialId ? credentialById.get(selected.apiCredentialId) : undefined
+  const selectedUserLabel = selectedCredential?.ownerPrincipalName ?? (selectedCredential ? 'Organization / shared' : 'Internal / diagnostic')
+
   return <div className="stack compactPage">
     {error && <div className="error">{error}</div>}
     {message && <div className="notice">{message}</div>}
@@ -154,6 +229,22 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
         <button className="primary" onClick={() => void saveRetention()}>Save retention</button>
         <button className="secondary" onClick={() => void runCleanup()}>Run cleanup now</button>
         <span className="muted">Allowed {settings?.minimumRetentionDays ?? 10} days–11 years ({settings?.maximumRetentionDays ?? 4015} days) · automatic cleanup every {settings?.cleanupIntervalHours ?? 4}h</span>
+      </div>
+    </section>
+
+    <section className="panel formPanel summaryPolicyPanel">
+      <div className="panelTitle tuningTitle"><div><h2>AI request summaries</h2><span>Administrator-only prompt, model and routing defaults</span></div><span>{summarySettings?.updatedAtUtc ? 'Updated ' + new Date(summarySettings.updatedAtUtc).toLocaleString() : 'Administrator policy'}</span></div>
+      <div className="summaryPolicyGrid">
+        <label className="summaryPromptField">System prompt<textarea aria-label="Request summary system prompt" rows={9} value={summarySystemPrompt} onChange={event => setSummarySystemPrompt(event.target.value)} /></label>
+        <div className="summaryPolicyOptions">
+          <label>Default model<select aria-label="Default request summary model" value={summaryDefaultModel} onChange={event => setSummaryDefaultModel(event.target.value)}><option value="">Automatic: first enabled OpenAI model</option>{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
+          <label>Default node<select aria-label="Default request summary node" value={summaryDefaultNodeId} onChange={event => setSummaryDefaultNodeId(event.target.value)}><option value="">Automatic routing</option>{nodes.filter(item => item.enabled).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <p className="muted">If a node is selected, the summary model must be deployed there. With automatic routing, LlmProxy selects a healthy eligible node for the chosen logical model.</p>
+          <div className="actions">
+            <button className="primary" onClick={() => void saveSummarySettings()}>Save summary policy</button>
+            <button className="secondary" disabled={!summarySettings} onClick={() => setSummarySystemPrompt(summarySettings?.defaultSystemPrompt ?? '')}>Reset default prompt</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -174,8 +265,9 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
       </div>
 
       <div className="tableScroll"><table><thead><tr><th>Time</th><th>User</th><th>Credential</th><th>Surface</th><th>Model</th><th>Status</th><th>Request ID</th><th>Action</th></tr></thead><tbody>
-        {result.items.map(log => {
+        {(result.items as AuditedContentLogSummary[]).map(log => {
           const credential = log.apiCredentialId ? credentialById.get(log.apiCredentialId) : undefined
+          const summaryBusy = summaryLoadingId === log.id
           return <tr key={log.id}>
             <td>{new Date(log.startedAtUtc).toLocaleString()}</td>
             <td>{credential?.ownerPrincipalName ?? (credential ? 'Organization / shared' : 'Internal / diagnostic')}</td>
@@ -184,40 +276,34 @@ export default function ContentLogs({ credentials, nodes }: { credentials: ApiCr
             <td><strong>{log.logicalModel ?? '—'}</strong></td>
             <td>{log.statusCode}</td>
             <td className="mono">{short(log.requestId)}</td>
-            <td><button className="secondary" onClick={() => void openLog(log.id)}>Inspect</button></td>
+            <td><div className="actions auditRowActions"><button className="secondary" onClick={() => void openLog(log.id)}>Inspect</button><button className="secondary" disabled={summaryBusy} title={log.hasSummary ? 'Open saved administrator summary' : 'Generate and save administrator summary'} onClick={() => void openSummary(log)}>{summaryBusy && <span className="miniSpinner buttonSpinner" aria-hidden="true" />}Summary{log.hasSummary ? ' ✓' : ''}</button></div></td>
           </tr>
         })}
         {!loading && result.items.length === 0 && <tr><td colSpan={8} className="muted">No retained request/response logs match these filters.</td></tr>}
-        {loading && <tr><td colSpan={8} className="muted">Loading request audit…</td></tr>}
       </tbody></table></div>
 
-      <div className="pagination"><span>{result.total === 0 ? '0 requests' : `${(result.page - 1) * result.pageSize + 1}–${Math.min(result.page * result.pageSize, result.total)} of ${result.total}`}</span><div className="actions"><button disabled={page <= 1 || loading} onClick={() => setPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {page} / {pageCount}</span><button disabled={page >= pageCount || loading} onClick={() => setPage(current => current + 1)}>Next</button></div></div>
+      <div className="pagination"><span className="paginationStatus"><span>{result.total === 0 ? '0 requests' : `${(result.page - 1) * result.pageSize + 1}–${Math.min(result.page * result.pageSize, result.total)} of ${result.total}`}</span><span className={loading ? 'miniSpinner' : 'miniSpinner idle'} aria-label={loading ? 'Refreshing request audit' : undefined} /></span><div className="actions"><button disabled={page <= 1 || loading} onClick={() => setPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {page} / {pageCount}</span><button disabled={page >= pageCount || loading} onClick={() => setPage(current => current + 1)}>Next</button></div></div>
     </section>
 
-    {selected && <section className="panel formPanel">
-      <div className="panelTitle tuningTitle"><div><h2>Request detail</h2><span>{friendlySurface(selected.surface)} · HTTP {selected.statusCode}</span></div><button className="secondary" onClick={() => setSelected(null)}>Close</button></div>
-      <div className="statusGrid">
-        <div><span>Request ID</span><strong className="mono">{selected.requestId}</strong></div>
-        <div><span>Model</span><strong>{selected.logicalModel ?? '—'}</strong></div>
-        <div><span>Node</span><strong>{selected.nodeId ? nodeNames.get(selected.nodeId) ?? short(selected.nodeId) : '—'}</strong></div>
-        <div><span>Attempts</span><strong>{selected.attemptCount ?? '—'}</strong></div>
-        <div><span>TTFT</span><strong>{selected.timeToFirstByteMilliseconds == null ? '—' : String(selected.timeToFirstByteMilliseconds) + ' ms'}</strong></div>
-        <div><span>Error</span><strong className="mono">{selected.errorCode ?? '—'}</strong></div>
-      </div>
-      <PayloadBlock title="Request body" body={selected.requestBody} />
-      <PayloadBlock title="Response body" body={selected.responseBody} />
-    </section>}
+    <RequestAuditDetailModal
+      detail={selected}
+      onClose={() => setSelected(null)}
+      userLabel={selectedUserLabel}
+      credentialLabel={selectedCredential?.name}
+      nodeLabel={selected?.nodeId ? nodeNames.get(selected.nodeId) : undefined}
+    />
+
+    <RequestAuditSummaryModal
+      summary={selectedSummary}
+      models={models}
+      nodes={nodes}
+      busy={summaryRegenerating}
+      onClose={() => setSelectedSummary(null)}
+      onRegenerate={regenerateSummary}
+    />
   </div>
 }
 
-function PayloadBlock({ title, body }: { title: string; body: string }) {
-  return <div className="payloadBlock">
-    <div className="payloadHeader"><h3>{title}</h3><button className="secondary" onClick={() => void navigator.clipboard.writeText(body)}>Copy</button></div>
-    <pre className="payload">{pretty(body)}</pre>
-  </div>
-}
-
-function pretty(value: string) { try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value } }
 function friendlySurface(value: string) { return ({ chat_completions: 'Chat Completions', responses: 'Responses', systemone: 'System One', systemone_test: 'System One test', model_test: 'Model test' } as Record<string,string>)[value] ?? value }
 function short(value: string) { return value.length > 18 ? value.slice(0, 14) + '…' : value }
 function ownerValue(tenantId: string, objectId: string) { return tenantId + '::' + objectId }
