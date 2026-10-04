@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Model, Node } from './types'
 import type { RequestAuditSummary } from './requestAuditTypes'
 import { Modal } from './UiPrimitives'
+import './requestAudit.css'
 
 export default function RequestAuditSummaryModal({ summary, models, nodes, busy, onClose, onRegenerate }: {
   summary: RequestAuditSummary | null
