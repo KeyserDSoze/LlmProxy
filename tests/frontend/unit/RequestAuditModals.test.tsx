@@ -59,7 +59,7 @@ describe('request audit modals', () => {
     />)
 
     expect(screen.getByRole('dialog', { name: 'Request detail' })).toBeInTheDocument()
-    expect(screen.getByText('agic-code-fast')).toBeInTheDocument()
+    expect(screen.getAllByText('agic-code-fast')).toHaveLength(2)
     expect(screen.getByText(/Build an API/)).toBeInTheDocument()
     expect(screen.getByText(/Implemented the API/)).toBeInTheDocument()
 
