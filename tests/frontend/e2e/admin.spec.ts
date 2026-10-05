@@ -239,15 +239,16 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
   await expect(page.getByText('inference-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
-  await page.getByRole('button', { name: 'Inference Nodes' }).click()
-  await page.getByRole('button', { name: 'Add inference node' }).click()
+  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await page.getByRole('button', { name: 'Add hardware node' }).click()
   await page.getByLabel('Name').fill('inference-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
   const row = page.getByRole('row').filter({ hasText: 'inference-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: inference-02')).toBeVisible()
 })
 
-test('hardware view exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Hardware', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Hardware', exact: true })).toBeVisible()
+test('infrastructure exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await expect(page.getByRole('heading', { name: 'Physical infrastructure', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: /Capacity & telemetry/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
   await expect(page.getByText('4.0 GiB used · 25.0%')).toBeVisible()
@@ -260,8 +261,8 @@ test('hardware view exposes telemetry, physical capacity and explicit capacity p
   await page.getByRole('button', { name: 'Save endpoint' }).click()
 
   await page.getByRole('tab', { name: /Physical capacity/ }).click()
-  await expect(page.getByRole('heading', { name: 'Physical node capacity' })).toBeVisible()
-  await expect(page.getByText('HTTP 429 · Retry-After: 1')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Physical concurrency' })).toBeVisible()
+  await expect(page.getByText('429 capacity_exhausted')).toBeVisible()
 
   await page.getByRole('tab', { name: /Benchmark profiles/ }).click()
   await expect(page.getByRole('heading', { name: 'Benchmark capacity profiles' })).toBeVisible()

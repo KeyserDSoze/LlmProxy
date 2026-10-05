@@ -143,6 +143,8 @@ export const api = {
     request<void>(`/api/admin/nodes/${id}/upstream-credential`, { method: 'DELETE' }),
   updateNode: (id: string, body: { name: string; baseAddress: string; weight: number; maxConcurrency: number }) =>
     request<Node>(`/api/admin/nodes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  consolidateNode: (sourceId: string, targetId: string) =>
+    request<{ sourceNodeId?: string; targetNodeId?: string; movedDeployments?: number; code?: string; message?: string; activeRequests?: number }>(`/api/admin/nodes/${sourceId}/consolidate-into/${targetId}`, { method: 'POST' }),
   updateNodeHardwareMetrics: (id: string, baseAddress: string | null) =>
     request<{ id: string; hardwareMetricsBaseAddress: string | null }>(`/api/admin/nodes/${id}/hardware-metrics`, { method: 'PUT', body: JSON.stringify({ baseAddress }) }),
   testNodeConnection: (id: string) => request<NodeConnectionTest>(`/api/admin/nodes/${id}/test-connection`, { method: 'POST' }),
@@ -168,6 +170,10 @@ export const api = {
     request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),
   updateDeployment: (id: string, body: { weight: number; maxConcurrency?: number | null; enabled: boolean }) =>
     request<Deployment>(`/api/admin/deployments/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  setDeploymentUpstreamCredential: (id: string, bearerToken: string) =>
+    request<{ id: string; hasUpstreamCredential: boolean }>(`/api/admin/deployments/${id}/upstream-credential`, { method: 'PUT', body: JSON.stringify({ bearerToken }) }),
+  clearDeploymentUpstreamCredential: (id: string) =>
+    request<void>(`/api/admin/deployments/${id}/upstream-credential`, { method: 'DELETE' }),
   updateCapacityProfile: (id: string, body: CapacityProfileInput) =>
     request<Deployment>(`/api/admin/deployments/${id}/capacity-profile`, { method: 'PUT', body: JSON.stringify(body) }),
   clearCapacityProfile: (id: string) =>

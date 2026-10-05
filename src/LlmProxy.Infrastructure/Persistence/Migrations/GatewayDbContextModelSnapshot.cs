@@ -45,6 +45,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<int?>("MaxConcurrency").HasColumnType("integer");
             b.Property<string>("RuntimeBaseAddress").HasMaxLength(500).HasColumnType("character varying(500)");
+            b.Property<string>("UpstreamBearerTokenCiphertext").HasMaxLength(4096).HasColumnType("character varying(4096)");
             b.Property<string>("CatalogModelId").HasMaxLength(200).HasColumnType("character varying(200)");
             b.Property<string>("ManagedInstallationId").HasMaxLength(300).HasColumnType("character varying(300)");
             b.Property<Guid>("ModelId").HasColumnType("uuid");

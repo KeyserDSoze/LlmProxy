@@ -20,20 +20,38 @@ public static class CapacityAdminEndpoints
         group.MapGet("/capacity", async (
             GatewayDbContext dbContext,
             IRequestLoadTracker loadTracker,
+            INodeMaintenanceCoordinator maintenanceCoordinator,
             CancellationToken cancellationToken) =>
         {
             var nodes = await dbContext.Nodes.AsNoTracking().OrderBy(node => node.Name).ToListAsync(cancellationToken);
             var deployments = await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken);
+            var coordinated = new Dictionary<Guid, NodeMaintenanceStatus>();
+            foreach (var node in nodes)
+            {
+                coordinated[node.Id] = await maintenanceCoordinator.GetStatusAsync(node.Id, cancellationToken);
+            }
 
             return Results.Ok(new
             {
-                nodes = nodes.Select(node => new
+                nodes = nodes.Select(node =>
                 {
-                    node.Id,
-                    node.Name,
-                    node.MaxConcurrency,
-                    activeRequests = loadTracker.GetNodeActive(node.Id),
-                    remaining = Math.Max(0, node.MaxConcurrency - loadTracker.GetNodeActive(node.Id))
+                    var localActive = loadTracker.GetNodeActive(node.Id);
+                    var coordination = coordinated[node.Id];
+                    var active = coordination.CoordinationAvailable && coordination.ActiveRequests >= 0
+                        ? coordination.ActiveRequests
+                        : localActive;
+                    return new
+                    {
+                        node.Id,
+                        node.Name,
+                        node.MaxConcurrency,
+                        activeRequests = active,
+                        localActiveRequests = localActive,
+                        remaining = Math.Max(0, node.MaxConcurrency - active),
+                        capacityProvider = coordination.Provider,
+                        coordinationAvailable = coordination.CoordinationAvailable,
+                        admissionBlocked = coordination.AdmissionBlocked
+                    };
                 }),
                 deployments = deployments.Select(deployment =>
                 {

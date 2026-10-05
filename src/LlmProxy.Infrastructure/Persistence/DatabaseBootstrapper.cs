@@ -139,6 +139,9 @@ public sealed class DatabaseBootstrapper(
             var legacyBaseAddress = configuration["SystemOne:BaseAddress"];
             if (!string.IsNullOrWhiteSpace(legacyBaseAddress))
             {
+                var legacyMaxConcurrency = Math.Clamp(configuration.GetValue("SystemOne:MaxConcurrency", 8), 1, 1024);
+                var existingHardware = (await dbContext.Nodes.ToListAsync(cancellationToken))
+                    .FirstOrDefault(node => SameHost(node.BaseAddress, legacyBaseAddress));
                 var desiredNodeName = configuration["SystemOne:NodeName"] ?? "systemone-classifier";
                 var nodeName = desiredNodeName;
                 for (var suffix = 2; await dbContext.Nodes.AnyAsync(item => item.Name == nodeName, cancellationToken); suffix++)
@@ -146,17 +149,7 @@ public sealed class DatabaseBootstrapper(
                     nodeName = $"{desiredNodeName}-{suffix}";
                 }
 
-                var node = new InferenceNode(
-                    nodeName,
-                    legacyBaseAddress,
-                    weight: 1,
-                    maxConcurrency: Math.Clamp(configuration.GetValue("SystemOne:MaxConcurrency", 8), 1, 1024));
                 var legacyApiKey = configuration["SystemOne:ApiKey"];
-                if (!string.IsNullOrWhiteSpace(legacyApiKey))
-                {
-                    node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(legacyApiKey));
-                }
-
                 var configuredPublicName = configuration["SystemOne:DefaultModel"];
                 var desiredPublicName = string.IsNullOrWhiteSpace(configuredPublicName) ? "systemone-default" : configuredPublicName.Trim();
                 var publicName = desiredPublicName;
@@ -174,9 +167,27 @@ public sealed class DatabaseBootstrapper(
                     supportsTools: false,
                     surface: ModelSurface.SystemOne);
 
-                dbContext.Nodes.Add(node);
                 dbContext.Models.Add(classifier);
-                dbContext.Deployments.Add(new ModelDeployment(node.Id, classifier.Id));
+                if (existingHardware is not null)
+                {
+                    var deployment = new ModelDeployment(existingHardware.Id, classifier.Id, maxConcurrency: legacyMaxConcurrency);
+                    deployment.ConfigureRuntime(legacyBaseAddress);
+                    if (!string.IsNullOrWhiteSpace(legacyApiKey))
+                    {
+                        deployment.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(legacyApiKey));
+                    }
+                    dbContext.Deployments.Add(deployment);
+                }
+                else
+                {
+                    var node = new InferenceNode(nodeName, legacyBaseAddress, weight: 1, maxConcurrency: legacyMaxConcurrency);
+                    if (!string.IsNullOrWhiteSpace(legacyApiKey))
+                    {
+                        node.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(legacyApiKey));
+                    }
+                    dbContext.Nodes.Add(node);
+                    dbContext.Deployments.Add(new ModelDeployment(node.Id, classifier.Id));
+                }
             }
         }
 
@@ -246,6 +257,13 @@ public sealed class DatabaseBootstrapper(
             .ToArray();
         requestRateLimiter.ReplacePolicies(ratePolicySnapshots);
         runtimeStateSink.PublishRatePolicySnapshot(ratePolicySnapshots);
+    }
+
+    private static bool SameHost(string first, string second)
+    {
+        return Uri.TryCreate(first, UriKind.Absolute, out var firstUri)
+            && Uri.TryCreate(second, UriKind.Absolute, out var secondUri)
+            && string.Equals(firstUri.Host, secondUri.Host, StringComparison.OrdinalIgnoreCase);
     }
 
     private static RoutingStrategy ParseConfiguredStrategy(string? value)

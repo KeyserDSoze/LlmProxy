@@ -92,6 +92,24 @@ public sealed class InMemoryRouteCatalogTests
     }
 
     [Fact]
+    public async Task Deployment_runtime_bearer_overrides_the_physical_node_bearer()
+    {
+        var nodeId = Guid.NewGuid();
+        var modelId = Guid.NewGuid();
+        var catalog = new InMemoryRouteCatalog();
+
+        catalog.Replace(
+            [new RouteNodeSnapshot(nodeId, "hardware-01", "http://hardware-01:8000", true, NodeStatus.Healthy, 1, 8, "node-cipher")],
+            [new RouteModelSnapshot(modelId, "classifier", "provider-classifier", true, false, false, ModelSurface.SystemOne)],
+            [new RouteDeploymentSnapshot(Guid.NewGuid(), nodeId, modelId, true, 1, 4, "http://hardware-01:8090", "deployment-cipher")]);
+
+        var candidate = Assert.Single(await catalog.GetCandidatesAsync("classifier", CancellationToken.None));
+
+        Assert.Equal("http://hardware-01:8090", candidate.BaseAddress);
+        Assert.Equal("deployment-cipher", candidate.UpstreamBearerTokenCiphertext);
+    }
+
+    [Fact]
     public async Task Uses_node_capacity_when_deployment_override_is_absent()
     {
         var nodeId = Guid.NewGuid();

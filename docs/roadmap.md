@@ -177,6 +177,10 @@ local RAM  = per-replica request-path L1
 
 - DONE: hardware-agnostic node terminology and routing grouped by logical model.
 - DONE: deployment-specific runtime endpoints so one physical host can serve multiple models on independent ports.
+- DONE: unified Infrastructure workspace for physical fleet, capacity/telemetry and management-agent inventory/model lifecycle.
+- DONE: editable node-wide simultaneous-request ceiling plus separate per-deployment concurrency controls.
+- DONE: safe coordinated consolidation of legacy same-host runtime rows while preserving runtime endpoint, encrypted bearer and deployment ceiling.
+- DONE: live node-capacity administration reports distributed Redis activity when available instead of presenting one gateway's local count as the physical total.
 - DONE: curated deployable-model metadata with license, source, capabilities and conservative RAM/VRAM/disk/GPU planning envelopes.
 - DONE: administrator Model & Hardware UI with live inventory, compatibility explanations and install/start/stop/remove lifecycle actions.
 - DONE: authenticated LlmProxy Node Agent for Docker/vLLM lifecycle and NVIDIA inventory on prepared Linux hosts.

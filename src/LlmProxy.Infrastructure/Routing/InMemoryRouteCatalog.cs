@@ -62,7 +62,7 @@ public sealed class InMemoryRouteCatalog : IRouteCatalog
                 deployment.MaxConcurrency ?? node.MaxConcurrency,
                 node.Status,
                 node.MaxConcurrency,
-                node.UpstreamBearerTokenCiphertext,
+                deployment.UpstreamBearerTokenCiphertext ?? node.UpstreamBearerTokenCiphertext,
                 model.Surface));
         }
 

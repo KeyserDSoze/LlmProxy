@@ -386,6 +386,142 @@ public static class AdminEndpoints
             return Results.Ok(deployment);
         });
 
+        var setDeploymentUpstreamCredential = group.MapPut("/deployments/{id:guid}/upstream-credential", async (
+            Guid id,
+            SetNodeUpstreamCredentialRequest request,
+            GatewayDbContext dbContext,
+            UpstreamCredentialProtector upstreamCredentialProtector,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.BearerToken)) return Results.BadRequest(new { error = "BearerToken is required." });
+            if (!upstreamCredentialProtector.IsConfigured)
+            {
+                return Results.Problem("Security:UpstreamCredentialEncryptionKey must be configured before storing an upstream credential.", statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
+            if (deployment is null) return Results.NotFound();
+            deployment.SetUpstreamBearerTokenCiphertext(upstreamCredentialProtector.Protect(request.BearerToken));
+            AddAudit(dbContext, httpContext, "deployment.upstream_credential.set", "deployment", deployment.Id.ToString(), new { configured = true });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(new { deployment.Id, hasUpstreamCredential = true });
+        });
+
+        var clearDeploymentUpstreamCredential = group.MapDelete("/deployments/{id:guid}/upstream-credential", async (
+            Guid id,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
+            if (deployment is null) return Results.NotFound();
+            deployment.SetUpstreamBearerTokenCiphertext(null);
+            AddAudit(dbContext, httpContext, "deployment.upstream_credential.clear", "deployment", deployment.Id.ToString(), new { configured = false });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.NoContent();
+        });
+
+        var consolidateNode = group.MapPost("/nodes/{sourceId:guid}/consolidate-into/{targetId:guid}", async (
+            Guid sourceId,
+            Guid targetId,
+            GatewayDbContext dbContext,
+            INodeMaintenanceCoordinator maintenanceCoordinator,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (sourceId == targetId) return Results.BadRequest(new { error = "Source and target hardware must be different." });
+
+            var source = await dbContext.Nodes.SingleOrDefaultAsync(node => node.Id == sourceId, cancellationToken);
+            var target = await dbContext.Nodes.SingleOrDefaultAsync(node => node.Id == targetId, cancellationToken);
+            if (source is null || target is null) return Results.NotFound();
+
+            var deployments = await dbContext.Deployments
+                .Where(deployment => deployment.NodeId == sourceId)
+                .ToListAsync(cancellationToken);
+            if (deployments.Any(deployment => deployment.ManagedInstallationId != null))
+            {
+                return Results.Conflict(new { error = "Agent-managed model installations cannot be consolidated. Remove/redeploy them through Infrastructure so the management agent remains authoritative." });
+            }
+
+            var sourceModelIds = deployments.Select(deployment => deployment.ModelId).ToArray();
+            var duplicateModels = await dbContext.Deployments.AsNoTracking()
+                .Where(deployment => deployment.NodeId == targetId && sourceModelIds.Contains(deployment.ModelId))
+                .Select(deployment => deployment.ModelId)
+                .ToListAsync(cancellationToken);
+            if (duplicateModels.Count > 0)
+            {
+                return Results.Conflict(new { error = "The target hardware already has one or more of the source model deployments." });
+            }
+
+            if (source.Status != NodeStatus.Draining)
+            {
+                if (!source.Enabled)
+                {
+                    return Results.Conflict(new { error = "Re-enable the source runtime before consolidation so LlmProxy can establish a coordinated drain." });
+                }
+
+                if (!await maintenanceCoordinator.TryBeginDrainAsync(sourceId, cancellationToken))
+                {
+                    return Results.Json(new { error = "Could not establish the distributed admission block required for safe consolidation." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+
+                source.StartDrain();
+                AddAudit(dbContext, httpContext, "node.consolidate.drain", "node", source.Id.ToString(), new { source.Name, target = target.Name });
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await maintenanceCoordinator.TryConfirmDrainAsync(sourceId, cancellationToken);
+            }
+
+            var status = await maintenanceCoordinator.GetStatusAsync(sourceId, cancellationToken);
+            if (!status.CoordinationAvailable || !status.AdmissionBlocked)
+            {
+                return Results.Json(new { error = "Safe consolidation cannot be proven while capacity coordination is unavailable." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            if (status.ActiveRequests != 0)
+            {
+                return Results.Json(new
+                {
+                    code = "source_still_draining",
+                    message = "The source runtime is draining. Retry consolidation after active requests reach zero.",
+                    activeRequests = status.ActiveRequests
+                }, statusCode: StatusCodes.Status202Accepted);
+            }
+
+            foreach (var deployment in deployments)
+            {
+                if (deployment.MaxConcurrency is null)
+                {
+                    deployment.SetCapacity(deployment.Weight, source.MaxConcurrency);
+                }
+                if (deployment.UpstreamBearerTokenCiphertext is null && source.UpstreamBearerTokenCiphertext is not null)
+                {
+                    deployment.SetUpstreamBearerTokenCiphertext(source.UpstreamBearerTokenCiphertext);
+                }
+                deployment.MoveToNode(targetId, deployment.RuntimeBaseAddress ?? source.BaseAddress);
+            }
+
+            dbContext.Nodes.Remove(source);
+            AddAudit(dbContext, httpContext, "node.consolidate", "node", source.Id.ToString(), new
+            {
+                source = source.Name,
+                target = target.Name,
+                movedDeploymentIds = deployments.Select(deployment => deployment.Id).ToArray(),
+                preservedRuntimeRoot = source.BaseAddress,
+                targetPhysicalMaxConcurrency = target.MaxConcurrency
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            var coordinationCleaned = await maintenanceCoordinator.TryResumeAsync(sourceId, CancellationToken.None);
+
+            return Results.Ok(new
+            {
+                sourceNodeId = sourceId,
+                targetNodeId = targetId,
+                movedDeployments = deployments.Count,
+                coordinationCleanupPending = !coordinationCleaned
+            });
+        });
+
         group.MapGet("/api-credentials", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.ApiCredentials.AsNoTracking().OrderByDescending(item => item.CreatedAtUtc).Select(item => new
             {
@@ -550,6 +686,9 @@ public static class AdminEndpoints
                 createModel,
                 createDeployment,
                 updateDeployment,
+                setDeploymentUpstreamCredential,
+                clearDeploymentUpstreamCredential,
+                consolidateNode,
                 createCredential,
                 revokeCredential
             })

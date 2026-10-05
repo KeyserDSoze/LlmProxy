@@ -160,7 +160,11 @@ export type NodeCapacitySnapshot = {
   name: string
   maxConcurrency: number
   activeRequests: number
+  localActiveRequests?: number
   remaining: number
+  capacityProvider?: string
+  coordinationAvailable?: boolean
+  admissionBlocked?: boolean
 }
 
 export type DeploymentCapacitySnapshot = {

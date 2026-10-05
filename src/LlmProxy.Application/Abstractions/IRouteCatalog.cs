@@ -53,7 +53,8 @@ public sealed record RouteDeploymentSnapshot(
     bool Enabled,
     int Weight,
     int? MaxConcurrency,
-    string? RuntimeBaseAddress = null)
+    string? RuntimeBaseAddress = null,
+    string? UpstreamBearerTokenCiphertext = null)
 {
     public static RouteDeploymentSnapshot From(ModelDeployment deployment)
         => new(
@@ -63,7 +64,8 @@ public sealed record RouteDeploymentSnapshot(
             deployment.Enabled,
             deployment.Weight,
             deployment.MaxConcurrency,
-            deployment.RuntimeBaseAddress);
+            deployment.RuntimeBaseAddress,
+            deployment.UpstreamBearerTokenCiphertext);
 }
 
 public sealed record RouteCatalogStatus(

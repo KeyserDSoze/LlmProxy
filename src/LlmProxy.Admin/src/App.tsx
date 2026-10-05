@@ -1,9 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import GovernanceExperience from './GovernanceExperience'
-import HardwareExperience from './HardwareExperience'
-import ModelHardwareExperience from './ModelHardwareExperience'
-import NodesPage from './NodesPage'
+import InfrastructureExperience from './InfrastructureExperience'
 import ModelsDeployments from './ModelsDeployments'
 import CredentialsPage from './CredentialsPage'
 import MetricsPage from './MetricsPage'
@@ -15,7 +13,7 @@ import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-export type View = 'dashboard' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
+export type View = 'dashboard' | 'infrastructure' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -135,9 +133,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         </div>
         <nav>
           <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem icon="nodes" active={view === 'nodes'} onClick={() => setView('nodes')}>Inference Nodes</NavItem>
-          <NavItem icon="hardware" active={view === 'hardware'} onClick={() => setView('hardware')}>Hardware</NavItem>
-          {canWrite && <NavItem icon="control" active={view === 'model-management'} onClick={() => setView('model-management')}>Model & Hardware</NavItem>}
+          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => setView('infrastructure')}>Infrastructure</NavItem>
           <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => setView('models')}>Models & Deployments</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
           <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
@@ -168,9 +164,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
             {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
-            {view === 'nodes' && <NodesPage nodes={nodes} canWrite={canWrite} refresh={refresh} />}
-            {view === 'hardware' && <HardwareExperience nodes={nodes} hardware={hardware} refresh={refresh} />}
-            {view === 'model-management' && canWrite && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {(view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management') && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
             {(view === 'models' || view === 'deployments') && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
@@ -589,7 +583,7 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', nodes: 'Inference nodes', hardware: 'Hardware', 'model-management': 'Model & hardware control', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', infrastructure: 'Infrastructure', nodes: 'Infrastructure', hardware: 'Infrastructure', 'model-management': 'Infrastructure', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

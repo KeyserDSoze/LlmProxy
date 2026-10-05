@@ -1,8 +1,24 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-10-04**.
+Last reviewed: **2026-10-05**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
+
+## Physical infrastructure and capacity consolidation — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Current source makes the physical-capacity model explicit and removes three overlapping administrator entry points:
+
+- **Infrastructure** now contains Fleet & access, Capacity & telemetry, and Inventory & model lifecycle tabs;
+- physical `MaxConcurrency` is editable after node creation and is explicitly defined as simultaneous inference requests across the machine, not a user count;
+- the live Capacity view reports distributed Redis node activity when coordination is available, while retaining the local gateway count as a diagnostic;
+- per-deployment concurrency is editable independently and may inherit the hardware ceiling;
+- legacy same-host rows such as a DGX runtime on `:8080` plus System One on `:8090` can be safely consolidated after a coordinated drain, preserving runtime roots, encrypted upstream credentials and the old deployment ceiling;
+- future legacy System One import attaches to already-registered same-host hardware instead of creating a second physical-capacity pool;
+- hardware inventory remains live CPU/RAM/disk/GPU/driver/runtime data supplied by the management agent.
+
+Caller admission remains separate: **Users & Access** controls the admitted Entra population and **Usage & Governance** controls request/token quotas. There is no supported people-to-concurrency conversion; production concurrency still requires representative model/runtime/hardware benchmarks.
+
+Local validation: Admin production build and 26 frontend unit tests pass. Local .NET execution is blocked by the runner's CoreCLR memory limit and Playwright Chromium download is blocked by the runner/CDN path, so exact-head GitHub CI/Full Stack remains required before this increment can be called validated or released.
 
 ## Request audit expansion — IMPLEMENTED / VALIDATION IN PROGRESS
 

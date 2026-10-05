@@ -95,13 +95,13 @@ Content-Type: application/json
 }
 ```
 
-The selected deployment may use the node service root or its own deployment-specific runtime service root. LlmProxy replaces the client credential with the selected node's encrypted upstream bearer, forwards to `<runtime-root>/v1/systemone`, and can fail over to another eligible deployment on transport errors or upstream 5xx responses before the downstream response starts.
+The selected deployment may use the node service root or its own deployment-specific runtime service root. LlmProxy replaces the client credential with a deployment-specific encrypted upstream bearer when configured, otherwise with the selected node's encrypted upstream bearer, forwards to `<runtime-root>/v1/systemone`, and can fail over to another eligible deployment on transport errors or upstream 5xx responses before the downstream response starts.
 
 Request-rate governance can be scoped to the System One logical model. Output-token budgets are not applied to System One because its typed classifier response is not token-generation accounting.
 
 ### Legacy configuration import
 
-The historical `SYSTEM_ONE_ENABLED`, `SYSTEM_ONE_BASE_ADDRESS`, `SYSTEM_ONE_API_KEY` and timeout variables remain accepted as an upgrade bridge. When enabled and no System One logical model exists yet, startup imports that configuration once into a normal node + System One model + deployment, encrypting the upstream bearer with the existing upstream-credential key. Afterwards administrators manage placement/routing through **Models & Deployments** instead of a separate global classifier configuration.
+The historical `SYSTEM_ONE_ENABLED`, `SYSTEM_ONE_BASE_ADDRESS`, `SYSTEM_ONE_API_KEY` and timeout variables remain accepted as an upgrade bridge. When enabled and no System One logical model exists yet, startup imports that configuration once into a normal System One model/deployment, encrypting the upstream bearer with the existing upstream-credential key. If a registered node has the same hostname, the deployment is attached to that physical hardware and keeps the legacy runtime root/bearer at deployment scope; otherwise a node is created for compatibility. Afterwards administrators manage placement/routing through **Infrastructure** and **Models & Deployments** instead of a separate global classifier configuration.
 
 Optional import metadata:
 

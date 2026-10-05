@@ -99,7 +99,7 @@ async function installMaintenanceApi(page: Page) {
 test('inference node controls use safe maintenance drain and validated resume', async ({ page }) => {
   const state = await installMaintenanceApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Inference Nodes' }).click()
+  await page.getByRole('button', { name: 'Infrastructure' }).click()
 
   const row = page.getByRole('row').filter({ hasText: 'inference-maintenance' })
   await row.getByRole('button', { name: 'Drain' }).click()

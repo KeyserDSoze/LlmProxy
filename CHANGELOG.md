@@ -8,6 +8,10 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Admin **Infrastructure** unifies physical Fleet & access, Capacity & telemetry, and Inventory & model lifecycle, with post-creation editing of the hardware-wide simultaneous-request ceiling.
+- Legacy same-host node rows can be consolidated safely after a distributed drain; deployments preserve their runtime root, encrypted upstream credential and prior inherited concurrency ceiling while moving under one physical hardware limit.
+- Model deployments support an encrypted upstream-bearer override so multiple authenticated runtimes/ports on one physical host can share hardware capacity without sharing provider credentials.
+- Models & Deployments exposes an explicit per-deployment concurrency editor; an empty deployment limit inherits the physical hardware ceiling.
 - Administrator automatic-update policies support Manual, ASAP (five-minute checks), Nightly, Weekly and Monthly cadence, always targeting the latest stable release.
 - System One classifiers are first-class logical models/deployments with model → node and node → model visibility, deployment-specific runtime roots, routed diagnostics and `GET /v1/systemone/models`.
 
@@ -42,6 +46,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Changed
 
+- Capacity administration now distinguishes admitted people, physical simultaneous inference requests and caller rate/token governance; the live physical-capacity view uses distributed coordination counts when available and shows the local gateway count only as diagnostics.
+- Legacy System One bootstrap attaches to an already-registered same-host physical node when possible, keeping its distinct runtime port and bearer at deployment scope instead of manufacturing a separate physical capacity pool.
 - Version jumps now preserve every intermediate stable release in order for Admin, automatic and future manual `llmproxyctl update` paths, preventing an intermediate custom migration from being skipped.
 - System One now uses the common routing, distributed capacity, failover, request-rate governance, request metrics and encrypted upstream-credential path; legacy `SYSTEM_ONE_*` configuration is imported once for compatibility.
 - Immutable release downloads retry transient network failures such as connection resets before failing checksum-verified bootstrap.

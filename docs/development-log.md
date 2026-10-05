@@ -621,3 +621,18 @@ Validation is intentionally not claimed until the exact final main SHA completes
 The Docker/PostgreSQL governance smoke exposed a real local-L1 race: background credential-usage persistence can update `LastUsedAtUtc` from an entity loaded before an administrator changes caller governance. The credential cache interceptor previously republished every modified credential, so that non-runtime timestamp write could restore a stale `EnforceCallerGovernance` (or other runtime snapshot field) in memory even though PostgreSQL contained the newer value.
 
 The interceptor now republishes only when runtime-significant credential fields change (hash, enabled/expiry, ownership, usage group or caller-governance). Usage timestamps remain durable/observable but cannot mutate authentication/governance runtime state. The existing governance smoke is the regression acceptance: the first two governed calls must succeed and the third must be rejected immediately after enabling caller governance.
+
+
+## 2026-10-05 — Physical infrastructure and capacity consolidation
+
+Implemented the operator-facing correction for capacity confusion exposed by GitHub Copilot `429 capacity_exhausted` responses:
+
+- consolidated Inference Nodes, Hardware and Model & Hardware navigation into one **Infrastructure** workspace with Fleet & access, Capacity & telemetry, and Inventory & model lifecycle tabs;
+- made the physical node concurrency ceiling editable after creation and labelled it as simultaneous inference requests rather than people;
+- exposed separate per-deployment concurrency editing while retaining inheritance from the hardware limit;
+- changed live node-capacity reporting to use distributed maintenance/capacity coordination state when available and retain the per-gateway counter as diagnostics;
+- added a coordinated same-host consolidation operation for legacy pseudo-nodes: drain source admissions, wait for zero active requests, preserve the runtime root and encrypted upstream bearer at deployment scope, preserve any previously inherited deployment ceiling, move the deployment, then remove the duplicate physical node row;
+- made legacy System One bootstrap reuse an existing same-host physical node when possible;
+- documented the intended split: Users & Access = admitted people, Infrastructure = physical simultaneous requests, Usage & Governance = caller request/token quotas.
+
+Local validation on the implementation head: Admin production build passed and Vitest passed 26/26 tests. Backend local build could not start CoreCLR in the constrained runner (`0x8007000E`), and Playwright browser installation returned a zero-byte/truncated CDN archive; neither is recorded as a product test failure. Exact-head GitHub CI/Full Stack is the release gate and validation authority.

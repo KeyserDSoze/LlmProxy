@@ -1,6 +1,6 @@
 # Capacity control and backpressure
 
-LlmProxy enforces physical inference capacity at both deployment and node level. Benchmark evidence is stored separately from live limits, and Redis-enabled deployments coordinate capacity across gateway replicas with renewable leases.
+LlmProxy enforces physical inference capacity at both deployment and node level. Benchmark evidence is stored separately from live limits, and Redis-enabled deployments coordinate capacity across gateway replicas with renewable leases. Capacity values count **simultaneous inference requests, not people**: one Copilot user may have several requests in flight at once.
 
 ## Capacity layers
 
@@ -18,6 +18,8 @@ inference node-01 total active = 8 -> saturated
 ```
 
 A request to either deployment cannot bypass the physical ceiling merely because that deployment still has local headroom.
+
+An inference node represents one physical machine. If the same server exposes vLLM on `:8080` and a System One runtime on `:8090`, those are deployment runtime roots on the same hardware and must share one physical ceiling. They must not be modeled as independent physical-capacity pools merely because the ports differ.
 
 ## Capacity provider abstraction
 
@@ -171,7 +173,17 @@ DELETE /api/admin/deployments/{id}/capacity-profile
 POST   /api/admin/deployments/{id}/capacity-profile/apply
 ```
 
-`GET /api/admin/capacity` exposes current local active counts together with persisted limit/profile metadata. Shared Redis lease state is coordination infrastructure rather than the reporting source of truth for historical usage.
+`GET /api/admin/capacity` exposes the current distributed node active count when coordination is available, the local gateway count for diagnostics, the capacity provider/admission-block state and persisted limit/profile metadata. This is a live admission view, not historical usage reporting.
+
+The Admin UI exposes this under **Infrastructure → Capacity & telemetry → Physical capacity**. `Edit capacity` changes `InferenceNode.MaxConcurrency` at runtime and is audited through the normal node update API. Deployment-specific concurrency can be edited separately in **Models & Deployments**; an empty deployment limit inherits the hardware ceiling.
+
+Caller population and quotas remain separate controls:
+
+- **Users & Access** controls which Entra users are admitted; a desired population such as 30 people is represented by admitting those users, not by setting node concurrency to 30.
+- **Infrastructure** controls the physical simultaneous-request ceiling, for example 10 requests in flight across the machine.
+- **Usage & Governance** controls request/token rate limits per user, group or credential.
+
+There is intentionally no conversion such as `30 users = 30 concurrency`: the safe simultaneous-request value comes from benchmark evidence for the actual model/runtime/hardware combination.
 
 ## Test strategy
 

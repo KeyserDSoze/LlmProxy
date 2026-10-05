@@ -3,10 +3,17 @@ import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
 import type { Node, NodeConnectionTest } from './types'
 
-export default function NodesPage({ nodes, canWrite, refresh }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void> }) {
+export default function NodesPage({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'active' | 'disabled'>('active')
   const [addOpen, setAddOpen] = useState(false)
   const [credentialNode, setCredentialNode] = useState<Node | null>(null)
+  const [editNode, setEditNode] = useState<Node | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editBaseAddress, setEditBaseAddress] = useState('')
+  const [editWeight, setEditWeight] = useState(1)
+  const [editMaxConcurrency, setEditMaxConcurrency] = useState(4)
+  const [consolidateNode, setConsolidateNode] = useState<Node | null>(null)
+  const [consolidateTargetId, setConsolidateTargetId] = useState('')
   const [name, setName] = useState('')
   const [baseAddress, setBaseAddress] = useState('http://')
   const [weight, setWeight] = useState(1)
@@ -38,6 +45,36 @@ export default function NodesPage({ nodes, canWrite, refresh }: { nodes: Node[];
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
+  function openEdit(node: Node) {
+    setEditNode(node); setEditName(node.name); setEditBaseAddress(node.baseAddress); setEditWeight(node.weight); setEditMaxConcurrency(node.maxConcurrency); setError(null)
+  }
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault(); if (!editNode) return
+    setBusy('edit'); setError(null)
+    try {
+      await api.updateNode(editNode.id, { name: editName, baseAddress: editBaseAddress, weight: editWeight, maxConcurrency: editMaxConcurrency })
+      setEditNode(null); await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
+  }
+
+  function openConsolidate(node: Node) {
+    setConsolidateNode(node); setConsolidateTargetId(nodes.find(item => item.id !== node.id)?.id ?? ''); setError(null)
+  }
+
+  async function consolidate(event: FormEvent) {
+    event.preventDefault(); if (!consolidateNode || !consolidateTargetId) return
+    setBusy('consolidate'); setError(null)
+    try {
+      const result = await api.consolidateNode(consolidateNode.id, consolidateTargetId)
+      if (result.code === 'source_still_draining') {
+        setError(`Source runtime is draining (${result.activeRequests ?? 0} active). Retry Consolidate when it reaches zero.`)
+      } else {
+        setConsolidateNode(null); await refresh()
+      }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
+  }
+
   async function clearCredential() {
     if (!credentialNode) return
     setBusy('credential'); setError(null)
@@ -59,10 +96,12 @@ export default function NodesPage({ nodes, canWrite, refresh }: { nodes: Node[];
   }
 
   return <div className="stack compactPage">
-    <section className="panel pageToolbar">
+    {!embedded && <section className="panel pageToolbar">
       <div><h2>Inference fleet</h2><p className="muted">Active nodes stay front and center. Add, credentials and destructive actions open only when needed.</p></div>
       {canWrite && <button className="primary" onClick={() => setAddOpen(true)}>Add inference node</button>}
-    </section>
+    </section>}
+
+    {embedded && canWrite && <section className="panel pageToolbar"><div><h2>Hardware fleet</h2><p className="muted">Register one row per physical machine. Use deployment runtime roots when models listen on different ports.</p></div><button className="primary" onClick={() => setAddOpen(true)}>Add hardware node</button></section>}
 
     {error && <div className="error">{error}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'active', label: 'Active nodes', count: active.length }, { value: 'disabled', label: 'Disabled nodes', count: disabled.length }]} />
@@ -77,7 +116,9 @@ export default function NodesPage({ nodes, canWrite, refresh }: { nodes: Node[];
           <td>{node.maxConcurrency}</td>
           <td className="actions">
             <button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
+            {canWrite && <button onClick={() => openEdit(node)}>Edit</button>}
             {canWrite && <button onClick={() => { setCredentialNode(node); setCredentialSecret('') }}>Credentials</button>}
+            {canWrite && nodes.length > 1 && <button onClick={() => openConsolidate(node)}>Consolidate</button>}
             {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button>}
             {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button>}
             {canWrite && (!node.enabled || node.status === 'Draining') && <button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button>}
@@ -98,6 +139,24 @@ export default function NodesPage({ nodes, canWrite, refresh }: { nodes: Node[];
         <div className="formGridTwo"><label>Weight<input type="number" min="1" value={weight} onChange={event => setWeight(Number(event.target.value))} /></label><label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={event => setMaxConcurrency(Number(event.target.value))} /></label></div>
         <label>Upstream bearer token (optional)<input type="password" autoComplete="new-password" value={upstreamBearerToken} onChange={event => setUpstreamBearerToken(event.target.value)} placeholder="provider token" /></label>
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setAddOpen(false)}>Cancel</button><button className="primary" disabled={busy === 'add'}>{busy === 'add' ? 'Adding…' : 'Add node'}</button></div>
+      </form>
+    </Modal>
+
+    <Modal open={Boolean(editNode)} title={`Hardware settings · ${editNode?.name ?? ''}`} description="Physical concurrency is the maximum simultaneous inference requests admitted across every deployment on this machine. It is not a user count." onClose={() => setEditNode(null)}>
+      <form className="formPanel" onSubmit={saveEdit}>
+        <label>Name<input value={editName} onChange={event => setEditName(event.target.value)} required /></label>
+        <label>Default runtime service root<input value={editBaseAddress} onChange={event => setEditBaseAddress(event.target.value)} required /></label>
+        <div className="formGridTwo"><label>Routing weight<input type="number" min="1" value={editWeight} onChange={event => setEditWeight(Number(event.target.value))} /></label><label>Physical max concurrent requests<input aria-label="Physical max concurrent requests" type="number" min="1" value={editMaxConcurrency} onChange={event => setEditMaxConcurrency(Number(event.target.value))} /></label></div>
+        <div className="notice">Example: 30 authorized people belongs in Users & Access. A value of 10 here means this hardware accepts at most 10 simultaneous inference requests across all its models.</div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setEditNode(null)}>Cancel</button><button className="primary" disabled={busy === 'edit'}>{busy === 'edit' ? 'Saving…' : 'Save hardware'}</button></div>
+      </form>
+    </Modal>
+
+    <Modal open={Boolean(consolidateNode)} title={`Consolidate runtime · ${consolidateNode?.name ?? ''}`} description="Use this when a second row is really another runtime/port on the same physical machine. LlmProxy drains it, moves its deployments, preserves its runtime root and bearer, then removes the duplicate hardware row." onClose={() => setConsolidateNode(null)}>
+      <form className="formPanel" onSubmit={consolidate}>
+        <label>Physical hardware<select value={consolidateTargetId} onChange={event => setConsolidateTargetId(event.target.value)} required><option value="">Select target hardware</option>{nodes.filter(item => item.id !== consolidateNode?.id).map(item => <option key={item.id} value={item.id}>{item.name} · max {item.maxConcurrency} concurrent</option>)}</select></label>
+        <div className="notice">After consolidation, the target hardware's physical limit is shared. A source deployment that previously inherited its node limit keeps that old value as its deployment-specific ceiling.</div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setConsolidateNode(null)}>Cancel</button><button className="primary" disabled={!consolidateTargetId || busy === 'consolidate'}>{busy === 'consolidate' ? 'Draining…' : 'Consolidate safely'}</button></div>
       </form>
     </Modal>
 

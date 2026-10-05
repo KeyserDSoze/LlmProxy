@@ -109,7 +109,7 @@ The strategy survives restarts. `Routing__Strategy` / `ROUTING_STRATEGY` is only
 
 ## Node service roots
 
-A node address is a complete HTTP(S) service root. Examples:
+A node represents physical hardware and its address is the default complete HTTP(S) runtime service root. A deployment can override that root when another model/classifier runs on a different port or path on the same machine. Examples:
 
 ```text
 http://localhost:3450/primopath
@@ -125,6 +125,8 @@ http://localhost:3450/primopath/health
 http://localhost:3450/primopath/metrics
 http://localhost:3450/primopath/v1/chat/completions
 ```
+
+Deployment-specific runtime roots do not create independent physical capacity: all deployments assigned to the same node share `InferenceNode.MaxConcurrency`. A deployment may also carry an encrypted upstream bearer override; routing uses that credential first and otherwise inherits the node bearer. This allows `:8080` and `:8090` runtimes on one machine to keep distinct authentication while sharing one physical admission ceiling.
 
 ## Connection probe
 

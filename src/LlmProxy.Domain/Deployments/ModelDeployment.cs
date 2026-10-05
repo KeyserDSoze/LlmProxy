@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LlmProxy.Domain.Deployments;
 
 public sealed class ModelDeployment
@@ -30,6 +32,8 @@ public sealed class ModelDeployment
     public int Weight { get; private set; } = 1;
     public int? MaxConcurrency { get; private set; }
     public string? RuntimeBaseAddress { get; private set; }
+    [JsonIgnore]
+    public string? UpstreamBearerTokenCiphertext { get; private set; }
     public string? CatalogModelId { get; private set; }
     public string? ManagedInstallationId { get; private set; }
 
@@ -63,6 +67,24 @@ public sealed class ModelDeployment
             : LlmProxy.Domain.Nodes.InferenceEndpoint.NormalizeBaseAddress(runtimeBaseAddress);
         CatalogModelId = NormalizeOptional(catalogModelId, 200, nameof(catalogModelId));
         ManagedInstallationId = NormalizeOptional(managedInstallationId, 300, nameof(managedInstallationId));
+    }
+
+    public void SetUpstreamBearerTokenCiphertext(string? ciphertext)
+    {
+        UpstreamBearerTokenCiphertext = string.IsNullOrWhiteSpace(ciphertext) ? null : ciphertext;
+    }
+
+    public void MoveToNode(Guid nodeId, string? runtimeBaseAddress)
+    {
+        if (nodeId == Guid.Empty)
+        {
+            throw new ArgumentException("Node id is required.", nameof(nodeId));
+        }
+
+        NodeId = nodeId;
+        RuntimeBaseAddress = string.IsNullOrWhiteSpace(runtimeBaseAddress)
+            ? null
+            : LlmProxy.Domain.Nodes.InferenceEndpoint.NormalizeBaseAddress(runtimeBaseAddress);
     }
 
     public void SetCapacityProfile(

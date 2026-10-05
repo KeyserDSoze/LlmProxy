@@ -106,7 +106,7 @@ The distinction is intentional: a temporary exporter outage retains the last sam
 
 ## Admin UI
 
-The React console has a dedicated **inference node Hardware** view. It shows current collector availability, GPU count, utilization, framebuffer usage, temperature and power, and allows the independent DCGM service root to be configured or cleared per node.
+The React console exposes telemetry under **Infrastructure → Capacity & telemetry**. It shows current collector availability, GPU count, utilization, framebuffer usage, temperature and power, and allows the independent DCGM service root to be configured or cleared per physical node. The same workspace also exposes the node-wide simultaneous-request ceiling, making the distinction between observed hardware data and enforced physical capacity explicit.
 
 The page deliberately labels this data as observational and includes a **Routing isolation** note. Aggregate cards use only currently available snapshots; retained values from a transient failed collector are shown only as diagnostics for that node.
 

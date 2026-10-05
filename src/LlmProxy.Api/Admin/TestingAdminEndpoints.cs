@@ -45,8 +45,9 @@ public static class TestingAdminEndpoints
                     (deployment, node) => new
                     {
                         deployment.RuntimeBaseAddress,
+                        DeploymentUpstreamBearerTokenCiphertext = deployment.UpstreamBearerTokenCiphertext,
                         node.BaseAddress,
-                        node.UpstreamBearerTokenCiphertext
+                        NodeUpstreamBearerTokenCiphertext = node.UpstreamBearerTokenCiphertext
                     })
                 .FirstOrDefaultAsync(cancellationToken);
 
@@ -65,7 +66,8 @@ public static class TestingAdminEndpoints
                 baseAddress,
                 upstreamEndpoint,
                 publicEndpoint = SystemOnePath,
-                apiKeyConfigured = !string.IsNullOrWhiteSpace(topology?.UpstreamBearerTokenCiphertext),
+                apiKeyConfigured = !string.IsNullOrWhiteSpace(topology?.DeploymentUpstreamBearerTokenCiphertext)
+                    || !string.IsNullOrWhiteSpace(topology?.NodeUpstreamBearerTokenCiphertext),
                 timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300),
                 configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
                 models = models.Select(item => item.PublicName).ToArray(),

@@ -10,6 +10,8 @@ const mockedApi = vi.hoisted(() => ({
   routingPerformance: vi.fn(),
   routingRuntime: vi.fn(),
   hardware: vi.fn(),
+  capacity: vi.fn(),
+  modelManagementOverview: vi.fn(),
   updateRouting: vi.fn(),
   updateRoutingTuning: vi.fn(),
   nodes: vi.fn(),
@@ -101,6 +103,10 @@ describe('admin application', () => {
       framebufferUsedMiB: 4096, framebufferFreeMiB: 12288, framebufferUsageRatio: 0.25,
       maxTemperatureCelsius: 67, totalPowerUsageWatts: 261, collectedAtUtc: '2026-09-09T10:03:00Z', lastAttemptAtUtc: '2026-09-09T10:03:00Z', error: null
     }])
+    mockedApi.capacity.mockResolvedValue({
+      nodes: [{ id: 'node-1', name: 'inference-01', maxConcurrency: 4, activeRequests: 0, localActiveRequests: 0, remaining: 4, capacityProvider: 'redis', coordinationAvailable: true, admissionBlocked: false }],
+      deployments: [{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, maxConcurrency: 4, effectiveMaxConcurrency: 4, activeRequests: 0 }]
+    })
     mockedApi.updateRouting.mockResolvedValue({ strategy: 'RoundRobin', supportedStrategies: ['WeightedLeastLoaded', 'RoundRobin', 'WeightedRoundRobin'] })
     mockedApi.nodes.mockResolvedValue([{
       id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm',
@@ -110,6 +116,7 @@ describe('admin application', () => {
     }])
     mockedApi.setNodeUpstreamCredential.mockResolvedValue({ id: 'node-1', hasUpstreamCredential: true })
     mockedApi.clearNodeUpstreamCredential.mockResolvedValue(undefined)
+    mockedApi.updateNode.mockResolvedValue({ id: 'node-1', name: 'inference-01', baseAddress: 'http://10.0.0.21:8000/vllm', weight: 1, maxConcurrency: 10, enabled: true, status: 'Healthy', consecutiveHealthSuccesses: 4, consecutiveHealthFailures: 0 })
     mockedApi.updateNodeHardwareMetrics.mockResolvedValue({ id: 'node-1', hardwareMetricsBaseAddress: 'http://10.0.0.21:9400/dcgm' })
     mockedApi.models.mockResolvedValue([
       { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
@@ -173,7 +180,7 @@ describe('admin application', () => {
 
   it('navigates to the inference node management view and tests the complete service root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Inference Nodes' })); await user.click(screen.getByRole('button', { name: 'Test' }))
+    await user.click(screen.getByRole('button', { name: 'Infrastructure' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: inference-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
     expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
@@ -181,8 +188,9 @@ describe('admin application', () => {
 
   it('shows hardware telemetry and can update the separate DCGM root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Hardware' }))
-    expect(screen.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Infrastructure' }))
+    await user.click(screen.getByRole('tab', { name: /Capacity & telemetry/ }))
+    expect(await screen.findByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
     expect(screen.getByText('4.0 GiB used · 25.0%')).toBeInTheDocument()
     expect(screen.getAllByText('67 °C')).toHaveLength(2)
@@ -195,6 +203,18 @@ describe('admin application', () => {
     await user.type(input, 'http://10.0.0.21:9400/new-dcgm')
     await user.click(screen.getByRole('button', { name: 'Save endpoint' }))
     expect(mockedApi.updateNodeHardwareMetrics).toHaveBeenCalledWith('node-1', 'http://10.0.0.21:9400/new-dcgm')
+  })
+
+  it('edits the physical simultaneous-request ceiling from Infrastructure', async () => {
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
+    await user.click(screen.getByRole('button', { name: 'Infrastructure' }))
+    await user.click(screen.getByRole('tab', { name: /Capacity & telemetry/ }))
+    await user.click(screen.getByRole('tab', { name: /Physical capacity/ }))
+    await user.click(await screen.findByRole('button', { name: 'Edit capacity' }))
+    const limit = screen.getByLabelText('Maximum simultaneous inference requests')
+    await user.clear(limit); await user.type(limit, '10')
+    await user.click(screen.getByRole('button', { name: 'Save capacity' }))
+    expect(mockedApi.updateNode).toHaveBeenCalledWith('node-1', expect.objectContaining({ maxConcurrency: 10 }))
   })
 
   it('exposes live routing strategy, tuning and capacity signals', async () => {

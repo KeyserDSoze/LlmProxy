@@ -173,6 +173,32 @@ fi
 systemone_status="$(curl --fail --silent http://127.0.0.1:8080/api/admin/testing/systemone)"
 echo "$systemone_status" | jq -e '.enabled == true and .apiKeyConfigured == true and .publicEndpoint == "/v1/systemone" and .timeoutSeconds == 5 and (.upstreamEndpoint | contains("3452/classifier/v1/systemone"))' >/dev/null
 
+# Same host, different runtime ports are one physical capacity pool. Legacy System One
+# keeps its runtime root and encrypted bearer at deployment scope rather than creating
+# a second pseudo-hardware node.
+bootstrap_nodes="$(curl --fail --silent http://127.0.0.1:8080/api/admin/nodes)"
+echo "$bootstrap_nodes" | jq -e 'length == 1' >/dev/null
+bootstrap_node_id="$(echo "$bootstrap_nodes" | jq -r '.[0].id')"
+systemone_model_id="$(curl --fail --silent http://127.0.0.1:8080/api/admin/models | jq -r 'map(select(.surface == "SystemOne")) | first | .id')"
+systemone_deployment="$(curl --fail --silent http://127.0.0.1:8080/api/admin/deployments | jq -c --arg model "$systemone_model_id" 'map(select(.modelId == $model)) | first')"
+echo "$systemone_deployment" | jq -e --arg node "$bootstrap_node_id" '.nodeId == $node and .maxConcurrency == 8 and (.runtimeBaseAddress | contains("3452/classifier"))' >/dev/null
+systemone_bearer_ciphertext="$("${COMPOSE[@]}" exec -T postgres psql -U llmproxy -d llmproxy -Atc "SELECT \"UpstreamBearerTokenCiphertext\" FROM deployments WHERE \"Id\"='$(echo "$systemone_deployment" | jq -r '.id')';" | tr -d '\r')"
+[[ -n "$systemone_bearer_ciphertext" ]] || fail_with_diagnostics "Legacy System One bearer was not preserved at deployment scope."
+
+consolidation_source="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"name":"z-consolidation-source","baseAddress":"http://host.docker.internal:3452/classifier","weight":1,"maxConcurrency":3,"upstreamBearerToken":"laya-upstream"}' http://127.0.0.1:8080/api/admin/nodes)"
+consolidation_source_id="$(echo "$consolidation_source" | jq -r '.id')"
+consolidation_model="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"publicName":"zz-consolidation-smoke","providerModelName":"bootstrap-model","supportsStreaming":true,"supportsTools":false,"surface":"OpenAi"}' http://127.0.0.1:8080/api/admin/models)"
+consolidation_model_id="$(echo "$consolidation_model" | jq -r '.id')"
+consolidation_deployment="$(curl --fail --silent -H 'Content-Type: application/json' -d "{\"nodeId\":\"${consolidation_source_id}\",\"modelId\":\"${consolidation_model_id}\",\"weight\":1}" http://127.0.0.1:8080/api/admin/deployments)"
+consolidation_deployment_id="$(echo "$consolidation_deployment" | jq -r '.id')"
+consolidation_result="$(curl --fail --silent -X POST "http://127.0.0.1:8080/api/admin/nodes/${consolidation_source_id}/consolidate-into/${bootstrap_node_id}")"
+echo "$consolidation_result" | jq -e --arg source "$consolidation_source_id" --arg target "$bootstrap_node_id" '.sourceNodeId == $source and .targetNodeId == $target and .movedDeployments == 1' >/dev/null
+curl --fail --silent http://127.0.0.1:8080/api/admin/nodes | jq -e --arg source "$consolidation_source_id" 'map(select(.id == $source)) | length == 0' >/dev/null
+consolidated_deployment="$(curl --fail --silent http://127.0.0.1:8080/api/admin/deployments | jq -c --arg id "$consolidation_deployment_id" 'map(select(.id == $id)) | first')"
+echo "$consolidated_deployment" | jq -e --arg target "$bootstrap_node_id" '.nodeId == $target and .maxConcurrency == 3 and (.runtimeBaseAddress | contains("3452/classifier"))' >/dev/null
+consolidated_bearer_ciphertext="$("${COMPOSE[@]}" exec -T postgres psql -U llmproxy -d llmproxy -Atc "SELECT \"UpstreamBearerTokenCiphertext\" FROM deployments WHERE \"Id\"='${consolidation_deployment_id}';" | tr -d '\r')"
+[[ -n "$consolidated_bearer_ciphertext" ]] || fail_with_diagnostics "Consolidation did not preserve the source upstream bearer at deployment scope."
+
 systemone_test="$(curl --fail --silent -H 'Content-Type: application/json' -d '{"payload":{"state":{"document":"admin classifier test"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}}' http://127.0.0.1:8080/api/admin/testing/systemone)"
 echo "$systemone_test" | jq -e '.success == true and .statusCode == 200 and (.responseBody | fromjson | .served_by) == "classifier" and (.responseBody | fromjson | .state.document) == "admin classifier test"' >/dev/null
 

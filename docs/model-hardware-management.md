@@ -27,9 +27,11 @@ The physical node and the model runtime are deliberately different concepts. A n
 
 Stopping or removing a managed model disables its deployment before the remote lifecycle operation. This prevents new traffic from being routed to a runtime that is being stopped.
 
-## Model & Hardware Admin page
+## Infrastructure Admin workspace
 
-For the selected node LlmProxy shows CPU logical cores, total/free system RAM, total/free disk, detected NVIDIA GPUs, per-GPU total/free VRAM, driver and compute capability, plus the configured runtime version.
+The former Inference Nodes, Hardware and Model & Hardware navigation entries are consolidated under **Infrastructure**. Its tabs separate **Fleet & access**, **Capacity & telemetry**, and **Inventory & model lifecycle** while keeping one physical-machine concept.
+
+For the selected node, Inventory & model lifecycle shows CPU logical cores, total/free system RAM, total/free disk, detected NVIDIA GPUs, per-GPU total/free VRAM, driver and compute capability, plus the configured runtime version. This inventory is reported by the management agent; it is not a second manually maintained hardware database.
 
 The deployable-model catalog records model family, source/model card, license, parameter count, context size, precision, minimum/recommended GPU memory, system RAM, disk, GPU count, capabilities and notes. The page evaluates those requirements against the live free resources and reports `fits`, `tight`, `insufficient` or `unknown` with an explanation.
 
@@ -105,7 +107,15 @@ sudo systemctl status llmproxy-node-agent
 curl -H "Authorization: Bearer <secret>" http://127.0.0.1:9900/health
 ```
 
-Enter the same bearer once in **Model & Hardware**. LlmProxy stores it encrypted using `Security:UpstreamCredentialEncryptionKey`; it is never returned by the management API.
+Enter the same bearer once in **Infrastructure → Inventory & model lifecycle**. LlmProxy stores it encrypted using `Security:UpstreamCredentialEncryptionKey`; it is never returned by the management API.
+
+## Consolidating legacy same-host rows
+
+Older configuration could create a separate node row for System One even when its runtime was just another port on the same server. **Infrastructure → Fleet & access → Consolidate** provides the explicit upgrade path: LlmProxy establishes a distributed maintenance drain, waits for active work to reach zero, moves the source deployments to the selected physical hardware, preserves their runtime root and encrypted upstream bearer, then removes the duplicate node row.
+
+If a source deployment previously inherited the old node concurrency, consolidation writes that value as an explicit deployment ceiling so the move does not silently increase that model's concurrency. The target node's physical ceiling then applies across all consolidated deployments. Agent-managed installations are deliberately excluded because their agent ownership must be changed through the lifecycle workflow instead.
+
+For new legacy System One imports, if the configured runtime hostname already matches a registered hardware node, startup attaches the classifier deployment to that hardware directly and keeps the System One port/bearer at deployment scope.
 
 ## Configuration
 

@@ -66,4 +66,19 @@ public sealed class ModelDeploymentCapacityProfileTests
 
         Assert.Throws<InvalidOperationException>(() => deployment.ApplyRecommendedCapacity());
     }
+
+    [Fact]
+    public void Runtime_can_move_to_physical_hardware_without_losing_runtime_credential()
+    {
+        var originalNode = Guid.NewGuid();
+        var targetNode = Guid.NewGuid();
+        var deployment = new ModelDeployment(originalNode, Guid.NewGuid());
+        deployment.SetUpstreamBearerTokenCiphertext("encrypted-runtime-bearer");
+
+        deployment.MoveToNode(targetNode, "http://hardware-01:8090/");
+
+        Assert.Equal(targetNode, deployment.NodeId);
+        Assert.Equal("http://hardware-01:8090", deployment.RuntimeBaseAddress);
+        Assert.Equal("encrypted-runtime-bearer", deployment.UpstreamBearerTokenCiphertext);
+    }
 }

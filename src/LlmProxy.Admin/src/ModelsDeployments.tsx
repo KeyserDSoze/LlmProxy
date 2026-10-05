@@ -10,6 +10,9 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
   const [publishOpen, setPublishOpen] = useState(false)
   const [deployModel, setDeployModel] = useState<Model | null>(null)
   const [manageNode, setManageNode] = useState<Node | null>(null)
+  const [settingsDeployment, setSettingsDeployment] = useState<Deployment | null>(null)
+  const [settingsWeight, setSettingsWeight] = useState(1)
+  const [settingsMaxConcurrency, setSettingsMaxConcurrency] = useState('')
   const [publicName, setPublicName] = useState('')
   const [providerModelName, setProviderModelName] = useState('')
   const [surface, setSurface] = useState<Surface>('OpenAi')
@@ -23,6 +26,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
   const deploymentsByNode = useMemo(() => new Map(nodes.map(node => [node.id, deployments.filter(item => item.nodeId === node.id)])), [nodes, deployments])
   const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
   const modelById = useMemo(() => new Map(models.map(model => [model.id, model])), [models])
+  const nodeById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes])
   const activeNodes = useMemo(() => nodes.filter(node => node.enabled), [nodes])
 
   function modelSurface(model: Model): Surface { return model.surface ?? 'OpenAi' }
@@ -78,6 +82,20 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
+  function openDeploymentSettings(deployment: Deployment) {
+    setSettingsDeployment(deployment); setSettingsWeight(deployment.weight); setSettingsMaxConcurrency(deployment.maxConcurrency == null ? '' : String(deployment.maxConcurrency)); setError(null)
+  }
+
+  async function saveDeploymentSettings(event: FormEvent) {
+    event.preventDefault(); if (!settingsDeployment) return
+    const parsed = settingsMaxConcurrency.trim() === '' ? null : Number(settingsMaxConcurrency)
+    setBusy(`settings:${settingsDeployment.id}`); setError(null)
+    try {
+      await api.updateDeployment(settingsDeployment.id, { weight: settingsWeight, maxConcurrency: parsed, enabled: settingsDeployment.enabled })
+      setSettingsDeployment(null); setMessage('Deployment capacity updated.'); await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
+  }
+
   async function deployOnManagedNode(model: Model) {
     if (!manageNode) return
     setBusy(`node:${model.id}`); setError(null)
@@ -105,7 +123,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
             <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{kind === 'SystemOne' ? 'SYSTEM ONE' : 'OPENAI'}</span></td>
             <td className="mono">{model.providerModelName}</td>
             <td>{kind === 'SystemOne' ? 'typed classifier' : [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic'}</td>
-            <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
+            <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
             <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}</td>
           </tr>
         })}
@@ -143,8 +161,17 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
     <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>
       <div className="modalList">{models.map(model => {
         const deployment = (deploymentsByNode.get(manageNode?.id ?? '') ?? []).find(item => item.modelId === model.id)
-        return <div className="modalListRow" key={model.id}><div><strong>{model.publicName}</strong><div className="muted">{modelSurface(model) === 'SystemOne' ? 'System One' : 'OpenAI'} · <span className="mono">{model.providerModelName}</span></div></div><div className="actions">{deployment ? <><span className={deployment.enabled ? 'scopeBadge scope-org' : 'scopeBadge'}>{deployment.enabled ? 'Routing on' : 'Routing off'}</span><button disabled={busy === `deployment:${deployment.id}`} onClick={() => void toggleDeployment(deployment, !deployment.enabled)}>{deployment.enabled ? 'Disable' : 'Enable'}</button></> : <button className="primary" disabled={!manageNode?.enabled || busy === `node:${model.id}`} onClick={() => void deployOnManagedNode(model)}>Deploy</button>}</div></div>
+        return <div className="modalListRow" key={model.id}><div><strong>{model.publicName}</strong><div className="muted">{modelSurface(model) === 'SystemOne' ? 'System One' : 'OpenAI'} · <span className="mono">{model.providerModelName}</span></div>{deployment && <div className="muted">deployment max {deployment.maxConcurrency ?? 'inherits hardware'} · runtime <span className="mono">{deployment.runtimeBaseAddress ?? manageNode?.baseAddress}</span></div>}</div><div className="actions">{deployment ? <><span className={deployment.enabled ? 'scopeBadge scope-org' : 'scopeBadge'}>{deployment.enabled ? 'Routing on' : 'Routing off'}</span><button onClick={() => openDeploymentSettings(deployment)}>Capacity</button><button disabled={busy === `deployment:${deployment.id}`} onClick={() => void toggleDeployment(deployment, !deployment.enabled)}>{deployment.enabled ? 'Disable' : 'Enable'}</button></> : <button className="primary" disabled={!manageNode?.enabled || busy === `node:${model.id}`} onClick={() => void deployOnManagedNode(model)}>Deploy</button>}</div></div>
       })}</div>
+    </Modal>
+
+    <Modal open={Boolean(settingsDeployment)} title="Deployment capacity" description="Optionally cap this model/runtime below the physical hardware ceiling. Leave it empty to inherit the hardware limit." onClose={() => setSettingsDeployment(null)}>
+      <form className="formPanel" onSubmit={saveDeploymentSettings}>
+        <label>Routing weight<input type="number" min="1" value={settingsWeight} onChange={event => setSettingsWeight(Number(event.target.value))} required /></label>
+        <label>Maximum simultaneous requests<input aria-label="Deployment maximum simultaneous requests" type="number" min="1" value={settingsMaxConcurrency} onChange={event => setSettingsMaxConcurrency(event.target.value)} placeholder="Inherit hardware limit" /></label>
+        <div className="secretBox"><strong>Effective ceiling</strong><p>{settingsMaxConcurrency.trim() || (settingsDeployment ? nodeById.get(settingsDeployment.nodeId)?.maxConcurrency : '—')} concurrent requests for this deployment; the physical hardware ceiling still applies across all deployments.</p></div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setSettingsDeployment(null)}>Cancel</button><button className="primary" disabled={busy === `settings:${settingsDeployment?.id}`}>Save deployment</button></div>
+      </form>
     </Modal>
   </div>
 }
