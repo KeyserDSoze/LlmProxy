@@ -140,8 +140,10 @@ public sealed class DatabaseBootstrapper(
             if (!string.IsNullOrWhiteSpace(legacyBaseAddress))
             {
                 var legacyMaxConcurrency = Math.Clamp(configuration.GetValue("SystemOne:MaxConcurrency", 8), 1, 1024);
-                var existingHardware = (await dbContext.Nodes.ToListAsync(cancellationToken))
-                    .FirstOrDefault(node => SameHost(node.BaseAddress, legacyBaseAddress));
+                var existingHardware = dbContext.Nodes.Local
+                    .FirstOrDefault(node => SameHost(node.BaseAddress, legacyBaseAddress))
+                    ?? (await dbContext.Nodes.ToListAsync(cancellationToken))
+                        .FirstOrDefault(node => SameHost(node.BaseAddress, legacyBaseAddress));
                 var desiredNodeName = configuration["SystemOne:NodeName"] ?? "systemone-classifier";
                 var nodeName = desiredNodeName;
                 for (var suffix = 2; await dbContext.Nodes.AnyAsync(item => item.Name == nodeName, cancellationToken); suffix++)
