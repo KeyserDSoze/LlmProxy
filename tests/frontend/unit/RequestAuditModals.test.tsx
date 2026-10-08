@@ -74,6 +74,41 @@ describe('request audit modals', () => {
     expect(markdownBlob.type).toContain('text/markdown')
   })
 
+
+  it('shows reconstructed streaming text, completion state and JSON rather than SSE fragments', async () => {
+    const user = userEvent.setup()
+    const streamingDetail = {
+      ...detail,
+      responseContentType: 'text/event-stream',
+      isStreaming: true,
+      responseBody: JSON.stringify({
+        format: 'llmproxy.audit.stream.v1',
+        streaming: true,
+        state: 'cancelled',
+        complete: false,
+        reason: 'client_cancelled',
+        eventsProcessed: 18,
+        invalidEvents: 0,
+        truncated: false,
+        response: {
+          object: 'chat.completion',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'Partially generated answer' }, finish_reason: null }]
+        }
+      })
+    }
+
+    render(<RequestAuditDetailModal detail={streamingDetail} onClose={vi.fn()} />)
+    expect(screen.getByText('Stream state')).toBeInTheDocument()
+    expect(screen.getByText('cancelled')).toBeInTheDocument()
+    expect(screen.getByText('18')).toBeInTheDocument()
+    expect(screen.getByText('Partially generated answer')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reconstructed JSON' }))
+    expect(screen.getByText(/llmproxy.audit.stream.v1/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Readable response' }))
+    expect(screen.getByText('Partially generated answer')).toBeInTheDocument()
+  })
+
   it('shows a persisted administrator summary and can regenerate it with model/node overrides', async () => {
     const user = userEvent.setup()
     const onRegenerate = vi.fn(async () => undefined)
