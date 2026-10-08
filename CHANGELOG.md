@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Streaming Chat Completions and Responses Request Audit now stores **one reconstructed JSON response** (including partial content, tool calls, usage when known, and terminal/error status) rather than raw per-token SSE events. The Admin and user audit modal offers a readable response and structured JSON inspector. Original client streaming remains unchanged; audit capture is bounded and reports truncation. **Breaking pre-production audit format change:** old raw-SSE audit data is not migrated or supported by a legacy viewer.
+
 - Admin **Infrastructure** unifies physical Fleet & access, Capacity & telemetry, and Inventory & model lifecycle, with post-creation editing of the hardware-wide simultaneous-request ceiling.
 - Legacy same-host node rows can be consolidated safely after a distributed drain; deployments preserve their runtime root, encrypted upstream credential and prior inherited concurrency ceiling while moving under one physical hardware limit.
 - Model deployments support an encrypted upstream-bearer override so multiple authenticated runtimes/ports on one physical host can share hardware capacity without sharing provider credentials.
