@@ -29,7 +29,6 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     private bool _done;
     private bool _completed;
     private bool _failed;
-    private bool _reportedIncomplete;
     private bool _truncated;
     private int _capturedCharacters;
     private int _eventCount;
@@ -70,9 +69,9 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     public string Build(bool cancelled = false, string? upstreamFailure = null)
     {
         // Do not fabricate the terminating blank line: only complete SSE events count.
-        foreach (var (target, property) in _fragments)
+        foreach (var entry in _fragments)
         {
-            target[property] = _fragments[(target, property)].ToString();
+            entry.Key.Target[entry.Key.Property] = entry.Value.ToString();
         }
 
         var terminal = surface == "responses" ? _completed : _done;
@@ -242,7 +241,6 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
         }
         if (type == "response.incomplete")
         {
-            _reportedIncomplete = true;
             _failureReason = "response.incomplete";
         }
         if (item["response"] is JsonObject snapshot && type is
