@@ -353,6 +353,7 @@ public static class OpenAiEndpoints
 
                         if (context.Response.HasStarted)
                         {
+                            context.Items[LlmProxy.Api.Observability.InferenceContentLoggingMiddleware.StreamFailureItem] = finalErrorCode;
                             context.Abort();
                             return;
                         }
@@ -479,6 +480,7 @@ public static class OpenAiEndpoints
 
         if (context.Response.HasStarted)
         {
+            context.Items[LlmProxy.Api.Observability.InferenceContentLoggingMiddleware.StreamFailureItem] = "capacity_lease_lost";
             context.Abort();
             return;
         }

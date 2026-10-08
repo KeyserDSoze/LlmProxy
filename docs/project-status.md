@@ -1,8 +1,12 @@
 # Project status / handover snapshot
 
-Last reviewed: **2026-10-05**.
+Last reviewed: **2026-10-08**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
+
+## Streaming Request Audit normalization — IMPLEMENTED / VALIDATION IN PROGRESS
+
+Streaming Chat Completions and Responses are now audited as one bounded, structured JSON response rather than a concatenation of token-level SSE messages. Incremental reconstruction tracks partial delivered content, tool calls, usage and terminal/interrupted/cancelled status; the client continues to receive the unmodified SSE stream. The Request Audit inspection dialog renders readable generated text or reconstructed JSON, with stream status/event count/truncation metadata. No old log migration or legacy SSE adapter is provided because this deployment is pre-production. Backend/React tests were added; exact-head CI/full-stack evidence is still required before marking this DONE.
 
 ## Physical infrastructure and capacity consolidation — IMPLEMENTED / VALIDATION IN PROGRESS
 

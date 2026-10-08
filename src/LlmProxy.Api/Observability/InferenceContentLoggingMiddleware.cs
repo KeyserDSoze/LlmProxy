@@ -8,6 +8,7 @@ namespace LlmProxy.Api.Observability;
 
 public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
 {
+    public const string StreamFailureItem = "llmproxy.inference.stream.failure";
     private static readonly HashSet<string> LoggedPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/v1/chat/completions",
@@ -42,12 +43,18 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
         }
 
         var originalBody = context.Response.Body;
-        await using var capture = new ForwardingCaptureStream(originalBody);
+        await using var capture = new ForwardingCaptureStream(originalBody, context, SurfaceFor(context.Request.Path));
         context.Response.Body = capture;
+        Exception? invocationFailure = null;
 
         try
         {
             await next(context);
+        }
+        catch (Exception exception)
+        {
+            invocationFailure = exception;
+            throw;
         }
         finally
         {
@@ -73,7 +80,10 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
                 context.Request.ContentType,
                 context.Response.ContentType,
                 requestBody,
-                capture.GetCapturedText()));
+                capture.GetCapturedText(
+                    context.RequestAborted.IsCancellationRequested,
+                    context.Items.TryGetValue(StreamFailureItem, out var failure) ? failure as string
+                        : invocationFailure is not null ? "gateway_exception" : null)));
         }
     }
 
@@ -104,17 +114,58 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
         }
     }
 
-    private sealed class ForwardingCaptureStream(Stream destination) : Stream
+    private sealed class ForwardingCaptureStream(
+        Stream destination,
+        HttpContext context,
+        string surface) : Stream
     {
-        private readonly MemoryStream _capture = new();
+        private const int MaxRawBodyBytes = 2_000_000;
+        private readonly MemoryStream _rawBody = new();
+        private readonly StreamingAuditAssembler _assembler = new(surface);
+        private bool? _isEventStream;
+        private bool _rawTruncated;
+        private bool _captureFailed;
 
-        public string GetCapturedText() => Encoding.UTF8.GetString(_capture.ToArray());
+        public string GetCapturedText(bool cancelled, string? failure)
+        {
+            if (_isEventStream == true)
+                return _assembler.Build(cancelled, _captureFailed ? "audit_reconstruction_failed" : failure);
+
+            var raw = Encoding.UTF8.GetString(_rawBody.ToArray());
+            return _rawTruncated
+                ? JsonSerializer.Serialize(new { format = "llmproxy.audit.truncated.v1", truncated = true, rawBody = raw })
+                : raw;
+        }
+
+        private void Capture(ReadOnlySpan<byte> bytes)
+        {
+            if (_captureFailed) return;
+            try
+            {
+                _isEventStream ??= context.Response.ContentType?.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase) == true;
+                if (_isEventStream.Value)
+                {
+                    _assembler.Append(bytes);
+                }
+                else
+                {
+                    var available = MaxRawBodyBytes - (int)_rawBody.Length;
+                    if (bytes.Length > available) _rawTruncated = true;
+                    if (available > 0) _rawBody.Write(bytes[..Math.Min(available, bytes.Length)]);
+                }
+            }
+            catch (Exception)
+            {
+                // Audit is best-effort and must never break or delay client inference.
+                _captureFailed = true;
+            }
+        }
 
         public override bool CanRead => false;
         public override bool CanSeek => false;
         public override bool CanWrite => destination.CanWrite;
-        public override long Length => _capture.Length;
-        public override long Position { get => _capture.Position; set => throw new NotSupportedException(); }
+        public override long Length => _rawBody.Length;
+        public override long Position { get => _rawBody.Position; set => throw new NotSupportedException(); }
 
         public override void Flush() => destination.Flush();
         public override Task FlushAsync(CancellationToken cancellationToken) => destination.FlushAsync(cancellationToken);
@@ -124,20 +175,20 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
 
         public override void Write(byte[] buffer, int offset, int count)
         {
-            _capture.Write(buffer, offset, count);
             destination.Write(buffer, offset, count);
+            Capture(buffer.AsSpan(offset, count));
         }
 
         public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            await _capture.WriteAsync(buffer, cancellationToken);
             await destination.WriteAsync(buffer, cancellationToken);
+            Capture(buffer.Span);
         }
 
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            _capture.Write(buffer, offset, count);
-            return destination.WriteAsync(buffer, offset, count, cancellationToken);
+            await destination.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
+            Capture(buffer.AsSpan(offset, count));
         }
     }
 }

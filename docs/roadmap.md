@@ -61,6 +61,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: vLLM pressure + optional DCGM telemetry.
 - DONE: OTEL Collector + Tempo + Loki + Prometheus + Grafana bundle.
 - DONE: trace correlation and capacity-lease-loss evidence.
+- IMPLEMENTED / VALIDATION PENDING: bounded incremental reconstruction of Chat Completions and Responses SSE into single encrypted audit JSON, with partial output and cancellation/interruption status (no legacy log migration).
 - DONE: encrypted full request/response audit for Chat Completions, Responses and System One, with global Admin inspection and stable `tid+oid` owner-scoped user self-inspection.
 - DONE: paginated/filterable Admin Request Audit with optional 2-second live refresh, exact payload inspection and correlation to request metrics.
 - DONE: request-audit retention administrator-configurable 10-4015 days (11 years) with four-hour cleanup.

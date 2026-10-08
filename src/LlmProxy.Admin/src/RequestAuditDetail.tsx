@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Modal } from './UiPrimitives'
 
 export type RequestAuditDetailData = {
@@ -37,7 +38,9 @@ type RequestAuditDetailModalProps = {
 }
 
 export default function RequestAuditDetailModal({ detail, title = 'Request detail', onClose, userLabel, credentialLabel, nodeLabel }: RequestAuditDetailModalProps) {
+  const [responseView, setResponseView] = useState<'text' | 'json'>('text')
   if (!detail) return null
+  const streamAudit = parseStreamingAudit(detail.responseBody)
 
   return <Modal
     open
@@ -75,11 +78,27 @@ export default function RequestAuditDetailModal({ detail, title = 'Request detai
         <Meta label="Response type" value={detail.responseContentType ?? '—'} mono />
         <Meta label="Usage group" value={detail.usageGroupId ?? '—'} mono />
         <Meta label="Error" value={detail.errorCode ?? '—'} mono />
+        {streamAudit && <>
+          <Meta label="Stream state" value={streamAudit.state} />
+          <Meta label="SSE events" value={streamAudit.eventsProcessed} />
+          <Meta label="Partial output" value={!streamAudit.complete || streamAudit.truncated ? 'Yes' : 'No'} />
+          <Meta label="Stream reason" value={streamAudit.reason ?? '—'} />
+        </>}
       </div>
 
       <div className="requestAuditPayloadGrid">
         <PayloadBlock title="Request body" body={detail.requestBody} contentType={detail.requestContentType} />
-        <PayloadBlock title="Response body" body={detail.responseBody} contentType={detail.responseContentType} />
+        <div>
+          {streamAudit && <div className="actions requestAuditStreamTabs">
+            <button type="button" className={responseView === 'text' ? '' : 'secondary'} onClick={() => setResponseView('text')}>Readable response</button>
+            <button type="button" className={responseView === 'json' ? '' : 'secondary'} onClick={() => setResponseView('json')}>Reconstructed JSON</button>
+          </div>}
+          <PayloadBlock
+            title={streamAudit && responseView === 'text' ? 'Generated content' : 'Response body'}
+            body={streamAudit && responseView === 'text' ? readableStreamResponse(streamAudit) : detail.responseBody}
+            contentType={streamAudit && responseView === 'text' ? 'text/plain' : streamAudit ? 'application/json' : detail.responseContentType}
+          />
+        </div>
       </div>
     </div>
   </Modal>
@@ -239,4 +258,59 @@ function safeFilePart(value: string) {
 
 function mdValue(value: string | number) {
   return String(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+type StreamingAuditBody = {
+  format: 'llmproxy.audit.stream.v1'
+  streaming: true
+  state: 'completed' | 'interrupted' | 'cancelled' | 'incomplete'
+  complete: boolean
+  reason?: string | null
+  truncated: boolean
+  eventsProcessed: number
+  response: unknown
+}
+
+function parseStreamingAudit(body: string): StreamingAuditBody | null {
+  try {
+    const value: unknown = JSON.parse(body)
+    if (!value || typeof value !== 'object' || !('format' in value) || value.format !== 'llmproxy.audit.stream.v1')
+      return null
+    return value as StreamingAuditBody
+  } catch {
+    return null
+  }
+}
+
+function readableStreamResponse(audit: StreamingAuditBody): string {
+  const response = audit.response as Record<string, unknown> | null
+  if (!response || typeof response !== 'object') return '(No response content was received)'
+  const result: string[] = []
+  const choices = response.choices
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      const message = choice?.message
+      if (typeof message?.content === 'string') result.push(message.content)
+      if (typeof message?.reasoning_content === 'string') result.push('Reasoning:\n' + message.reasoning_content)
+      if (Array.isArray(message?.tool_calls)) result.push('Tool calls:\n' + JSON.stringify(message.tool_calls, null, 2))
+      if (message?.function_call) result.push('Function call:\n' + JSON.stringify(message.function_call, null, 2))
+      if (typeof message?.refusal === 'string') result.push('Refusal:\n' + message.refusal)
+    }
+  }
+  const output = response.output
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      if (Array.isArray(item?.content)) {
+        for (const part of item.content) {
+          if (typeof part?.text === 'string') result.push(part.text)
+          if (typeof part?.refusal === 'string') result.push('Refusal:\n' + part.refusal)
+        }
+      }
+      if (typeof item?.arguments === 'string') result.push('Function call (' + (item.name ?? 'unknown') + '):\n' + item.arguments)
+      if (Array.isArray(item?.summary)) {
+        for (const part of item.summary) if (typeof part?.text === 'string') result.push('Reasoning summary:\n' + part.text)
+      }
+    }
+  }
+  return result.length ? result.join('\n\n') : JSON.stringify(response, null, 2)
 }

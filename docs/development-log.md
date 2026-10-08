@@ -1,5 +1,17 @@
 # Development log
 
+## 2026-10-08 — Streaming Request Audit JSON reconstruction — IMPLEMENTED / VALIDATION IN PROGRESS
+
+- Replaced unbounded raw SSE byte accumulation with a request-scoped incremental assembler that stores a compact JSON response (Chat Completions and Responses).
+- Preserves downstream SSE verbatim; restores tool arguments, text, usage and event/termination metadata; categorizes completed, cancelled, interrupted and incomplete outputs.
+- Saves the part already received if a client disconnects or an upstream stream fails, including distinct lease-loss and upstream failure reasons.
+- Bounds audit memory/output and marks truncated content; streaming/non-streaming payloads continue to be encrypted in PostgreSQL under existing access/retention rules.
+- Added readable/JSON tabs and stream details in the shared Request Audit modal (admin and normal-user portal).
+- Intentionally no migration or compatibility parser for old raw SSE content: product is pre-production.
+- Added backend unit tests for UTF-8 fragmentation, chat/tool calls, Responses partial/full, cancellation, interruption, truncation and downstream forwarding, plus frontend modal coverage.
+- Validation pending exact-head CI and integration evidence.
+
+
 ## 2026-10-04 — Request audit visibility and long retention — IMPLEMENTED / VALIDATION IN PROGRESS
 
 Expanded the existing encrypted full-body content-log subsystem into an explicit **Request Audit** product surface.
