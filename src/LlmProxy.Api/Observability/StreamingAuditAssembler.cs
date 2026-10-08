@@ -352,8 +352,13 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     private void SetFinal(JsonObject target, string property, string? final)
     {
         if (final is null) return;
-        if (final.Length > _limit) { _truncated = true; return; }
-        _fragments.Remove((target, property));
+        var key = (target, property);
+        var priorLength = _fragments.TryGetValue(key, out var prior)
+            ? prior.Length : AsString(target[property])?.Length ?? 0;
+        var available = _limit - _snapshotCharacters - (_capturedCharacters - priorLength);
+        if (final.Length > available) { _truncated = true; return; }
+        _capturedCharacters = _capturedCharacters - priorLength + final.Length;
+        _fragments.Remove(key);
         target[property] = final;
     }
 
