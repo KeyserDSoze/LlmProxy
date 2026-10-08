@@ -94,6 +94,17 @@ public sealed class StreamingAuditAssemblerTests
             .GetProperty("output_tokens").GetInt32());
     }
 
+
+    [Fact]
+    public void Bounds_responses_final_text_without_delta_events()
+    {
+        var assembler = new StreamingAuditAssembler("responses", maxCapturedCharacters: 5);
+        assembler.Append(Encoding.UTF8.GetBytes(
+            "event: response.output_text.done\\ndata: {\\"type\\":\\"response.output_text.done\\",\\"output_index\\":0,\\"content_index\\":0,\\"text\\":\\"unbounded\\"}\\n\\n"));
+        using var result = JsonDocument.Parse(assembler.Build());
+        Assert.True(result.RootElement.GetProperty("truncated").GetBoolean());
+    }
+
     [Fact]
     public void Bounds_text_while_preserving_a_valid_partial_audit_json()
     {
