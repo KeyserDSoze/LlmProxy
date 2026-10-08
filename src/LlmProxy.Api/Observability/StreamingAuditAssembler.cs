@@ -31,6 +31,9 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     private bool _failed;
     private bool _truncated;
     private int _capturedCharacters;
+    private int _snapshotCharacters;
+    private int _pendingEventCharacters;
+    private bool _discardEvent;
     private int _eventCount;
     private int _invalidEvents;
 
@@ -137,7 +140,15 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
             return;
         }
 
-        if (line.StartsWith(':')) return; // SSE heartbeat/comment.
+        if (_discardEvent || line.StartsWith(':')) return; // SSE heartbeat/comment.
+        _pendingEventCharacters += line.Length;
+        if (_pendingEventCharacters > 262_144)
+        {
+            _discardEvent = true;
+            _data.Clear();
+            _truncated = true;
+            return;
+        }
         if (line.StartsWith("data:", StringComparison.Ordinal))
             _data.Add(line.Length > 5 && line[5] == ' ' ? line[6..] : line[5..]);
         else if (line.StartsWith("event:", StringComparison.Ordinal))
@@ -146,6 +157,16 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
 
     private void EndEvent()
     {
+        _pendingEventCharacters = 0;
+        if (_discardEvent)
+        {
+            _discardEvent = false;
+            _data.Clear();
+            _eventName = null;
+            _invalidEvents++;
+            _eventCount++;
+            return;
+        }
         if (_data.Count == 0) { _eventName = null; return; }
         var raw = string.Join("\n", _data);
         _data.Clear();
@@ -313,7 +334,7 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     private void AppendFragment(JsonObject target, string property, string? fragment)
     {
         if (string.IsNullOrEmpty(fragment)) return;
-        var available = _limit - _capturedCharacters;
+        var available = _limit - _capturedCharacters - _snapshotCharacters;
         if (available <= 0) { _truncated = true; return; }
         var take = Math.Min(fragment.Length, available);
         var key = (target, property);
@@ -338,7 +359,12 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     private JsonNode? LimitedClone(JsonNode? node)
     {
         if (node is null) return null;
-        if (node.ToJsonString().Length <= _limit) return node.DeepClone();
+        var size = node.ToJsonString().Length;
+        if (size <= _limit - _capturedCharacters - _snapshotCharacters)
+        {
+            _snapshotCharacters += size;
+            return node.DeepClone();
+        }
         _truncated = true;
         return null;
     }
