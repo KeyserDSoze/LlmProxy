@@ -68,7 +68,10 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     /// <summary>Return a compact, valid JSON document even for cancelled/failed streams.</summary>
     public string Build(bool cancelled = false, string? upstreamFailure = null)
     {
-        // Do not fabricate the terminating blank line: only complete SSE events count.
+        // Some providers close the stream without the final empty SSE separator line.
+        // Replay the trailing buffered event once at EOF; malformed JSON remains invalid.
+        if (_line.Length > 0) EndLine();
+        if (_data.Count > 0) EndEvent();
         foreach (var entry in _fragments)
         {
             entry.Key.Target[entry.Key.Property] = entry.Value.ToString();
