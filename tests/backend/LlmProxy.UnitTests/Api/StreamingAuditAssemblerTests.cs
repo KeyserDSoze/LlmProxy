@@ -100,7 +100,7 @@ public sealed class StreamingAuditAssemblerTests
     {
         var assembler = new StreamingAuditAssembler("responses", maxCapturedCharacters: 5);
         assembler.Append(Encoding.UTF8.GetBytes(
-            "event: response.output_text.done\\ndata: {\\"type\\":\\"response.output_text.done\\",\\"output_index\\":0,\\"content_index\\":0,\\"text\\":\\"unbounded\\"}\\n\\n"));
+            "event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"output_index\":0,\"content_index\":0,\"text\":\"unbounded\"}\n\n"));
         using var result = JsonDocument.Parse(assembler.Build());
         Assert.True(result.RootElement.GetProperty("truncated").GetBoolean());
     }
