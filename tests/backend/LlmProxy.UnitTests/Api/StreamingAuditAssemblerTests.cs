@@ -15,9 +15,9 @@ public sealed class StreamingAuditAssemblerTests
         var sse = """
             data: {"id":"chat-123","model":"provider","choices":[{"index":0,"delta":{"role":"assistant","content":"Caf"},"finish_reason":null}]}
 
-            data: {"choices":[{"index":0,"delta":{"content":"é ☕","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"search","arguments":"{\\"q\\":\\""}}]},"finish_reason":null}]}
+            data: {"choices":[{"index":0,"delta":{"content":"é ☕","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"search","arguments":"{\"q\":\""}}]},"finish_reason":null}]}
 
-            data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"test\\"}"}}]},"finish_reason":"tool_calls"}]}
+            data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"test\"}"}}]},"finish_reason":"tool_calls"}]}
 
             data: {"usage":{"prompt_tokens":7,"completion_tokens":4,"total_tokens":11},"choices":[]}
 
@@ -25,8 +25,8 @@ public sealed class StreamingAuditAssemblerTests
 
             """.Replace("\n", "\r\n");
         var bytes = Encoding.UTF8.GetBytes(sse);
-        foreach (var single in bytes)
-            assembler.Append(new ReadOnlySpan<byte>(in single));
+        for (var index = 0; index < bytes.Length; index++)
+            assembler.Append(bytes.AsSpan(index, 1));
 
         using var result = JsonDocument.Parse(assembler.Build());
         var root = result.RootElement;
