@@ -12,6 +12,7 @@ namespace LlmProxy.Api.Observability;
 public sealed class StreamingAuditAssembler(string surface, int maxCapturedCharacters = 2_000_000)
 {
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
+    private readonly char[] _decodeBuffer = new char[8192];
     private readonly StringBuilder _line = new();
     private readonly List<string> _data = [];
     private readonly Dictionary<int, JsonObject> _chatChoices = [];
@@ -40,7 +41,7 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
     public void Append(ReadOnlySpan<byte> bytes)
     {
         // Bounded temporary decoding; UTF-8 multibyte sequences can span writes.
-        var buffer = new char[8192];
+        var buffer = _decodeBuffer;
         for (var offset = 0; offset < bytes.Length; offset += 4096)
         {
             var part = bytes.Slice(offset, Math.Min(4096, bytes.Length - offset));
