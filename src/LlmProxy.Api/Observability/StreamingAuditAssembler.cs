@@ -87,7 +87,7 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
             response = _terminalResponse?.DeepClone() as JsonObject
                 ?? _responseRoot?.DeepClone() as JsonObject
                 ?? new JsonObject();
-            if (_terminalResponse is null)
+            if (_terminalResponse is null && _responseItems.Count > 0)
             {
                 var output = new JsonArray();
                 foreach (var (_, item) in _responseItems) output.Add(item.DeepClone());
@@ -243,8 +243,8 @@ public sealed class StreamingAuditAssembler(string surface, int maxCapturedChara
         {
             _failureReason = "response.incomplete";
         }
-        if (item["response"] is JsonObject snapshot && type is
-            "response.created" or "response.in_progress" or "response.completed" or "response.failed" or "response.incomplete")
+        if (item["response"] is JsonObject snapshot && (type is
+            "response.created" or "response.in_progress" or "response.completed" or "response.failed" or "response.incomplete"))
         {
             var clone = LimitedClone(snapshot) as JsonObject;
             if (clone is not null)
