@@ -115,7 +115,10 @@ public sealed class DockerModelRuntimeManager(
             args.Add("-v");
             args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
             args.Add("-p");
-            args.Add($"{record.Port}:{(record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000)}");
+            var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
+            var bindHost = options.ConnectionMode == "outbound" &&
+                !string.IsNullOrWhiteSpace(options.GatewayBaseAddress) ? "127.0.0.1:" : "";
+            args.Add($"{bindHost}{record.Port}:{containerPort}");
             args.Add(ManagedRuntimeProfiles.Image(record, options));
             args.AddRange(ManagedRuntimeProfiles.Arguments(record, options));
 
