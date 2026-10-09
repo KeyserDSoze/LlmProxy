@@ -14,4 +14,5 @@ public sealed class NodeEnrollmentRecord
     public DateTimeOffset? LastHeartbeatAtUtc { get; set; }
     public string? AgentVersion { get; set; }
     public string? DesiredAgentVersion { get; set; }
+    public string? AgentUpdateStatus { get; set; }
 }

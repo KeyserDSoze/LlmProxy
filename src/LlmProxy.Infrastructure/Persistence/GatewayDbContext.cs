@@ -63,6 +63,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.Mode).HasMaxLength(16).IsRequired();
             entity.Property(x => x.AgentVersion).HasMaxLength(80);
             entity.Property(x => x.DesiredAgentVersion).HasMaxLength(40);
+            entity.Property(x => x.AgentUpdateStatus).HasMaxLength(80);
         });
         modelBuilder.Entity<InferenceNode>(entity =>
         {

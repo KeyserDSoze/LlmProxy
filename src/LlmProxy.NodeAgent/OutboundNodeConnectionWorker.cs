@@ -79,7 +79,8 @@ public sealed class OutboundNodeConnectionWorker(
                         Content = JsonContent.Create(new
                         {
                             inventory = currentInventory,
-                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString()
+                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(),
+                            agentUpdateStatus = ReadUpdateStatus()
                         })
                     };
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", connection.AgentSecret);
@@ -102,6 +103,24 @@ public sealed class OutboundNodeConnectionWorker(
             try { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    private string? ReadUpdateStatus()
+    {
+        var path = Path.Combine(options.DataDirectory, "update-status.json");
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var data = JsonDocument.Parse(File.ReadAllText(path));
+            var status = data.RootElement.GetProperty("status").GetString();
+            var version = data.RootElement.GetProperty("version").GetString();
+            if (status is not ("running" or "failed" or "succeeded") ||
+                version is null || !System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$"))
+                return null;
+            return status + ":" + version;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException)
+        { return null; }
     }
 
     private sealed record HeartbeatInstruction(string? DesiredAgentVersion);

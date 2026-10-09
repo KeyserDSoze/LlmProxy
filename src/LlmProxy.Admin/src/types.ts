@@ -108,7 +108,7 @@ export type NodeMaintenanceResponse = {
 }
 
 export type AgentPairingInvitation = { enrollmentToken: string; expiresAtUtc: string }
-export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; desiredAgentVersion?: string | null; tunnelConnected?: boolean }
+export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; desiredAgentVersion?: string | null; agentUpdateStatus?: string | null; tunnelConnected?: boolean }
 
 export type ManagedBenchmarkJob = {
   id: string

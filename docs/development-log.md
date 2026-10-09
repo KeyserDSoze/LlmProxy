@@ -1,5 +1,11 @@
 # Development log
 
+## 2026-10-09 — Agent update status in Admin — CI PENDING
+
+- Detached updater now writes root-only running/succeeded/failed plus release version.
+- Agent heartbeat publishes only validated state, and Admin shows the last known update outcome without SSH.
+
+
 ## 2026-10-09 — Immutable Node Agent bootstrap distribution — CI PENDING
 
 - Bundled the one-command pairing helper as an immutable release asset rather than asking operators to execute the mutable repository main branch.

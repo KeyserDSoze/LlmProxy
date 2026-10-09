@@ -3,6 +3,16 @@ set -euo pipefail
 version="${1:-}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version." >&2; exit 2; }
 [[ "$(id -u)" -eq 0 ]] || { echo "Root required." >&2; exit 2; }
+state_file=/var/lib/llmproxy-node-agent/update-status.json
+mkdir -p /var/lib/llmproxy-node-agent
+chmod 0700 /var/lib/llmproxy-node-agent
+write_state() { printf '{"status":"%s","version":"%s"}\n' "$1" "$version" > "$state_file"; chmod 0600 "$state_file"; }
+write_state running
+on_exit() {
+  result=$?
+  if [[ "$result" -ne 0 ]]; then write_state failed; fi
+}
+trap on_exit EXIT
 for cmd in curl tar sha256sum systemctl; do command -v "$cmd" >/dev/null; done
 case "$(uname -m)" in
   x86_64) rid="linux-x64";;
@@ -52,6 +62,7 @@ for attempt in $(seq 1 20); do
   if systemctl is-active --quiet "$service" && [[ "$status" == "200" || "$status" == "401" ]]; then
     healthy=$((healthy + 1))
     if [[ "$healthy" -ge 3 ]]; then
+      write_state succeeded
       echo "Node Agent upgraded to $version"
       exit 0
     fi

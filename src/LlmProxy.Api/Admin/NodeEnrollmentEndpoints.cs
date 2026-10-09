@@ -41,10 +41,10 @@ public static class NodeEnrollmentEndpoints
         {
             var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
-                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion })
+                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus })
                 .ToListAsync(token);
             return Results.Ok(records.Select(x => new {
-                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion,
+                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus,
                 tunnelConnected = x.NodeId.HasValue && relay.IsConnected(x.NodeId.Value)
             }));
         });
@@ -140,7 +140,8 @@ public static class NodeEnrollmentEndpoints
             HttpRequest httpRequest, CancellationToken token) =>
         {
             if (request.Inventory.ValueKind != JsonValueKind.Object ||
-                request.AgentVersion?.Length > 80) return Results.BadRequest();
+                request.AgentVersion?.Length > 80 || request.AgentUpdateStatus?.Length > 80)
+                return Results.BadRequest();
             var bearer = ReadBearer(httpRequest);
             if (bearer is null || !bearer.StartsWith("lpa_", StringComparison.Ordinal) || bearer.Length > 160)
                 return Results.Unauthorized();
@@ -151,6 +152,7 @@ public static class NodeEnrollmentEndpoints
             record.LastHeartbeatAtUtc = DateTimeOffset.UtcNow;
             record.HardwareInventoryJson = request.Inventory.GetRawText();
             record.AgentVersion = request.AgentVersion;
+            record.AgentUpdateStatus = request.AgentUpdateStatus;
             if (record.DesiredAgentVersion == request.AgentVersion)
                 record.DesiredAgentVersion = null;
             await db.SaveChangesAsync(token);
@@ -186,6 +188,6 @@ public static class NodeEnrollmentEndpoints
     public sealed record AgentEnrollmentRequest(
         string Token, string Hostname, string Mode, JsonElement Inventory,
         string? ManagementBaseAddress, string? AgentBearer, string? AgentVersion);
-    public sealed record AgentHeartbeatRequest(JsonElement Inventory, string? AgentVersion);
+    public sealed record AgentHeartbeatRequest(JsonElement Inventory, string? AgentVersion, string? AgentUpdateStatus = null);
     public sealed record AgentUpdateRequest(string? Version = null);
 }

@@ -234,3 +234,7 @@ The Admin one-command bootstrap is served from the latest **immutable GitHub Rel
 ### Credentialed remote inference
 
 When a managed deployment uses a configured encrypted upstream bearer, the Gateway restores that token only for the outbound HTTP request. The Agent tunnel forwards the provider's `Authorization: Bearer` header inside authenticated WSS to the specific locally managed runtime port. The Agent's own management bearer remains independent and is generated locally; provider authorization never grants local management access.
+
+### Node Agent update results
+
+A detached Agent upgrade writes a permission-restricted status marker under `/var/lib/llmproxy-node-agent/update-status.json`. The next authenticated heartbeat forwards only its `running`/`succeeded`/`failed` flag and verified version to LlmProxy, which persists and displays the result alongside the Agent's current version. No console log or arbitrary process output is ingested. This avoids requiring SSH to determine whether an upgrade finished.

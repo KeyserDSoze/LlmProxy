@@ -69,6 +69,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset?>("LastHeartbeatAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("AgentVersion").HasMaxLength(80).HasColumnType("character varying(80)");
             b.Property<string>("DesiredAgentVersion").HasMaxLength(40).HasColumnType("character varying(40)");
+            b.Property<string>("AgentUpdateStatus").HasMaxLength(80).HasColumnType("character varying(80)");
             b.HasKey("Id");
             b.HasIndex("InvitationHash").IsUnique();
             b.HasIndex("AgentSecretHash").IsUnique();

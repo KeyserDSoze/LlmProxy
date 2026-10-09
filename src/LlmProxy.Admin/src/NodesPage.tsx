@@ -149,7 +149,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
           <td><Status value={node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
             const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
-            return <div key={pair.nodeId} className="muted">Agent {fresh ? 'connected' : 'offline'} · {pair.mode}{pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}</div>
+            return <div key={pair.nodeId} className="muted">Agent {fresh ? 'connected' : 'offline'} · {pair.mode}{pair.agentUpdateStatus ? ' · update ' + pair.agentUpdateStatus : ''}{pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}</div>
           })}</td><td className="mono">{node.baseAddress}</td>
           <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
           <td>{node.maxConcurrency}</td>
