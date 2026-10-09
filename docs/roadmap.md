@@ -249,3 +249,5 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - RESEARCH: AirLLM layer/expert streaming with OpenAI HTTP shim and real end-to-end throughput/TTFT measurements before exposing deployment choices.
 
 - IMPLEMENTED / VALIDATION PENDING: benchmark SLO evaluator proposing candidate concurrency from measured evidence; still requires controlled live hardware repetitions and operator approval.
+
+- IMPLEMENTED / VALIDATION PENDING: per-deployment vLLM/SGLang/llama.cpp telemetry normalized for the Admin; do not feed scheduler until benchmark evidence.

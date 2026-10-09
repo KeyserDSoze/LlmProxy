@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Multi-runtime deployment metrics — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
+
+Added a separate Prometheus collector and tracker per Agent-managed deployment, normalizing vLLM, SGLang and llama.cpp gauges/counters into the Infrastructure Admin installation list. llama.cpp launch now enables Prometheus metrics. Metrics are observation-only and do not affect existing node-scoped routing scoring. Synthetic parser tests added; real runtime and exact-head CI validation pending.
+
+
 ## Multi-instance managed deployment — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
 
 The Agent supports several configurations of the same catalog checkpoint with different container IDs and ports; gateway registration keys on the managed installation ID. Filtered PostgreSQL uniqueness preserves manual-deployment deduplication and allows multiple managed profiles under the same physical node. Migration and metadata/profile tests added; real hardware validation and exact SHA CI still required. Physical Redis admission remains node aggregate, not multiplied by profile count.

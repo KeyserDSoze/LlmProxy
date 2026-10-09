@@ -107,6 +107,7 @@ builder.Services.AddScoped<ContentLogRetentionService>();
 builder.Services.AddHostedService<ContentLogRetentionWorker>();
 builder.Services.AddSingleton<IDeploymentPerformanceTracker, InMemoryDeploymentPerformanceTracker>();
 builder.Services.AddSingleton<INodeRuntimeMetricsTracker, VllmRuntimeMetricsTracker>();
+builder.Services.AddSingleton<IDeploymentRuntimeMetricsTracker, DeploymentRuntimeMetricsTracker>();
 builder.Services.AddSingleton<INodeHardwareMetricsTracker, NodeHardwareMetricsTracker>();
 builder.Services.AddSingleton(new RoutingStrategyState(configuredRoutingStrategy));
 builder.Services.AddSingleton(new RoutingTuningState(RoutingTuningSettings.Default));
@@ -145,6 +146,7 @@ builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSp
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
+builder.Services.AddHostedService<DeploymentRuntimeMetricsCollector>();
 builder.Services.AddHostedService<NodeHardwareMetricsCollector>();
 
 builder.Services.AddAuthorization(options =>

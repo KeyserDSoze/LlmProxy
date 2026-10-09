@@ -623,6 +623,21 @@ export type ManagedModelState = {
   error?: string | null
 }
 
+export type DeploymentRuntimeMetricsSnapshot = {
+  deploymentId: string
+  nodeId: string
+  available: boolean
+  runtime?: string | null
+  modelName?: string | null
+  runningRequests: number
+  waitingRequests: number
+  cacheUsageRatio?: number | null
+  promptTokensTotal?: number | null
+  generationTokensTotal?: number | null
+  collectedAtUtc?: string | null
+  error?: string | null
+}
+
 export type ManagedInstallation = {
   runtime?: string
   id: string
@@ -634,6 +649,7 @@ export type ManagedInstallation = {
   runtimeBaseAddress?: string | null
   enabled: boolean
   agentStatus: string
+  runtimeMetrics?: DeploymentRuntimeMetricsSnapshot | null
   agentState?: ManagedModelState | null
 }
 

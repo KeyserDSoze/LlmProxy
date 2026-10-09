@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-09 — Per-deployment runtime metrics — IMPLEMENTED / VALIDATION PENDING
+
+- Added a new metrics collector/tracker keyed by managed deployment ID, instead of mixing several runtime instances into the node-level vLLM tracker.
+- Normalized supported vLLM, SGLang and llama.cpp Prometheus metrics; enabled llama.cpp `--metrics`.
+- Exposed live running/queued/cache signals beside installed profiles in Infrastructure Admin, without changing routing or Redis admission behavior.
+- Added format/invalid-data tests. Direct hardware verification still required.
+
+
 ## 2026-10-09 — Multi-instance managed inference profiles — IMPLEMENTED / VALIDATION PENDING
 
 - Added identity-based idempotency for installations so distinct runtime profiles no longer conflict on catalog ID.

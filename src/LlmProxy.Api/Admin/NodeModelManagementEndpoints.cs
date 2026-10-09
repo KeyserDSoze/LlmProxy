@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Deployments;
 using LlmProxy.Domain.Models;
@@ -25,6 +26,7 @@ public static class NodeModelManagementEndpoints
             GatewayDbContext dbContext,
             IHttpClientFactory httpClientFactory,
             UpstreamCredentialProtector protector,
+            IDeploymentRuntimeMetricsTracker runtimeMetrics,
             CancellationToken cancellationToken) =>
         {
             var node = await dbContext.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -37,7 +39,7 @@ public static class NodeModelManagementEndpoints
 
             if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
             {
-                return Results.Ok(BuildOverview(node, null, [], deployments, models, "Management agent is not configured."));
+                return Results.Ok(BuildOverview(node, null, [], deployments, models, "Management agent is not configured.", runtimeMetrics));
             }
 
             try
@@ -48,11 +50,11 @@ public static class NodeModelManagementEndpoints
                 var installed = await SendAgentAsync<ManagedModelsResponse>(
                     client, node, protector, HttpMethod.Get, "/v1/models", null, cancellationToken);
 
-                return Results.Ok(BuildOverview(node, hardware, installed.Models ?? [], deployments, models, null));
+                return Results.Ok(BuildOverview(node, hardware, installed.Models ?? [], deployments, models, null, runtimeMetrics));
             }
             catch (AgentException exception)
             {
-                return Results.Ok(BuildOverview(node, null, [], deployments, models, exception.Message));
+                return Results.Ok(BuildOverview(node, null, [], deployments, models, exception.Message, runtimeMetrics));
             }
         });
 
@@ -346,7 +348,8 @@ public static class NodeModelManagementEndpoints
         IReadOnlyList<ManagedModelState> agentModels,
         IReadOnlyList<ModelDeployment> deployments,
         IReadOnlyDictionary<Guid, ModelDefinition> models,
-        string? agentError) =>
+        string? agentError,
+        IDeploymentRuntimeMetricsTracker runtimeMetrics) =>
         new
         {
             node = new
@@ -381,6 +384,7 @@ public static class NodeModelManagementEndpoints
                     deployment.Enabled,
                     agentStatus = agentState?.Status ?? (deployment.Enabled ? "unknown" : "stopped"),
                     agentState,
+                    runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
                     runtime = agentState?.Runtime ?? DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm"
                 };
             })

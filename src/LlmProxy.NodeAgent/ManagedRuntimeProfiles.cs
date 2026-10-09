@@ -72,7 +72,7 @@ public static class ManagedRuntimeProfiles
         if (record.Runtime == "llama.cpp")
         {
             args.AddRange(["--hf-repo", record.ProviderModelName, "--alias", record.ProviderModelName,
-                "--host", "0.0.0.0", "--port", "8080", "--cont-batching"]);
+                "--host", "0.0.0.0", "--port", "8080", "--cont-batching", "--metrics"]);
             if (options.UseNvidiaGpus) args.AddRange(["--n-gpu-layers", "-1"]);
             if (record.MaxNumSeqs is int parallel) args.AddRange(["--parallel", parallel.ToString(CultureInfo.InvariantCulture)]);
             if (record.MaxModelLen is int context) args.AddRange(["--ctx-size", context.ToString(CultureInfo.InvariantCulture)]);

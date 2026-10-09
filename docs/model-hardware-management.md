@@ -199,3 +199,9 @@ An installation is idempotent for the exact catalog model, runtime, checkpoint, 
 Migration `20261009223000_AllowManagedDeploymentProfiles` changes the PostgreSQL uniqueness constraint: manual/unmanaged deployments remain unique for (NodeId, ModelId), while managed deployments are unique per (NodeId, ManagedInstallationId). Existing installations survive unchanged. Downgrading is refused if multiple profiles would violate the old constraint.
 
 Two variants may share the same logical model only if they expose the same provider model identifier. Different checkpoint/model identifiers should have different logical aliases until per-deployment provider-model overrides are supported. Stop, start and remove operate on distinct installation IDs; do not assume a configured `maxNumSeqs` number is a sustainable user count.
+
+### Deployment-level runtime pressure telemetry
+
+Every enabled Agent-managed runtime with a configured runtime root exposes its own sampled telemetry in **Infrastructure → Inventory & model lifecycle → Installed models**. An independent collector reads `<runtime-root>/metrics` with the configured upstream bearer. vLLM, SGLang and llama.cpp metric names are parsed into per-deployment running/queued requests, optional cache utilization and optional token counters. For llama.cpp, Node Agent now adds `--metrics` to launch arguments. A missing metric remains unknown, not zero.
+
+This telemetry is **observational only**: it does not alter routing score or physical-node admission rules. The old node-root vLLM metrics collector remains intact for current routing behavior. The dedicated collector uses a bounded 2 MiB response and drops stale installation IDs; external runtime endpoint traffic must remain on the trusted private network.
