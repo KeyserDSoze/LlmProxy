@@ -13,8 +13,10 @@ COPY src/LlmProxy.Domain/LlmProxy.Domain.csproj src/LlmProxy.Domain/
 COPY src/LlmProxy.Application/LlmProxy.Application.csproj src/LlmProxy.Application/
 COPY src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj src/LlmProxy.Infrastructure/
 COPY src/LlmProxy.Api/LlmProxy.Api.csproj src/LlmProxy.Api/
+COPY tests/performance/LlmProxy.Benchmark/LlmProxy.Benchmark.csproj tests/performance/LlmProxy.Benchmark/
 RUN dotnet restore src/LlmProxy.Api/LlmProxy.Api.csproj
 COPY src/ src/
+COPY tests/performance/LlmProxy.Benchmark/ tests/performance/LlmProxy.Benchmark/
 RUN dotnet publish src/LlmProxy.Api/LlmProxy.Api.csproj -c Release -o /app/publish --no-restore -p:Version="$LLMPROXY_VERSION" -p:InformationalVersion="$LLMPROXY_VERSION"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
