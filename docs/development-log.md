@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-09 — Node Agent Admin-driven updates — CI PENDING
+
+- Admin queues official newer immutable agent version against a paired node and audit-logs the change.
+- Heartbeat carries desired version; the Agent schedules a detached, root-owned systemd transaction.
+- New updater verifies published archive SHA-256, replaces the release binary tree, preserves enrollment credentials and model cache, and rolls back on unsuccessful service/HTTP startup.
+- Switched admin image build base to Docker Official Node 22 mirrored on AWS Public ECR after repeated Docker Hub OAuth 504 CI failures.
+
+
 ## 2026-10-09 — Admin-run benchmark jobs — CI PENDING
 
 - Removed manual CLI dependency for standard direct runtime sweeps by integrating the existing benchmark runner in API worker.

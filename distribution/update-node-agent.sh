@@ -16,13 +16,11 @@ url="https://github.com/KeyserDSoze/LlmProxy/releases/download/v${version}/${ass
 mkdir "$tmp/archive" "$tmp/new"
 curl --retry 4 -fsSL "$url" -o "$tmp/archive/$asset"
 curl --retry 4 -fsSL "$url.sha256" -o "$tmp/archive/$asset.sha256"
-(cd "$tmp" && sha256sum -c "archive/$asset.sha256") || {
-  # Published checksum filenames are prefixed dist/; verify in that exact layout.
-  mkdir -p "$tmp/dist"
-  cp "$tmp/archive/$asset" "$tmp/dist/$asset"
-  cp "$tmp/archive/$asset.sha256" "$tmp/dist/$asset.sha256"
-  (cd "$tmp" && sha256sum -c "dist/$asset.sha256")
-}
+# Release checksums contain the dist/ asset prefix; verify with the same layout.
+mkdir -p "$tmp/dist"
+cp "$tmp/archive/$asset" "$tmp/dist/$asset"
+cp "$tmp/archive/$asset.sha256" "$tmp/dist/$asset.sha256"
+(cd "$tmp" && sha256sum -c "dist/$asset.sha256")
 tar -xzf "$tmp/archive/$asset" -C "$tmp/new"
 test -x "$tmp/new/LlmProxy.NodeAgent"
 test -f "$tmp/new/update-node-agent.sh"
@@ -47,10 +45,18 @@ if ! systemctl start "$service"; then
   systemctl start "$service"
   exit 1
 fi
+# Require both a live service and its local HTTP listener for several consecutive polls.
+healthy=0
 for attempt in $(seq 1 20); do
-  if systemctl is-active --quiet "$service"; then
-    echo "Node Agent upgraded to $version"
-    exit 0
+  status="$(curl --silent --output /dev/null --max-time 2 --write-out '%{http_code}' http://127.0.0.1:9900/health || true)"
+  if systemctl is-active --quiet "$service" && [[ "$status" == "200" || "$status" == "401" ]]; then
+    healthy=$((healthy + 1))
+    if [[ "$healthy" -ge 3 ]]; then
+      echo "Node Agent upgraded to $version"
+      exit 0
+    fi
+  else
+    healthy=0
   fi
   sleep 2
 done

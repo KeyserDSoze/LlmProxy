@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Node Agent immutable release update — IMPLEMENTED / CI PENDING (2026-10-09)
+
+Admin can queue a newer published immutable Node Agent release. Each paired Agent reads a desired version in its authenticated heartbeat and schedules a detached systemd updater. The updater downloads archive+published SHA-256, stages the new executable tree, preserves config/cache/identity, checks service and local HTTP readiness and rolls back on startup failure. CI/static shell checks and actual host acceptance still needed. Cross-replica remote relay remains restricted to single API replica (distributed backplane not validated).
+
+
 ## Admin benchmark execution — IMPLEMENTED / CI PENDING (2026-10-09)
 
 Added PostgreSQL-persisted per-deployment benchmark queue, atomic cross-replica worker claim, bounded real SLO sweep using existing library and UI results/status. The system records capacity evidence but never automatically modifies live limits. Must validate CI and target GPU before production use.

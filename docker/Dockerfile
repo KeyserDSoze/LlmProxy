@@ -1,4 +1,4 @@
-FROM node:22-alpine AS admin-build
+FROM public.ecr.aws/docker/library/node:22-alpine AS admin-build
 WORKDIR /admin
 COPY src/LlmProxy.Admin/package.json ./
 RUN npm install --no-audit --no-fund
