@@ -43,7 +43,12 @@ if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; 
     sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/${generated_bearer}/" /etc/llmproxy/node-agent.env
   fi
   if grep -q '^NodeAgent__AdvertiseHost=' /etc/llmproxy/node-agent.env; then
-    sed -i "s/^NodeAgent__AdvertiseHost=.*/NodeAgent__AdvertiseHost=$(hostname -f 2>/dev/null || hostname)/" /etc/llmproxy/node-agent.env
+    advertise_host="${LLMPROXY_ADVERTISE_HOST:-$(hostname -f 2>/dev/null || hostname)}"
+    if [[ ! "$advertise_host" =~ ^[a-zA-Z0-9.:-]+$ ]]; then
+      echo "Invalid advertised address; use a DNS name or IP address." >&2
+      exit 2
+    fi
+    sed -i "s/^NodeAgent__AdvertiseHost=.*/NodeAgent__AdvertiseHost=${advertise_host}/" /etc/llmproxy/node-agent.env
   fi
 fi
 

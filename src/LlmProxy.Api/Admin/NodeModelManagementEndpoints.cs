@@ -40,7 +40,9 @@ public static class NodeModelManagementEndpoints
 
             if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
             {
-                return Results.Ok(BuildOverview(node, null, [], deployments, models, "Management agent is not configured.", runtimeMetrics));
+                var cached = await ReadCachedInventoryAsync(dbContext, id, cancellationToken);
+                return Results.Ok(BuildOverview(node, cached, [], deployments, models,
+                    "Management agent is not configured.", runtimeMetrics, live: false));
             }
 
             try
@@ -55,7 +57,8 @@ public static class NodeModelManagementEndpoints
             }
             catch (AgentException exception)
             {
-                return Results.Ok(BuildOverview(node, null, [], deployments, models, exception.Message, runtimeMetrics));
+                var cached = await ReadCachedInventoryAsync(dbContext, id, cancellationToken);
+                return Results.Ok(BuildOverview(node, cached, [], deployments, models, exception.Message, runtimeMetrics, live: false));
             }
         });
 
@@ -347,6 +350,17 @@ public static class NodeModelManagementEndpoints
         return endpoints;
     }
 
+    private static async Task<HardwareInventory?> ReadCachedInventoryAsync(
+        GatewayDbContext db, Guid nodeId, CancellationToken token)
+    {
+        var data = await db.NodeEnrollments.AsNoTracking()
+            .Where(x => x.NodeId == nodeId)
+            .Select(x => x.HardwareInventoryJson).FirstOrDefaultAsync(token);
+        if (string.IsNullOrWhiteSpace(data)) return null;
+        try { return JsonSerializer.Deserialize<HardwareInventory>(data, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
+        catch (JsonException) { return null; }
+    }
+
     private static bool IsOutboundNode(InferenceNode node) =>
         Uri.TryCreate(node.ManagementBaseAddress, UriKind.Absolute, out var uri) &&
         AgentRelayHub.TryParseNode(uri, out var nodeId) && nodeId == node.Id;
@@ -363,7 +377,8 @@ public static class NodeModelManagementEndpoints
         IReadOnlyList<ModelDeployment> deployments,
         IReadOnlyDictionary<Guid, ModelDefinition> models,
         string? agentError,
-        IDeploymentRuntimeMetricsTracker runtimeMetrics) =>
+        IDeploymentRuntimeMetricsTracker runtimeMetrics,
+        bool live = true) =>
         new
         {
             node = new
@@ -373,7 +388,8 @@ public static class NodeModelManagementEndpoints
                 node.ManagementBaseAddress,
                 hasManagementCredential = !string.IsNullOrWhiteSpace(node.ManagementBearerTokenCiphertext)
             },
-            agentAvailable = hardware is not null,
+            agentAvailable = live && hardware is not null,
+            inventoryStale = !live && hardware is not null,
             agentError,
             hardware,
             catalog = DeployableModelCatalog.All.Select(item => new
@@ -453,7 +469,14 @@ public static class NodeModelManagementEndpoints
         protector.ApplyBearer(request, node.ManagementBearerTokenCiphertext);
         if (body is not null) request.Content = JsonContent.Create(body);
 
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        HttpResponseMessage response;
+        try { response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken); }
+        catch (HttpRequestException error) { throw new AgentException("Agent connectivity failed: " + error.Message); }
+        catch (IOException error) { throw new AgentException("Agent connectivity failed: " + error.Message); }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        { throw new AgentException("Agent request timed out."); }
+        using (response)
+        {
         if (!response.IsSuccessStatusCode)
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -466,6 +489,7 @@ public static class NodeModelManagementEndpoints
 
         return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
             ?? throw new AgentException("Management agent returned an empty response.");
+        }
     }
 
     private static void AddAudit(GatewayDbContext dbContext, HttpContext httpContext, string action, string entityType, string entityId, object details)

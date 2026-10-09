@@ -10,6 +10,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
   const [pairMode, setPairMode] = useState<'outbound' | 'direct'>('outbound')
+  const [directHost, setDirectHost] = useState('')
   const [pairedNodes, setPairedNodes] = useState<PairedNodeStatus[]>([])
   useEffect(() => {
     let alive = true
@@ -43,7 +44,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [error, setError] = useState<string | null>(null)
 
   const pairingCommand = invitation
-    ? `curl -fsSL https://raw.githubusercontent.com/KeyserDSoze/LlmProxy/main/distribution/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode} bash`
+    ? `curl -fsSL https://raw.githubusercontent.com/KeyserDSoze/LlmProxy/main/distribution/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
     : ''
 
   async function beginPair() {
@@ -169,6 +170,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <option value="outbound">Outbound WSS tunnel (NAT or another network)</option>
           <option value="direct">Direct management (private reachable network)</option>
         </select></label>
+        {pairMode === 'direct' && <label>Private reachable IP/hostname (optional)<input aria-label="Direct agent hostname" value={directHost} onChange={event => setDirectHost(event.target.value)} placeholder="10.0.0.21" /></label>}
         <p className="muted">On the Linux server, run this command once as an administrator. The installer verifies the immutable release checksum, starts systemd and enrolls automatically.</p>
         {window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' &&
           <p className="error">Remote enrollment needs HTTPS. Access the Admin through its public HTTPS domain before copying the command.</p>}

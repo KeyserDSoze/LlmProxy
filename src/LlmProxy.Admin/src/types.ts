@@ -664,6 +664,7 @@ export type ModelManagementOverview = {
     hasManagementCredential: boolean
   }
   agentAvailable: boolean
+  inventoryStale?: boolean
   agentError?: string | null
   hardware?: HardwareInventory | null
   catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility }>
