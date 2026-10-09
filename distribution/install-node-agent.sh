@@ -38,6 +38,12 @@ if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; 
   else
     sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://0.0.0.0:9900|' /etc/llmproxy/node-agent.env
   fi
+  # Explicit new invitation means intentional (re)pairing. Preserve cache and installations,
+  # but invalidate only the local gateway identity so a revoked node can re-enroll.
+  if [[ -f /var/lib/llmproxy-node-agent/gateway-connection.json ]]; then
+    systemctl stop llmproxy-node-agent >/dev/null 2>&1 || true
+    rm -f /var/lib/llmproxy-node-agent/gateway-connection.json
+  fi
   if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env; then
     generated_bearer="$(openssl rand -hex 32)"
     sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/${generated_bearer}/" /etc/llmproxy/node-agent.env
