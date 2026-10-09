@@ -27,6 +27,20 @@ else
   echo "Preserved existing /etc/llmproxy/node-agent.env."
 fi
 
+# A single installer invocation can carry the invitation without a subsequent manual edit.
+if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; then
+  sed -i "s|^NodeAgent__GatewayBaseAddress=.*|NodeAgent__GatewayBaseAddress=${LLMPROXY_GATEWAY_URL}|" /etc/llmproxy/node-agent.env
+  sed -i "s|^NodeAgent__EnrollmentToken=.*|NodeAgent__EnrollmentToken=${LLMPROXY_ENROLLMENT_TOKEN}|" /etc/llmproxy/node-agent.env
+  sed -i "s|^NodeAgent__ConnectionMode=.*|NodeAgent__ConnectionMode=${LLMPROXY_CONNECTION_MODE:-outbound}|" /etc/llmproxy/node-agent.env
+  if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env; then
+    generated_bearer="$(openssl rand -hex 32)"
+    sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/${generated_bearer}/" /etc/llmproxy/node-agent.env
+  fi
+  if grep -q '^NodeAgent__AdvertiseHost=' /etc/llmproxy/node-agent.env; then
+    sed -i "s/^NodeAgent__AdvertiseHost=.*/NodeAgent__AdvertiseHost=$(hostname -f)/" /etc/llmproxy/node-agent.env
+  fi
+fi
+
 systemctl daemon-reload
 
 if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env || grep -q '^NodeAgent__AdvertiseHost=$' /etc/llmproxy/node-agent.env; then

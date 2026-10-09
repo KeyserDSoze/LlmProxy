@@ -107,6 +107,9 @@ export type NodeMaintenanceResponse = {
   warmups?: EndpointProbe[]
 }
 
+export type AgentPairingInvitation = { enrollmentToken: string; expiresAtUtc: string }
+export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null }
+
 export type Node = {
   id: string
   name: string

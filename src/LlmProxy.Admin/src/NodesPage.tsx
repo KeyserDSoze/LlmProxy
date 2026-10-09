@@ -1,10 +1,19 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
-import type { Node, NodeConnectionTest } from './types'
+import type { AgentPairingInvitation, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 export default function NodesPage({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'active' | 'disabled'>('active')
+  const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
+  const [pairedNodes, setPairedNodes] = useState<PairedNodeStatus[]>([])
+  useEffect(() => {
+    let alive = true
+    const poll = () => { void api.pairedAgentNodes().then(rows => { if (alive) setPairedNodes(rows) }).catch(() => {}) }
+    poll()
+    const timer = window.setInterval(poll, 10000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [nodes])
   const [addOpen, setAddOpen] = useState(false)
   const [credentialNode, setCredentialNode] = useState<Node | null>(null)
   const [editNode, setEditNode] = useState<Node | null>(null)

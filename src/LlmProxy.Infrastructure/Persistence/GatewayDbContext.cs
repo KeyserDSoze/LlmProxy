@@ -12,6 +12,7 @@ namespace LlmProxy.Infrastructure.Persistence;
 public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options) : DbContext(options)
 {
     public DbSet<InferenceNode> Nodes => Set<InferenceNode>();
+    public DbSet<NodeEnrollmentRecord> NodeEnrollments => Set<NodeEnrollmentRecord>();
     public DbSet<ModelDefinition> Models => Set<ModelDefinition>();
     public DbSet<ModelDeployment> Deployments => Set<ModelDeployment>();
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
@@ -34,6 +35,18 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<NodeEnrollmentRecord>(entity =>
+        {
+            entity.ToTable("node_enrollments");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.InvitationHash).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => x.InvitationHash).IsUnique();
+            entity.Property(x => x.AgentSecretHash).HasMaxLength(64);
+            entity.HasIndex(x => x.AgentSecretHash).IsUnique();
+            entity.HasIndex(x => x.NodeId).IsUnique();
+            entity.Property(x => x.Mode).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.AgentVersion).HasMaxLength(80);
+        });
         modelBuilder.Entity<InferenceNode>(entity =>
         {
             entity.ToTable("nodes");

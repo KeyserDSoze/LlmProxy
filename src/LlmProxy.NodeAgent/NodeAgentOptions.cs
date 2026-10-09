@@ -15,7 +15,10 @@ public sealed record NodeAgentOptions(
     int CommandTimeoutMinutes,
     int StartupTimeoutMinutes,
     string LlamaCppDockerImage,
-    string SglangDockerImage)
+    string SglangDockerImage,
+    string? GatewayBaseAddress,
+    string? EnrollmentToken,
+    string ConnectionMode)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -33,7 +36,10 @@ public sealed record NodeAgentOptions(
             ParseInt(section["CommandTimeoutMinutes"], 60, 1, 360),
             ParseInt(section["StartupTimeoutMinutes"], 20, 1, 120),
             section["LlamaCppDockerImage"] ?? "ghcr.io/ggml-org/llama.cpp:server-cuda",
-            section["SglangDockerImage"] ?? "lmsysorg/sglang:latest");
+            section["SglangDockerImage"] ?? "lmsysorg/sglang:latest",
+            section["GatewayBaseAddress"],
+            section["EnrollmentToken"],
+            section["ConnectionMode"] ?? "outbound");
     }
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>

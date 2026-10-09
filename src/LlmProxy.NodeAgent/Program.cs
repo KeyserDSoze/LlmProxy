@@ -16,6 +16,8 @@ builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<HardwareInventoryReader>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
+builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
 builder.Services.AddHttpClient("runtime-health", client => client.Timeout = TimeSpan.FromSeconds(5));
 
 var app = builder.Build();

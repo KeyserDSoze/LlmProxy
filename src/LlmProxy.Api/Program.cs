@@ -251,6 +251,7 @@ app.MapRouteCatalogAdminEndpoints(entraEnabled);
 app.MapRuntimeStateAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapNodeModelManagementEndpoints(entraEnabled);
+app.MapNodeEnrollmentEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapUserRateLimitAdminEndpoints(entraEnabled);

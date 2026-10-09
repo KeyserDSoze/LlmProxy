@@ -35,6 +35,25 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("audit_events");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.NodeEnrollmentRecord", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<string>("InvitationHash").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<DateTimeOffset>("ExpiresAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset?>("ConsumedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<Guid?>("NodeId").HasColumnType("uuid");
+            b.Property<string>("AgentSecretHash").HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("Mode").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+            b.Property<string>("HardwareInventoryJson").HasColumnType("text");
+            b.Property<DateTimeOffset?>("LastHeartbeatAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("AgentVersion").HasMaxLength(80).HasColumnType("character varying(80)");
+            b.HasKey("Id");
+            b.HasIndex("InvitationHash").IsUnique();
+            b.HasIndex("AgentSecretHash").IsUnique();
+            b.HasIndex("NodeId").IsUnique();
+            b.ToTable("node_enrollments");
+        });
+
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
