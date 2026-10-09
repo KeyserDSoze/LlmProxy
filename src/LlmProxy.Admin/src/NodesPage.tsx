@@ -47,6 +47,13 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
     ? `curl -fsSL https://raw.githubusercontent.com/KeyserDSoze/LlmProxy/main/distribution/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
     : ''
 
+  async function updateAgent(nodeId: string) {
+    setError(null); setBusy('agent-update:' + nodeId)
+    try { await api.updatePairedAgent(nodeId); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+
   async function beginPair() {
     setError(null); setBusy('pair')
     try { setInvitation(await api.createAgentInvitation()); setPairOpen(true) }
@@ -148,7 +155,11 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <td>{node.maxConcurrency}</td>
           <td className="actions">
             <button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
-            {canWrite && <button onClick={() => openEdit(node)}>Edit</button>}
+            {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
+              <button disabled={busy === 'agent-update:' + node.id} onClick={() => void updateAgent(node.id)}>
+                {pairedNodes.some(pair => pair.nodeId === node.id && pair.desiredAgentVersion) ? 'Update queued' : 'Update agent'}
+              </button>}
+            {canWrite && <button onClick={() => openEdit(node)}>Edit</button>
             {canWrite && <button onClick={() => { setCredentialNode(node); setCredentialSecret('') }}>Credentials</button>}
             {canWrite && nodes.length > 1 && <button onClick={() => openConsolidate(node)}>Consolidate</button>}
             {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button>}

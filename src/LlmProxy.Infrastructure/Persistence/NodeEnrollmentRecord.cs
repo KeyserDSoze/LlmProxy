@@ -13,4 +13,5 @@ public sealed class NodeEnrollmentRecord
     public string? HardwareInventoryJson { get; set; }
     public DateTimeOffset? LastHeartbeatAtUtc { get; set; }
     public string? AgentVersion { get; set; }
+    public string? DesiredAgentVersion { get; set; }
 }

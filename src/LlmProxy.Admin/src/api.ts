@@ -50,6 +50,10 @@ export const api = {
   nodes: () => request<Node[]>('/api/admin/nodes'),
   createAgentInvitation: () => request<AgentPairingInvitation>('/api/admin/node-enrollment/invitations', { method: 'POST' }),
   pairedAgentNodes: () => request<PairedNodeStatus[]>('/api/admin/node-enrollment/nodes'),
+  updatePairedAgent: (nodeId: string, version?: string) =>
+    request<{ desiredAgentVersion: string }>(`/api/admin/node-enrollment/nodes/${nodeId}/update`, {
+      method: 'POST', body: JSON.stringify({ version: version ?? null })
+    }),
   models: () => request<Model[]>('/api/admin/models'),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
   apiCredentials: () => request<ApiCredential[]>('/api/admin/api-credentials'),

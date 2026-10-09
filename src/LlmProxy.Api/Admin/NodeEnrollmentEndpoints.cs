@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using LlmProxy.Api.AgentConnectivity;
+using LlmProxy.Api.Product;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Persistence;
@@ -40,15 +41,41 @@ public static class NodeEnrollmentEndpoints
         {
             var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
-                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion })
+                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion })
                 .ToListAsync(token);
             return Results.Ok(records.Select(x => new {
-                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion,
+                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion,
                 tunnelConnected = x.NodeId.HasValue && relay.IsConnected(x.NodeId.Value)
             }));
         });
 
-        if (entraEnabled) invite.RequireAuthorization("AdminWrite");
+        var update = admin.MapPost("/nodes/{nodeId:guid}/update", async (
+            Guid nodeId, AgentUpdateRequest request, GatewayDbContext db,
+            ReleaseDiscoveryService releases, HttpContext context, CancellationToken token) =>
+        {
+            var agent = await db.NodeEnrollments.SingleOrDefaultAsync(
+                x => x.NodeId == nodeId && x.AgentSecretHash != null, token);
+            if (agent is null) return Results.NotFound();
+            var available = await releases.GetAvailableAsync(agent.AgentVersion ?? "0.0.0", token);
+            var selected = string.IsNullOrWhiteSpace(request.Version)
+                ? available.FirstOrDefault(x => x.IsNewer)
+                : available.FirstOrDefault(x => x.Version == request.Version && x.IsNewer);
+            if (selected is null)
+                return Results.BadRequest(new { error = "no_verified_newer_release" });
+            agent.DesiredAgentVersion = selected.Version;
+            db.AuditEvents.Add(new AuditEvent(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
+                "agent.update.schedule", "node", nodeId.ToString(),
+                context.Connection.RemoteIpAddress?.ToString(),
+                JsonSerializer.Serialize(new { version = selected.Version })));
+            await db.SaveChangesAsync(token);
+            return Results.Accepted($"/api/admin/node-enrollment/nodes", new { nodeId, desiredAgentVersion = selected.Version });
+        });
+
+        if (entraEnabled)
+        {
+            invite.RequireAuthorization("AdminWrite");
+            update.RequireAuthorization("AdminWrite");
+        }
 
         // The agent endpoints use separate random per-agent credentials and never accept browser cookies as auth.
         var agents = app.MapGroup("/api/agent-connection");
@@ -118,12 +145,16 @@ public static class NodeEnrollmentEndpoints
             if (bearer is null || !bearer.StartsWith("lpa_", StringComparison.Ordinal) || bearer.Length > 160)
                 return Results.Unauthorized();
             var digest = hasher.Hash(bearer);
-            var updated = await db.NodeEnrollments.Where(x => x.NodeId == nodeId && x.AgentSecretHash == digest)
-                .ExecuteUpdateAsync(x => x
-                    .SetProperty(r => r.LastHeartbeatAtUtc, DateTimeOffset.UtcNow)
-                    .SetProperty(r => r.HardwareInventoryJson, request.Inventory.GetRawText())
-                    .SetProperty(r => r.AgentVersion, request.AgentVersion), token);
-            return updated == 1 ? Results.Ok(new { status = "connected" }) : Results.Unauthorized();
+            var record = await db.NodeEnrollments.SingleOrDefaultAsync(
+                x => x.NodeId == nodeId && x.AgentSecretHash == digest, token);
+            if (record is null) return Results.Unauthorized();
+            record.LastHeartbeatAtUtc = DateTimeOffset.UtcNow;
+            record.HardwareInventoryJson = request.Inventory.GetRawText();
+            record.AgentVersion = request.AgentVersion;
+            if (record.DesiredAgentVersion == request.AgentVersion)
+                record.DesiredAgentVersion = null;
+            await db.SaveChangesAsync(token);
+            return Results.Ok(new { status = "connected", desiredAgentVersion = record.DesiredAgentVersion });
         });
         agents.MapGet("/{nodeId:guid}/tunnel", async (Guid nodeId,
             GatewayDbContext db, ApiKeyHasher hasher, AgentRelayHub relay, HttpContext context) =>
@@ -156,4 +187,5 @@ public static class NodeEnrollmentEndpoints
         string Token, string Hostname, string Mode, JsonElement Inventory,
         string? ManagementBaseAddress, string? AgentBearer, string? AgentVersion);
     public sealed record AgentHeartbeatRequest(JsonElement Inventory, string? AgentVersion);
+    public sealed record AgentUpdateRequest(string? Version = null);
 }

@@ -17,6 +17,9 @@ done
 
 install -d -m 0755 /opt/llmproxy-node-agent /etc/llmproxy /var/lib/llmproxy-node-agent/huggingface
 install -m 0755 "$BINARY" /opt/llmproxy-node-agent/LlmProxy.NodeAgent
+if [[ -f "$SCRIPT_DIR/update-node-agent.sh" ]]; then
+  install -m 0755 "$SCRIPT_DIR/update-node-agent.sh" /opt/llmproxy-node-agent/update-node-agent.sh
+fi
 install -m 0644 "$SERVICE" /etc/systemd/system/llmproxy-node-agent.service
 
 if [[ ! -f /etc/llmproxy/node-agent.env ]]; then

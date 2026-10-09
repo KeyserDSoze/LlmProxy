@@ -9,10 +9,13 @@ namespace LlmProxy.NodeAgent;
 /// <summary>Agent-initiated registration and heartbeat: no open inbound port is needed for visibility.</summary>
 public sealed class OutboundNodeConnectionWorker(
     NodeAgentOptions options, HardwareInventoryReader inventory,
-    IHttpClientFactory factory, ILogger<OutboundNodeConnectionWorker> logger) : BackgroundService
+    IHttpClientFactory factory, ProcessRunner runner,
+    ILogger<OutboundNodeConnectionWorker> logger) : BackgroundService
 {
     private sealed record Connection(Guid NodeId, string AgentSecret);
     private readonly string _stateFile = Path.Combine(options.DataDirectory, "gateway-connection.json");
+    private string? _lastUpdateAttempt;
+    private DateTimeOffset _lastUpdateAt;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -83,6 +86,12 @@ public sealed class OutboundNodeConnectionWorker(
                     using var response = await client.SendAsync(request, stoppingToken);
                     if (!response.IsSuccessStatusCode)
                         logger.LogWarning("Node heartbeat returned HTTP {StatusCode}.", (int)response.StatusCode);
+                    else
+                    {
+                        var instruction = await response.Content.ReadFromJsonAsync<HeartbeatInstruction>(stoppingToken);
+                        if (instruction?.DesiredAgentVersion is string desired)
+                            await TryStartUpdateAsync(desired, stoppingToken);
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -93,6 +102,30 @@ public sealed class OutboundNodeConnectionWorker(
             try { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    private sealed record HeartbeatInstruction(string? DesiredAgentVersion);
+
+    private async Task TryStartUpdateAsync(string version, CancellationToken cancellationToken)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$") ||
+            version == typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3))
+            return;
+        if (_lastUpdateAttempt == version && DateTimeOffset.UtcNow - _lastUpdateAt < TimeSpan.FromMinutes(10))
+            return;
+        _lastUpdateAttempt = version;
+        _lastUpdateAt = DateTimeOffset.UtcNow;
+        const string updater = "/opt/llmproxy-node-agent/update-node-agent.sh";
+        if (!File.Exists(updater))
+        {
+            logger.LogWarning("Node Agent updater not installed; latest Node Agent archive must be installed once.");
+            return;
+        }
+        var task = await runner.RunAsync("systemd-run",
+            ["--unit=llmproxy-node-agent-update", "--collect", "--no-block", "/bin/bash", updater, version],
+            TimeSpan.FromSeconds(15), cancellationToken);
+        if (!task.Success) logger.LogWarning("Agent update scheduling failed: {Reason}", task.StandardError);
+        else logger.LogInformation("Scheduled verified Node Agent update to {Version}.", version);
     }
 
     private async Task<Connection?> ReadStateAsync(CancellationToken token) =>
