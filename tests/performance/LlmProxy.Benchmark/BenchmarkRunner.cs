@@ -188,6 +188,8 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
         long? inputTokens = null;
         long? outputTokens = null;
         long? totalTokens = null;
+        bool completed = false;
+        bool failed = false;
 
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
@@ -197,10 +199,16 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
             }
 
             var data = line[5..].Trim();
-            if (data.Length == 0 || data.Equals("[DONE]", StringComparison.OrdinalIgnoreCase))
+            if (data.Equals("[DONE]", StringComparison.OrdinalIgnoreCase))
             {
+                completed = true;
                 continue;
             }
+            if (data.Length == 0) continue;
+
+            var terminal = InspectStreamingTerminalEvent(data);
+            if (terminal == StreamingTerminal.Completed) completed = true;
+            if (terminal == StreamingTerminal.Failed) failed = true;
 
             if (ttftMilliseconds is null && OpenAiUsageParser.ContainsOutputDelta(data, surface))
             {
@@ -214,8 +222,9 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
         }
 
         clock.Stop();
+        var success = completed && !failed;
         return new BenchmarkRequestResult(
-            true,
+            success,
             (int)response.StatusCode,
             clock.Elapsed.TotalMilliseconds,
             ttftMilliseconds,
@@ -223,7 +232,34 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
             outputTokens,
             totalTokens,
             requestId,
-            null);
+            failed ? "stream_failed" : completed ? null : "stream_incomplete");
+    }
+
+    private enum StreamingTerminal { None, Completed, Failed }
+
+    private static StreamingTerminal InspectStreamingTerminalEvent(string data)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(data);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return StreamingTerminal.None;
+            if (root.TryGetProperty("error", out var error) &&
+                error.ValueKind is JsonValueKind.Object or JsonValueKind.String)
+                return StreamingTerminal.Failed;
+            if (!root.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String)
+                return StreamingTerminal.None;
+            return type.GetString() switch
+            {
+                "response.completed" => StreamingTerminal.Completed,
+                "response.failed" or "response.incomplete" or "error" => StreamingTerminal.Failed,
+                _ => StreamingTerminal.None
+            };
+        }
+        catch (JsonException)
+        {
+            return StreamingTerminal.None;
+        }
     }
 
     private static async Task<BenchmarkRequestResult> ReadBufferedResponseAsync(

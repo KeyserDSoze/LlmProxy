@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Benchmark SSE completion integrity — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
+
+Benchmark streaming success now requires a terminal SSE marker or Responses completion event; premature EOF and explicit failures are counted in the error breakdown, not as successful requests. Synthetic HTTP handler tests added. This closes a false-positive path in concurrency recommendations. Target-hardware acceptance and exact-head CI pending.
+
+
 ## Admin deployment alias and benchmark workflow — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
 
 Install modal now supports explicit logical alias / optional host port to create independently addressable profile instances and, when provider IDs match, combine their routing pool. Each running installation exposes a copyable direct-runtime benchmark command. No benchmark starts unattended or changes physical capacity. Awaiting frontend CI and target hardware measurements.

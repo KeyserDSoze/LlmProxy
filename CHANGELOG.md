@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Benchmark SSE integrity checks: interrupted streams and explicit Responses errors now count as failures rather than successful requests, preventing inflated concurrency claims.
+
 - Infrastructure model install dialog accepts logical alias and optional host port; each running installation provides a copyable direct benchmark command without changing production capacity limits.
 
 - Observational per-managed-deployment runtime pressure metrics for vLLM, SGLang and llama.cpp; Infrastructure displays running/queued requests and available cache usage without modifying routing behavior.

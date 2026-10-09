@@ -1,5 +1,12 @@
 # Development log
 
+## 2026-10-09 — Benchmark SSE terminal verification — IMPLEMENTED / VALIDATION PENDING
+
+- Streaming benchmark runner no longer treats HTTP 200 plus partial SSE data as successful inference.
+- Records incomplete streams and explicit Responses failures separately; a proper completion is required for success.
+- Added Chat/Responses test fixtures simulating normal and prematurely terminated streams.
+
+
 ## 2026-10-09 — Admin alias and benchmark operator flow — IMPLEMENTED / VALIDATION PENDING
 
 - Added UI controls for public model alias and explicit port on managed model install, enabling multi-profile routing within the same logical pool where provider model ID is identical.
