@@ -16,9 +16,9 @@ public sealed record NodeAgentOptions(
     int StartupTimeoutMinutes,
     string LlamaCppDockerImage,
     string SglangDockerImage,
-    string? GatewayBaseAddress,
-    string? EnrollmentToken,
-    string ConnectionMode)
+    string? GatewayBaseAddress = null,
+    string? EnrollmentToken = null,
+    string ConnectionMode = "outbound")
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {

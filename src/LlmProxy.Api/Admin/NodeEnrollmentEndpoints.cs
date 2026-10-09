@@ -109,6 +109,8 @@ public static class NodeEnrollmentEndpoints
             AgentHeartbeatRequest request, GatewayDbContext db, ApiKeyHasher hasher,
             HttpRequest httpRequest, CancellationToken token) =>
         {
+            if (request.Inventory.ValueKind != JsonValueKind.Object ||
+                request.AgentVersion?.Length > 80) return Results.BadRequest();
             var bearer = ReadBearer(httpRequest);
             if (bearer is null || !bearer.StartsWith("lpa_", StringComparison.Ordinal) || bearer.Length > 160)
                 return Results.Unauthorized();

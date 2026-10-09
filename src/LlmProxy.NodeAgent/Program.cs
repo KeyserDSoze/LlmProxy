@@ -18,6 +18,9 @@ builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
+builder.Services.AddHostedService<OutboundAgentRelayWorker>();
+builder.Services.AddHttpClient("relay-local", client => client.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("runtime-health", client => client.Timeout = TimeSpan.FromSeconds(5));
 
 var app = builder.Build();

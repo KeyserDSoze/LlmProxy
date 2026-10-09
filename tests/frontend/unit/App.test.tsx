@@ -15,6 +15,8 @@ const mockedApi = vi.hoisted(() => ({
   updateRouting: vi.fn(),
   updateRoutingTuning: vi.fn(),
   nodes: vi.fn(),
+  pairedAgentNodes: vi.fn(),
+  createAgentInvitation: vi.fn(),
   models: vi.fn(),
   deployments: vi.fn(),
   apiCredentials: vi.fn(),
@@ -79,6 +81,7 @@ const tuning = {
 describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedApi.pairedAgentNodes.mockResolvedValue([])
     mockedApi.adminSession.mockResolvedValue({ canWrite: true, roles: ['LlmProxy.Admin'] })
     mockedApi.overview.mockResolvedValue({
       nodes: { total: 1, healthy: 1, degraded: 0, unhealthy: 0, draining: 0 },

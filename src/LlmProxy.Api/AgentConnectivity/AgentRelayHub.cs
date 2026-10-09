@@ -79,7 +79,7 @@ public sealed class AgentRelayHub
             var id = Guid.NewGuid().ToString("N");
             var pending = new Pending();
             if (!_requests.TryAdd(id, pending)) throw new InvalidOperationException("Duplicate relay ID.");
-            using var cancel = token.Register(() =>
+            var cancel = token.Register(() =>
             {
                 pending.Fail(new OperationCanceledException(token));
                 _requests.TryRemove(id, out _);
@@ -92,13 +92,14 @@ public sealed class AgentRelayHub
                     ContentType: request.Content?.Headers.ContentType?.ToString()), token);
                 var headers = await pending.Headers.Task.WaitAsync(token);
                 var response = new HttpResponseMessage((System.Net.HttpStatusCode)(headers.Status ?? 502));
-                response.Content = new StreamContent(new RelayStream(pending.Chunks.Reader));
+                response.Content = new StreamContent(new RelayStream(pending.Chunks.Reader, cancel));
                 if (!string.IsNullOrWhiteSpace(headers.ContentType))
                     response.Content.Headers.TryAddWithoutValidation("Content-Type", headers.ContentType);
                 return response;
             }
             catch
             {
+                cancel.Dispose();
                 _requests.TryRemove(id, out _);
                 throw;
             }
@@ -158,7 +159,7 @@ public sealed class AgentRelayHub
         }
     }
 
-    private sealed class RelayStream(ChannelReader<byte[]> reader) : Stream
+    private sealed class RelayStream(ChannelReader<byte[]> reader, CancellationTokenRegistration registration) : Stream
     {
         private byte[]? _current;
         private int _offset;
@@ -186,6 +187,11 @@ public sealed class AgentRelayHub
             return length;
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) registration.Dispose();
+            base.Dispose(disposing);
+        }
         public override void Flush() {}
         public override Task FlushAsync(CancellationToken ct) => Task.CompletedTask;
         public override long Seek(long value, SeekOrigin origin) => throw new NotSupportedException();
