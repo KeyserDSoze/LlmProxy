@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- One-click Admin inference benchmarks run as persisted background jobs on the gateway with per-concurrency metrics and provisional SLO-based capacity evidence. Results display in the UI; no automatic limit changes.
+
 - Self-service Linux Node Agent pairing in Infrastructure: short-lived one-use invitations, checksum-verified installer, automatic discovery/heartbeats, plus outbound WSS management and SSE inference transport for machines outside the gateway network. Requires one gateway replica for this initial relay and real host acceptance before HA/production use.
 
 - Benchmark SSE integrity checks: interrupted streams and explicit Responses errors now count as failures rather than successful requests, preventing inflated concurrency claims.

@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-09 — Admin-run benchmark jobs — CI PENDING
+
+- Removed manual CLI dependency for standard direct runtime sweeps by integrating the existing benchmark runner in API worker.
+- Persisted jobs/reports and enforced uniqueness for in-progress jobs per deployment.
+- Added Admin initiation, polling, SLO setting and per-concurrency results; recommendations remain advisory.
+- Added crash-recovery timeout and use of stored upstream bearer only when required; no prompt bodies in reports.
+
+
 ## 2026-10-09 — Agent auto-pairing / reverse WSS relay — VALIDATION IN PROGRESS
 
 - Added Admin Linux pairing wizard and one-use 30-minute invitations with per-Agent credentials, a 10-second heartbeat and inventory snapshots.

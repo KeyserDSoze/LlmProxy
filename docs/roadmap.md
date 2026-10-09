@@ -256,3 +256,5 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - [ ] Multi-replica Agent transport backplane with session ownership/forwarding that does not persist plaintext inference data.
 - [ ] Real remote WSS SSE resilience, tool-calling and load acceptance.
 - [ ] Agent self-update, fully Admin-run benchmark jobs and prerequisite validation/remediation.
+
+- [x] Admin-run persisted benchmark sweeps with synthetic payloads and explicit application of recommended capacity (CI/hardware acceptance pending).

@@ -162,3 +162,11 @@ The serialized JSON includes the optional `recommendation` section with each lev
 ## Streaming completion integrity
 
 An HTTP 200 or a first text delta is **not** a successful streaming inference by itself. The benchmark now requires an explicit `[DONE]` SSE marker, or `response.completed` for the Responses event format. `response.failed`, `response.incomplete` and structured SSE error payloads are failures even when later followed by `[DONE]`. Premature EOF is classified as `stream_incomplete` rather than successful output. This prevents incomplete streams at high concurrency from inflating success rates and capacity recommendations. This validation affects only the benchmarking client: the gateway still forwards SSE bytes without modifying them.
+
+## Admin-triggered background benchmarks
+
+**Infrastructure → Inventory & model lifecycle → Installed models → Benchmark** now schedules a persisted synthetic-only job (PostgreSQL). The API worker executes the repository's actual benchmark evaluator, not a simulated score: streaming success requires SSE completion, and tested concurrency is 1/2/4/8/12/16 with 40 requests each. Only one pending/running job per managed deployment is admitted, even across API replicas. Admin polls persisted status, error and JSON results, with the SLO recommendation and an individual level breakdown.
+
+If a tested concurrency level passes, the recommendation is stored as a deployment Capacity Profile, **but the active physical or deployment concurrency limit is not modified**. Admin must separately apply an accepted recommendation under Capacity & telemetry. The worker's synthetic prompt, bearer and request/response text are never written into benchmark reports; database stores only timing, usage, numeric results and errors. A non-responsive runtime can take up to thirty minutes to time out; a crashed worker's lock is reclaimed after thirty-five minutes.
+
+Do not benchmark a production instance at saturation during active user traffic. A run can impose significant GPU pressure. The target is selected server-side from the managed deployment, never supplied as an arbitrary URL by the browser.

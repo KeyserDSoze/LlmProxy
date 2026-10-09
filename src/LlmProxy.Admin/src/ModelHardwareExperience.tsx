@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
-import type { ModelManagementOverview, Node } from './types'
+import type { ManagedBenchmarkJob, ModelManagementOverview, Node } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'inventory' | 'deploy'>('inventory')
@@ -20,6 +20,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [logicalAlias, setLogicalAlias] = useState('')
   const [installPort, setInstallPort] = useState('')
   const [benchmarkDeploymentId, setBenchmarkDeploymentId] = useState<string | null>(null)
+  const [benchmarkJobs, setBenchmarkJobs] = useState<ManagedBenchmarkJob[]>([])
+  const [benchmarkP95, setBenchmarkP95] = useState(5000)
+  const [benchmarkSuccess, setBenchmarkSuccess] = useState(99)
+  const [benchmarkBusy, setBenchmarkBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,13 +32,38 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   useEffect(() => { void load() }, [load])
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const benchmarkInstallation = overview?.installations.find(item => item.id === benchmarkDeploymentId) ?? null
-  const benchTarget = benchmarkInstallation?.runtimeBaseAddress ?? benchmarkInstallation?.agentState?.runtimeBaseAddress
-  const benchmarkCommand = benchmarkInstallation && benchTarget
-    ? 'dotnet run --project tests/performance/LlmProxy.Benchmark -- ' +
-      '--target ' + shellQuote(benchTarget) + ' --model ' + shellQuote(benchmarkInstallation.providerModelName ?? '') +
-      ' --surface chat --stream true --concurrency 1,2,4,8,12,16 --requests 40 --warmup 3 ' +
-      '--max-output-tokens 128 --max-p95-ttft-ms 5000 --min-success-percent 99'
-    : null
+  useEffect(() => {
+    if (!benchmarkDeploymentId) return
+    let active = true
+    const poll = () => { void api.benchmarkJobs(benchmarkDeploymentId).then(rows => {
+      if (active) setBenchmarkJobs(rows)
+    }).catch(() => {}) }
+    poll()
+    const timer = window.setInterval(poll, 3000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [benchmarkDeploymentId])
+
+  async function runBenchmark() {
+    if (!benchmarkDeploymentId) return
+    setBenchmarkBusy(true); setError(null)
+    try {
+      await api.startBenchmark(benchmarkDeploymentId, {
+        maxP95TtftMilliseconds: benchmarkP95, minSuccessRatePercent: benchmarkSuccess
+      })
+      setBenchmarkJobs(await api.benchmarkJobs(benchmarkDeploymentId))
+      setMessage('Benchmark queued. Results and provisional capacity will appear here automatically.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBenchmarkBusy(false) }
+  }
+
+  const recentBenchmark = benchmarkJobs[0] ?? null
+  const benchmarkReport = (() => {
+    if (!recentBenchmark?.reportJson) return null
+    try { return JSON.parse(recentBenchmark.reportJson) as {
+      recommendation?: { recommendedMaxConcurrency?: number | null; summary?: string }
+      levels?: Array<{ concurrency: number; attempted: number; successRatePercent: number; p95TtftMilliseconds?: number | null; outputTokensPerSecond?: number | null }>
+    } } catch { return null }
+  })()
 
   async function configure(event: FormEvent) { event.preventDefault(); if (!nodeId) return; setBusy('configure'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, bearerToken: bearerToken.trim() || null }); setBearerToken(''); setMessage('Management agent configuration updated.'); setAgentOpen(false); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
   async function clearCredential() { if (!nodeId) return; setBusy('credential'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, clearBearerToken: true }); setBearerToken(''); setMessage('Management-agent bearer removed.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
@@ -80,13 +109,29 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null}>{busy?.startsWith('install:') ? 'Installing…' : 'Install profile'}</button></div>
       </form>
     </Modal>
-    <Modal open={benchmarkDeploymentId !== null} title="Benchmark this deployment" description="Run a controlled direct-runtime baseline from a machine with .NET SDK and repository checkout. This does not change admission limits." onClose={() => setBenchmarkDeploymentId(null)}>
+    <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>
       <div className="stack">
-        <p className="muted">Runtime: {benchmarkInstallation?.runtime ?? 'unknown'} · {benchmarkInstallation?.logicalModel ?? 'unknown'} · {benchTarget ?? 'endpoint unavailable'}</p>
-        {benchmarkCommand ? <><pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{benchmarkCommand}</pre>
-          <button className="secondary" onClick={() => void navigator.clipboard.writeText(benchmarkCommand)}>Copy benchmark command</button>
-          <p className="muted">Run the same sweep through the LLMProxy gateway with the logical alias and an API key supplied via --api-key-env. Compare TTFT, throughput and errors across profiles. Results are advisory until repeated on actual hardware.</p>
-        </> : <div className="notice">Start the runtime before benchmarking.</div>}
+        <p className="muted">{benchmarkInstallation?.runtime ?? 'unknown'} · {benchmarkInstallation?.logicalModel ?? 'unknown'}</p>
+        <p className="muted">The sweep runs 40 requests at concurrency 1, 2, 4, 8, 12, and 16. It measures streamed completions and does not automatically change the production limits.</p>
+        <div className="formGridTwo">
+          <label>Maximum P95 TTFT (ms)<input aria-label="Benchmark P95 TTFT limit" type="number" min="100" max="300000" value={benchmarkP95} onChange={e => setBenchmarkP95(Number(e.target.value))}/></label>
+          <label>Minimum success rate (%)<input aria-label="Benchmark success threshold" type="number" min="1" max="100" step="1" value={benchmarkSuccess} onChange={e => setBenchmarkSuccess(Number(e.target.value))}/></label>
+        </div>
+        <button className="primary" disabled={!canWrite || benchmarkBusy || recentBenchmark?.status === 'running' || recentBenchmark?.status === 'pending'} onClick={() => void runBenchmark()}>{benchmarkBusy ? 'Scheduling…' : 'Start benchmark on this deployment'}</button>
+        {recentBenchmark && <div className="notice">
+          <strong>Latest run: {recentBenchmark.status}</strong>
+          <div className="muted">Requested {new Date(recentBenchmark.requestedAtUtc).toLocaleString()}</div>
+          {recentBenchmark.error && <p>{recentBenchmark.error}</p>}
+        </div>}
+        {benchmarkReport?.recommendation && <p><strong>Provisional capacity: {benchmarkReport.recommendation.recommendedMaxConcurrency ?? 'Not established'}</strong> — {benchmarkReport.recommendation.summary}</p>}
+        {benchmarkReport?.levels && <div className="tableScroll"><table><thead><tr><th>Concurrent</th><th>Requests</th><th>Success</th><th>P95 TTFT</th><th>Output tokens/s</th></tr></thead><tbody>
+          {benchmarkReport.levels.map(level => <tr key={level.concurrency}>
+            <td>{level.concurrency}</td><td>{level.attempted}</td><td>{level.successRatePercent.toFixed(1)}%</td>
+            <td>{level.p95TtftMilliseconds == null ? 'n/a' : level.p95TtftMilliseconds.toFixed(0) + ' ms'}</td>
+            <td>{level.outputTokensPerSecond == null ? 'n/a' : level.outputTokensPerSecond.toFixed(1)}</td>
+          </tr>)}
+        </tbody></table></div>}
+        <p className="muted">Any successful recommendation is saved as capacity evidence only. Applying it requires explicit approval in Infrastructure → Capacity & telemetry.</p>
       </div>
     </Modal>
     <Modal open={agentOpen} title="Management agent" description="Configure the management service root. The bearer is encrypted at rest and never returned by the API." onClose={() => setAgentOpen(false)}><form className="formPanel" onSubmit={configure}><label>Management service root<input aria-label="Management service root" value={managementBaseAddress} onChange={event => setManagementBaseAddress(event.target.value)} placeholder="http://10.0.0.21:9900" /></label><label>Bearer token<input aria-label="Management bearer token" type="password" value={bearerToken} onChange={event => setBearerToken(event.target.value)} placeholder={overview?.node.hasManagementCredential ? 'Configured · leave blank to keep it' : 'Optional only on isolated development networks'} /></label><div className="modalActions"><button type="button" className="secondary" disabled={!overview?.node.hasManagementCredential || busy === 'credential'} onClick={() => void clearCredential()}>Clear bearer</button><button className="primary" disabled={!canWrite || busy === 'configure'}>{busy === 'configure' ? 'Saving…' : 'Save agent'}</button></div></form></Modal>

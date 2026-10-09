@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Admin benchmark execution — IMPLEMENTED / CI PENDING (2026-10-09)
+
+Added PostgreSQL-persisted per-deployment benchmark queue, atomic cross-replica worker claim, bounded real SLO sweep using existing library and UI results/status. The system records capacity evidence but never automatically modifies live limits. Must validate CI and target GPU before production use.
+
+
 ## Auto-enrollment and outbound reverse inference transport — IMPLEMENTED / VALIDATION IN PROGRESS (2026-10-09)
 
 The Admin pairing wizard can generate a single-use, expiring enrollment code and an immutable release checksum-verified one-line Linux Agent installer. The Agent self-registers, persists a credential locally, heartbeats with inventory, and creates its own authenticated WebSocket for remote management and byte-preserving SSE inference even across unrelated networks/NAT. Existing direct management remains available. Agent connectivity is separate from model health. CI and real-host acceptance remain required; the current relay is gateway-replica-local, not HA or multi-replica routing.
