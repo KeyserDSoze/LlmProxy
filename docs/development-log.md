@@ -1,5 +1,12 @@
 # Development log
 
+## 2026-10-09 — Admin alias and benchmark operator flow — IMPLEMENTED / VALIDATION PENDING
+
+- Added UI controls for public model alias and explicit port on managed model install, enabling multi-profile routing within the same logical pool where provider model ID is identical.
+- Added per-installed-deployment direct benchmark command, ready to copy, retaining the benchmark CLI's SLO checks and output evidence.
+- No automatic concurrency ceiling increase; real-device benchmark acceptance remains required.
+
+
 ## 2026-10-09 — Per-deployment runtime metrics — IMPLEMENTED / VALIDATION PENDING
 
 - Added a new metrics collector/tracker keyed by managed deployment ID, instead of mixing several runtime instances into the node-level vLLM tracker.

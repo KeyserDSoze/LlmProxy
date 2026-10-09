@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Admin deployment alias and benchmark workflow — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
+
+Install modal now supports explicit logical alias / optional host port to create independently addressable profile instances and, when provider IDs match, combine their routing pool. Each running installation exposes a copyable direct-runtime benchmark command. No benchmark starts unattended or changes physical capacity. Awaiting frontend CI and target hardware measurements.
+
+
 ## Multi-runtime deployment metrics — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
 
 Added a separate Prometheus collector and tracker per Agent-managed deployment, normalizing vLLM, SGLang and llama.cpp gauges/counters into the Infrastructure Admin installation list. llama.cpp launch now enables Prometheus metrics. Metrics are observation-only and do not affect existing node-scoped routing scoring. Synthetic parser tests added; real runtime and exact-head CI validation pending.
