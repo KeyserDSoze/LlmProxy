@@ -8,6 +8,10 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Managed inference deployments support vLLM execution profiles (`maxNumSeqs`, context, KV cache auto/FP8 and CPU offload), official Qwen3 AWQ 4-bit checkpoint entries and experimental llama.cpp (GGUF) / SGLang runtime profiles through the Node Agent. Admin installation records the selected profile and rejects conflicting reinstalls; existing vLLM defaults and gateway routing contract are preserved. Other runtimes require real-device acceptance before production routing.
+- Benchmark harness can evaluate explicitly configured p95 TTFT, success-rate and throughput-per-slot proxy SLOs, returning sample-size-aware advisory capacity candidates and per-level reasons in JSON. Live physical/deployment concurrency limits remain operator-controlled; no 12-concurrent-user improvement is claimed without measured evidence.
+
+
 - Streaming Chat Completions and Responses Request Audit now stores **one reconstructed JSON response** (including partial content, tool calls, usage when known, and terminal/error status) rather than raw per-token SSE events. The Admin and user audit modal offers a readable response and structured JSON inspector. Original client streaming remains unchanged; audit capture is bounded and reports truncation. **Breaking pre-production audit format change:** old raw-SSE audit data is not migrated or supported by a legacy viewer.
 
 - Admin **Infrastructure** unifies physical Fleet & access, Capacity & telemetry, and Inventory & model lifecycle, with post-creation editing of the hardware-wide simultaneous-request ceiling.

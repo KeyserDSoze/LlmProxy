@@ -1,8 +1,8 @@
 # LlmProxy
 
-> **Managed hardware:** administrators can prepare Linux inference hosts with the LlmProxy Node Agent, inspect CPU/RAM/disk/GPU capacity, evaluate deployable model fit, and control vLLM model lifecycle from the Admin UI. See [docs/model-hardware-management.md](docs/model-hardware-management.md).
+> **Managed hardware:** administrators can prepare Linux inference hosts with the LlmProxy Node Agent, inspect CPU/RAM/disk/GPU capacity, evaluate deployable model fit, and control vLLM model lifecycle and experimental llama.cpp/SGLang profiles from the Admin UI. See [docs/model-hardware-management.md](docs/model-hardware-management.md).
 
-Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on NVIDIA DGX infrastructure.
+Enterprise OpenAI-compatible gateway for routing GitHub Copilot and other AI clients to on-premises LLMs running on heterogeneous inference hardware.
 
 > Immutable distribution releases are generated automatically from validated `main` pushes, starting at `v0.0.1`. The legacy `0.2.0-preview.*` values remain source-history metadata, not the automatic GitHub Release counter.
 

@@ -9,7 +9,7 @@ Benchmark CLI now rejects sweeps with fewer requests than declared concurrency a
 Added managed vLLM execution controls (max simultaneous sequences, context, KV FP8/auto, CPU weight offload), official AWQ quantized vLLM checkpoints, and experimental llama.cpp GGUF plus SGLang runtimes in the Node Agent. Catalog, admin deployment dialog and persisted agent installation metadata carry runtime-specific profiles. The existing default vLLM lifecycle remains the baseline. New Node Agent unit coverage validates profiles. Actual inference hardware benchmark evidence, llama.cpp end-to-end smoke and exact-main CI are pending; AirLLM remains research work, not implemented. SGLang HTTP feature compatibility and telemetry require real hardware acceptance.
 
 
-Last reviewed: **2026-10-08**.
+Last reviewed: **2026-10-09**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.
 
