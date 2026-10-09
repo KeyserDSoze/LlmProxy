@@ -39,11 +39,38 @@ public sealed class NodeHealthMonitor(
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
             var nodes = await dbContext.Nodes.Where(node => node.Enabled).ToListAsync(cancellationToken);
+            var activeManagedRuntimes = await dbContext.Deployments.AsNoTracking()
+                .Where(deployment => deployment.Enabled && deployment.ManagedInstallationId != null
+                    && deployment.RuntimeBaseAddress != null)
+                .Select(deployment => new {
+                    deployment.NodeId,
+                    RuntimeBaseAddress = deployment.RuntimeBaseAddress!,
+                    deployment.UpstreamBearerTokenCiphertext
+                })
+                .ToListAsync(cancellationToken);
+            var serviceRoots = activeManagedRuntimes.GroupBy(x => x.NodeId)
+                .ToDictionary(g => g.Key, g => g.ToList());
             var client = httpClientFactory.CreateClient("health");
 
             foreach (var node in nodes.Where(node => node.Status != NodeStatus.Draining))
             {
-                var result = await CheckNodeAsync(client, node, cancellationToken);
+                // A physical node stays routable when ANY of its enabled managed runtimes is healthy.
+                // A stopped second model must not make a still-running first model disappear.
+                HealthCheckResult result;
+                if (serviceRoots.TryGetValue(node.Id, out var runtimes))
+                {
+                    result = new HealthCheckResult(false, 0, "No managed runtime is healthy.");
+                    foreach (var runtime in runtimes)
+                    {
+                        var check = await CheckNodeAsync(client, node, runtime.RuntimeBaseAddress,
+                            runtime.UpstreamBearerTokenCiphertext ?? node.UpstreamBearerTokenCiphertext,
+                            cancellationToken);
+                        if (check.Success) { result = check; break; }
+                        result = check;
+                    }
+                }
+                else result = await CheckNodeAsync(client, node, node.BaseAddress,
+                    node.UpstreamBearerTokenCiphertext, cancellationToken);
                 var checkedAtUtc = DateTimeOffset.UtcNow;
 
                 if (result.Success)
@@ -74,15 +101,17 @@ public sealed class NodeHealthMonitor(
     private async Task<HealthCheckResult> CheckNodeAsync(
         HttpClient client,
         InferenceNode node,
+        string runtimeRoot,
+        string? upstreamBearerTokenCiphertext,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        var healthUri = InferenceEndpoint.Combine(node.BaseAddress, "/health");
+        var healthUri = InferenceEndpoint.Combine(runtimeRoot, "/health");
 
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, healthUri);
-            upstreamCredentialProtector.ApplyBearer(request, node.UpstreamBearerTokenCiphertext);
+            upstreamCredentialProtector.ApplyBearer(request, upstreamBearerTokenCiphertext);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
