@@ -53,6 +53,18 @@ public sealed class OutboundNodeConnectionWorker(
                         connection = await response.Content.ReadFromJsonAsync<Connection>(stoppingToken)
                             ?? throw new InvalidOperationException("Node enrollment returned no credential.");
                         await SaveStateAsync(connection, stoppingToken);
+                        // A pairing code is consumed once; remove its plaintext from service config.
+                        const string envFile = "/etc/llmproxy/node-agent.env";
+                        if (File.Exists(envFile))
+                        {
+                            var lines = await File.ReadAllLinesAsync(envFile, stoppingToken);
+                            for (var index = 0; index < lines.Length; index++)
+                                if (lines[index].StartsWith("NodeAgent__EnrollmentToken=", StringComparison.Ordinal))
+                                    lines[index] = "NodeAgent__EnrollmentToken=";
+                            await File.WriteAllLinesAsync(envFile, lines, stoppingToken);
+                            if (OperatingSystem.IsLinux())
+                                File.SetUnixFileMode(envFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                        }
                         logger.LogInformation("Paired node {NodeId} in {Mode} mode.", connection.NodeId, options.ConnectionMode);
                     }
                 }

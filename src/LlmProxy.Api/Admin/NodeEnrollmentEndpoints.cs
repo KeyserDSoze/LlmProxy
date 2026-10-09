@@ -36,13 +36,16 @@ public static class NodeEnrollmentEndpoints
             return Results.Ok(new { enrollmentToken = secret, record.ExpiresAtUtc });
         });
 
-        admin.MapGet("/nodes", async (GatewayDbContext db, CancellationToken token) =>
+        admin.MapGet("/nodes", async (GatewayDbContext db, AgentRelayHub relay, CancellationToken token) =>
         {
-            var now = DateTimeOffset.UtcNow;
-            return Results.Ok(await db.NodeEnrollments.AsNoTracking()
+            var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
                 .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion })
-                .ToListAsync(token));
+                .ToListAsync(token);
+            return Results.Ok(records.Select(x => new {
+                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion,
+                tunnelConnected = x.NodeId.HasValue && relay.IsConnected(x.NodeId.Value)
+            }));
         });
 
         if (entraEnabled) invite.RequireAuthorization("AdminWrite");

@@ -3,9 +3,13 @@ import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
 import type { AgentPairingInvitation, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
+function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
+
 export default function NodesPage({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'active' | 'disabled'>('active')
   const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
+  const [pairOpen, setPairOpen] = useState(false)
+  const [pairMode, setPairMode] = useState<'outbound' | 'direct'>('outbound')
   const [pairedNodes, setPairedNodes] = useState<PairedNodeStatus[]>([])
   useEffect(() => {
     let alive = true
@@ -33,6 +37,17 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [testingNode, setTestingNode] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const pairingCommand = invitation
+    ? `curl -fsSL https://raw.githubusercontent.com/KeyserDSoze/LlmProxy/main/distribution/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode} bash`
+    : ''
+
+  async function beginPair() {
+    setError(null); setBusy('pair')
+    try { setInvitation(await api.createAgentInvitation()); setPairOpen(true) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
 
   const active = useMemo(() => nodes.filter(node => node.enabled), [nodes])
   const disabled = useMemo(() => nodes.filter(node => !node.enabled), [nodes])
@@ -107,10 +122,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   return <div className="stack compactPage">
     {!embedded && <section className="panel pageToolbar">
       <div><h2>Inference fleet</h2><p className="muted">Active nodes stay front and center. Add, credentials and destructive actions open only when needed.</p></div>
-      {canWrite && <button className="primary" onClick={() => setAddOpen(true)}>Add inference node</button>}
+      {canWrite && <div className="actions"><button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button><button onClick={() => setAddOpen(true)}>Add inference node</button></div>}
     </section>}
 
-    {embedded && canWrite && <section className="panel pageToolbar"><div><h2>Hardware fleet</h2><p className="muted">Register one row per physical machine. Use deployment runtime roots when models listen on different ports.</p></div><button className="primary" onClick={() => setAddOpen(true)}>Add hardware node</button></section>}
+    {embedded && canWrite && <section className="panel pageToolbar"><div><h2>Hardware fleet</h2><p className="muted">Register one row per physical machine. Use deployment runtime roots when models listen on different ports.</p></div><div className="actions"><button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button><button onClick={() => setAddOpen(true)}>Add hardware node</button></div></section>}
 
     {error && <div className="error">{error}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'active', label: 'Active nodes', count: active.length }, { value: 'disabled', label: 'Disabled nodes', count: disabled.length }]} />
@@ -120,7 +135,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       <div className="tableScroll"><table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
         {visible.map(node => <tr key={node.id}>
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
-          <td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td>
+          <td><Status value={node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
+            const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
+            return <div key={pair.nodeId} className="muted">Agent {fresh ? 'connected' : 'offline'} · {pair.mode}{pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}</div>
+          })}</td><td className="mono">{node.baseAddress}</td>
           <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
           <td>{node.maxConcurrency}</td>
           <td className="actions">
@@ -141,6 +159,22 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       </div>)}
     </section>
 
+    <Modal open={pairOpen} title="Pair a Linux server" description="Install the Agent once and it registers automatically. Outbound mode needs no incoming WAN ports." onClose={() => { setPairOpen(false); setInvitation(null) }}>
+      <div className="stack">
+        <label>Connection mode<select aria-label="Agent connection mode" value={pairMode} onChange={event => setPairMode(event.target.value as 'outbound' | 'direct')}>
+          <option value="outbound">Outbound WSS tunnel (NAT or another network)</option>
+          <option value="direct">Direct management (private reachable network)</option>
+        </select></label>
+        <p className="muted">On the Linux server, run this command once as an administrator. The installer verifies the immutable release checksum, starts systemd and enrolls automatically.</p>
+        {window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' &&
+          <p className="error">Remote enrollment needs HTTPS. Access the Admin through its public HTTPS domain before copying the command.</p>}
+        <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{pairingCommand}</pre>
+        <button type="button" onClick={() => void navigator.clipboard.writeText(pairingCommand)}>Copy installation command</button>
+        <p className="muted">Invitation expires {invitation ? new Date(invitation.expiresAtUtc).toLocaleString() : 'soon'} and is valid for one registration only.</p>
+        <p className="muted">{pairMode === 'outbound' ? 'HTTPS/WSS egress only; reverse relay can carry inference SSE.' : 'The gateway must be able to reach the server on port 9900; use a private network or VPN.'}</p>
+        <div className="modalActions"><button className="secondary" type="button" onClick={() => { setPairOpen(false); setInvitation(null) }}>Close</button></div>
+      </div>
+    </Modal>
     <Modal open={addOpen} title="Add inference node" description="Register the inference service root and optional provider bearer. The bearer remains write-only." onClose={() => setAddOpen(false)}>
       <form className="formPanel" onSubmit={submit}>
         <label>Name<input value={name} onChange={event => setName(event.target.value)} required placeholder="inference-02" /></label>
