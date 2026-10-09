@@ -55,7 +55,8 @@ public sealed class AgentRelayHub
     }
 
     private sealed record Message(string Type, string Id, string? Method = null, string? Path = null,
-        string? Body = null, int? Status = null, string? ContentType = null, string? Error = null);
+        string? Body = null, int? Status = null, string? ContentType = null, string? Error = null,
+        string? Authorization = null);
 
     private sealed class Pending
     {
@@ -95,7 +96,8 @@ public sealed class AgentRelayHub
             {
                 await SendAsync(new Message("request", id, request.Method.Method,
                     uri.PathAndQuery, Convert.ToBase64String(body),
-                    ContentType: request.Content?.Headers.ContentType?.ToString()), token);
+                    ContentType: request.Content?.Headers.ContentType?.ToString(),
+                    Authorization: request.Headers.Authorization?.ToString()), token);
                 var headers = await pending.Headers.Task.WaitAsync(token);
                 var response = new HttpResponseMessage((System.Net.HttpStatusCode)(headers.Status ?? 502));
                 response.Content = new StreamContent(new RelayStream(pending.Chunks.Reader, cancel));

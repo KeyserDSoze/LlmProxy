@@ -230,3 +230,7 @@ When installed in outbound mode, the installer binds the Agent HTTP API to `127.
 ### Distribution security
 
 The Admin one-command bootstrap is served from the latest **immutable GitHub Release asset**, not mutable `main`, with an adjacent published `.sha256`. That bootstrap downloads each immutable architecture-specific Agent archive and independently checks the archive's official SHA-256 before execution. The bootstrap script itself is fetched through HTTPS from the release endpoint; organizations requiring an independent verification of the bootstrap can download and check the adjacent SHA-256 asset before executing it.
+
+### Credentialed remote inference
+
+When a managed deployment uses a configured encrypted upstream bearer, the Gateway restores that token only for the outbound HTTP request. The Agent tunnel forwards the provider's `Authorization: Bearer` header inside authenticated WSS to the specific locally managed runtime port. The Agent's own management bearer remains independent and is generated locally; provider authorization never grants local management access.

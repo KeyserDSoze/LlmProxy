@@ -14,7 +14,8 @@ public sealed class OutboundAgentRelayWorker(
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private sealed record Connection(Guid NodeId, string AgentSecret);
     private sealed record Frame(string Type, string Id, string? Method = null, string? Path = null,
-        string? Body = null, int? Status = null, string? ContentType = null, string? Error = null);
+        string? Body = null, int? Status = null, string? ContentType = null, string? Error = null,
+        string? Authorization = null);
 
     protected override async Task ExecuteAsync(CancellationToken token)
     {
@@ -136,6 +137,14 @@ public sealed class OutboundAgentRelayWorker(
         }
         if (isManagement && options.BearerToken is not null)
             outbound.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.BearerToken);
+        else if (!isManagement && frame.Authorization is not null)
+        {
+            if (frame.Authorization.Length > 4096 ||
+                !frame.Authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
+                frame.Authorization.Contains('\r') || frame.Authorization.Contains('\n'))
+                throw new InvalidDataException("Unsupported runtime authentication header.");
+            outbound.Headers.TryAddWithoutValidation("Authorization", frame.Authorization);
+        }
         var client = factory.CreateClient("relay-local");
         using var result = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, token);
         await SendAsync(socket, sender, new Frame("headers", frame.Id,
