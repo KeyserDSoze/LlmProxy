@@ -44,7 +44,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [error, setError] = useState<string | null>(null)
 
   const pairingCommand = invitation
-    ? `curl -fsSL https://raw.githubusercontent.com/KeyserDSoze/LlmProxy/main/distribution/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
+    ? `curl -fsSL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/llmproxy-connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
     : ''
 
   async function updateAgent(nodeId: string) {

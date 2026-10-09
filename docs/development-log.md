@@ -1,5 +1,11 @@
 # Development log
 
+## 2026-10-09 — Immutable Node Agent bootstrap distribution — CI PENDING
+
+- Bundled the one-command pairing helper as an immutable release asset rather than asking operators to execute the mutable repository main branch.
+- Published an adjacent SHA-256 asset; each installer invocation also verifies the architecture-specific binary archive checksum.
+
+
 ## 2026-10-09 — Safe benchmark cancellation — CI PENDING
 
 Added audit-logged Admin benchmark cancellation. Workers poll durable job state and cancel active inference requests. Cancelled jobs cannot accidentally apply stale capacity evidence even if a benchmark races completion.
