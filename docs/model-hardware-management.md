@@ -238,3 +238,7 @@ When a managed deployment uses a configured encrypted upstream bearer, the Gatew
 ### Node Agent update results
 
 A detached Agent upgrade writes a permission-restricted status marker under `/var/lib/llmproxy-node-agent/update-status.json`. The next authenticated heartbeat forwards only its `running`/`succeeded`/`failed` flag and verified version to LlmProxy, which persists and displays the result alongside the Agent's current version. No console log or arbitrary process output is ingested. This avoids requiring SSH to determine whether an upgrade finished.
+
+### Remaining production acceptance for remote Agents
+
+The current source must be tested on at least two separate Linux hosts or networks using a real HTTPS/WSS ingress: Agent enrollment, heartbeat after reconnect, registry downloads, lifecycle and health, Chat Completions and Responses SSE and tool calls, cancellation under load, and staged/rollback Agent update. CI synthetically verifies tunnel framing but does not substitute for real network/GPU evidence. Remote models should be exercised initially behind **one** gateway API replica until distributed Agent session forwarding is implemented; this limitation is deliberately fail-closed.

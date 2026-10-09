@@ -1,5 +1,10 @@
 # Development log
 
+## 2026-10-09 — Explicit completion boundary
+
+Completed in source: Admin-initiated benchmark queue/results/cancellation, paired Agent update scheduling and rollback/status, immutable pairing installer and direct/outbound WSS Agent management. Remaining: cross-replica Agent backplane (NOT present), Linux dependency automation for more distributions, real hardware and separated-network acceptance. Full CI must pass for a release; older v0.2.3 predates this work.
+
+
 ## 2026-10-09 — Agent update status in Admin — CI PENDING
 
 - Detached updater now writes root-only running/succeeded/failed plus release version.

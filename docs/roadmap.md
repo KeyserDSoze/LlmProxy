@@ -255,6 +255,8 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - [x] Admin one-time Agent invitations, verified installer, registration, heartbeat and outbound WebSocket relay (CI/target-host acceptance pending).
 - [ ] Multi-replica Agent transport backplane with session ownership/forwarding that does not persist plaintext inference data.
 - [ ] Real remote WSS SSE resilience, tool-calling and load acceptance.
-- [ ] Agent self-update, fully Admin-run benchmark jobs and prerequisite validation/remediation.
+- [x] Admin-queued immutable Node Agent self-update (version resolution, checksum validation, systemd swap/rollback, heartbeat result), pending Linux host acceptance.
+- [x] Admin-run benchmark jobs with server-side SLO results, cancellation and manual capacity approval, pending live inference acceptance.
+- [ ] Safe one-time host Docker/NVIDIA prerequisites onboarding and diagnostics without manual commands where distributions support automated setup.
 
 - [x] Admin-run persisted benchmark sweeps with synthetic payloads and explicit application of recommended capacity (CI/hardware acceptance pending).

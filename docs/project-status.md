@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Remaining acceptance and HA constraints (2026-10-09)
+
+The managed Agent can be paired across networks, remotely managed and controlled from Admin; Admin benchmarks and immutable Agent self-updates have been implemented. They remain subject to full CI and real Linux/GPU acceptance. **The WSS tunnel is still per-API-replica; Redis-backed cross-replica forwarding is NOT implemented in the released code.** A multi-replica cluster must not claim remote Agent inference HA until that backplane and soak tests are complete. Linux Docker/NVIDIA prerequisites still need host preparation, even though no CLI is needed for normal day-to-day model lifecycle operations after Agent setup.
+
+
 ## Node Agent immutable release update — IMPLEMENTED / CI PENDING (2026-10-09)
 
 Admin can queue a newer published immutable Node Agent release. Each paired Agent reads a desired version in its authenticated heartbeat and schedules a detached systemd updater. The updater downloads archive+published SHA-256, stages the new executable tree, preserves config/cache/identity, checks service and local HTTP readiness and rolls back on startup failure. CI/static shell checks and actual host acceptance still needed. Cross-replica remote relay remains restricted to single API replica (distributed backplane not validated).
