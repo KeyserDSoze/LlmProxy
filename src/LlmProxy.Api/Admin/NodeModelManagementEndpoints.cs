@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Deployments;
@@ -184,7 +185,8 @@ public static class NodeModelManagementEndpoints
                     return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
                 }
 
-                deployment.ConfigureRuntime(state.RuntimeBaseAddress, descriptor.Id, state.InstallationId);
+                var runtimeAddress = OutboundRuntimeAddress(node, state);
+                deployment.ConfigureRuntime(runtimeAddress, descriptor.Id, state.InstallationId);
                 if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase)) deployment.Enable();
                 else deployment.Disable();
 
@@ -245,7 +247,10 @@ public static class NodeModelManagementEndpoints
                 if (string.IsNullOrWhiteSpace(state.RuntimeBaseAddress))
                     return Results.Problem("The management agent started the model but did not return a runtimeBaseAddress.", statusCode: StatusCodes.Status502BadGateway);
 
-                deployment.ConfigureRuntime(state.RuntimeBaseAddress, deployment.CatalogModelId, deployment.ManagedInstallationId);
+                var runtimeAddress = OutboundRuntimeAddress(node, state);
+                deployment.ConfigureRuntime(runtimeAddress, deployment.CatalogModelId, deployment.ManagedInstallationId);
+                if (IsOutboundNode(node))
+                    node.Update(node.Name, runtimeAddress!, node.Weight, node.MaxConcurrency);
                 deployment.Enable();
                 AddAudit(dbContext, httpContext, "model.start", "deployment", deployment.Id.ToString(), new { node.Name, deployment.ManagedInstallationId, state.RuntimeBaseAddress });
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -341,6 +346,15 @@ public static class NodeModelManagementEndpoints
 
         return endpoints;
     }
+
+    private static bool IsOutboundNode(InferenceNode node) =>
+        Uri.TryCreate(node.ManagementBaseAddress, UriKind.Absolute, out var uri) &&
+        AgentRelayHub.TryParseNode(uri, out var nodeId) && nodeId == node.Id;
+
+    private static string? OutboundRuntimeAddress(InferenceNode node, ManagedModelState state) =>
+        IsOutboundNode(node)
+            ? AgentRelayHub.Root(node.Id) + "/runtime/" + state.Port
+            : state.RuntimeBaseAddress;
 
     private static object BuildOverview(
         InferenceNode node,

@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using LlmProxy.Api.Admin;
+using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Api.Identity;
 using LlmProxy.Api.Observability;
 using LlmProxy.Api.OpenAi;
@@ -40,6 +41,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReleaseDiscoveryService>();
+builder.Services.AddSingleton<AgentRelayHub>();
+builder.Services.AddTransient<AgentRelayHttpHandler>();
 builder.Services.AddSingleton<UpdateAgentClient>();
 builder.Services.AddHostedService<ProductAutoUpdateWorker>();
 
@@ -129,13 +132,13 @@ builder.Services.AddSingleton<BufferedCredentialUsageSink>();
 builder.Services.AddSingleton<ICredentialUsageSink>(services => services.GetRequiredService<BufferedCredentialUsageSink>());
 builder.Services.AddHostedService(services => services.GetRequiredService<BufferedCredentialUsageSink>());
 
-builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan);
-builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3));
-builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.FromSeconds(5));
-builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
-builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3));
-builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30));
+builder.Services.AddHttpClient("vllm", client => client.Timeout = Timeout.InfiniteTimeSpan).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("health", client => client.Timeout = TimeSpan.FromSeconds(3)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("probe", client => client.Timeout = TimeSpan.FromSeconds(5)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpan.FromSeconds(30)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHttpClient("github-releases", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -143,7 +146,7 @@ builder.Services.AddHttpClient("github-releases", client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 });
 builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
-builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds));
+builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
 builder.Services.AddHostedService<DeploymentRuntimeMetricsCollector>();
@@ -232,6 +235,7 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
         ? Results.Ok(new { status = "ready" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
+app.UseWebSockets();
 app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);

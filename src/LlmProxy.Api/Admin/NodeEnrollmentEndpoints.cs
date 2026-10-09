@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Persistence;
@@ -75,9 +76,12 @@ public static class NodeEnrollmentEndpoints
             machine = new string(machine.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').Take(80).ToArray());
             if (machine.Length == 0) machine = "agent";
             var name = machine + "-" + invitation.Id.ToString("N")[..8];
-            // Unknown is deliberately not routable: onboarding does not certify inference readiness.
+            // No deployment can route until an actual runtime has started and passed health checks.
             var node = new InferenceNode(name, "http://127.0.0.1:1");
-            node.Disable();
+            if (request.Mode == "outbound")
+            {
+                node.SetManagementBaseAddress(AgentRelayHub.Root(node.Id) + "/management");
+            }
             if (request.Mode == "direct" && Uri.TryCreate(request.ManagementBaseAddress, UriKind.Absolute, out var baseUri) &&
                 baseUri.Scheme == Uri.UriSchemeHttp && baseUri.Port is > 0 and <= 65535 &&
                 !string.IsNullOrWhiteSpace(request.AgentBearer))
@@ -115,6 +119,23 @@ public static class NodeEnrollmentEndpoints
                     .SetProperty(r => r.HardwareInventoryJson, request.Inventory.GetRawText())
                     .SetProperty(r => r.AgentVersion, request.AgentVersion), token);
             return updated == 1 ? Results.Ok(new { status = "connected" }) : Results.Unauthorized();
+        });
+        agents.MapGet("/{nodeId:guid}/tunnel", async (Guid nodeId,
+            GatewayDbContext db, ApiKeyHasher hasher, AgentRelayHub relay, HttpContext context) =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+                return Results.BadRequest(new { error = "websocket_required" });
+            var bearer = ReadBearer(context.Request);
+            if (bearer is null || !bearer.StartsWith("lpa_", StringComparison.Ordinal) || bearer.Length > 160)
+                return Results.Unauthorized();
+            var hash = hasher.Hash(bearer);
+            var valid = await db.NodeEnrollments.AsNoTracking().AnyAsync(
+                x => x.NodeId == nodeId && x.AgentSecretHash == hash && x.Mode == "outbound",
+                context.RequestAborted);
+            if (!valid) return Results.Unauthorized();
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            await relay.AttachAsync(nodeId, socket, context.RequestAborted);
+            return Results.Empty;
         });
         return app;
     }
