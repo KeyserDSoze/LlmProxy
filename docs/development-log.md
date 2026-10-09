@@ -1,5 +1,10 @@
 # Development log
 
+## 2026-10-09 — Safe benchmark cancellation — CI PENDING
+
+Added audit-logged Admin benchmark cancellation. Workers poll durable job state and cancel active inference requests. Cancelled jobs cannot accidentally apply stale capacity evidence even if a benchmark races completion.
+
+
 ## 2026-10-09 — Node Agent Admin-driven updates — CI PENDING
 
 - Admin queues official newer immutable agent version against a paired node and audit-logs the change.

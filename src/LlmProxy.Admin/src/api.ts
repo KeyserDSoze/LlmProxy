@@ -193,6 +193,7 @@ export const api = {
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' }),
   benchmarkJobs: (deploymentId: string) =>
     request<ManagedBenchmarkJob[]>(`/api/admin/benchmarks/deployments/${deploymentId}`),
+  cancelBenchmark: (jobId: string) => request<void>(`/api/admin/benchmarks/jobs/${jobId}`, { method: 'DELETE' }),
   startBenchmark: (deploymentId: string, body: { maxP95TtftMilliseconds: number; minSuccessRatePercent: number }) =>
     request<ManagedBenchmarkJob>(`/api/admin/benchmarks/deployments/${deploymentId}`, { method: 'POST', body: JSON.stringify(body) }),
   modelManagementOverview: (nodeId: string) =>

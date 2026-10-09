@@ -47,7 +47,25 @@ public static class InferenceBenchmarkAdminEndpoints
             catch (DbUpdateException) { return Results.Conflict(new { error = "benchmark_already_running" }); }
             return Results.Accepted($"/api/admin/benchmarks/deployments/{deploymentId}", job);
         });
-        if (entraEnabled) start.RequireAuthorization("AdminWrite");
+        var cancel = group.MapDelete("/jobs/{jobId:guid}", async (
+            Guid jobId, GatewayDbContext db, HttpContext http, CancellationToken token) =>
+        {
+            var cancelled = await db.BenchmarkJobs
+                .Where(j => j.Id == jobId && (j.Status == "pending" || j.Status == "running"))
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, "cancelled")
+                    .SetProperty(j => j.CompletedAtUtc, DateTimeOffset.UtcNow), token);
+            if (cancelled == 0) return Results.Conflict(new { error = "benchmark_not_active" });
+            db.AuditEvents.Add(new AuditEvent(http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
+                "deployment.benchmark.cancel", "benchmark", jobId.ToString(),
+                http.Connection.RemoteIpAddress?.ToString(), null));
+            await db.SaveChangesAsync(token);
+            return Results.NoContent();
+        });
+        if (entraEnabled)
+        {
+            start.RequireAuthorization("AdminWrite");
+            cancel.RequireAuthorization("AdminWrite");
+        }
         return app;
     }
 

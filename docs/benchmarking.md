@@ -170,3 +170,5 @@ An HTTP 200 or a first text delta is **not** a successful streaming inference by
 If a tested concurrency level passes, the recommendation is stored as a deployment Capacity Profile, **but the active physical or deployment concurrency limit is not modified**. Admin must separately apply an accepted recommendation under Capacity & telemetry. The worker's synthetic prompt, bearer and request/response text are never written into benchmark reports; database stores only timing, usage, numeric results and errors. A non-responsive runtime can take up to thirty minutes to time out; a crashed worker's lock is reclaimed after thirty-five minutes.
 
 Do not benchmark a production instance at saturation during active user traffic. A run can impose significant GPU pressure. The target is selected server-side from the managed deployment, never supplied as an arbitrary URL by the browser.
+
+Admin **Cancel benchmark** marks the job as cancelled in PostgreSQL and the worker observes the change and interrupts the active network load. A cancelled run never writes a capacity recommendation. The operator can repeat the sweep after resolving hardware capacity or network faults.

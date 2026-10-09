@@ -43,6 +43,14 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     return () => { active = false; window.clearInterval(timer) }
   }, [benchmarkDeploymentId])
 
+  async function cancelBenchmark() {
+    if (!recentBenchmark) return
+    setBenchmarkBusy(true)
+    try { await api.cancelBenchmark(recentBenchmark.id); setBenchmarkJobs(await api.benchmarkJobs(recentBenchmark.deploymentId)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBenchmarkBusy(false) }
+  }
+
   async function runBenchmark() {
     if (!benchmarkDeploymentId) return
     setBenchmarkBusy(true); setError(null)
@@ -118,6 +126,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label>Minimum success rate (%)<input aria-label="Benchmark success threshold" type="number" min="1" max="100" step="1" value={benchmarkSuccess} onChange={e => setBenchmarkSuccess(Number(e.target.value))}/></label>
         </div>
         <button className="primary" disabled={!canWrite || benchmarkBusy || recentBenchmark?.status === 'running' || recentBenchmark?.status === 'pending'} onClick={() => void runBenchmark()}>{benchmarkBusy ? 'Scheduling…' : 'Start benchmark on this deployment'}</button>
+        {recentBenchmark && (recentBenchmark.status === 'running' || recentBenchmark.status === 'pending') &&
+          <button className="secondary" disabled={benchmarkBusy} onClick={() => void cancelBenchmark()}>Cancel benchmark</button>}
         {recentBenchmark && <div className="notice">
           <strong>Latest run: {recentBenchmark.status}</strong>
           <div className="muted">Requested {new Date(recentBenchmark.requestedAtUtc).toLocaleString()}</div>

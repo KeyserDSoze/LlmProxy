@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Cancel ongoing Admin benchmark jobs without CLI access; cancelled and stale jobs cannot write or apply recommendations.
+
 - Administrator-scheduled checksum-verified Node Agent upgrades delivered through paired Agent heartbeats, with independent systemd updater and automatic rollback when service verification fails.
 
 - One-click Admin inference benchmarks run as persisted background jobs on the gateway with per-concurrency metrics and provisional SLO-based capacity evidence. Results display in the UI; no automatic limit changes.

@@ -70,14 +70,34 @@ public sealed class InferenceBenchmarkWorker(
                     new AuthenticationHeaderValue("Bearer", protector.Unprotect(secret));
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromMinutes(30));
-            var report = await new BenchmarkRunner(client).RunAsync(options, timeout.Token);
+            // Cancellation is persisted so a browser close does not lose operator intent.
+            var monitor = Task.Run(async () =>
+            {
+                while (!timeout.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), timeout.Token);
+                    using var monitorScope = scopes.CreateScope();
+                    var monitorDb = monitorScope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                    var status = await monitorDb.BenchmarkJobs.AsNoTracking()
+                        .Where(j => j.Id == next).Select(j => j.Status)
+                        .FirstOrDefaultAsync(timeout.Token);
+                    if (status != "running") { timeout.Cancel(); break; }
+                }
+            }, CancellationToken.None);
+            BenchmarkReport report;
+            try { report = await new BenchmarkRunner(client).RunAsync(options, timeout.Token); }
+            finally
+            {
+                timeout.Cancel();
+                try { await monitor; } catch (OperationCanceledException) { }
+            }
             var reportJson = JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            await db.BenchmarkJobs.Where(j => j.Id == next && j.Status == "running")
+            var completed = await db.BenchmarkJobs.Where(j => j.Id == next && j.Status == "running")
                 .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, "completed")
                     .SetProperty(j => j.ReportJson, reportJson)
                     .SetProperty(j => j.CompletedAtUtc, DateTimeOffset.UtcNow), token);
             // Evidence stays advisory: a human must explicitly apply the capacity profile.
-            if (report.Recommendation?.RecommendedMaxConcurrency is int level &&
+            if (completed == 1 && report.Recommendation?.RecommendedMaxConcurrency is int level &&
                 level >= 1 && report.Levels.Any(x => x.Concurrency == level))
             {
                 var evidence = report.Levels.Single(x => x.Concurrency == level);
@@ -92,6 +112,13 @@ public sealed class InferenceBenchmarkWorker(
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException)
+        {
+            await db.BenchmarkJobs.Where(j => j.Id == next && j.Status == "running")
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, "failed")
+                    .SetProperty(j => j.Error, "Benchmark timed out or was interrupted.")
+                    .SetProperty(j => j.CompletedAtUtc, DateTimeOffset.UtcNow), CancellationToken.None);
+        }
         catch (Exception error)
         {
             logger.LogWarning("Benchmark {JobId} failed: {Type}", next, error.GetType().Name);
