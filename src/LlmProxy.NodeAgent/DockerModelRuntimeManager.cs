@@ -26,7 +26,7 @@ public sealed class DockerModelRuntimeManager(
 
     public async Task<ManagedModelState> InstallAsync(InstallRequest request, CancellationToken cancellationToken)
     {
-        ValidateRequest(request);
+        ManagedRuntimeProfiles.Validate(request);
         await _operations.WaitAsync(cancellationToken);
         try
         {
@@ -34,6 +34,8 @@ public sealed class DockerModelRuntimeManager(
                 string.Equals(item.CatalogModelId, request.CatalogModelId, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
             {
+                if (!ManagedRuntimeProfiles.Matches(existing, request))
+                    throw new InvalidOperationException("This catalog model is already installed with a different runtime profile. Stop/remove its deployment before changing the profile.");
                 var running = await IsRunningAsync(existing, cancellationToken);
                 return ToState(existing, running ? "running" : "stopped", running ? RuntimeAddress(existing.Port) : null);
             }
@@ -49,6 +51,11 @@ public sealed class DockerModelRuntimeManager(
                 InstallationId = BuildInstallationId(request.CatalogModelId),
                 CatalogModelId = request.CatalogModelId.Trim(),
                 ProviderModelName = request.ProviderModelName.Trim(),
+                Runtime = request.Runtime,
+                MaxNumSeqs = request.MaxNumSeqs,
+                MaxModelLen = request.MaxModelLen,
+                KvCacheDtype = request.KvCacheDtype,
+                CpuOffloadGiB = request.CpuOffloadGiB,
                 Port = port,
                 TensorParallelSize = request.TensorParallelSize,
                 ExtraArguments = request.ExtraArguments?.ToArray() ?? [],
@@ -58,8 +65,8 @@ public sealed class DockerModelRuntimeManager(
 
             try
             {
-                await RequireDockerAsync(["pull", options.DockerImage], cancellationToken);
-                if (options.PrefetchModels)
+                await RequireDockerAsync(["pull", ManagedRuntimeProfiles.Image(record, options)], cancellationToken);
+                if (options.PrefetchModels && record.Runtime == "vllm")
                 {
                     var script = $"from huggingface_hub import snapshot_download; snapshot_download({JsonSerializer.Serialize(record.ProviderModelName)})";
                     await RequireDockerAsync(
@@ -107,15 +114,11 @@ public sealed class DockerModelRuntimeManager(
                 args.Add("all");
             }
             args.Add("-v");
-            args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface");
+            args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
             args.Add("-p");
-            args.Add($"{record.Port}:8000");
-            args.Add(options.DockerImage);
-            args.Add("--model");
-            args.Add(record.ProviderModelName);
-            args.Add("--tensor-parallel-size");
-            args.Add(record.TensorParallelSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            foreach (var argument in record.ExtraArguments) args.Add(argument);
+            args.Add($"{record.Port}:{(record.Runtime == "llama.cpp" ? 8080 : 8000)}");
+            args.Add(ManagedRuntimeProfiles.Image(record, options));
+            args.AddRange(ManagedRuntimeProfiles.Arguments(record, options));
 
             try
             {
@@ -255,21 +258,9 @@ public sealed class DockerModelRuntimeManager(
     }
 
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
-        new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error);
+        new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
+            record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 
-    private static void ValidateRequest(InstallRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.CatalogModelId) || request.CatalogModelId.Length > 200)
-            throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
-        if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)
-            throw new ArgumentException("providerModelName is required and must be at most 300 characters.");
-        if (request.TensorParallelSize < 1 || request.TensorParallelSize > 64)
-            throw new ArgumentOutOfRangeException(nameof(request.TensorParallelSize));
-        if (request.Port is < 1024 or > 65535)
-            throw new ArgumentOutOfRangeException(nameof(request.Port));
-        if (request.ExtraArguments is { Count: > 64 } || request.ExtraArguments?.Any(argument => argument.Length > 500) == true)
-            throw new ArgumentException("Too many or too-long runtime arguments.");
-    }
 }

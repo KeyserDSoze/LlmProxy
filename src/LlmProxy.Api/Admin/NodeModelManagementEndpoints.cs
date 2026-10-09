@@ -131,6 +131,8 @@ public static class NodeModelManagementEndpoints
                 var hardware = await SendAgentAsync<HardwareInventory>(
                     client, node, protector, HttpMethod.Get, "/v1/system", null, cancellationToken);
                 var compatibility = EvaluateCompatibility(descriptor, hardware);
+                if (request.MaxModelLen is int requestedContext && requestedContext > descriptor.ContextTokens)
+                    return Results.BadRequest(new { error = "context_exceeds_model", maxContextTokens = descriptor.ContextTokens });
                 if (!request.Force && compatibility.Status == "insufficient")
                 {
                     return Results.BadRequest(new
@@ -145,8 +147,13 @@ public static class NodeModelManagementEndpoints
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    Math.Max(1, compatibility.SuggestedTensorParallelSize),
-                    request.ExtraArguments ?? []);
+                    descriptor.Runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
+                    request.ExtraArguments ?? [],
+                    descriptor.Runtime,
+                    request.MaxNumSeqs,
+                    request.MaxModelLen,
+                    descriptor.Runtime == "vllm" ? request.KvCacheDtype : null,
+                    descriptor.Runtime == "vllm" ? request.CpuOffloadGiB : null);
                 var state = await SendAgentAsync<ManagedModelState>(
                     client, node, protector, HttpMethod.Post, "/v1/models/install", installRequest, cancellationToken);
 
@@ -185,7 +192,12 @@ public static class NodeModelManagementEndpoints
                     state.InstallationId,
                     agentStatus = state.Status,
                     state.RuntimeBaseAddress,
-                    compatibilityStatus = compatibility.Status
+                    compatibilityStatus = compatibility.Status,
+                    runtime = descriptor.Runtime,
+                    request.MaxNumSeqs,
+                    request.MaxModelLen,
+                    request.KvCacheDtype,
+                    request.CpuOffloadGiB
                 });
                 await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -364,7 +376,8 @@ public static class NodeModelManagementEndpoints
                     deployment.RuntimeBaseAddress,
                     deployment.Enabled,
                     agentStatus = agentState?.Status ?? (deployment.Enabled ? "unknown" : "stopped"),
-                    agentState
+                    agentState,
+                    runtime = agentState?.Runtime ?? DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm"
                 };
             })
         };
@@ -451,8 +464,12 @@ public static class NodeModelManagementEndpoints
     }
 
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
-    public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false, IReadOnlyList<string>? ExtraArguments = null);
-    public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize, IReadOnlyList<string> ExtraArguments);
+    public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
+        IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
+        string? KvCacheDtype = null, double? CpuOffloadGiB = null);
+    public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
+        IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
+        string? KvCacheDtype, double? CpuOffloadGiB);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
     public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null);
     public sealed record HardwareInventory(
@@ -475,6 +492,11 @@ public static class NodeModelManagementEndpoints
         string Status,
         string? RuntimeBaseAddress,
         int? Port = null,
-        string? Error = null);
+        string? Error = null,
+        string Runtime = "vllm",
+        int? MaxNumSeqs = null,
+        int? MaxModelLen = null,
+        string? KvCacheDtype = null,
+        double? CpuOffloadGiB = null);
     private sealed class AgentException(string message) : Exception(message);
 }

@@ -238,3 +238,12 @@ image digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53
 7. Preserve the automatic immutable release train; use `release:minor` / `release:major` only for intentional SemVer line changes.
 
 NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current direction; continue LlmProxy + vLLM unless explicitly reopened.
+
+## Multi-runtime inference roadmap (2026-10-09)
+
+- IMPLEMENTED / VALIDATION PENDING: vLLM managed execution profiles (sequence cap, max context, KV dtype, CPU offload) with admin UI.
+- IMPLEMENTED / VALIDATION PENDING: llama.cpp GGUF experimental managed engine, NVIDIA CUDA image and source checkpoint.
+- NEXT: real hardware direct-versus-gateway benchmarks with sustainable-concurrency SLO and measured capacity profile, not hypothetical user-count multipliers.
+- NEXT: multi-installation same-model/same-node schema and lifecycle (current agent explicitly refuses conflicting profiles).
+- NEXT: SGLang runtime adapter, separate metrics and OpenAI surface acceptance.
+- RESEARCH: AirLLM layer/expert streaming with OpenAI HTTP shim and real end-to-end throughput/TTFT measurements before exposing deployment choices.

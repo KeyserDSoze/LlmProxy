@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Multi-runtime deployment profiles — IMPLEMENTED / CI VALIDATION PENDING (2026-10-09)
+
+Added managed vLLM execution controls (max simultaneous sequences, context, KV FP8/auto, CPU weight offload) and experimental llama.cpp GGUF runtime support in the Node Agent. Catalog, admin deployment dialog and persisted agent installation metadata carry runtime-specific profiles. The existing default vLLM lifecycle remains the baseline. New Node Agent unit coverage validates profiles. Actual inference hardware benchmark evidence, llama.cpp end-to-end smoke and exact-main CI are pending; SGLang and AirLLM remain research work, not implemented.
+
+
 Last reviewed: **2026-10-08**.
 
 This is the canonical current-state snapshot for LlmProxy. Read root `AGENTS.md` first.

@@ -14,5 +14,6 @@
     <ProjectReference Include="../../../src/LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
     <ProjectReference Include="../../../src/LlmProxy.Api/LlmProxy.Api.csproj" />
     <ProjectReference Include="../../../src/LlmProxy.UpdateAgent/LlmProxy.UpdateAgent.csproj" />
+    <ProjectReference Include="../../../src/LlmProxy.NodeAgent/LlmProxy.NodeAgent.csproj" />
   </ItemGroup>
 </Project>

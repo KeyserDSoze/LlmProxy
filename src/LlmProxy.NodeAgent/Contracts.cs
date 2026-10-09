@@ -25,13 +25,23 @@ public sealed record InstallRequest(
     string ProviderModelName,
     int? Port,
     int TensorParallelSize,
-    IReadOnlyList<string>? ExtraArguments);
+    IReadOnlyList<string>? ExtraArguments,
+    string Runtime = "vllm",
+    int? MaxNumSeqs = null,
+    int? MaxModelLen = null,
+    string? KvCacheDtype = null,
+    double? CpuOffloadGiB = null);
 
 public sealed record ManagedModelRecord
 {
     public required string InstallationId { get; init; }
     public required string CatalogModelId { get; init; }
     public required string ProviderModelName { get; init; }
+    public string Runtime { get; init; } = "vllm";
+    public int? MaxNumSeqs { get; init; }
+    public int? MaxModelLen { get; init; }
+    public string? KvCacheDtype { get; init; }
+    public double? CpuOffloadGiB { get; init; }
     public required int Port { get; init; }
     public required int TensorParallelSize { get; init; }
     public IReadOnlyList<string> ExtraArguments { get; init; } = [];
@@ -48,6 +58,11 @@ public sealed record ManagedModelState(
     string Status,
     string? RuntimeBaseAddress,
     int Port,
-    string? Error);
+    string? Error,
+    string Runtime = "vllm",
+    int? MaxNumSeqs = null,
+    int? MaxModelLen = null,
+    string? KvCacheDtype = null,
+    double? CpuOffloadGiB = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);

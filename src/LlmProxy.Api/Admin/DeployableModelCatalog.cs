@@ -20,7 +20,8 @@ public sealed record DeployableModelDescriptor(
     bool SupportsStreaming,
     bool SupportsTools,
     IReadOnlyList<string> Tags,
-    string Notes);
+    string Notes,
+    string Runtime = "vllm");
 
 public static class DeployableModelCatalog
 {
@@ -132,7 +133,29 @@ public static class DeployableModelCatalog
             true,
             true,
             ["general", "instruct", "compact"],
-            "Established Apache-2.0 instruct model with moderate hardware requirements.")
+            "Established Apache-2.0 instruct model with moderate hardware requirements."),
+        new(
+            "qwen3-4b-gguf-q4",
+            "Qwen3 4B GGUF Q4_K_M",
+            "ggml-org/Qwen3-4B-GGUF:Q4_K_M",
+            "Qwen3",
+            "Apache-2.0",
+            "https://huggingface.co/ggml-org/Qwen3-4B-GGUF",
+            4.0,
+            131072,
+            "Q4_K_M",
+            0,
+            6,
+            8,
+            16,
+            8,
+            0,
+            1,
+            true,
+            true,
+            ["gguf", "quantized", "cpu-offload", "experimental"],
+            "Experimental llama.cpp profile; context is shared across parallel slots and capacity requires benchmarking.",
+            "llama.cpp")
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>

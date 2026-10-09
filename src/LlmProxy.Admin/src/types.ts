@@ -556,6 +556,7 @@ export type UserUsageSummary = {
 
 
 export type DeployableModel = {
+  runtime?: 'vllm' | 'llama.cpp'
   id: string
   displayName: string
   providerModelName: string
@@ -608,6 +609,11 @@ export type HardwareInventory = {
 }
 
 export type ManagedModelState = {
+  runtime?: string
+  maxNumSeqs?: number | null
+  maxModelLen?: number | null
+  kvCacheDtype?: string | null
+  cpuOffloadGiB?: number | null
   installationId: string
   catalogModelId?: string | null
   providerModelName?: string | null
@@ -618,6 +624,7 @@ export type ManagedModelState = {
 }
 
 export type ManagedInstallation = {
+  runtime?: string
   id: string
   modelId: string
   logicalModel?: string | null

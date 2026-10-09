@@ -173,3 +173,13 @@ Hardware E: model-2
 ```
 
 A request for `model-1` can route only to A/B. A request for `model-2` can route only to A/C/D/E. If A hosts the runtimes on different ports, deployment-specific runtime addresses keep the pools separate even though the physical node is shared.
+
+## Multi-runtime launch profiles (initial implementation, 2026-10-09)
+
+The managed Node Agent supports `vllm` (existing Hugging Face/Transformers weights) and experimental `llama.cpp` (GGUF checkpoints). The curated catalog assigns each model to its allowed runtime: regular Qwen/Mistral models remain on vLLM, and `qwen3-4b-gguf-q4` is an experimental Q4_K_M GGUF deployment. Do not pass a standard Transformers checkpoint to llama.cpp or silently transform model formats. SGLang and AirLLM are *not* installed or exposed yet.
+
+On the Admin **Infrastructure → Inventory & model lifecycle → Deploy models** tab, the installation dialog provides `maxNumSeqs`, `maxModelLen` and (for vLLM) `kvCacheDtype` / `cpuOffloadGiB`. The Node Agent stores the chosen profile in its installation registry and selects runtime-specific Docker images and flags. For llama.cpp, `maxModelLen` is the **total** context pool shared by concurrent slots; vLLM `maxModelLen` is a per-request model limit. The engine is not silently changed for existing installations, and an attempt to reinstall the same catalog id with a different profile is rejected until the old deployment is stopped and removed. Profiles do not change distributed physical/request concurrency limits.
+
+`NodeAgent__DockerImage` is the vLLM image. `NodeAgent__LlamaCppDockerImage` defaults to `ghcr.io/ggml-org/llama.cpp:server-cuda` for NVIDIA systems. **Pin both to immutable tested tags/digests in production**, validate the host CUDA driver, and use the CPU `:server` variant with `NodeAgent__UseNvidiaGpus=false` on a CPU-only test node. GGUF weights are pulled by llama.cpp on first server start and stored in the shared agent cache, not by the vLLM Python prefetch step. A GGUF lazy download may exceed normal startup times; set `NodeAgent__StartupTimeoutMinutes` accordingly. `llama-server` listens inside the container on port 8080, vLLM on 8000, both with the existing host-port management and /health contract.
+
+`maxNumSeqs` and `--parallel` are runtime execution controls, **not** promises of sustainable user concurrency. Benchmark direct vs gateway at 1,2,4,8,12,16 before changing deployment/node MaxConcurrency. An installation is not considered production validated without Chat, Responses, SSE, tool calls, cancellation, actual model load and concurrent-load acceptance. AirLLM needs a separate HTTP adapter and model-specific validation.

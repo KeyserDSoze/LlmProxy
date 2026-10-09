@@ -13,7 +13,8 @@ public sealed record NodeAgentOptions(
     bool UseNvidiaGpus,
     bool PrefetchModels,
     int CommandTimeoutMinutes,
-    int StartupTimeoutMinutes)
+    int StartupTimeoutMinutes,
+    string LlamaCppDockerImage)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -29,7 +30,8 @@ public sealed record NodeAgentOptions(
             ParseBool(section["UseNvidiaGpus"], true),
             ParseBool(section["PrefetchModels"], true),
             ParseInt(section["CommandTimeoutMinutes"], 60, 1, 360),
-            ParseInt(section["StartupTimeoutMinutes"], 20, 1, 120));
+            ParseInt(section["StartupTimeoutMinutes"], 20, 1, 120),
+            section["LlamaCppDockerImage"] ?? "ghcr.io/ggml-org/llama.cpp:server-cuda");
     }
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>
