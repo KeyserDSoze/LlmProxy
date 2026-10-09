@@ -49,7 +49,7 @@ public sealed class OutboundNodeConnectionWorker(
                                 managementBaseAddress = options.ConnectionMode == "direct" ?
                                     "http://" + options.AdvertiseHost + ":9900" : null,
                                 agentBearer = options.ConnectionMode == "direct" ? options.BearerToken : null,
-                                agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString()
+                                agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3)
                             }, stoppingToken);
                         if (!response.IsSuccessStatusCode)
                             throw new HttpRequestException($"Node enrollment rejected: HTTP {(int)response.StatusCode}");
@@ -79,7 +79,7 @@ public sealed class OutboundNodeConnectionWorker(
                         Content = JsonContent.Create(new
                         {
                             inventory = currentInventory,
-                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(),
+                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3),
                             agentUpdateStatus = ReadUpdateStatus()
                         })
                     };
