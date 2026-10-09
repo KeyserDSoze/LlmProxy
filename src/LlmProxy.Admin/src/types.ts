@@ -110,6 +110,17 @@ export type NodeMaintenanceResponse = {
 export type AgentPairingInvitation = { enrollmentToken: string; expiresAtUtc: string }
 export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; tunnelConnected?: boolean }
 
+export type ManagedBenchmarkJob = {
+  id: string
+  deploymentId: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  requestedAtUtc: string
+  startedAtUtc?: string | null
+  completedAtUtc?: string | null
+  reportJson?: string | null
+  error?: string | null
+}
+
 export type Node = {
   id: string
   name: string

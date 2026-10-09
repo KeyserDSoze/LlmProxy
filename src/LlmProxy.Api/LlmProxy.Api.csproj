@@ -3,6 +3,7 @@
     <ProjectReference Include="../LlmProxy.Domain/LlmProxy.Domain.csproj" />
     <ProjectReference Include="../LlmProxy.Application/LlmProxy.Application.csproj" />
     <ProjectReference Include="../LlmProxy.Infrastructure/LlmProxy.Infrastructure.csproj" />
+    <ProjectReference Include="../../tests/performance/LlmProxy.Benchmark/LlmProxy.Benchmark.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">

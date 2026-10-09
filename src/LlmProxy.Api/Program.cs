@@ -45,6 +45,7 @@ builder.Services.AddSingleton<AgentRelayHub>();
 builder.Services.AddTransient<AgentRelayHttpHandler>();
 builder.Services.AddSingleton<UpdateAgentClient>();
 builder.Services.AddHostedService<ProductAutoUpdateWorker>();
+builder.Services.AddHostedService<InferenceBenchmarkWorker>();
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
@@ -257,6 +258,7 @@ app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapNodeModelManagementEndpoints(entraEnabled);
 app.MapNodeEnrollmentEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
+app.MapInferenceBenchmarkAdminEndpoints(entraEnabled);
 app.MapUsageGovernanceEndpoints(entraEnabled);
 app.MapUserRateLimitAdminEndpoints(entraEnabled);
 app.MapUserTokenBudgetAdminEndpoints(entraEnabled);

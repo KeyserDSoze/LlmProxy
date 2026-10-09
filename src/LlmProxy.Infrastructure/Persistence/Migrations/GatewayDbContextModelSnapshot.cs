@@ -35,6 +35,27 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("audit_events");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.InferenceBenchmarkJob", b =>
+        {
+            b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<Guid>("DeploymentId").HasColumnType("uuid");
+            b.Property<string>("Status").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+            b.Property<DateTimeOffset>("RequestedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset?>("StartedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset?>("CompletedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<double>("MaxP95TtftMilliseconds").HasColumnType("double precision");
+            b.Property<double>("MinSuccessRatePercent").HasColumnType("double precision");
+            b.Property<string>("ReportJson").HasColumnType("text");
+            b.Property<string>("Error").HasMaxLength(1000).HasColumnType("character varying(1000)");
+            b.HasKey("Id");
+            b.HasIndex("Status");
+            b.HasIndex("DeploymentId", "RequestedAtUtc");
+            b.HasIndex("DeploymentId").IsUnique()
+                .HasDatabaseName("IX_inference_benchmark_jobs_ActiveDeployment")
+                .HasFilter("\"Status\" IN ('pending', 'running')");
+            b.ToTable("inference_benchmark_jobs");
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.NodeEnrollmentRecord", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
@@ -412,6 +433,15 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.HasKey("Id");
             b.HasIndex("ProcessedAtUtc", "NextAttemptAtUtc", "Id");
             b.ToTable("runtime_state_outbox");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.InferenceBenchmarkJob", b =>
+        {
+            b.HasOne("LlmProxy.Domain.Deployments.ModelDeployment", null)
+                .WithMany()
+                .HasForeignKey("DeploymentId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
         });
 
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>

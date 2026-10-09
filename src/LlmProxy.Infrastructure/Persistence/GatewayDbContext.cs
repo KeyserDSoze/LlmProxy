@@ -13,6 +13,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
 {
     public DbSet<InferenceNode> Nodes => Set<InferenceNode>();
     public DbSet<NodeEnrollmentRecord> NodeEnrollments => Set<NodeEnrollmentRecord>();
+    public DbSet<InferenceBenchmarkJob> BenchmarkJobs => Set<InferenceBenchmarkJob>();
     public DbSet<ModelDefinition> Models => Set<ModelDefinition>();
     public DbSet<ModelDeployment> Deployments => Set<ModelDeployment>();
     public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
@@ -35,6 +36,21 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<InferenceBenchmarkJob>(entity =>
+        {
+            entity.ToTable("inference_benchmark_jobs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Status).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.Error).HasMaxLength(1000);
+            entity.Property(x => x.ReportJson).HasColumnType("text");
+            entity.HasIndex(x => new { x.DeploymentId, x.RequestedAtUtc });
+            entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.DeploymentId).IsUnique()
+                .HasDatabaseName("IX_inference_benchmark_jobs_ActiveDeployment")
+                .HasFilter("\"Status\" IN ('pending', 'running')");
+            entity.HasOne<LlmProxy.Domain.Deployments.ModelDeployment>().WithMany()
+                .HasForeignKey(x => x.DeploymentId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<NodeEnrollmentRecord>(entity =>
         {
             entity.ToTable("node_enrollments");

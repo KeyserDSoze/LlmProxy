@@ -1,4 +1,4 @@
-import type { AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -187,6 +187,10 @@ export const api = {
   rotateApiCredential: (id: string) => request<CreatedApiCredential>('/api/admin/api-credentials/' + id + '/rotate', { method: 'POST' }),
   revealApiCredential: (id: string) => request<RevealedApiCredential>('/api/admin/api-credentials/' + id + '/secret'),
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' }),
+  benchmarkJobs: (deploymentId: string) =>
+    request<ManagedBenchmarkJob[]>(`/api/admin/benchmarks/deployments/${deploymentId}`),
+  startBenchmark: (deploymentId: string, body: { maxP95TtftMilliseconds: number; minSuccessRatePercent: number }) =>
+    request<ManagedBenchmarkJob>(`/api/admin/benchmarks/deployments/${deploymentId}`, { method: 'POST', body: JSON.stringify(body) }),
   modelManagementOverview: (nodeId: string) =>
     request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
   configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
