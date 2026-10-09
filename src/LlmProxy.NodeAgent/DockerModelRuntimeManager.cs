@@ -18,7 +18,7 @@ public sealed class DockerModelRuntimeManager(
         foreach (var row in rows)
         {
             var running = await IsRunningAsync(row, cancellationToken);
-            var status = running ? "running" : row.Status == "installing" ? "installing" : "stopped";
+            var status = running ? "running" : row.Status is "installing" or "error" ? row.Status : "stopped";
             states.Add(ToState(row, status, running ? RuntimeAddress(row.Port) : null));
         }
         return new ManagedModelsResponse(states);
@@ -30,18 +30,17 @@ public sealed class DockerModelRuntimeManager(
         await _operations.WaitAsync(cancellationToken);
         try
         {
-            var existing = (await registry.ReadAsync(cancellationToken)).FirstOrDefault(item =>
-                string.Equals(item.CatalogModelId, request.CatalogModelId, StringComparison.OrdinalIgnoreCase));
+            var rows = await registry.ReadAsync(cancellationToken);
+            var existing = ManagedRuntimeProfiles.FindMatchingInstallation(rows, request);
             if (existing is not null)
             {
-                if (!ManagedRuntimeProfiles.Matches(existing, request))
-                    throw new InvalidOperationException("This catalog model is already installed with a different runtime profile. Stop/remove its deployment before changing the profile.");
                 var running = await IsRunningAsync(existing, cancellationToken);
-                return ToState(existing, running ? "running" : "stopped", running ? RuntimeAddress(existing.Port) : null);
+                return ToState(existing, running ? "running" : existing.Status,
+                    running ? RuntimeAddress(existing.Port) : null);
             }
 
+            // A different runtime profile receives a distinct installation and port.
             Directory.CreateDirectory(options.ModelCacheDirectory);
-            var rows = await registry.ReadAsync(cancellationToken);
             var port = request.Port ?? AllocatePort(rows);
             if (rows.Any(item => item.Port == port))
                 throw new InvalidOperationException($"Port {port} is already assigned to another managed model.");

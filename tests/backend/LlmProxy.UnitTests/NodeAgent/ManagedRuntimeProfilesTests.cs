@@ -56,6 +56,21 @@ public sealed class ManagedRuntimeProfilesTests
     }
 
     [Fact]
+    public void One_catalog_supports_multiple_profiles_and_identical_reinstallation()
+    {
+        var first = new InstallRequest("qwen3-4b", "Qwen/Qwen3-4B", null, 1, [], "vllm", 1, 8192);
+        var second = first with { MaxNumSeqs = 12 };
+        var rows = new[] {
+            ToRecord(first) with { InstallationId = "first", Port = 18000 },
+            ToRecord(second) with { InstallationId = "second", Port = 18001 }
+        };
+        Assert.Equal("first", ManagedRuntimeProfiles.FindMatchingInstallation(rows, first)?.InstallationId);
+        Assert.Equal("second", ManagedRuntimeProfiles.FindMatchingInstallation(rows, second)?.InstallationId);
+        Assert.Null(ManagedRuntimeProfiles.FindMatchingInstallation(rows, first with { MaxModelLen = 16384 }));
+        Assert.Null(ManagedRuntimeProfiles.FindMatchingInstallation(rows, second with { Port = 18002 }));
+    }
+
+    [Fact]
     public void Same_model_different_profile_cannot_be_silently_reused()
     {
         var baseline = new InstallRequest("qwen3-4b", "Qwen/Qwen3-4B", null, 1, [], "vllm", 1, 8192);

@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Multi-instance managed deployment — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
+
+The Agent supports several configurations of the same catalog checkpoint with different container IDs and ports; gateway registration keys on the managed installation ID. Filtered PostgreSQL uniqueness preserves manual-deployment deduplication and allows multiple managed profiles under the same physical node. Migration and metadata/profile tests added; real hardware validation and exact SHA CI still required. Physical Redis admission remains node aggregate, not multiplied by profile count.
+
+
 ## Benchmark SLO capacity evidence — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
 
 Benchmark CLI now rejects sweeps with fewer requests than declared concurrency and offers optional p95 TTFT, success-rate and per-slot throughput-proxy SLOs. JSON/console output includes advisory recommendations with per-level reasons and minimum sample requirements; no live capacity is changed. Synthetic unit tests added. Real hardware/A-B quantized throughput results remain pending.

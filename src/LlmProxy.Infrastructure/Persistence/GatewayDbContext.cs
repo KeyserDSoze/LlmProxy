@@ -66,7 +66,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.UpstreamBearerTokenCiphertext).HasMaxLength(4096);
             entity.Property(x => x.CatalogModelId).HasMaxLength(200);
             entity.Property(x => x.ManagedInstallationId).HasMaxLength(300);
-            entity.HasIndex(x => new { x.NodeId, x.ModelId }).IsUnique();
+            entity.HasIndex(x => new { x.NodeId, x.ModelId }).IsUnique().HasFilter("\"ManagedInstallationId\" IS NULL");
+            entity.HasIndex(x => new { x.NodeId, x.ManagedInstallationId }).IsUnique().HasFilter("\"ManagedInstallationId\" IS NOT NULL");
             entity.HasOne<InferenceNode>().WithMany().HasForeignKey(x => x.NodeId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<ModelDefinition>().WithMany().HasForeignKey(x => x.ModelId).OnDelete(DeleteBehavior.Cascade);
         });

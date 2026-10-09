@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Multiple managed inference configurations of one model on a single physical node, with distinct container/deployment IDs and a PostgreSQL migration using filtered unique indexes. Shared physical-node capacity remains enforced.
+
 - Managed inference deployments support vLLM execution profiles (`maxNumSeqs`, context, KV cache auto/FP8 and CPU offload), official Qwen3 AWQ 4-bit checkpoint entries and experimental llama.cpp (GGUF) / SGLang runtime profiles through the Node Agent. Admin installation records the selected profile and rejects conflicting reinstalls; existing vLLM defaults and gateway routing contract are preserved. Other runtimes require real-device acceptance before production routing.
 - Benchmark harness can evaluate explicitly configured p95 TTFT, success-rate and throughput-per-slot proxy SLOs, returning sample-size-aware advisory capacity candidates and per-level reasons in JSON. Live physical/deployment concurrency limits remain operator-controlled; no 12-concurrent-user improvement is claimed without measured evidence.
 

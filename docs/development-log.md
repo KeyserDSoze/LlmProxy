@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-09 — Multi-instance managed inference profiles — IMPLEMENTED / VALIDATION PENDING
+
+- Added identity-based idempotency for installations so distinct runtime profiles no longer conflict on catalog ID.
+- Gateway now registers managed deployments by actual installation ID, not just node/model.
+- Added PostgreSQL partial unique indexes preserving unmanaged node/model uniqueness and managed node/installation uniqueness, with guarded downgrade.
+- Added focused tests and documented shared physical node admission. Hardware concurrency still requires benchmark evidence.
+
+
 ## 2026-10-09 — Capacity SLO evaluator — IMPLEMENTED / VALIDATION PENDING
 
 - Prevented invalid concurrency tests with fewer request samples than target simultaneous slots.

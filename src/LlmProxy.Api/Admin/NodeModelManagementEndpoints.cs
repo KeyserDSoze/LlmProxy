@@ -170,12 +170,16 @@ public static class NodeModelManagementEndpoints
                 }
 
                 var deployment = await dbContext.Deployments.SingleOrDefaultAsync(
-                    item => item.NodeId == node.Id && item.ModelId == model.Id,
+                    item => item.NodeId == node.Id && item.ManagedInstallationId == state.InstallationId,
                     cancellationToken);
                 if (deployment is null)
                 {
                     deployment = new ModelDeployment(node.Id, model.Id);
                     dbContext.Deployments.Add(deployment);
+                }
+                else if (deployment.ModelId != model.Id)
+                {
+                    return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
                 }
 
                 deployment.ConfigureRuntime(state.RuntimeBaseAddress, descriptor.Id, state.InstallationId);

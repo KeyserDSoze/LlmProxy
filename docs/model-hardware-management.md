@@ -191,3 +191,11 @@ The catalog now includes the official `Qwen/Qwen3-4B-AWQ` and `Qwen/Qwen3-8B-AWQ
 The image can be configured via `NodeAgent__SglangDockerImage` (default `lmsysorg/sglang:latest`, **pin to a tested digest** before rollout). The vLLM `kvCacheDtype` and `cpuOffloadGiB` fields are explicitly not applied to SGLang. SGLang telemetry does not yet feed the vLLM-specific runtime-pressure parser; routing relies on common queue/load and gateway capacity signals until a dedicated metrics adapter is tested.
 
 Suggested baseline matrix: Qwen3 4B BF16 vLLM vs AWQ vLLM vs AWQ SGLang vs Q4_K_M GGUF llama.cpp. Test 1,2,4,8,12,16 concurrent requests with identical input/output token profiles; record aggregate output tokens/s, per-request token/s, p95 TTFT, OOM, batch behavior and KV cache. Do not infer 12 concurrent users just from `maxNumSeqs=12`.
+
+### Multiple runtime profiles per model/node (2026-10-09)
+
+An installation is idempotent for the exact catalog model, runtime, checkpoint, runtime flags and (if supplied) explicit port. Different profiles use separate installation IDs, ports and Docker containers, and the gateway registers distinct deployment IDs. Every deployment still consumes the **same physical node capacity lease**: this does not multiply GPU capacity and concurrent models can exhaust VRAM.
+
+Migration `20261009223000_AllowManagedDeploymentProfiles` changes the PostgreSQL uniqueness constraint: manual/unmanaged deployments remain unique for (NodeId, ModelId), while managed deployments are unique per (NodeId, ManagedInstallationId). Existing installations survive unchanged. Downgrading is refused if multiple profiles would violate the old constraint.
+
+Two variants may share the same logical model only if they expose the same provider model identifier. Different checkpoint/model identifiers should have different logical aliases until per-deployment provider-model overrides are supported. Stop, start and remove operate on distinct installation IDs; do not assume a configured `maxNumSeqs` number is a sustainable user count.

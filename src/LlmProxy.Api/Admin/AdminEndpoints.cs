@@ -348,6 +348,11 @@ public static class AdminEndpoints
                 return Results.BadRequest(new { error = "NodeId and ModelId must reference existing entities." });
             }
 
+            if (await dbContext.Deployments.AnyAsync(x =>
+                    x.NodeId == request.NodeId && x.ModelId == request.ModelId && x.ManagedInstallationId == null,
+                    cancellationToken))
+                return Results.Conflict(new { error = "manual_deployment_already_exists" });
+
             var deployment = new ModelDeployment(request.NodeId, request.ModelId, request.Weight, request.MaxConcurrency);
             if (!string.IsNullOrWhiteSpace(request.RuntimeBaseAddress))
             {

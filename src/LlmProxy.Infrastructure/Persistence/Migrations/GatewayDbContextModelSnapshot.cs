@@ -55,7 +55,8 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Weight").HasColumnType("integer");
             b.HasKey("Id");
             b.HasIndex("ModelId");
-            b.HasIndex("NodeId", "ModelId").IsUnique();
+            b.HasIndex("NodeId", "ModelId").IsUnique().HasFilter("\"ManagedInstallationId\" IS NULL");
+            b.HasIndex("NodeId", "ManagedInstallationId").IsUnique().HasFilter("\"ManagedInstallationId\" IS NOT NULL");
             b.ToTable("deployments");
         });
 

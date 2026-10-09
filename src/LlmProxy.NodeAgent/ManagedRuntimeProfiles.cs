@@ -42,6 +42,12 @@ public static class ManagedRuntimeProfiles
         }
     }
 
+    public static ManagedModelRecord? FindMatchingInstallation(IReadOnlyList<ManagedModelRecord> rows, InstallRequest request) =>
+        rows.FirstOrDefault(record =>
+            string.Equals(record.CatalogModelId, request.CatalogModelId.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            Matches(record, request) &&
+            (request.Port is null || record.Port == request.Port));
+
     public static bool Matches(ManagedModelRecord record, InstallRequest request) =>
         record.Runtime == request.Runtime &&
         record.ProviderModelName == request.ProviderModelName.Trim() &&
