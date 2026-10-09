@@ -556,7 +556,7 @@ export type UserUsageSummary = {
 
 
 export type DeployableModel = {
-  runtime?: 'vllm' | 'llama.cpp'
+  runtime?: 'vllm' | 'llama.cpp' | 'sglang'
   id: string
   displayName: string
   providerModelName: string

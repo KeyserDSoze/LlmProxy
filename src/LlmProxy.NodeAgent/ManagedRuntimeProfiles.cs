@@ -12,8 +12,8 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
         if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)
             throw new ArgumentException("providerModelName is required and must be at most 300 characters.");
-        if (request.Runtime is not ("vllm" or "llama.cpp"))
-            throw new ArgumentException("Unsupported runtime. Only vllm and llama.cpp are managed.");
+        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang"))
+            throw new ArgumentException("Unsupported runtime. Only vllm, llama.cpp and sglang are managed.");
         if (request.TensorParallelSize < 1 || request.TensorParallelSize > 64)
             throw new ArgumentOutOfRangeException(nameof(request.TensorParallelSize));
         if (request.Port is < 1024 or > 65535)
@@ -29,6 +29,8 @@ public static class ManagedRuntimeProfiles
         if (request.CpuOffloadGiB is < 0 or > 1024 or double.NaN or double.PositiveInfinity or double.NegativeInfinity)
             throw new ArgumentOutOfRangeException(nameof(request.CpuOffloadGiB));
 
+        if (request.Runtime == "sglang" && (request.KvCacheDtype is not null || request.CpuOffloadGiB is not null))
+            throw new ArgumentException("vLLM-only KV cache and CPU weight offload flags are not supported for SGLang.");
         if (request.Runtime == "llama.cpp")
         {
             if (request.TensorParallelSize != 1)
@@ -51,7 +53,12 @@ public static class ManagedRuntimeProfiles
         record.ExtraArguments.SequenceEqual(request.ExtraArguments ?? []);
 
     public static string Image(ManagedModelRecord record, NodeAgentOptions options) =>
-        record.Runtime == "llama.cpp" ? options.LlamaCppDockerImage : options.DockerImage;
+        record.Runtime switch
+        {
+            "llama.cpp" => options.LlamaCppDockerImage,
+            "sglang" => options.SglangDockerImage,
+            _ => options.DockerImage
+        };
 
     public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options)
     {
@@ -63,6 +70,14 @@ public static class ManagedRuntimeProfiles
             if (options.UseNvidiaGpus) args.AddRange(["--n-gpu-layers", "-1"]);
             if (record.MaxNumSeqs is int parallel) args.AddRange(["--parallel", parallel.ToString(CultureInfo.InvariantCulture)]);
             if (record.MaxModelLen is int context) args.AddRange(["--ctx-size", context.ToString(CultureInfo.InvariantCulture)]);
+        }
+        else if (record.Runtime == "sglang")
+        {
+            args.AddRange(["python3", "-m", "sglang.launch_server", "--model-path", record.ProviderModelName,
+                "--host", "0.0.0.0", "--port", "30000", "--tp-size",
+                record.TensorParallelSize.ToString(CultureInfo.InvariantCulture), "--enable-metrics"]);
+            if (record.MaxNumSeqs is int parallel) args.AddRange(["--max-running-requests", parallel.ToString(CultureInfo.InvariantCulture)]);
+            if (record.MaxModelLen is int context) args.AddRange(["--context-length", context.ToString(CultureInfo.InvariantCulture)]);
         }
         else
         {

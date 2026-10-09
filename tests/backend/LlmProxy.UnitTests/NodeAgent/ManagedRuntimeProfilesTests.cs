@@ -32,9 +32,23 @@ public sealed class ManagedRuntimeProfilesTests
         Assert.DoesNotContain("--tensor-parallel-size", args);
     }
 
+    [Fact]
+    public void Sglang_profile_uses_server_compatible_flags()
+    {
+        var request = new InstallRequest("awq-sglang", "Qwen/Qwen3-4B-AWQ", null, 1, [], "sglang", 12, 8192);
+        ManagedRuntimeProfiles.Validate(request);
+        var args = ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()).ToArray();
+        Assert.Contains("sglang.launch_server", args);
+        Assert.Contains("--max-running-requests", args);
+        Assert.Contains("--context-length", args);
+        Assert.Contains("--enable-metrics", args);
+        Assert.DoesNotContain("--max-num-seqs", args);
+    }
+
     [Theory]
     [InlineData("airllm", "ggml-org/Qwen3-4B-GGUF:Q4_K_M", null)]
     [InlineData("llama.cpp", "Qwen/Qwen3-4B", "fp8")]
+    [InlineData("sglang", "Qwen/Qwen3-4B-AWQ", "fp8")]
     public void Invalid_profiles_are_rejected(string runtime, string model, string? kv)
     {
         var request = new InstallRequest("test", model, null, 1, [], runtime, 4, 8192, kv);
@@ -67,5 +81,5 @@ public sealed class ManagedRuntimeProfilesTests
 
     private static NodeAgentOptions Options() =>
         new(null, "docker", "vllm/vllm-openai:latest", "/tmp/state", "/tmp/models",
-            "localhost", 18000, true, true, 60, 20, "ghcr.io/ggml-org/llama.cpp:server-cuda");
+            "localhost", 18000, true, true, 60, 20, "ghcr.io/ggml-org/llama.cpp:server-cuda", "lmsysorg/sglang:latest");
 }

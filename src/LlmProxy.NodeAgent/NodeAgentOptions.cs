@@ -14,7 +14,8 @@ public sealed record NodeAgentOptions(
     bool PrefetchModels,
     int CommandTimeoutMinutes,
     int StartupTimeoutMinutes,
-    string LlamaCppDockerImage)
+    string LlamaCppDockerImage,
+    string SglangDockerImage)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -31,7 +32,8 @@ public sealed record NodeAgentOptions(
             ParseBool(section["PrefetchModels"], true),
             ParseInt(section["CommandTimeoutMinutes"], 60, 1, 360),
             ParseInt(section["StartupTimeoutMinutes"], 20, 1, 120),
-            section["LlamaCppDockerImage"] ?? "ghcr.io/ggml-org/llama.cpp:server-cuda");
+            section["LlamaCppDockerImage"] ?? "ghcr.io/ggml-org/llama.cpp:server-cuda",
+            section["SglangDockerImage"] ?? "lmsysorg/sglang:latest");
     }
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>

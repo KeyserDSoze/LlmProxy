@@ -245,5 +245,5 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - IMPLEMENTED / VALIDATION PENDING: llama.cpp GGUF experimental managed engine, NVIDIA CUDA image and source checkpoint.
 - NEXT: real hardware direct-versus-gateway benchmarks with sustainable-concurrency SLO and measured capacity profile, not hypothetical user-count multipliers.
 - NEXT: multi-installation same-model/same-node schema and lifecycle (current agent explicitly refuses conflicting profiles).
-- NEXT: SGLang runtime adapter, separate metrics and OpenAI surface acceptance.
+- IMPLEMENTED / VALIDATION PENDING: initial SGLang managed Docker launch and curated AWQ pilot; NEXT: independent metrics parser, OpenAI Chat/Responses/SSE/tool-call compatibility and hardware acceptance.
 - RESEARCH: AirLLM layer/expert streaming with OpenAI HTTP shim and real end-to-end throughput/TTFT measurements before exposing deployment choices.

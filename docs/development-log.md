@@ -4,7 +4,8 @@
 
 - Extended Node Agent to select vLLM or llama.cpp container/entrypoint and runtime-specific port/cache/flags without changing public OpenAI routing contracts.
 - Added safe typed controls for sequence capacity, context, vLLM KV cache precision and CPU offload, with validation and recorded installation profiles.
-- Added experimental ggml-org Qwen3 4B Q4_K_M GGUF catalog entry, admin install modal and runtime/profile visibility.
+- Added experimental ggml-org Qwen3 4B Q4_K_M GGUF catalog entry and official Qwen3 AWQ INT4 vLLM reference checkpoints, admin install modal and runtime/profile visibility.
+- Added SGLang container launcher/profile as a third experimental runtime with a curated Qwen3 AWQ pilot checkpoint; no production-serving claim without hardware verification.
 - Existing same-model installations reject conflicting profiles instead of silently ignoring requested settings.
 - Added targeted unit tests and operator documentation. CI/hardware validation pending; no 12-user throughput claim.
 

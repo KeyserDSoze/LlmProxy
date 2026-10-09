@@ -66,7 +66,7 @@ public sealed class DockerModelRuntimeManager(
             try
             {
                 await RequireDockerAsync(["pull", ManagedRuntimeProfiles.Image(record, options)], cancellationToken);
-                if (options.PrefetchModels && record.Runtime == "vllm")
+                if (options.PrefetchModels && record.Runtime != "llama.cpp")
                 {
                     var script = $"from huggingface_hub import snapshot_download; snapshot_download({JsonSerializer.Serialize(record.ProviderModelName)})";
                     await RequireDockerAsync(
@@ -116,7 +116,7 @@ public sealed class DockerModelRuntimeManager(
             args.Add("-v");
             args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
             args.Add("-p");
-            args.Add($"{record.Port}:{(record.Runtime == "llama.cpp" ? 8080 : 8000)}");
+            args.Add($"{record.Port}:{(record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000)}");
             args.Add(ManagedRuntimeProfiles.Image(record, options));
             args.AddRange(ManagedRuntimeProfiles.Arguments(record, options));
 
