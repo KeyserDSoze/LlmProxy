@@ -113,7 +113,7 @@ export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; la
 export type ManagedBenchmarkJob = {
   id: string
   deploymentId: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   requestedAtUtc: string
   startedAtUtc?: string | null
   completedAtUtc?: string | null
