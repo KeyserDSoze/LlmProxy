@@ -20,6 +20,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Linux Agent install and update scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n distribution/connect-node.sh
+          bash -n distribution/install-node-agent.sh
+          bash -n distribution/update-node-agent.sh
+          test -f distribution/llmproxy-node-agent.service
+          grep -q "sha256sum -c" distribution/connect-node.sh
+          grep -q "sha256sum -c" distribution/update-node-agent.sh
+          grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
+
       - name: Validate source and automatic release versioning
         shell: bash
         run: |
