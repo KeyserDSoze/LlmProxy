@@ -147,17 +147,20 @@ jobs:
               continue
             fi
 
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" "$SOURCE_SHA" -m "LlmProxy $VERSION"
-
-            PUSH_URL="https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-            if git push "$PUSH_URL" "refs/tags/$TAG"; then
+            # A tag points to an already-existing validated main commit. Git push
+            # with a GitHub App token can be denied if its history modifies workflows
+            # even though no workflow file is changed here. Use Git's REST object
+            # and ref APIs with this workflow's contents:write GITHUB_TOKEN instead.
+            TAG_OBJECT_SHA="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+              -f "tag=$TAG" -f "message=LlmProxy $VERSION" \
+              -f "object=$SOURCE_SHA" -f "type=commit" --jq '.sha')"
+            if [[ "$TAG_OBJECT_SHA" =~ ^[0-9a-f]{40}$ ]] &&
+               gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                 -f "ref=refs/tags/$TAG" -f "sha=$TAG_OBJECT_SHA" >/dev/null; then
               CREATED=true
               break
             fi
-
-            git tag -d "$TAG" >/dev/null 2>&1 || true
+            # GitHub rejects duplicate refs; the next loop allocates the next unused tag.
             sleep 1
           done
 
