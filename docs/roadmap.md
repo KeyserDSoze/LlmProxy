@@ -251,3 +251,8 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - IMPLEMENTED / VALIDATION PENDING: benchmark SLO evaluator proposing candidate concurrency from measured evidence; still requires controlled live hardware repetitions and operator approval.
 
 - IMPLEMENTED / VALIDATION PENDING: per-deployment vLLM/SGLang/llama.cpp telemetry normalized for the Admin; do not feed scheduler until benchmark evidence.
+
+- [x] Admin one-time Agent invitations, verified installer, registration, heartbeat and outbound WebSocket relay (CI/target-host acceptance pending).
+- [ ] Multi-replica Agent transport backplane with session ownership/forwarding that does not persist plaintext inference data.
+- [ ] Real remote WSS SSE resilience, tool-calling and load acceptance.
+- [ ] Agent self-update, fully Admin-run benchmark jobs and prerequisite validation/remediation.

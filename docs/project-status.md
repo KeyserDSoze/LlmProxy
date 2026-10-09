@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Auto-enrollment and outbound reverse inference transport — IMPLEMENTED / VALIDATION IN PROGRESS (2026-10-09)
+
+The Admin pairing wizard can generate a single-use, expiring enrollment code and an immutable release checksum-verified one-line Linux Agent installer. The Agent self-registers, persists a credential locally, heartbeats with inventory, and creates its own authenticated WebSocket for remote management and byte-preserving SSE inference even across unrelated networks/NAT. Existing direct management remains available. Agent connectivity is separate from model health. CI and real-host acceptance remain required; the current relay is gateway-replica-local, not HA or multi-replica routing.
+
+
 ## Benchmark SSE completion integrity — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
 
 Benchmark streaming success now requires a terminal SSE marker or Responses completion event; premature EOF and explicit failures are counted in the error breakdown, not as successful requests. Synthetic HTTP handler tests added. This closes a false-positive path in concurrency recommendations. Target-hardware acceptance and exact-head CI pending.

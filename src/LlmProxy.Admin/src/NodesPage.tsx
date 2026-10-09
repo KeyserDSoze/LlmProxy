@@ -13,7 +13,11 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [pairedNodes, setPairedNodes] = useState<PairedNodeStatus[]>([])
   useEffect(() => {
     let alive = true
-    const poll = () => { void api.pairedAgentNodes().then(rows => { if (alive) setPairedNodes(rows) }).catch(() => {}) }
+    const poll = () => { void api.pairedAgentNodes().then(rows => {
+      if (!alive) return
+      setPairedNodes(rows)
+      if (rows.some(pair => !nodes.some(node => node.id === pair.nodeId))) void refresh()
+    }).catch(() => {}) }
     poll()
     const timer = window.setInterval(poll, 10000)
     return () => { alive = false; window.clearInterval(timer) }

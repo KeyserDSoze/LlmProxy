@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Self-service Linux Node Agent pairing in Infrastructure: short-lived one-use invitations, checksum-verified installer, automatic discovery/heartbeats, plus outbound WSS management and SSE inference transport for machines outside the gateway network. Requires one gateway replica for this initial relay and real host acceptance before HA/production use.
+
 - Benchmark SSE integrity checks: interrupted streams and explicit Responses errors now count as failures rather than successful requests, preventing inflated concurrency claims.
 
 - Infrastructure model install dialog accepts logical alias and optional host port; each running installation provides a copyable direct benchmark command without changing production capacity limits.

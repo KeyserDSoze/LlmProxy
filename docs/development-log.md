@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-09 — Agent auto-pairing / reverse WSS relay — VALIDATION IN PROGRESS
+
+- Added Admin Linux pairing wizard and one-use 30-minute invitations with per-Agent credentials, a 10-second heartbeat and inventory snapshots.
+- Added checksum-verified Linux release installer that generates a local bearer and requires no subsequent manual edit for gateway pairing.
+- Added Agent-initiated authenticated WebSocket tunnel and HTTP/SSE multiplexing for managed runtime and Agent management operations; local port/path allowlist prevents general remote shell behavior.
+- Added provider-neutral virtual runtime routes handled by a named HttpClient delegate for OpenAI, health, model management and metrics calls.
+- The Agent reports connected status independently from inference health. Only the gateway replica that owns a socket can currently forward requests; live cross-network acceptance pending.
+
+
 ## 2026-10-09 — Benchmark SSE terminal verification — IMPLEMENTED / VALIDATION PENDING
 
 - Streaming benchmark runner no longer treats HTTP 200 plus partial SSE data as successful inference.
