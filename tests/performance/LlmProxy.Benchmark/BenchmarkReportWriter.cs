@@ -117,6 +117,15 @@ public static class BenchmarkConsoleWriter
             Console.WriteLine(
                 $"{level.Concurrency,5} | {level.Succeeded,2}/{level.Attempted,-5} | {level.SuccessRatePercent,6:0.0}% | {level.RequestsPerSecond,5:0.00} | {Format(level.P50TtftMilliseconds),8} | {Format(level.P95TtftMilliseconds),8} | {Format(level.P95DurationMilliseconds),12} | {FormatRate(level.OutputTokensPerSecond),8}");
         }
+
+        if (report.Recommendation is { } recommendation)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"Capacity candidate: {recommendation.RecommendedMaxConcurrency?.ToString() ?? "none"}");
+            Console.WriteLine(recommendation.Summary);
+            foreach (var item in recommendation.Levels)
+                Console.WriteLine($"  {item.Concurrency,3} concurrent: {(item.Pass ? "PASS" : "FAIL")} — {item.Reason}");
+        }
     }
 
     private static string Format(double? value) => value is null ? "—" : $"{value.Value:0} ms";

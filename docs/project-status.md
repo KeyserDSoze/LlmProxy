@@ -1,5 +1,9 @@
 # Project status / handover snapshot
 
+## Benchmark SLO capacity evidence — IMPLEMENTED / VALIDATION PENDING (2026-10-09)
+
+Benchmark CLI now rejects sweeps with fewer requests than declared concurrency and offers optional p95 TTFT, success-rate and per-slot throughput-proxy SLOs. JSON/console output includes advisory recommendations with per-level reasons and minimum sample requirements; no live capacity is changed. Synthetic unit tests added. Real hardware/A-B quantized throughput results remain pending.
+
 ## Multi-runtime deployment profiles — IMPLEMENTED / CI VALIDATION PENDING (2026-10-09)
 
 Added managed vLLM execution controls (max simultaneous sequences, context, KV FP8/auto, CPU weight offload), official AWQ quantized vLLM checkpoints, and experimental llama.cpp GGUF plus SGLang runtimes in the Node Agent. Catalog, admin deployment dialog and persisted agent installation metadata carry runtime-specific profiles. The existing default vLLM lifecycle remains the baseline. New Node Agent unit coverage validates profiles. Actual inference hardware benchmark evidence, llama.cpp end-to-end smoke and exact-main CI are pending; AirLLM remains research work, not implemented. SGLang HTTP feature compatibility and telemetry require real hardware acceptance.

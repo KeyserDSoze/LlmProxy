@@ -25,6 +25,31 @@ public sealed class BenchmarkOptionsTests
     }
 
     [Fact]
+    public void Parse_rejects_unexercised_concurrency_levels()
+    {
+        var error = Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(new[]
+        {
+            "--target", "http://localhost:8080", "--model", "agic-code", "--concurrency", "1,12",
+            "--requests", "10"
+        }));
+        Assert.Contains("--requests", error.Message);
+    }
+
+    [Fact]
+    public void Parse_accepts_latency_and_token_slo()
+    {
+        var options = BenchmarkOptions.Parse(new[]
+        {
+            "--target", "http://localhost:8080", "--model", "agic-code", "--concurrency", "1,12",
+            "--requests", "30", "--max-p95-ttft-ms", "5000",
+            "--min-output-tps-per-slot", "10", "--min-success-percent", "99"
+        });
+        Assert.Equal(5000, options.MaxP95TtftMilliseconds);
+        Assert.Equal(10, options.MinOutputTokensPerSecondPerSlot);
+        Assert.Equal(99, options.MinSuccessRatePercent);
+    }
+
+    [Fact]
     public void Parse_rejects_target_with_embedded_credentials()
     {
         var exception = Assert.Throws<ArgumentException>(() => BenchmarkOptions.Parse(new[]

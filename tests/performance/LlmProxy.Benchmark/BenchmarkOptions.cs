@@ -26,6 +26,9 @@ public sealed class BenchmarkOptions
     public string Prompt { get; init; } = DefaultSyntheticPrompt;
     public string PromptLabel { get; init; } = "synthetic-coding-v1";
     public string? ApiKeyEnvironmentVariable { get; init; }
+    public double? MaxP95TtftMilliseconds { get; init; }
+    public double MinSuccessRatePercent { get; init; } = 99;
+    public double? MinOutputTokensPerSecondPerSlot { get; init; }
 
     public static string HelpText => """
 LlmProxy benchmark harness
@@ -47,6 +50,9 @@ Optional:
   --prompt-label <label>         Safe report label. Default: synthetic-coding-v1/custom
   --api-key-env <ENV_NAME>       Read bearer token from this environment variable
   --output-dir <path>            Default: benchmark-results
+  --max-p95-ttft-ms <n>          Optional latency SLO to calculate a provisional capacity recommendation
+  --min-success-percent <n>      Required success rate for SLO. Default: 99
+  --min-output-tps-per-slot <n>   Optional minimum average output TPS / configured concurrent slot
   --help                         Show this help
 
 The harness never writes the prompt body or bearer token to JSON/CSV output.
@@ -58,7 +64,7 @@ The harness never writes the prompt body or bearer token to JSON/CSV output.
         {
             "--target", "--model", "--surface", "--stream", "--concurrency", "--requests", "--warmup",
             "--max-output-tokens", "--timeout-seconds", "--level-delay-seconds", "--prompt-file", "--prompt-label",
-            "--api-key-env", "--output-dir"
+            "--api-key-env", "--output-dir", "--max-p95-ttft-ms", "--min-success-percent", "--min-output-tps-per-slot"
         };
 
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -110,6 +116,15 @@ The harness never writes the prompt body or bearer token to JSON/CSV output.
         var maxOutputTokens = ParseInt(Get(values, "--max-output-tokens", "128"), "--max-output-tokens", 1, 65_536);
         var timeoutSeconds = ParseInt(Get(values, "--timeout-seconds", "120"), "--timeout-seconds", 1, 3_600);
         var delaySeconds = ParseInt(Get(values, "--level-delay-seconds", "2"), "--level-delay-seconds", 0, 300);
+        if (requests < concurrency.Max())
+            throw new ArgumentException("--requests must be at least the maximum --concurrency level so every requested slot can be exercised.");
+
+        var maxP95TtftMs = values.TryGetValue("--max-p95-ttft-ms", out var p95Text)
+            ? ParseDouble(p95Text, "--max-p95-ttft-ms", 1, 300000) : (double?)null;
+        var minSuccess = ParseDouble(Get(values, "--min-success-percent", "99"), "--min-success-percent", 0, 100);
+        var minOutputTps = values.TryGetValue("--min-output-tps-per-slot", out var outputText)
+            ? ParseDouble(outputText, "--min-output-tps-per-slot", 0.01, 100000) : (double?)null;
+
         var outputDirectory = Get(values, "--output-dir", "benchmark-results").Trim();
         if (outputDirectory.Length == 0)
         {
@@ -152,7 +167,10 @@ The harness never writes the prompt body or bearer token to JSON/CSV output.
             OutputDirectory = outputDirectory,
             Prompt = prompt,
             PromptLabel = promptLabel,
-            ApiKeyEnvironmentVariable = apiKeyEnvironmentVariable
+            ApiKeyEnvironmentVariable = apiKeyEnvironmentVariable,
+            MaxP95TtftMilliseconds = maxP95TtftMs,
+            MinSuccessRatePercent = minSuccess,
+            MinOutputTokensPerSecondPerSlot = minOutputTps
         };
     }
 
@@ -176,6 +194,14 @@ The harness never writes the prompt body or bearer token to JSON/CSV output.
             throw new ArgumentException($"{key} must be an integer between {minimum} and {maximum}.");
         }
 
+        return parsed;
+    }
+
+    private static double ParseDouble(string value, string key, double minimum, double maximum)
+    {
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+            !double.IsFinite(parsed) || parsed < minimum || parsed > maximum)
+            throw new ArgumentException($"{key} must be between {minimum} and {maximum}.");
         return parsed;
     }
 

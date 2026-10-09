@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-09 — Capacity SLO evaluator — IMPLEMENTED / VALIDATION PENDING
+
+- Prevented invalid concurrency tests with fewer request samples than target simultaneous slots.
+- Added explicit TTFT/success/per-slot aggregate TPS proxy SLO flags and a minimum-sample evaluator in existing benchmark harness.
+- Added provisional capacity recommendation and per-level rejection reasons to JSON/console evidence; no autonomous physical limit updates.
+- Added focused unit coverage; hardware tests are still required before applying capacities.
+
+
 ## 2026-10-09 — Managed inference runtime profiles and GGUF pilot — IMPLEMENTED / VALIDATION PENDING
 
 - Extended Node Agent to select vLLM or llama.cpp container/entrypoint and runtime-specific port/cache/flags without changing public OpenAI routing contracts.

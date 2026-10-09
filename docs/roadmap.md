@@ -247,3 +247,5 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - NEXT: multi-installation same-model/same-node schema and lifecycle (current agent explicitly refuses conflicting profiles).
 - IMPLEMENTED / VALIDATION PENDING: initial SGLang managed Docker launch and curated AWQ pilot; NEXT: independent metrics parser, OpenAI Chat/Responses/SSE/tool-call compatibility and hardware acceptance.
 - RESEARCH: AirLLM layer/expert streaming with OpenAI HTTP shim and real end-to-end throughput/TTFT measurements before exposing deployment choices.
+
+- IMPLEMENTED / VALIDATION PENDING: benchmark SLO evaluator proposing candidate concurrency from measured evidence; still requires controlled live hardware repetitions and operator approval.

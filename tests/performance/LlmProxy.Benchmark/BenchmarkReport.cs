@@ -13,7 +13,20 @@ public sealed record BenchmarkReport(
     int MaxOutputTokens,
     string PromptLabel,
     int PromptCharacters,
-    IReadOnlyList<BenchmarkLevelReport> Levels);
+    IReadOnlyList<BenchmarkLevelReport> Levels)
+{
+    public BenchmarkCapacityRecommendation? Recommendation { get; init; }
+}
+
+public sealed record BenchmarkCapacityRecommendation(
+    int? RecommendedMaxConcurrency,
+    double MinimumSuccessRatePercent,
+    double? MaximumP95TtftMilliseconds,
+    double? MinimumOutputTokensPerSecondPerSlot,
+    IReadOnlyList<BenchmarkCapacityDecision> Levels,
+    string Summary);
+
+public sealed record BenchmarkCapacityDecision(int Concurrency, bool Pass, string Reason);
 
 public sealed record BenchmarkLevelReport(
     int Concurrency,

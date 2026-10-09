@@ -141,3 +141,20 @@ Hardware telemetry remains observational until a repeatable benchmark demonstrat
 CI must compile the benchmark console and execute its unit tests, including option validation, endpoint composition, percentile math and OpenAI usage/SSE-event parsing. CI must **not** run an actual load sweep against a remote or production endpoint.
 
 Real benchmark runs are environment acceptance/performance activities and should be executed deliberately from the target network or a dedicated self-hosted runner once that environment is available.
+
+## Evidence-based candidate recommendation (2026-10-09)
+
+To evaluate a tentative interactive capacity automatically, pass an explicit latency SLO and (if runtime token usage is available) a per-slot output throughput floor:
+
+```bash
+dotnet run --project tests/performance/LlmProxy.Benchmark -- \
+  --target http://localhost:8080 --model agic-code \
+  --api-key-env LLMPROXY_API_KEY --stream true \
+  --concurrency 1,2,4,8,12,16 --requests 40 --warmup 3 \
+  --max-output-tokens 128 --max-p95-ttft-ms 5000 \
+  --min-success-percent 99 --min-output-tps-per-slot 10
+```
+
+A request count smaller than the maximum concurrency is now rejected: it would not exercise the advertised number of simultaneous slots. To mark a level as passing, the evaluator also requires at least max(20, 2 × concurrency) attempted requests, the configured success rate, p95 TTFT and, when selected, aggregate output token/s divided by configured concurrency. The last is only a *conservative capacity proxy*, **not** a measured per-user decoding speed distribution. If a runtime does not report usage tokens, no per-slot TPS claim is made.
+
+The serialized JSON includes the optional `recommendation` section with each level's pass/fail and reasons, plus the largest consecutively passing concurrency. This is **advisory**, not a production capacity guarantee or an automatic change of LLMProxy node/deployment limits. Repeat tests (and direct vs gateway) on identical model, hardware, quantization and realistic prompt/context profiles, then save the evidence manually in the Capacity Profile admin UI.

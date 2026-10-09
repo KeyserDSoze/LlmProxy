@@ -38,7 +38,7 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
             levels.Add(await RunLevelAsync(endpoint, options, bearerToken, options.ConcurrencyLevels[levelIndex], cancellationToken));
         }
 
-        return new BenchmarkReport(
+        var report = new BenchmarkReport(
             runId,
             startedAt,
             DateTimeOffset.UtcNow,
@@ -52,6 +52,7 @@ public sealed class BenchmarkRunner(HttpClient httpClient)
             options.PromptLabel,
             options.Prompt.Length,
             levels);
+        return report with { Recommendation = BenchmarkCapacityEvaluator.Evaluate(report, options) };
     }
 
     private async Task<BenchmarkLevelReport> RunLevelAsync(
