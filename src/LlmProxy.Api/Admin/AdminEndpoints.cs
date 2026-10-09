@@ -271,6 +271,7 @@ public static class AdminEndpoints
             Guid id,
             GatewayDbContext dbContext,
             IRequestLoadTracker loadTracker,
+            LlmProxy.Api.AgentConnectivity.AgentRelayHub relay,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
@@ -299,6 +300,8 @@ public static class AdminEndpoints
             }
 
             dbContext.Deployments.RemoveRange(deployments);
+            dbContext.NodeEnrollments.RemoveRange(await dbContext.NodeEnrollments
+                .Where(x => x.NodeId == id).ToListAsync(cancellationToken));
             dbContext.Nodes.Remove(node);
             AddAudit(dbContext, httpContext, "node.delete", "node", node.Id.ToString(), new
             {
@@ -306,6 +309,7 @@ public static class AdminEndpoints
                 deploymentCount = deployments.Count
             });
             await dbContext.SaveChangesAsync(cancellationToken);
+            relay.Disconnect(id);
             return Results.NoContent();
         });
 

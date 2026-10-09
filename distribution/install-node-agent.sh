@@ -32,6 +32,12 @@ if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; 
   sed -i "s|^NodeAgent__GatewayBaseAddress=.*|NodeAgent__GatewayBaseAddress=${LLMPROXY_GATEWAY_URL}|" /etc/llmproxy/node-agent.env
   sed -i "s|^NodeAgent__EnrollmentToken=.*|NodeAgent__EnrollmentToken=${LLMPROXY_ENROLLMENT_TOKEN}|" /etc/llmproxy/node-agent.env
   sed -i "s|^NodeAgent__ConnectionMode=.*|NodeAgent__ConnectionMode=${LLMPROXY_CONNECTION_MODE:-outbound}|" /etc/llmproxy/node-agent.env
+  if [[ "${LLMPROXY_CONNECTION_MODE:-outbound}" == "outbound" ]]; then
+    # The reverse channel needs loopback Agent HTTP only. Never expose management on the WAN.
+    sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://127.0.0.1:9900|' /etc/llmproxy/node-agent.env
+  else
+    sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://0.0.0.0:9900|' /etc/llmproxy/node-agent.env
+  fi
   if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env; then
     generated_bearer="$(openssl rand -hex 32)"
     sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/${generated_bearer}/" /etc/llmproxy/node-agent.env
