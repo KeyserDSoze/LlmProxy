@@ -381,9 +381,35 @@ done
 catalog_id="$(curl --fail --silent http://127.0.0.1:8081/api/admin/model-management/catalog | jq -r '.[0].id')"
 [[ -n "$catalog_id" && "$catalog_id" != null ]] ||
   fail_with_diagnostics "No curated model exists for Agent SSE relay smoke."
-installed="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
-  -d '{"force":true,"maxNumSeqs":2}' \
-  "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/models/$catalog_id/install")"
+# The Agent tunnel has only just been paired and is relayed over Redis.
+# Capture the exact HTTP status and a safe error code instead of stopping at
+# curl exit 22 with no explanation. Retry only transient relay failures.
+installed=""
+install_succeeded=false
+for attempt in {1..8}; do
+  install_status="$(curl --silent --show-error \
+    --output /tmp/llmproxy-remote-install.json --write-out '%{http_code}' \
+    -X POST -H 'Content-Type: application/json' \
+    -d '{"force":true,"maxNumSeqs":2}' \
+    "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/models/$catalog_id/install" || true)"
+  if [[ "$install_status" == "200" ]] &&
+     jq -e '.deployment.id != null' /tmp/llmproxy-remote-install.json >/dev/null 2>&1; then
+    installed="$(cat /tmp/llmproxy-remote-install.json)"
+    install_succeeded=true
+    break
+  fi
+  # Only log the HTTP status and response error type, not raw upstream
+  # responses (which might contain secrets in other scenarios).
+  install_error="$(jq -r '.error.code // .error // .title // .status // "unknown_error" | tostring' \
+    /tmp/llmproxy-remote-install.json 2>/dev/null | head -c 160 || true)"
+  echo "Remote Agent install attempt $attempt: HTTP ${install_status:-unreachable}, reason=${install_error:-invalid_response}" >&2
+  case "$install_status" in
+    000|502|503|504) [[ "$attempt" -lt 8 ]] && sleep 2 ;;
+    *) break ;;
+  esac
+done
+[[ "$install_succeeded" == "true" ]] ||
+  fail_with_diagnostics "Cross-replica model installation failed; see HTTP status and error type above."
 deployment_id="$(echo "$installed" | jq -r '.deployment.id')"
 [[ -n "$deployment_id" && "$deployment_id" != null ]] ||
   fail_with_diagnostics "Cross-replica model installation over Agent relay did not register."
