@@ -617,6 +617,9 @@ export type GpuInventory = {
   driverVersion?: string | null
   computeCapability?: string | null
   memoryType?: 'dedicated' | 'unified' | 'unknown'
+  utilizationPercent?: number | null
+  temperatureCelsius?: number | null
+  powerWatts?: number | null
 }
 
 export type HardwareInventory = {
@@ -624,6 +627,7 @@ export type HardwareInventory = {
   operatingSystem?: string | null
   architecture?: string | null
   cpuLogicalCores: number
+  cpuUtilizationPercent?: number | null
   systemMemoryTotalGiB: number
   systemMemoryAvailableGiB: number
   diskTotalGiB: number
