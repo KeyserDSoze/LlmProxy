@@ -91,7 +91,7 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
                     ["--query-gpu=name,memory.total,memory.free,driver_version", "--format=csv,noheader,nounits"],
                     TimeSpan.FromSeconds(8),
                     cancellationToken);
-            var parsed = result.Success ? ParseNvidiaSmiCsv(result.StandardOutput) : [];
+            IReadOnlyList<GpuInventory> parsed = result.Success ? ParseNvidiaSmiCsv(result.StandardOutput) : [];
             if (parsed.Count == 0)
             {
                 // Query GPU discovery can fail on driver/version combinations.
