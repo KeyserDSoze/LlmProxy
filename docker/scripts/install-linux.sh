@@ -611,6 +611,25 @@ prepare_environment() {
   fi
   if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then set_env_value CLOUDFLARE_TUNNEL_TOKEN "$CLOUDFLARE_TUNNEL_TOKEN"; fi
 
+  # Protected first-install flow optionally chooses host port mappings before
+  # invoking the privileged bootstrap. Updates do not set these values and
+  # therefore preserve the operator's existing port selection.
+  local host_port_name requested_host_port
+  for host_port_name in LLMPROXY_PORT GRAFANA_PORT; do
+    requested_host_port="${!host_port_name:-}"
+    if [[ -z "$requested_host_port" ]]; then continue; fi
+    if [[ ! "$requested_host_port" =~ ^[1-9][0-9]{0,4}$ ]] ||
+        (( 10#$requested_host_port > 65535 )); then
+      echo "Invalid requested $host_port_name: expected TCP port 1-65535." >&2
+      exit 9
+    fi
+    set_env_value "$host_port_name" "$requested_host_port"
+  done
+  if [[ "$(read_env_value LLMPROXY_PORT)" == "$(read_env_value GRAFANA_PORT)" ]]; then
+    echo "LLMPROXY_PORT and GRAFANA_PORT must be different host ports." >&2
+    exit 9
+  fi
+
   if [[ -n "$(read_env_value CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
     set_env_value REVERSE_PROXY_ENABLED true
     # New publicly tunneled installations must not expose an unnecessary public LAN listener.

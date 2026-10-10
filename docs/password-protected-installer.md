@@ -29,8 +29,28 @@ curl -fsSL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/test
 ```
 
 Prompts for the password interactively using `/dev/tty`, decrypts the
-release-pinned encrypted script, downloads and verifies the official immutable
-bootstrap and installs the complete LLMProxy Docker/systemd stack.
+release-pinned encrypted script, then presents a **first-install-only port
+selection** for Grafana (default TCP host port `3000`) and the LLMProxy
+gateway (default TCP host port `8080`). **Enter** accepts the displayed
+default; type another available port to use it instead. Port conflicts
+are reported before deployment. On an interrupted first install, previously
+chosen values in `/opt/llmproxy/.env` become the new defaults.
+Already-installed hosts and the update command never prompt and retain
+their current ports. Port selections are explicitly handed across `sudo`
+and written to the persistent private environment file.
+
+Changing only the **host** LLMProxy port does **not** change the container's
+internal port: the bundled Cloudflare Tunnel normally still connects to
+`http://llmproxy:8080`. Only change Cloudflare's origin if you have explicitly
+configured it to connect through the host port instead.
+
+The bootstrap installs just the **LLMProxy control plane** (gateway/API,
+Admin UI, PostgreSQL, Redis, Grafana and observability, and optionally the
+Cloudflare Tunnel). It does **not** install inference engines, any LLM model
+weights, or a GPU runtime. With zero GPU/LLM hosts configured it sets
+`BOOTSTRAP_ENABLED=false`, starts with an empty model catalog and lets
+administrators later pair Linux hardware and deploy models from Admin.
+The installer verifies the pinned official bootstrap before executing it.
 
 ### Safe update of an existing installation (one Linux command)
 

@@ -63,14 +63,27 @@ persist_protected_environment() {
   local target="$1"
   (
     umask 077
-    declare -p ENTRA_ENABLED ENTRA_TENANT_ID ENTRA_CLIENT_ID \
-      ENTRA_SUPER_ADMINS ENTRA_CLIENT_SECRET CLOUDFLARE_TUNNEL_TOKEN > "$target"
+    {
+      declare -p ENTRA_ENABLED ENTRA_TENANT_ID ENTRA_CLIENT_ID \
+        ENTRA_SUPER_ADMINS ENTRA_CLIENT_SECRET CLOUDFLARE_TUNNEL_TOKEN
+      # Only the initial-install wizard exports these optional host port
+      # overrides. Updates must not reset existing port selections.
+      for optional in LLMPROXY_PORT GRAFANA_PORT; do
+        if [[ "${!optional+x}" == x ]]; then
+          declare -p "$optional"
+        fi
+      done
+    } > "$target"
   )
   chmod 0600 "$target"
 }
 ''')
 
 if action == "install":
+    # The first-install wizard must be included inside the encrypted payload.
+    # The unauthenticated launcher and the update artifact never prompt for ports.
+    from pathlib import Path
+    print(Path("distribution/first-install-port-selection.sh").read_text(encoding="utf-8"))
     print(r'''
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
