@@ -47,6 +47,21 @@ jobs:
           cmp distribution/llmproxy.service <(tar -xOf "$release_archive" llmproxy-9.8.7/distribution/llmproxy.service)
           tar -tzf "$release_archive" | grep -Fx 'llmproxy-9.8.7/distribution/llmproxyctl' >/dev/null
           tar -tzf "$release_archive" | grep -Fx 'llmproxy-9.8.7/distribution/bootstrap.sh' >/dev/null
+          # Exercise the same large archive layout used in the publication
+          # workflow. An early-exiting grep -q under pipefail previously sent
+          # SIGPIPE to tar and falsely reported a missing systemd unit.
+          mkdir -p "$release_fixture/mock-agents"
+          dd if=/dev/urandom of="$release_fixture/mock-agents/x64" bs=1048576 count=2 status=none
+          dd if=/dev/urandom of="$release_fixture/mock-agents/arm64" bs=1048576 count=2 status=none
+          UPDATE_AGENT_X64_BINARY="$release_fixture/mock-agents/x64" \
+          UPDATE_AGENT_ARM64_BINARY="$release_fixture/mock-agents/arm64" \
+            bash distribution/build-release-bundle.sh 9.8.8 "$release_fixture"
+          tar -tzf "$release_fixture/llmproxy-9.8.8-linux.tar.gz" \
+            > "$release_fixture/large-archive-contents.txt"
+          grep -Fx 'llmproxy-9.8.8/distribution/llmproxy.service' \
+            "$release_fixture/large-archive-contents.txt" >/dev/null
+          grep -Fx 'llmproxy-9.8.8/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent' \
+            "$release_fixture/large-archive-contents.txt" >/dev/null
           grep -F 'set_env_value BOOTSTRAP_ENABLED false' docker/scripts/install-linux.sh
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
