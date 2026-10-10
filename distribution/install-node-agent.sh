@@ -117,12 +117,12 @@ if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env || grep -
   echo
   echo "Node agent installed but NOT started."
   echo "Edit /etc/llmproxy/node-agent.env: set a long random bearer and the address reachable from LlmProxy."
-  echo "Then run: systemctl enable llmproxy-node-agent
-# Reload an already-active Agent so repair/bootstrap configuration is applied.
-systemctl restart llmproxy-node-agent"
+  echo "Then run: systemctl enable --now llmproxy-node-agent"
   exit 0
 fi
 
-systemctl enable --now llmproxy-node-agent
+systemctl enable llmproxy-node-agent
+# Reload an active service so a recovered/reinstalled binary and settings are used.
+systemctl restart llmproxy-node-agent
 echo "LlmProxy Node Agent installed and started."
 systemctl --no-pager --full status llmproxy-node-agent || true
