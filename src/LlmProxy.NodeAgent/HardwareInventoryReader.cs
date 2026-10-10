@@ -4,11 +4,14 @@ namespace LlmProxy.NodeAgent;
 
 public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRunner runner)
 {
+    private readonly object _cpuLock = new();
+    private (long Total, long Idle)? _lastCpuSample;
     public async Task<HardwareInventory> ReadAsync(CancellationToken cancellationToken)
     {
         var (memoryTotal, memoryAvailable) = ReadMemory();
         var drive = ResolveDrive(options.DataDirectory);
         var gpus = await ReadGpusAsync(cancellationToken);
+        var cpuUtilization = ReadCpuUtilization();
         var docker = await TryDockerVersionAsync(cancellationToken);
         var issues = new List<string>();
         var dockerReady = docker is not null && await IsCommandAvailableAsync(options.DockerExecutable,
@@ -43,7 +46,8 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
             gpus,
             "docker",
             docker,
-            readiness);
+            readiness,
+            cpuUtilization);
     }
 
     private static (long TotalBytes, long AvailableBytes) ReadMemory()
@@ -87,7 +91,15 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
                     ["--query-gpu=name,memory.total,memory.free,driver_version", "--format=csv,noheader,nounits"],
                     TimeSpan.FromSeconds(8),
                     cancellationToken);
-            return result.Success ? ParseNvidiaSmiCsv(result.StandardOutput) : [];
+            var parsed = result.Success ? ParseNvidiaSmiCsv(result.StandardOutput) : [];
+            if (parsed.Count == 0)
+            {
+                // Query GPU discovery can fail on driver/version combinations.
+                // Count devices using the driver-supported inventory output instead.
+                var list = await runner.RunAsync("nvidia-smi", ["-L"], TimeSpan.FromSeconds(8), cancellationToken);
+                if (list.Success) parsed = ParseNvidiaSmiList(list.StandardOutput);
+            }
+            return parsed.Count == 0 ? parsed : await AttachGpuTelemetryAsync(parsed, cancellationToken);
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException)
         {
@@ -120,6 +132,81 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
                 memoryType));
         }
         return rows;
+    }
+
+    public static IReadOnlyList<GpuInventory> ParseNvidiaSmiList(string output)
+    {
+        var rows = new List<GpuInventory>();
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // nvidia-smi -L: GPU 0: NVIDIA GB10 (UUID: GPU-...)
+            var match = System.Text.RegularExpressions.Regex.Match(line,
+                @"^GPU\s+\d+:\s+(?<name>.+?)\s+\(UUID:", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                var name = match.Groups["name"].Value.Trim();
+                rows.Add(new GpuInventory(name, 0, 0, null, null,
+                    name.Contains("GB10", StringComparison.OrdinalIgnoreCase) ? "unified" : "unknown"));
+            }
+        }
+        return rows;
+    }
+
+    private async Task<IReadOnlyList<GpuInventory>> AttachGpuTelemetryAsync(
+        IReadOnlyList<GpuInventory> rows, CancellationToken token)
+    {
+        try
+        {
+            var response = await runner.RunAsync("nvidia-smi",
+                ["--query-gpu=utilization.gpu,temperature.gpu,power.draw", "--format=csv,noheader,nounits"],
+                TimeSpan.FromSeconds(8), token);
+            if (!response.Success) return rows;
+            var lines = response.StandardOutput.Split('\n',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (lines.Length != rows.Count) return rows;
+            var result = new List<GpuInventory>(rows.Count);
+            for (var index = 0; index < rows.Count; index++)
+            {
+                var parts = lines[index].Split(',', StringSplitOptions.TrimEntries);
+                static double? Read(string? value) =>
+                    double.TryParse(value, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var measured)
+                        && double.IsFinite(measured) && measured >= 0 ? measured : null;
+                result.Add(rows[index] with
+                {
+                    UtilizationPercent = parts.Length > 0 ? Read(parts[0]) : null,
+                    TemperatureCelsius = parts.Length > 1 ? Read(parts[1]) : null,
+                    PowerWatts = parts.Length > 2 ? Read(parts[2]) : null
+                });
+            }
+            return result;
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException)
+        { return rows; }
+    }
+
+    private double? ReadCpuUtilization()
+    {
+        try
+        {
+            var line = File.ReadLines("/proc/stat").FirstOrDefault();
+            if (line is null || !line.StartsWith("cpu ", StringComparison.Ordinal)) return null;
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).ToArray();
+            if (parts.Length < 5) return null;
+            var values = parts.Select(long.Parse).ToArray();
+            var total = values.Sum();
+            var idle = values[3] + values[4];
+            lock (_cpuLock)
+            {
+                var previous = _lastCpuSample;
+                _lastCpuSample = (total, idle);
+                if (previous is null || total <= previous.Value.Total) return null;
+                return Math.Clamp(100d * (1d - (idle - previous.Value.Idle) /
+                    (double)(total - previous.Value.Total)), 0, 100);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or FormatException or OverflowException)
+        { return null; }
     }
 
     private static bool HasNvidiaPciDevice()
