@@ -181,7 +181,11 @@ public static class NodeEnrollmentEndpoints
             record.HardwareInventoryJson = request.Inventory.GetRawText();
             record.AgentVersion = request.AgentVersion;
             record.AgentUpdateStatus = request.AgentUpdateStatus;
-            if (record.DesiredAgentVersion == request.AgentVersion)
+            // A failed upgrade requires a new explicit Admin action; never keep
+            // restarting a working Linux node in an automatic retry loop.
+            if (record.DesiredAgentVersion == request.AgentVersion ||
+                record.DesiredAgentVersion is string desired &&
+                request.AgentUpdateStatus == "failed:" + desired)
                 record.DesiredAgentVersion = null;
             await db.SaveChangesAsync(token);
             return Results.Ok(new { status = "connected", desiredAgentVersion = record.DesiredAgentVersion });
