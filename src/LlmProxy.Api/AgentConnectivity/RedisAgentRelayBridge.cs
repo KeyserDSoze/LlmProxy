@@ -140,6 +140,29 @@ public sealed class RedisAgentRelayBridge(
             if (frame?.Id != id || frame.NodeId != nodeId) return;
             switch (frame.Type)
             {
+                // Management endpoints return bounded JSON (not SSE). A single
+                // encrypted Redis frame carries its headers and entire body
+                // atomically so independent subscription callbacks cannot mark
+                // the stream complete before its JSON chunk becomes readable.
+                case "complete":
+                    try
+                    {
+                        var data = Convert.FromBase64String(frame.Body ?? string.Empty);
+                        if (data.Length > MaxRequestBytes)
+                        {
+                            pending.Fail(new IOException("Remote Agent management response exceeds 4 MiB."));
+                            break;
+                        }
+                        if (data.Length > 0 && !pending.Chunks.Writer.TryWrite(data))
+                        {
+                            pending.Fail(new IOException("Remote Agent management response was not accepted."));
+                            break;
+                        }
+                        pending.Chunks.Writer.TryComplete();
+                        pending.Headers.TrySetResult(frame);
+                    }
+                    catch (FormatException e) { pending.Fail(new IOException("Invalid remote Agent JSON frame.", e)); }
+                    break;
                 case "headers": pending.Headers.TrySetResult(frame); break;
                 case "chunk" when frame.Body is not null:
                     try
@@ -208,6 +231,28 @@ public sealed class RedisAgentRelayBridge(
                 request.Headers.TryAddWithoutValidation("Authorization", frame.Authorization);
             }
             using var response = await local.SendAsync(frame.NodeId, request, lifetime.Token);
+            // Admin JSON responses must be atomic across the Redis relay. The
+            // separate headers/chunk/done path below stays unchanged for
+            // inference streaming under /runtime/.
+            if (path.StartsWith("/management/", StringComparison.Ordinal))
+            {
+                await using var managementStream = await response.Content.ReadAsStreamAsync(lifetime.Token);
+                using var boundedBody = new MemoryStream();
+                var managementBuffer = new byte[16384];
+                int read;
+                while ((read = await managementStream.ReadAsync(managementBuffer.AsMemory(), lifetime.Token)) > 0)
+                {
+                    if (boundedBody.Length + read > MaxRequestBytes)
+                        throw new InvalidDataException("Remote Agent management response exceeds 4 MiB.");
+                    await boundedBody.WriteAsync(managementBuffer.AsMemory(0, read), lifetime.Token);
+                }
+                await PublishAsync(new Frame("complete", frame.NodeId, frame.Id,
+                    ContentType: response.Content.Headers.ContentType?.ToString(),
+                    Body: Convert.ToBase64String(boundedBody.GetBuffer(), 0, (int)boundedBody.Length),
+                    Status: (int)response.StatusCode), frame.Reply!);
+                return;
+            }
+
             await PublishAsync(new Frame("headers", frame.NodeId, frame.Id, Status: (int)response.StatusCode,
                 ContentType: response.Content.Headers.ContentType?.ToString()), frame.Reply!);
             await using var stream = await response.Content.ReadAsStreamAsync(lifetime.Token);
