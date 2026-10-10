@@ -119,7 +119,7 @@ jobs:
             --decrypt "$tmp/test-update.install.sh.gpg" \
             3<<<"$PASSWORD"
           bash -n "$tmp/decrypted-update.sh"
-          grep -F 'llmproxyctl update "$VERSION"' "$tmp/decrypted-update.sh" >/dev/null
+          grep -F '"$LLMPROXYCTL" update "$VERSION"' "$tmp/decrypted-update.sh" >/dev/null
           grep -F 'export ENTRA_CLIENT_SECRET=' "$tmp/decrypted-update.sh" >/dev/null
           grep -F 'VERSION=9.8.7' "$tmp/decrypted-update.sh" >/dev/null
           # Execute the decrypted update against a harmless fake ctl/sudo.
