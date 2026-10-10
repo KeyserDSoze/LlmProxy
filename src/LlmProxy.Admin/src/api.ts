@@ -1,4 +1,4 @@
-import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -51,6 +51,10 @@ export const api = {
   agentDownloads: () => request<AgentDownloads>('/api/admin/node-enrollment/downloads'),
   createAgentInvitation: () => request<AgentPairingInvitation>('/api/admin/node-enrollment/invitations', { method: 'POST' }),
   pairedAgentNodes: () => request<PairedNodeStatus[]>('/api/admin/node-enrollment/nodes'),
+  revealAgentRecovery: (nodeId: string) => request<AgentRecoverySecret>(
+    `/api/admin/node-enrollment/nodes/${nodeId}/recovery/reveal`, { method: 'POST' }),
+  rotateAgentRecovery: (nodeId: string) => request<AgentRecoverySecret>(
+    `/api/admin/node-enrollment/nodes/${nodeId}/recovery/rotate`, { method: 'POST' }),
   updatePairedAgent: (nodeId: string, version?: string) =>
     request<{ desiredAgentVersion: string }>(`/api/admin/node-enrollment/nodes/${nodeId}/update`, {
       method: 'POST', body: JSON.stringify({ version: version ?? null })
