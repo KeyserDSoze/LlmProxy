@@ -183,7 +183,7 @@ public sealed class OutboundNodeConnectionWorker(
             if (lines[index].StartsWith("NodeAgent__EnrollmentToken=", StringComparison.Ordinal) ||
                 lines[index].StartsWith("NodeAgent__RecoveryToken=", StringComparison.Ordinal) ||
                 lines[index].StartsWith("NodeAgent__RecoveryNodeId=", StringComparison.Ordinal))
-                lines[index] = lines[index][..lines[index].IndexOf('=') + 1];
+                lines[index] = lines[index][..(lines[index].IndexOf('=') + 1)];
             if (lines[index].StartsWith("NodeAgent__ForceRecovery=", StringComparison.Ordinal))
                 lines[index] = "NodeAgent__ForceRecovery=false";
         }
@@ -206,9 +206,10 @@ public sealed class OutboundNodeConnectionWorker(
         var temp = _stateFile + ".tmp";
         var optionsForFile = new FileStreamOptions
         {
-            Mode = FileMode.Create, Access = FileAccess.Write,
-            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite
+            Mode = FileMode.Create, Access = FileAccess.Write
         };
+        if (OperatingSystem.IsLinux())
+            optionsForFile.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         await using (var stream = new FileStream(temp, optionsForFile))
             await JsonSerializer.SerializeAsync(stream, state, cancellationToken: token);
         if (OperatingSystem.IsLinux())
