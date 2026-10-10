@@ -62,6 +62,19 @@ install -m 0755 "$RELEASE_DIR/distribution/llmproxyctl" /usr/local/bin/llmproxyc
 install -d -m 0755 /usr/local/lib/llmproxy
 install -m 0755 "$RELEASE_DIR/distribution/bootstrap.sh" /usr/local/lib/llmproxy/bootstrap.sh
 
+# A dedicated systemd unit complements Docker's per-container restart policies.
+# The stack becomes manageable with systemctl and starts automatically after a reboot.
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+  unit="$RELEASE_DIR/distribution/llmproxy.service"
+  [[ -f "$unit" ]] || { echo "Missing LlmProxy systemd unit: $unit" >&2; exit 4; }
+  install -m 0644 "$unit" /etc/systemd/system/llmproxy.service
+  systemctl daemon-reload
+  systemctl enable --now llmproxy.service
+  release_log "Enabled llmproxy.service for automatic boot startup."
+else
+  release_log "No systemd detected: Docker's unless-stopped policies provide container startup on hosts with an enabled Docker daemon."
+fi
+
 printf '\nLlmProxy %s installed successfully.\n' "$VERSION"
 printf 'Control command: llmproxyctl\n'
 printf 'Persistent configuration: %s/.env\n' "$INSTALL_DIR"

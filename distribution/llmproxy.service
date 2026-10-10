@@ -1,0 +1,18 @@
+[Unit]
+Description=LLMProxy gateway, databases, observability and Cloudflare Tunnel
+Documentation=https://github.com/KeyserDSoze/LlmProxy
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/llmproxy
+ExecStart=/usr/local/bin/llmproxyctl start
+ExecStop=/usr/local/bin/llmproxyctl stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

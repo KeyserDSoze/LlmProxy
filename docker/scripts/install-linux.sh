@@ -552,6 +552,8 @@ prompt_required_value() {
 }
 
 prepare_environment() {
+  local NEW_ENVIRONMENT=false
+  [[ -f "$ENV_FILE" ]] || NEW_ENVIRONMENT=true
   install -d -m 0750 "$INSTALL_DIR" "$INSTALL_DIR/runtime" "$INSTALL_DIR/backups"
   if [[ "$CALLER_USER" != "root" ]]; then
     chown "$CALLER_USER:$CALLER_GROUP" "$INSTALL_DIR" "$INSTALL_DIR/runtime" "$INSTALL_DIR/backups"
@@ -609,6 +611,11 @@ prepare_environment() {
 
   if [[ -n "$(read_env_value CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
     set_env_value REVERSE_PROXY_ENABLED true
+    # New publicly tunneled installations must not expose an unnecessary public LAN listener.
+    if [[ "$NEW_ENVIRONMENT" == true ]]; then
+      set_env_value LLMPROXY_BIND_ADDRESS 127.0.0.1
+      log "Cloudflare Tunnel detected: public host listener restricted to 127.0.0.1."
+    fi
     if is_missing_env_value CLOUDFLARED_PROTOCOL; then
       set_env_value CLOUDFLARED_PROTOCOL http2
     fi
@@ -616,15 +623,29 @@ prepare_environment() {
   fi
 
   if [[ "$PREPARE_ONLY" != "true" ]]; then
-    prompt_required_value INFERENCE_NODE_BASE_ADDRESS "inference node/vLLM service root (for example http://10.0.0.21:8000)" || true
-    prompt_required_value PROVIDER_MODEL_NAME "Exact provider model id exposed by vLLM" || true
+    local node_missing=false model_missing=false
+    is_missing_env_value INFERENCE_NODE_BASE_ADDRESS && node_missing=true
+    is_missing_env_value PROVIDER_MODEL_NAME && model_missing=true
 
-    if is_missing_env_value INFERENCE_NODE_BASE_ADDRESS || is_missing_env_value PROVIDER_MODEL_NAME; then
-      cat >&2 <<EOF
-Production configuration still needs INFERENCE_NODE_BASE_ADDRESS and PROVIDER_MODEL_NAME.
-Edit $ENV_FILE or rerun with --node-url and --provider-model.
-EOF
+    if [[ "$node_missing" == true && "$model_missing" == true ]]; then
+      # Fresh control-plane installations can pair physical servers and deploy
+      # models from Admin after installation. Never bootstrap a fictitious node.
+      if [[ "$NEW_ENVIRONMENT" == true ]]; then
+        set_env_value BOOTSTRAP_ENABLED false
+        log "No inference host configured: starting with an empty model catalog. Pair a Linux Node Agent from Admin."
+      elif [[ "$(read_env_value BOOTSTRAP_ENABLED)" != "false" ]]; then
+        echo "Existing configuration expects an initial node, but both values are missing." >&2
+        echo "Set BOOTSTRAP_ENABLED=false in $ENV_FILE for intentional control-plane-only mode." >&2
+        exit 9
+      fi
+    elif [[ "$node_missing" != "$model_missing" ]]; then
+      echo "Specify both --node-url and --provider-model, or neither for an Agent-managed installation." >&2
       exit 9
+    else
+      # Preserve explicit node support for operators migrating older deployments.
+      if [[ "$NEW_ENVIRONMENT" == true ]]; then
+        set_env_value BOOTSTRAP_ENABLED true
+      fi
     fi
   fi
 
@@ -668,6 +689,10 @@ probe_url() {
 }
 
 check_dgx() {
+  if [[ "$(read_env_value BOOTSTRAP_ENABLED)" == "false" ]]; then
+    log "No initial inference node: Admin will onboard agents and models after gateway startup."
+    return 0
+  fi
   if [[ "$SKIP_NODE_CHECK" == "true" ]]; then
     warn "Skipping initial inference node/vLLM reachability check by request."
     return 0

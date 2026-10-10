@@ -266,6 +266,46 @@ This makes the same exact release consumable by conventional x86_64 Linux hosts 
 
 Repository CI still runs primarily on GitHub-hosted amd64 runners. A successful multi-architecture Buildx publication proves the ARM64 image builds, while real GPU inference hardware installation/runtime acceptance remains a target-environment acceptance step.
 
+## First installation with Cloudflare Tunnel and no existing model
+
+A new LLMProxy control plane can start with **no external inference server**. Its first-run installer now sets `BOOTSTRAP_ENABLED=false` when neither `--node-url` nor `--provider-model` is supplied. After signing into the Admin UI, pair Linux GPUs and install models from Infrastructure.
+
+Configure Microsoft Entra ID with a Web redirect URL matching the external hostname, e.g. `https://llmproxy.example.com/signin-oidc`. In Cloudflare Zero Trust, create a remotely managed tunnel, copy its **tunnel token**, and publish a hostname service of **HTTP** `http://llmproxy:8080`, reachable from the bundled Docker `cloudflared` container on the same Compose network. Do not configure the Cloudflare route to localhost inside the tunnel container.
+
+Before first install (replace placeholders, never paste real secrets into GitHub):
+
+```bash
+export ENTRA_ENABLED=true
+export ENTRA_TENANT_ID='TENANT_ID'
+export ENTRA_CLIENT_ID='CLIENT_ID'
+export ENTRA_CLIENT_SECRET='CLIENT_SECRET'
+export ENTRA_SUPER_ADMINS='admin@example.com'
+export CLOUDFLARE_TUNNEL_TOKEN='CLOUDFLARE_TUNNEL_TOKEN'
+```
+
+Download, verify and execute the versioned release bootstrap:
+
+```bash
+VERSION=0.2.21
+curl -fL https://github.com/KeyserDSoze/LlmProxy/releases/download/v${VERSION}/llmproxy-bootstrap.sh -o llmproxy-bootstrap.sh
+curl -fL https://github.com/KeyserDSoze/LlmProxy/releases/download/v${VERSION}/llmproxy-bootstrap.sh.sha256 -o llmproxy-bootstrap.sh.sha256
+sha256sum -c llmproxy-bootstrap.sh.sha256
+sudo -E bash llmproxy-bootstrap.sh --version "$VERSION" --non-interactive
+```
+
+Replace the example `VERSION` with an **actually published release that contains this feature**. Previous releases, including 0.2.20, still require an initial inference node for first installation. The bootstrap persists the Cloudflare token in the host-protected `/opt/llmproxy/.env` (do not store it in the shell command history). For fresh tunneled hosts, the installer sets `LLMPROXY_BIND_ADDRESS=127.0.0.1`; the tunnel originates internally at `llmproxy:8080`.
+
+The release installer also installs `llmproxy.service` and enables it in systemd when available. Docker already uses `restart: unless-stopped` on the gateway, database, Redis, observability and cloudflared containers. Both mechanisms recover after reboot:
+
+```bash
+sudo systemctl is-enabled docker llmproxy
+sudo systemctl status llmproxy
+llmproxyctl status
+llmproxyctl health
+```
+
+After public HTTPS and Entra login work, go to **Infrastructure → Fleet & access → Pair Linux agent**. This generates a 30-minute pairing invitation and a one-command installer for the remote GPU server. The Node Agent itself also registers as a systemd service, restarts automatically, and does not require re-pairing after reboot.
+
 ## Cloudflare Tunnel and Entra ID
 
 When the bundled `cloudflared` service is used, publish exactly one Cloudflare origin:

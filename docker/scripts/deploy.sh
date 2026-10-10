@@ -50,11 +50,17 @@ for required in \
   LLM_PROXY_API_KEY \
   LLM_PROXY_API_KEY_PEPPER \
   LLMPROXY_UPSTREAM_CREDENTIAL_KEY \
-  GRAFANA_ADMIN_PASSWORD \
-  INFERENCE_NODE_BASE_ADDRESS \
-  PROVIDER_MODEL_NAME; do
+  GRAFANA_ADMIN_PASSWORD; do
   require_env_value "$required"
 done
+
+# Pairing from Admin is the preferred flow for new installations.
+# Never silently create an unreachable placeholder inference deployment.
+BOOTSTRAP_MODE="$(read_env_value BOOTSTRAP_ENABLED | tr '[:upper:]' '[:lower:]')"
+if [[ "$BOOTSTRAP_MODE" != "false" ]]; then
+  require_env_value INFERENCE_NODE_BASE_ADDRESS
+  require_env_value PROVIDER_MODEL_NAME
+fi
 
 ASPNET_ENV="$(read_env_value ASPNETCORE_ENVIRONMENT)"
 if [[ "$ASPNET_ENV" != "Production" ]]; then

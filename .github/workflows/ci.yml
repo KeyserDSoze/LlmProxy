@@ -33,6 +33,10 @@ jobs:
           test -s distribution/airllm-runtime/Dockerfile
           grep -F 'distribution/airllm-runtime' .github/workflows/container.yml >/dev/null
           bash -n distribution/prepare-node-host.sh
+          test -f distribution/llmproxy.service
+          grep -Fx 'WantedBy=multi-user.target' distribution/llmproxy.service
+          grep -F 'systemctl enable --now llmproxy.service' distribution/install.sh
+          grep -F 'set_env_value BOOTSTRAP_ENABLED false' docker/scripts/install-linux.sh
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
           grep -q "sha256sum -c" distribution/update-node-agent.sh
@@ -311,6 +315,20 @@ jobs:
           LLMPROXY_ENV_FILE="$TMP_DIR/public.env" \
           LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
             bash docker/scripts/deploy.sh sha-ci-public
+
+          # An empty production control plane must validate without fictitious
+          # inference nodes, while the public Cloudflare deployment stays Entra-protected.
+          cp "$TMP_DIR/public.env" "$TMP_DIR/empty-models.env"
+          sed -i \
+            -e 's/^BOOTSTRAP_ENABLED=true$/BOOTSTRAP_ENABLED=false/' \
+            -e 's#^INFERENCE_NODE_BASE_ADDRESS=.*#INFERENCE_NODE_BASE_ADDRESS=#' \
+            -e 's/^PROVIDER_MODEL_NAME=.*/PROVIDER_MODEL_NAME=/' \
+            -e 's/^LLMPROXY_BIND_ADDRESS=.*/LLMPROXY_BIND_ADDRESS=127.0.0.1/' \
+            "$TMP_DIR/empty-models.env"
+          LLMPROXY_DEPLOY_DIR="$TMP_DIR/empty-model-runtime" \
+          LLMPROXY_ENV_FILE="$TMP_DIR/empty-models.env" \
+          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+            bash docker/scripts/deploy.sh sha-ci-empty-models
 
       - name: Environment acceptance harness smoke
         shell: bash
