@@ -24,8 +24,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Access to scoped deployment variables and secrets is deliberate: these
-    # values are only passed to the encryption step, never Docker build.
+    # All deployment values come from environment test Secrets, never Variables;
+    # only the encrypted installer generator receives those values.
     environment: test
     steps:
       - name: Checkout validated source
@@ -111,15 +111,15 @@ jobs:
             exit 4
           fi
 
-      - name: Verify protected test environment configuration and encrypt installer
+      - name: Verify protected test environment Secrets and encrypt install and update
         shell: bash
         env:
-          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
-          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
-          ENTRA_SUPER_ADMINS: ${{ vars.ENTRA_SUPER_ADMINS }}
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_SUPER_ADMINS: ${{ secrets.ENTRA_SUPER_ADMINS }}
           ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-          INSTALL_PASSWORD: ${{ secrets.password }}
+          PASSWORD: ${{ secrets.PASSWORD }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
@@ -129,6 +129,8 @@ jobs:
             cd dist
             sha256sum -c test.sh.sha256
             sha256sum -c test.install.sh.gpg.sha256
+            sha256sum -c test-update.sh.sha256
+            sha256sum -c test-update.install.sh.gpg.sha256
           )
 
       - name: Login to GHCR
@@ -358,7 +360,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             "dist/llmproxy-update-plan.json"             "dist/llmproxy-update-plan.json.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"             "dist/llmproxy-connect-node.sh"             "dist/llmproxy-connect-node.sh.sha256"             "dist/test.sh"             "dist/test.sh.sha256"             "dist/test.install.sh.gpg"             "dist/test.install.sh.gpg.sha256"             release-manifest.json
+          gh release create "$RELEASE_TAG"             --repo "$GITHUB_REPOSITORY"             --verify-tag             --title "LlmProxy $VERSION"             --generate-notes             "dist/llmproxy-$VERSION-linux.tar.gz"             "dist/llmproxy-$VERSION-linux.tar.gz.sha256"             "dist/llmproxy-bootstrap.sh"             "dist/llmproxy-bootstrap.sh.sha256"             "dist/llmproxy-update-plan.json"             "dist/llmproxy-update-plan.json.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-x64.tar.gz.sha256"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz"             "dist/llmproxy-node-agent-$VERSION-linux-arm64.tar.gz.sha256"             "dist/llmproxy-connect-node.sh"             "dist/llmproxy-connect-node.sh.sha256"             "dist/test.sh"             "dist/test.sh.sha256"             "dist/test.install.sh.gpg"             "dist/test.install.sh.gpg.sha256"             "dist/test-update.sh"             "dist/test-update.sh.sha256"             "dist/test-update.install.sh.gpg"             "dist/test-update.install.sh.gpg.sha256"             release-manifest.json
 
           {
             echo "### Immutable release published"

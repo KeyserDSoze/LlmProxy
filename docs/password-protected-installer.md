@@ -1,64 +1,78 @@
-# Password-protected single-command first install
+# Encrypted per-environment installation and update
 
-Every validated immutable release builds the protected **test** deployment
-assets in the **Publish container** reusable workflow job. The job uses the
-GitHub Actions environment `test`; ensure it exists **before** releasing.
+Every immutable LLMProxy release publishes password-protected **test**
+initial-install and update scripts, using the **test** GitHub Actions
+Environment. Configure the Environment *before* publication.
 
-Go to **GitHub → Settings → Environments → test** and create:
+Go to **GitHub → Settings → Environments → test → Environment secrets**.
+All six values are **Secrets** (do not create any Environment Variables):
 
-| GitHub Environment setting | Type | Name | Value |
-|---|---|---|---|
-| Variable | Variable | `ENTRA_TENANT_ID` | Microsoft Entra directory ID |
-| Variable | Variable | `ENTRA_CLIENT_ID` | Microsoft Entra application/client ID |
-| Variable | Variable | `ENTRA_SUPER_ADMINS` | Comma-separated admin email/UPN identifiers |
-| Secret | Secret | `ENTRA_CLIENT_SECRET` | Fresh Microsoft Entra client secret |
-| Secret | Secret | `CLOUDFLARE_TUNNEL_TOKEN` | Fresh token for the Cloudflare tunnel |
-| Secret | Secret | `password` | New, high-entropy install passphrase **at least 20 characters** |
+| GitHub Environment Secret name | Value |
+|---|---|
+| `ENTRA_TENANT_ID` | Microsoft Entra directory/tenant ID |
+| `ENTRA_CLIENT_ID` | Microsoft Entra application/client ID |
+| `ENTRA_SUPER_ADMINS` | Admin UPN/emails separated by commas **or** semicolons; `oid:GUID` also supported |
+| `ENTRA_CLIENT_SECRET` | Rotated Microsoft Entra application Client Secret |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Rotated dedicated Cloudflare Tunnel connector token |
+| `PASSWORD` | Strong random install/update decryption passphrase of at least 20 characters |
 
-`ENTRA_ENABLED=true` is fixed in the generated installer. The private keys are
-injected only into the asset encryption step through Actions step environment,
-never into Git or the Docker image. Release publication **fails closed** if
-required values are missing: no incomplete unprotected installer is published.
-Environment approval rules may delay release publication, by design.
-Rotate any previously posted or exposed secret before using this feature.
+The same `PASSWORD` decrypts both scripts for the **same release**.
+`ENTRA_ENABLED=true` is built in. Version comes from the immutable release
+tag. The release job refuses publication if a required Secret is missing.
+**Never commit or paste real credential values into logs or source code.**
+Rotate any credential pasted into chat previously before publication.
 
-Each release embeds its **exact** version into the two published public assets:
-
-- `test.sh`: unencrypted **credential-free** launcher. Fetches ciphertext,
-  validates its SHA-256, prompts interactively via `/dev/tty`, decrypts with
-  GnuPG, checks shell syntax and executes the decrypted script.
-- `test.install.sh.gpg`: password-encrypted installation script containing the
-  pinned version and necessary credentials. GnuPG uses AES-256 with
-  iterated SHA-512 S2K and a modification-detection check (MDC).
-- `test.sh.sha256` and `test.install.sh.gpg.sha256`: checksums.
-
-On a new Linux server (root/sudo access, outbound GitHub/Cloudflare network),
-run exactly:
+### New installation (one Linux command)
 
 ```bash
 curl -fsSL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/test.sh | bash
 ```
 
-The launcher asks `Password for environment test:` without echoing it.
-It downloads ciphertext **from the version embedded by that release**, verifies
-its checksum, decrypts to a root/user-private temporary folder, downloads and
-verifies the **same pinned version** of the official bootstrap script, and
-performs the non-interactive Linux install. Installation creates and enables
-`llmproxy.service` under systemd and runs Cloudflare Tunnel in Compose.
+Prompts for the password interactively using `/dev/tty`, decrypts the
+release-pinned encrypted script, downloads and verifies the official immutable
+bootstrap and installs the complete LLMProxy Docker/systemd stack.
 
-The plain bootstrap command remains available without environment settings.
-Do **not** use this public launcher to convey a short or reused password:
-a publicly downloadable encrypted asset enables offline password guessing.
-The GitHub sha256 file detects transport damage, but is **not a digital signature**
-and does not defend against an attacker who can replace both release assets.
-Limit who can publish releases and protect the `test` GitHub environment.
+### Safe update of an existing installation (one Linux command)
 
-The decrypted install script and password exist briefly in process memory
-and a `0700` temporary directory on the destination host. Root can always
-read running processes; on an untrusted host encryption at rest is not
-a substitute for host security.
+```bash
+curl -fsSL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/test-update.sh | bash
+```
 
-To refresh credentials **or** the install password, update environment secrets,
-publish a **new** version, and never overwrite older immutable release assets.
-Older publicly available encrypted payloads remain decryptable with their
-original password until GitHub removes those releases.
+Prompts for the **same GitHub Environment Secret `PASSWORD` that was used
+when publishing the latest release**. Decrypts the update payload and runs
+`sudo -E llmproxyctl update <release-version>` with the five deployment
+values exported. The built-in updater resolves and applies **all published
+intermediate releases**, runs migrations, preserves PostgreSQL/Redis volumes,
+model inventory and the existing application configuration, and writes changed
+Entra ID, Super Admin and Cloudflare Tunnel settings to the existing private
+`/opt/llmproxy/.env` through the normal Linux installer. Compose recreates
+affected containers; the Cloudflare service remains isolated to LLMProxy's own
+Compose project. The Node Agent/other Cloudflare tunnels are not removed.
+
+**Updating to an already installed release is supported**: invoking the
+update command with the same version re-applies its pinned environment
+Secrets and recreates containers, without skipping future migrations.
+
+**Secrets in published releases are immutable snapshots.** Changing GitHub
+Environment Secrets alone does *not* update any installed server or retroactively
+alter the latest GitHub Release. After changing any Secret, publish a **new
+version**, then run the update command. Old encrypted assets remain publicly
+available and decryptable with their own original password; rotate leaked
+tokens at their upstream providers and remove old release assets if required.
+
+### Published assets per release
+
+- `test.sh`, `test.sh.sha256`: publicly downloadable first-install launcher
+- `test.install.sh.gpg`, `test.install.sh.gpg.sha256`: AES-256 encrypted first-install payload
+- `test-update.sh`, `test-update.sh.sha256`: publicly downloadable update launcher
+- `test-update.install.sh.gpg`, `test-update.install.sh.gpg.sha256`: AES-256 encrypted update payload
+
+The launcher validates the ciphertext checksum, decrypts into a user-private
+temporary directory, checks Bash syntax and executes it. It never prints the
+password. GnuPG uses AES-256 and iterated SHA-512 S2K with MDC; an incorrect
+password fails before executing decrypted code. Checksums detect corruption
+but **are not independent digital signatures**. Restrict GitHub release
+write access and protect the `test` environment. A high-entropy passphrase
+is essential because public ciphertext permits offline password attempts.
+Protect the Linux host: privileged processes can access decrypted script
+contents and the resulting `0600` application environment file.

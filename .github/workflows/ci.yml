@@ -49,6 +49,9 @@ jobs:
           ! grep -E 'systemctl (stop|disable|restart) cloudflared|docker (stop|rm) cloudflared' docker/scripts/deploy.sh distribution/llmproxyctl distribution/install.sh
           grep -A4 '^  cloudflared:' docker/docker-compose.full.yml | grep -F 'restart: unless-stopped' >/dev/null
           grep -F 'test.install.sh.gpg' .github/workflows/container.yml >/dev/null
+          grep -F 'test-update.install.sh.gpg' .github/workflows/container.yml >/dev/null
+          grep -F 'secrets.PASSWORD' .github/workflows/container.yml >/dev/null
+          ! grep -F 'vars.ENTRA_' .github/workflows/container.yml
           grep -q "sha256sum -c" distribution/update-node-agent.sh
           grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
           grep -q "downloads/agent/version" distribution/connect-node.sh
@@ -71,7 +74,7 @@ jobs:
           ENTRA_SUPER_ADMINS: ci-admin@example.invalid
           ENTRA_CLIENT_SECRET: ci-fake-entra-client-secret
           CLOUDFLARE_TUNNEL_TOKEN: ci-fake-cloudflare-token
-          INSTALL_PASSWORD: ci-long-test-fixture-passphrase-not-a-production-secret
+          PASSWORD: ci-long-test-fixture-passphrase-not-a-production-secret
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
@@ -79,29 +82,52 @@ jobs:
           bash distribution/build-environment-installer.sh test 9.8.7 "$tmp"
           test -s "$tmp/test.sh"
           test -s "$tmp/test.install.sh.gpg"
+          test -s "$tmp/test-update.sh"
+          test -s "$tmp/test-update.install.sh.gpg"
           bash -n "$tmp/test.sh"
+          bash -n "$tmp/test-update.sh"
+          grep -F 'ACTION="update"' "$tmp/test-update.sh" >/dev/null
+          grep -F 'VERSION="9.8.7"' "$tmp/test-update.sh" >/dev/null
           (
             cd "$tmp"
             sha256sum -c test.sh.sha256
             sha256sum -c test.install.sh.gpg.sha256
+            sha256sum -c test-update.sh.sha256
+            sha256sum -c test-update.install.sh.gpg.sha256
           )
           # The ciphertext must not contain the plaintext canary.
-          if grep -aFq 'ci-fake-entra-client-secret' "$tmp/test.install.sh.gpg"; then
+          if grep -aFq 'ci-fake-entra-client-secret' "$tmp/test.install.sh.gpg" ||
+             grep -aFq 'ci-fake-entra-client-secret' "$tmp/test-update.install.sh.gpg"; then
             echo "Protected installer contains unencrypted credential." >&2
             exit 1
           fi
           gpg --batch --yes --quiet --pinentry-mode loopback \
             --passphrase-fd 3 --output "$tmp/decrypted.sh" \
             --decrypt "$tmp/test.install.sh.gpg" \
-            3<<<"$INSTALL_PASSWORD"
+            3<<<"$PASSWORD"
           bash -n "$tmp/decrypted.sh"
           grep -F 'VERSION=9.8.7' "$tmp/decrypted.sh" >/dev/null
           grep -F 'export ENTRA_CLIENT_SECRET=' "$tmp/decrypted.sh" >/dev/null
+          gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase-fd 3 --output "$tmp/decrypted-update.sh" \
+            --decrypt "$tmp/test-update.install.sh.gpg" \
+            3<<<"$PASSWORD"
+          bash -n "$tmp/decrypted-update.sh"
+          grep -F 'llmproxyctl update "$VERSION"' "$tmp/decrypted-update.sh" >/dev/null
+          grep -F 'export ENTRA_CLIENT_SECRET=' "$tmp/decrypted-update.sh" >/dev/null
+          grep -F 'VERSION=9.8.7' "$tmp/decrypted-update.sh" >/dev/null
           if gpg --batch --yes --quiet --pinentry-mode loopback \
             --passphrase-fd 3 --output "$tmp/wrong.sh" \
             --decrypt "$tmp/test.install.sh.gpg" \
             3<<<"incorrect-ci-passphrase" >/dev/null 2>&1; then
             echo "Wrong password unexpectedly decrypted installer." >&2
+            exit 1
+          fi
+          if gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase-fd 3 --output "$tmp/wrong-update.sh" \
+            --decrypt "$tmp/test-update.install.sh.gpg" \
+            3<<<"incorrect-ci-passphrase" >/dev/null 2>&1; then
+            echo "Wrong password unexpectedly decrypted update installer." >&2
             exit 1
           fi
 

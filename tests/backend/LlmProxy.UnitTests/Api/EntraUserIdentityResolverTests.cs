@@ -64,6 +64,27 @@ public sealed class EntraUserIdentityResolverTests
     }
 
     [Fact]
+    public async Task Configured_super_admin_comma_and_semicolon_lists_both_match()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EntraId:SuperAdmins"] = "first@example.com, second@example.com; third@example.com"
+            })
+            .Build();
+        var claims = new ClaimsIdentity([
+            new Claim("preferred_username", "second@example.com"),
+            new Claim("oid", "object-2")
+        ], authenticationType: "test");
+        var principal = new ClaimsPrincipal(claims);
+
+        var transformed = await new ConfiguredSuperAdminClaimsTransformation(configuration)
+            .TransformAsync(principal);
+
+        Assert.True(transformed.IsInRole("LlmProxy.Admin"));
+    }
+
+    [Fact]
     public async Task Configured_super_admin_matches_mapped_dotnet_name_claim()
     {
         var configuration = new ConfigurationBuilder()
