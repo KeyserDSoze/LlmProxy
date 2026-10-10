@@ -324,6 +324,10 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ci-full-grafana
         run: docker compose -f docker/docker-compose.full.yml config >/dev/null
 
+      - name: Verify other Cloudflare tunnels remain independent of LLMProxy
+        shell: bash
+        run: bash tests/backend/integration/cloudflare_tunnel_isolation_smoke.sh
+
       - name: Validate Linux production deployment path
         shell: bash
         run: |
