@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
-import type { AgentDownloads, AgentPairingInvitation, Node, NodeConnectionTest, PairedNodeStatus } from './types'
+import type { AgentDownloads, AgentPairingInvitation, AgentRecoverySecret, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
 
@@ -10,6 +10,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
   const [agentDownloads, setAgentDownloads] = useState<AgentDownloads | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
+  const [recoveryNode, setRecoveryNode] = useState<Node | null>(null)
+  const [recoverySecret, setRecoverySecret] = useState<AgentRecoverySecret | null>(null)
+  const [recoveryVisible, setRecoveryVisible] = useState(false)
   const [pairMode, setPairMode] = useState<'outbound' | 'direct'>('outbound')
   const [directHost, setDirectHost] = useState('')
   const [pairedNodes, setPairedNodes] = useState<PairedNodeStatus[]>([])
@@ -47,6 +50,28 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const pairingCommand = invitation
     ? `curl -fsSL ${window.location.origin}/downloads/agent/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
     : ''
+
+  const recoveringAgent = recoveryNode ? pairedNodes.find(pair => pair.nodeId === recoveryNode.id) : null
+  const recoveryCommand = recoveryNode && recoverySecret
+    ? `curl -fsSL ${window.location.origin}/downloads/agent/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_RECOVERY_NODE_ID=${shellQuote(recoveryNode.id)} LLMPROXY_RECOVERY_TOKEN=${shellQuote(recoverySecret.recoveryToken)} LLMPROXY_CONNECTION_MODE=${recoveringAgent?.mode ?? 'outbound'} bash`
+    : ''
+
+  function closeRecovery() {
+    setRecoveryNode(null); setRecoverySecret(null); setRecoveryVisible(false)
+  }
+
+  async function revealRecovery(rotate = false) {
+    if (!recoveryNode) return
+    if (rotate && !window.confirm('Rotate this server recovery code? All older recovery commands for this server will stop working. The currently paired Agent remains connected.')) return
+    setBusy('recovery:' + recoveryNode.id); setError(null)
+    try {
+      const result = rotate ? await api.rotateAgentRecovery(recoveryNode.id) : await api.revealAgentRecovery(recoveryNode.id)
+      setRecoverySecret(result); setRecoveryVisible(true)
+      setPairedNodes(current => current.map(item => item.nodeId === recoveryNode.id
+        ? { ...item, hasRecoverySecret: true, recoverySecretCreatedAtUtc: result.recoverySecretCreatedAtUtc } : item))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
 
   async function updateAgent(nodeId: string) {
     setError(null); setBusy('agent-update:' + nodeId)
@@ -151,7 +176,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       <div className="tableScroll"><table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
         {visible.map(node => <tr key={node.id}>
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
-          <td><Status value={node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
+          <td><Status value={pairedNodes.some(pair => pair.nodeId === node.id) && node.baseAddress === 'http://127.0.0.1:1' ? 'No runtime' : node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
             const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
             return <div key={pair.nodeId} className="muted">Agent {fresh ? 'connected' : 'offline'} · {pair.mode}{pair.agentUpdateStatus ? ' · update ' + pair.agentUpdateStatus.split(':').slice(0, 3).join(' · ') : ''}{pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}
               {pair.agentUpdateStatus?.split(':')[0] === 'running' && pair.agentUpdateStatus?.split(':')[2] === 'downloading' &&
@@ -160,8 +185,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                     max="100" value={Number(pair.agentUpdateStatus?.split(':')[3])} style={{width: '100%'}} />
                   <span>{pair.agentUpdateStatus?.split(':')[3]}% of Agent release archive</span>
                 </div>}</div>
-          })}</td><td className="mono">{node.baseAddress}</td>
-          <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
+          })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : node.baseAddress}</td>
+          <td>{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
+            ? <div className="muted">Install and start an inference model to enable health checks.</div>
+            : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></>}</td>
           <td>{node.maxConcurrency}</td>
           <td className="actions">
             <button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
@@ -169,6 +196,8 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
               <button disabled={busy === 'agent-update:' + node.id} onClick={() => void updateAgent(node.id)}>
                 {pairedNodes.some(pair => pair.nodeId === node.id && pair.desiredAgentVersion) ? 'Update queued' : 'Update agent'}
               </button>}
+            {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
+              <button onClick={() => { setRecoveryNode(node); setRecoverySecret(null); setRecoveryVisible(false); setError(null) }}>Agent setup / recovery</button>}
             {canWrite && <button onClick={() => openEdit(node)}>Edit</button>}
             {canWrite && <button onClick={() => { setCredentialNode(node); setCredentialSecret('') }}>Credentials</button>}
             {canWrite && nodes.length > 1 && <button onClick={() => openConsolidate(node)}>Consolidate</button>}
@@ -217,6 +246,43 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
         <p className="muted">Invitation expires {invitation ? new Date(invitation.expiresAtUtc).toLocaleString() : 'soon'} and is valid for one registration only.</p>
         <p className="muted">{pairMode === 'outbound' ? 'HTTPS/WSS egress only; reverse relay can carry inference SSE.' : 'The gateway must be able to reach the server on port 9900; use a private network or VPN.'}</p>
         <div className="modalActions"><button className="secondary" type="button" onClick={() => { setPairOpen(false); setInvitation(null) }}>Close</button></div>
+      </div>
+    </Modal>
+    <Modal open={Boolean(recoveryNode)} title={`Agent management · ${recoveryNode?.name ?? ''}`}
+      description="Persistent, server-specific recovery of the existing hardware identity. No duplicate node, model-cache deletion or new pairing invitation."
+      onClose={closeRecovery}>
+      <div className="stack">
+        <div><strong>Registered server</strong><p className="mono">{recoveryNode?.id}</p></div>
+        <p>Agent: {recoveringAgent?.agentVersion ?? 'unknown'} · {recoveringAgent?.mode ?? 'outbound'} ·
+          {recoveringAgent?.tunnelConnected ? ' tunnel connected' : ' tunnel disconnected'} ·
+          last heartbeat {formatDate(recoveringAgent?.lastHeartbeatAtUtc)}</p>
+        <p className="muted">Recovery credential: {recoveringAgent?.hasRecoverySecret ? 'created' : 'not created yet'}.
+          {recoveringAgent?.recoverySecretCreatedAtUtc ? ' Last rotated ' + formatDate(recoveringAgent.recoverySecretCreatedAtUtc) : ''}
+          The credential is unique to this physical node and survives updates. Revealing or rotating it is audited.</p>
+        <div className="actions">
+          <button type="button" disabled={busy !== null} onClick={() => void revealRecovery()}>
+            {recoveringAgent?.hasRecoverySecret ? 'Reveal recovery code' : 'Create recovery code'}
+          </button>
+          <button type="button" className="secondary" disabled={busy !== null} onClick={() => void revealRecovery(true)}>
+            Rotate recovery code
+          </button>
+        </div>
+        {recoverySecret && <>
+          <label>Recovery code (admin only)
+            <input readOnly type={recoveryVisible ? 'text' : 'password'} value={recoverySecret.recoveryToken} autoComplete="off" />
+          </label>
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => setRecoveryVisible(current => !current)}>{recoveryVisible ? 'Hide code' : 'Show code'}</button>
+            <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(recoverySecret.recoveryToken)}>Copy code</button>
+          </div>
+          <strong>Repair or reinstall this Agent (existing node)</strong>
+          <p className="muted">Run on the registered Linux machine. Downloads the latest checksummed public Agent, preserves its model data and restores this exact node ID. Re-running with the same recovery key does not create another node. Stop active inference deployments before a full reinstall.</p>
+          <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{recoveryCommand}</pre>
+          <button type="button" onClick={() => void navigator.clipboard.writeText(recoveryCommand)}>Copy repair / reinstall command</button>
+          <p className="muted">Keep this command private: it contains a persistent server recovery secret. It is not included in public downloads, and can be revoked by rotating the key here.</p>
+        </>}
+        <p className="muted">For normal updates while online, use “Update agent” on the hardware row. For offline or lost pairing, use the recovery command above; it does not rely on an expired 30-minute invitation.</p>
+        <div className="modalActions"><button className="secondary" type="button" onClick={closeRecovery}>Close</button></div>
       </div>
     </Modal>
     <Modal open={addOpen} title="Add inference node" description="Register the inference service root and optional provider bearer. The bearer remains write-only." onClose={() => setAddOpen(false)}>
