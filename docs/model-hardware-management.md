@@ -40,6 +40,50 @@ hosts are still required to certify end-to-end recovery time.
 
 LlmProxy can manage prepared inference hardware without assuming a specific NVIDIA DGX product. A managed node can be a DGX, a conventional x86_64 GPU server, an ARM64 accelerator host, or another Linux machine able to run the configured container runtime.
 
+## DGX Spark / GB10 unified-memory inventory and AirLLM (implementation pending real-host acceptance)
+
+On NVIDIA GB10, `nvidia-smi --query-gpu=memory.total,memory.free` returns `[N/A]`
+because the accelerator uses shared CPU/GPU system RAM. This is **not** zero
+VRAM and **not** an extra memory pool. The Linux Node Agent preserves each GPU
+in the inventory (falling back to `nvidia-smi -L` when structured queries
+fail), marks GB10 as `memoryType=unified`, samples GPU utilization/temperature/
+power when supported, and samples aggregate CPU utilization from `/proc/stat`.
+Unsupported metrics remain absent rather than falsely reported as zero.
+
+The gateway evaluates unified-memory fit against **one** shared free-RAM pool,
+subtracting a host reserve of `max(8 GiB, 10% of installed RAM)`. It adds
+the model's system-RAM and GPU-memory planning estimates; these are conservative
+approximations, **not** proof of sustained inference, and CPU/GPU contention can
+be substantial. The Admin shows the count of detected GPUs, real per-GPU
+telemetry, shared-memory status and the reason for insufficient/unknown fit.
+Dedicated NVIDIA GPUs continue to report dedicated VRAM.
+
+The experimental AirLLM launch is selectable through **Infrastructure →
+Inventory & model lifecycle → Deploy models**: Qwen3 4B, 8B, 32B or an explicitly
+confirmed custom Hugging Face repository. The agent selects
+`distribution/airllm-runtime/Dockerfile.arm64` on ARM64 (NVIDIA's
+`nvcr.io/nvidia/pytorch:25.10-py3-igpu` base), and the existing Dockerfile
+for x64. It builds/downloads in the background, persists install jobs, and
+offers Start/Stop/Remove from Admin. Layer conversion occurs on first start;
+its cache requires **additional** disk beyond downloaded checkpoints.
+
+**This does not certify compatibility.** No actual DGX Spark/ARM64/AirLLM
+download/build/first-layer-conversion/generation benchmark is evidenced yet.
+The adapter serves **non-streaming Chat only** with a single generating worker,
+a finite waiting queue, and no validated Responses/SSE/tools. In production
+prefer resident vLLM/optimized llama.cpp for models that fit memory and
+require throughput; use AirLLM to *experimentally* run models too large to
+remain resident. Benchmark the same host/checkpoint/prompt before changing
+routing or concurrency limits. Never treat accepted concurrent requests as
+parallel GPU generation.
+
+For host acceptance, compare the Agent `GET /v1/system` payload with
+`nvidia-smi -L`, free RAM and supported telemetry, then install/start a
+small AirLLM model, observe `/health` and non-streaming Chat, check host disk
+and GPU execution, stop/restart the model, and repeat for larger checkpoints.
+Record exact driver, base image digest, Torch/CUDA version and model revision.
+Do not present a green software CI check as proof of the GPU-specific path.
+
 ## Architecture
 
 ```text
