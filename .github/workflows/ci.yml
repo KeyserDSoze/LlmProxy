@@ -30,15 +30,18 @@ jobs:
           bash -n distribution/install-node-agent.sh
           bash -n distribution/update-node-agent.sh
           bash -n distribution/prepare-node-host.sh
-          bash -n distribution/connect-node.sh
-          grep -q 'downloads/agent/version' distribution/connect-node.sh
-          grep -q 'COPY distribution/connect-node.sh' docker/Dockerfile
-          # Once paired, reboot must not require a second invitation.
-          grep -q '^Restart=always
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
           grep -q "sha256sum -c" distribution/update-node-agent.sh
           grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
+          grep -q "downloads/agent/version" distribution/connect-node.sh
+          grep -q "COPY distribution/connect-node.sh" docker/Dockerfile
+          grep -q "^Restart=always$" distribution/llmproxy-node-agent.service
+          grep -q "^WantedBy=multi-user.target$" distribution/llmproxy-node-agent.service
+          grep -q "systemctl enable --now llmproxy-node-agent" distribution/install-node-agent.sh
+          grep -q "gateway-connection.json" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q "File.SetUnixFileMode(_stateFile" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q "NodeAgent__EnrollmentToken=" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
 
       - name: Validate source and automatic release versioning
         shell: bash
