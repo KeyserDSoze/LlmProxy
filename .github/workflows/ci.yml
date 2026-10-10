@@ -30,6 +30,9 @@ jobs:
           bash -n distribution/install-node-agent.sh
           bash -n distribution/update-node-agent.sh
           bash -n distribution/prepare-node-host.sh
+          bash -n distribution/connect-node.sh
+          grep -q 'downloads/agent/version' distribution/connect-node.sh
+          grep -q 'COPY distribution/connect-node.sh' docker/Dockerfile
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
           grep -q "sha256sum -c" distribution/update-node-agent.sh

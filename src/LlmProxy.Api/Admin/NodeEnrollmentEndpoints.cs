@@ -16,6 +16,18 @@ public static class NodeEnrollmentEndpoints
     {
         // Public distribution: no Admin login and no pairing secret is required to download.
         // The only variable is a VERIFIED published SemVer; never proxy arbitrary URLs.
+        // The checksum belongs to the exact public script in THIS gateway image,
+        // not to a potentially newer/different GitHub release.
+        app.MapGet("/downloads/agent/connect-node.sh.sha256", async (
+            IWebHostEnvironment host, CancellationToken token) =>
+        {
+            var path = Path.Combine(host.WebRootPath, "downloads", "agent", "connect-node.sh");
+            if (!File.Exists(path)) return Results.NotFound();
+            var bytes = await File.ReadAllBytesAsync(path, token);
+            var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            return Results.Text(digest + "  connect-node.sh\\n", "text/plain");
+        }).AllowAnonymous();
+
         app.MapGet("/downloads/agent/version", async (ReleaseDiscoveryService releases, CancellationToken token) =>
         {
             var versions = await releases.GetAvailableAsync("0.0.0", token);
@@ -27,7 +39,7 @@ public static class NodeEnrollmentEndpoints
         app.MapGet("/downloads/agent/{version}/{fileName}", async (
             string version, string fileName, ReleaseDiscoveryService releases, CancellationToken token) =>
         {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^[0-9]+\.[0-9]+\.[0-9]+$"))
                 return Results.NotFound();
             var officialName = fileName switch
             {
@@ -35,7 +47,6 @@ public static class NodeEnrollmentEndpoints
                 "linux-x64.tar.gz.sha256" => $"llmproxy-node-agent-{version}-linux-x64.tar.gz.sha256",
                 "linux-arm64.tar.gz" => $"llmproxy-node-agent-{version}-linux-arm64.tar.gz",
                 "linux-arm64.tar.gz.sha256" => $"llmproxy-node-agent-{version}-linux-arm64.tar.gz.sha256",
-                "connect-node.sh.sha256" => "llmproxy-connect-node.sh.sha256",
                 _ => null
             };
             if (officialName is null) return Results.NotFound();
@@ -59,7 +70,7 @@ public static class NodeEnrollmentEndpoints
             {
                 version,
                 bootstrap = "/downloads/agent/connect-node.sh",
-                bootstrapChecksum = root + "connect-node.sh.sha256",
+                bootstrapChecksum = "/downloads/agent/connect-node.sh.sha256",
                 x64 = root + "linux-x64.tar.gz",
                 x64Checksum = root + "linux-x64.tar.gz.sha256",
                 arm64 = root + "linux-arm64.tar.gz",

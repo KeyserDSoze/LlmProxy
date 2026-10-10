@@ -18,7 +18,7 @@ if [[ ! "$gateway" =~ ^https://[a-zA-Z0-9._:-]+$ &&
       ! "$gateway" =~ ^http://(localhost|127\.0\.0\.1)(:[0-9]+)?$ ]]; then
   echo "An HTTPS LlmProxy domain is required." >&2; exit 3
 fi
-version="$(curl --retry 3 -fsSL "$gateway/downloads/agent/version" | tr -d '\\r\\n')"
+version="$(curl --retry 3 -fsSL "$gateway/downloads/agent/version")"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "No verified stable release found on LlmProxy." >&2; exit 3
 fi
