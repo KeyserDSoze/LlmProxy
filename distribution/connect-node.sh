@@ -2,7 +2,17 @@
 set -euo pipefail
 # Public gateway downloads (without authentication); pairing requires a separate short-lived token.
 : "${LLMPROXY_GATEWAY_URL:?Set LLMPROXY_GATEWAY_URL to the HTTPS LlmProxy address}"
-: "${LLMPROXY_ENROLLMENT_TOKEN:?Set LLMPROXY_ENROLLMENT_TOKEN from Admin pairing invitation}"
+# New nodes use a one-time invitation; known nodes use an admin-managed
+# server-specific recovery code that reclaims their existing node identity.
+if [[ -z "${LLMPROXY_ENROLLMENT_TOKEN:-}" &&
+      ( -z "${LLMPROXY_RECOVERY_TOKEN:-}" || -z "${LLMPROXY_RECOVERY_NODE_ID:-}" ) ]]; then
+  echo "Supply a new pairing invitation OR an existing node ID + recovery code." >&2
+  exit 1
+fi
+if [[ -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" && -n "${LLMPROXY_RECOVERY_TOKEN:-}" ]]; then
+  echo "Use invitation or recovery, not both." >&2
+  exit 1
+fi
 if [[ "$(id -u)" != 0 ]]; then echo "This installer requires sudo." >&2; exit 1; fi
 for tool in curl sha256sum tar systemctl openssl sed; do command -v "$tool" >/dev/null || { echo "Missing $tool" >&2; exit 1; }; done
 case "$(uname -m)" in
