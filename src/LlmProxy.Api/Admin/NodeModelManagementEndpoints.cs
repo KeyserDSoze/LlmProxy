@@ -148,7 +148,7 @@ public static class NodeModelManagementEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var descriptor = DeployableModelCatalog.Find(catalogId);
+            var descriptor = ResolveDescriptor(catalogId, request);
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
 
             var node = await dbContext.Nodes.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -164,7 +164,9 @@ public static class NodeModelManagementEndpoints
                 if (hardware.Readiness is { DockerDaemonReady: false })
                     return Results.Conflict(new { error = "docker_daemon_unavailable",
                         message = "The remote Agent reports no operational Docker daemon. Check the Node host prerequisite inventory." });
-                var compatibility = EvaluateCompatibility(descriptor, hardware);
+                var compatibility = descriptor.Id == "custom"
+                    ? new ModelCompatibility("unknown", "Custom checkpoint has no verified hardware requirements.", ["Benchmark and inspect the model license before production use."], 1)
+                    : EvaluateCompatibility(descriptor, hardware);
                 if (request.MaxModelLen is int requestedContext && requestedContext > descriptor.ContextTokens)
                     return Results.BadRequest(new { error = "context_exceeds_model", maxContextTokens = descriptor.ContextTokens });
                 if (!request.Force && compatibility.Status == "insufficient")
@@ -211,7 +213,7 @@ public static class NodeModelManagementEndpoints
             Guid id, string catalogId, InstallManagedModelRequest request, GatewayDbContext db,
             IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
         {
-            var descriptor = DeployableModelCatalog.Find(catalogId);
+            var descriptor = ResolveDescriptor(catalogId, request);
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
             var runtime = ResolveRuntime(descriptor, request.Runtime);
             if (runtime is null) return Results.BadRequest(new { error = "incompatible_runtime" });
@@ -226,7 +228,9 @@ public static class NodeModelManagementEndpoints
                     HttpMethod.Get, "/v1/system", null, token);
                 if (hardware.Readiness is { DockerDaemonReady: false })
                     return Results.Conflict(new { error = "docker_daemon_unavailable" });
-                var compatibility = EvaluateCompatibility(descriptor, hardware);
+                var compatibility = descriptor.Id == "custom"
+                    ? new ModelCompatibility("unknown", "Custom checkpoint has no verified hardware requirements.", ["Benchmark and inspect the model license before production use."], 1)
+                    : EvaluateCompatibility(descriptor, hardware);
                 if (request.MaxModelLen is int context && context > descriptor.ContextTokens)
                     return Results.BadRequest(new { error = "context_exceeds_model", maxContextTokens = descriptor.ContextTokens });
                 if (!request.Force && compatibility.Status == "insufficient")
@@ -274,7 +278,11 @@ public static class NodeModelManagementEndpoints
                     "/v1/models/install-jobs/" + jobId, null, token);
                 if (job.Status != "completed" || job.Result is null)
                     return Results.Conflict(new { error = "job_not_completed" });
-                var descriptor = DeployableModelCatalog.Find(job.Request.CatalogModelId);
+                var descriptor = ResolveDescriptor(job.Request.CatalogModelId,
+                    new InstallManagedModelRequest(job.Request.PublicName, job.Request.Port, true,
+                        job.Request.ExtraArguments, job.Request.MaxNumSeqs, job.Request.MaxModelLen,
+                        job.Request.KvCacheDtype, job.Request.CpuOffloadGiB, job.Request.Runtime,
+                        job.Request.TensorParallelSize, job.Request.ProviderModelName));
                 if (descriptor is null || ResolveRuntime(descriptor, job.Request.Runtime) != job.Result.Runtime ||
                     job.Result.CatalogModelId != descriptor.Id ||
                     job.Result.ProviderModelName != descriptor.ProviderModelName)
@@ -498,6 +506,31 @@ public static class NodeModelManagementEndpoints
         });
     }
 
+    private static DeployableModelDescriptor? ResolveDescriptor(string catalogId, InstallManagedModelRequest request)
+    {
+        if (catalogId != "custom") return DeployableModelCatalog.Find(catalogId);
+        // Explicit Admin-only unsafe/unknown-hardware opt-in. No arbitrary repository URLs or shell.
+        if (!request.Force || string.IsNullOrWhiteSpace(request.PublicName) ||
+            request.PublicName.Length > 160 ||
+            request.Runtime is not ("vllm" or "sglang" or "llama.cpp") ||
+            string.IsNullOrWhiteSpace(request.ProviderModelName) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(request.ProviderModelName,
+                @"^[A-Za-z0-9][A-Za-z0-9_.-]{0,98}/[A-Za-z0-9][A-Za-z0-9_.-]{0,98}(:[A-Za-z0-9_.-]{1,50})?$"))
+            return null;
+        if (request.Runtime == "llama.cpp" && !request.ProviderModelName.Contains(':'))
+            return null; // Require an explicit GGUF quant tag for custom llama.cpp deployments.
+        if (request.Runtime != "llama.cpp" && request.ProviderModelName.Contains(':'))
+            return null;
+        return new DeployableModelDescriptor("custom", request.PublicName, request.ProviderModelName,
+            "Custom Hugging Face", "Unverified: review checkpoint license",
+            "https://huggingface.co/" + request.ProviderModelName.Split(':')[0],
+            0, request.MaxModelLen ?? 8192, "Unverified", 0, 0, 0, 0, 0,
+            request.Runtime == "llama.cpp" ? 0 : 1, 1,
+            false, false, ["custom", "unverified"],
+            "Resources, streaming, license and safety have not been verified. Use a controlled test before routing production traffic.",
+            request.Runtime);
+    }
+
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
@@ -673,7 +706,7 @@ public static class NodeModelManagementEndpoints
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
-        int? TensorParallelSize = null);
+        int? TensorParallelSize = null, string? ProviderModelName = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null);
