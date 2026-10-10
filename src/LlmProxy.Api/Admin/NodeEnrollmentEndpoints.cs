@@ -84,6 +84,12 @@ public static class NodeEnrollmentEndpoints
             var agent = await db.NodeEnrollments.SingleOrDefaultAsync(
                 x => x.NodeId == nodeId && x.AgentSecretHash != null, token);
             if (agent is null) return Results.NotFound();
+            // A version swap restarts the local Agent. Never interrupt deployed models
+            // during a production request: stop managed deployments through Admin first.
+            if (await db.Deployments.AnyAsync(d => d.NodeId == nodeId && d.Enabled &&
+                d.ManagedInstallationId != null, token))
+                return Results.Conflict(new { error = "active_managed_models",
+                    message = "Stop all active managed deployments before upgrading the Agent." });
             var available = await releases.GetAvailableAsync(agent.AgentVersion ?? "0.0.0", token);
             var selected = string.IsNullOrWhiteSpace(request.Version)
                 ? available.FirstOrDefault(x => x.IsNewer)
