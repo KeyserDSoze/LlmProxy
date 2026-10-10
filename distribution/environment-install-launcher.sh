@@ -6,8 +6,12 @@ umask 077
 
 ENVIRONMENT="@ENVIRONMENT@"
 VERSION="@VERSION@"
+ACTION="@ACTION@"
 BASE_URL="https://github.com/KeyserDSoze/LlmProxy/releases/download/v${VERSION}"
 ASSET="${ENVIRONMENT}.install.sh.gpg"
+if [[ "$ACTION" == update ]]; then
+  ASSET="${ENVIRONMENT}-update.install.sh.gpg"
+fi
 TEMP_DIR="$(mktemp -d)"
 PASSWORD=""
 cleanup() {
@@ -45,7 +49,7 @@ if ! command -v gpg >/dev/null 2>&1; then
   fi
 fi
 
-echo "LLMProxy ${VERSION} – protected ${ENVIRONMENT} installer"
+echo "LLMProxy ${VERSION} – protected ${ENVIRONMENT} ${ACTION} launcher"
 download "$ASSET"
 download "$ASSET.sha256"
 (
@@ -75,5 +79,5 @@ fi
 PASSWORD=""
 chmod 0700 "$TEMP_DIR/install.sh"
 bash -n "$TEMP_DIR/install.sh"
-echo "Validated encrypted installer; starting LLMProxy ${VERSION} ..."
+echo "Validated encrypted ${ACTION} installer; applying LLMProxy ${VERSION} ..."
 bash "$TEMP_DIR/install.sh"
