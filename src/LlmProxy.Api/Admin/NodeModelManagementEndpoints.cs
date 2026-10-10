@@ -755,7 +755,7 @@ public static class NodeModelManagementEndpoints
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
-    public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null, string MemoryType = "dedicated");
+    public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null, string MemoryType = "dedicated", double? UtilizationPercent = null, double? TemperatureCelsius = null, double? PowerWatts = null);
     public sealed record HostReadiness(
         bool DockerInstalled, bool DockerDaemonReady, bool NvidiaDriverDetected,
         bool NvidiaToolkitReady, IReadOnlyList<string>? Issues);
@@ -772,7 +772,8 @@ public static class NodeModelManagementEndpoints
         IReadOnlyList<GpuInventory>? Gpus,
         string? Runtime,
         string? RuntimeVersion,
-        HostReadiness? Readiness = null);
+        HostReadiness? Readiness = null,
+        double? CpuUtilizationPercent = null);
     public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState>? Models);
     public sealed record ManagedModelState(
         string InstallationId,
