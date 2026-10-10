@@ -58,6 +58,9 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.InvitationHash).HasMaxLength(64).IsRequired();
             entity.HasIndex(x => x.InvitationHash).IsUnique();
             entity.Property(x => x.AgentSecretHash).HasMaxLength(64);
+            entity.Property(x => x.RecoverySecretHash).HasMaxLength(64);
+            entity.HasIndex(x => x.RecoverySecretHash).IsUnique();
+            entity.Property(x => x.RecoverySecretCiphertext).HasMaxLength(4096);
             entity.HasIndex(x => x.AgentSecretHash).IsUnique();
             entity.HasIndex(x => x.NodeId).IsUnique();
             entity.Property(x => x.Mode).HasMaxLength(16).IsRequired();
