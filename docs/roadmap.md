@@ -4,6 +4,14 @@ Status legend: `DONE` implemented and validated; `PLANNED` not complete; `EXTERN
 
 For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.
 
+## 2026-10-11 Agent fleet identity and recovery
+
+- [x] Differentiate one-time pairing invitation, durable node identity and admin-managed persistent per-node recovery code.
+- [x] Add admin-controlled encrypted reveal/rotation and copyable checksum-verified reinstall command for an existing physical node.
+- [x] Extend Agent to reclaim existing node ID without resetting deployments/models, persisting root-only identity and clearing bootstrap credentials.
+- [x] Distinguish No runtime deployed from hardware/Agent transport health in Fleet view.
+- [ ] End-to-end recovery of spark-1d52 from expired invitation HTTP 401, plus OS reboot, upgrade, and reverse WebSocket reconnect verification.
+
 ## 2026-10-03 control-plane follow-up
 
 - [x] Persist administrator automatic-update policy: Manual / ASAP 5m / Nightly / Weekly / Monthly.
