@@ -30,6 +30,12 @@ public sealed class RedisCoordinationConnection : IAsyncDisposable
         return connection.GetDatabase();
     }
 
+    public async Task<ISubscriber> GetSubscriberAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = await _connection.Value.WaitAsync(cancellationToken);
+        return connection.GetSubscriber();
+    }
+
     public string Key(string suffix) => $"{_keyPrefix}:{suffix}";
 
     public async ValueTask DisposeAsync()
