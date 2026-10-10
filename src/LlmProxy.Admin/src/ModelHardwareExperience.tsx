@@ -198,8 +198,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               ? <option value="llama.cpp">llama.cpp (GGUF)</option>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'airllm'
               ? <option value="airllm">AirLLM (experimental layer streaming)</option>
-              : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option>
-                }</>}
+              : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option></>}
           </select>
         </label>
         {runtimeChoice === 'airllm' && <p className="notice">Experimental AirLLM: the Agent builds the AirLLM serving image and downloads model weights. Only non-streaming Chat is supported. One generator processes a bounded request queue, so concurrent clients do not imply parallel generation. Benchmark against vLLM before using production traffic.</p>}
