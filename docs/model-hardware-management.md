@@ -174,6 +174,10 @@ Hardware E: model-2
 
 A request for `model-1` can route only to A/B. A request for `model-2` can route only to A/C/D/E. If A hosts the runtimes on different ports, deployment-specific runtime addresses keep the pools separate even though the physical node is shared.
 
+## Priority AirLLM engine: experimental, not yet installable (2026-10-10)
+
+AirLLM is a **P0 managed-runtime target** because its layer/expert weight streaming may make a larger model feasible on a limited-memory host, and its layer reuse/batching potential must be measured for real multi-user inference. The current Agent allowlist still supports only `vllm`, `llama.cpp`, and `sglang`; do not describe AirLLM as working in the Admin install catalog yet. Implement a reproducible, pinned AirLLM serving image/HTTP adapter with explicit health, OpenAI Chat/Responses compatibility, SSE completion and cancellation; a bounded single-worker queue first, then experiment with safe batching, if supported. Expose its measured resource usage, effective throughput and sustainable concurrency alongside the vLLM baseline, rather than treating low GPU memory as proof of more simultaneous users. See [AirLLM concurrency experiment](airllm-concurrency-experiment.md).
+
 ## Multi-runtime launch profiles (initial implementation, 2026-10-09)
 
 The managed Node Agent supports `vllm` (Hugging Face/Transformers weights) and experimental `llama.cpp` (GGUF checkpoints) plus `sglang` (curated Transformers/AWQ checkpoints). The curated catalog assigns each model to its allowed runtime: regular Qwen/Mistral models remain on vLLM, and `qwen3-4b-gguf-q4` is an experimental Q4_K_M GGUF deployment. Do not pass a standard Transformers checkpoint to llama.cpp or silently transform model formats. SGLang has an experimental managed launcher for a curated AWQ checkpoint; AirLLM is not installed or exposed yet.

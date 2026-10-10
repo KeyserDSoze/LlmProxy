@@ -228,6 +228,8 @@ image digest      sha256:de82c1b7fa29b6d0b7104b1e5960316b6eeea81cf85a9d23c4fcc53
 
 ## Current development order
 
+**New priority (2026-10-10):** after restoring green CI and validating outbound Agent transport, deliver the AirLLM experimental runtime and apples-to-apples multi-user benchmark. Do not defer the AirLLM experiment behind a universal model catalog or unrelated engine additions. Refer to [AirLLM concurrency experiment](airllm-concurrency-experiment.md).
+
 1. Validate the first automatically generated `v0.0.x` GitHub Releases, including multi-architecture assets.
 2. Install/update/rollback the latest exact `0.0.x` release on the ARM64 GB10 target; keep `sha-7e1534c` as the pre-autorelease fallback checkpoint until target-host acceptance is green.
 2. Install/validate the dedicated `llmproxy-prod` self-hosted runner and execute `.github/workflows/environment-acceptance.yml` against the real gateway host + inference runtime.
@@ -246,7 +248,9 @@ NVIDIA Personal AI Router (PAIR) was evaluated and rejected for the current dire
 - NEXT: real hardware direct-versus-gateway benchmarks with sustainable-concurrency SLO and measured capacity profile, not hypothetical user-count multipliers.
 - IMPLEMENTED / VALIDATION PENDING: separate installations/deployments for multiple profiles of the same model on one node, with filtered database uniqueness.
 - IMPLEMENTED / VALIDATION PENDING: initial SGLang managed Docker launch and curated AWQ pilot; NEXT: independent metrics parser, OpenAI Chat/Responses/SSE/tool-call compatibility and hardware acceptance.
-- RESEARCH: AirLLM layer/expert streaming with OpenAI HTTP shim and real end-to-end throughput/TTFT measurements before exposing deployment choices.
+- **PRIORITY P0 — PLANNED / NOT IMPLEMENTED:** AirLLM layer-by-layer/expert streaming as a managed experimental engine on paired Linux hosts, with an LLMProxy-owned OpenAI-compatible serving adapter, explicit runtime image/version and hardware compatibility gates. This is a core hypothesis of LLMProxy, not deferred background research. See [AirLLM concurrency experiment](airllm-concurrency-experiment.md).
+- **PRIORITY P0 — PLANNED:** benchmark AirLLM versus vLLM (and optionally llama.cpp/SGLang) on the **same host and same verified checkpoint**, comparing serial execution, request queueing, layer-aware batching if technically feasible, and multiple independent instances. Test 1/2/4/8/12/16 clients and report sustainable concurrency, TTFT, latency p50/p95, throughput, failures, GPU/RAM/disk usage and model-preparation overhead.
+- **PRIORITY P0 — SAFETY:** never equate low VRAM consumption or accepted requests with sustainable parallelism. Keep AirLLM experimental/out of production routing until Chat/Responses/SSE completion, cancellation, HTTP compatibility, health, resource isolation and real-host acceptance have passed. Never automatically raise concurrency based only on theoretical fit.
 
 - IMPLEMENTED / VALIDATION PENDING: benchmark SLO evaluator proposing candidate concurrency from measured evidence; still requires controlled live hardware repetitions and operator approval.
 

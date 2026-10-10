@@ -1,5 +1,9 @@
 # Project status / handover snapshot
 
+## AirLLM experimental serving and concurrency — P0 PLANNED / NOT IMPLEMENTED (2026-10-10)
+
+AirLLM is a first-priority LLMProxy research and implementation goal: verify whether loading weights layer-by-layer (or sparse experts on demand) enables more **sustainable** simultaneous users on the same host or primarily makes larger checkpoints fit limited VRAM. AirLLM is not yet part of the managed Node Agent runtime allowlist; there is no supported OpenAI Chat/Responses/SSE serving image. A bounded lab adapter, model/runtime compatibility gate, resource-aware scheduling and same-host AirLLM-versus-vLLM experiments are required. Low VRAM does **not** establish throughput or multi-user capacity. The design and acceptance gates are recorded in [docs/airllm-concurrency-experiment.md](airllm-concurrency-experiment.md).
+
 ## Public domain-hosted Linux Agent distribution — IMPLEMENTED / VALIDATION PENDING (2026-10-10)
 
 The Admin pairing wizard now offers an origin-derived public `curl` installer and direct public Agent archive URLs (x64/ARM64 and SHA-256). The gateway exposes only the inert installer via public StaticFiles and allowlisted version-pinned redirects to published official artifacts. Enrollment still requires a one-time 30-minute Admin invitation; systemd and root-protected locally persisted node credentials survive reboots without a new pairing. Exact-head CI and published-image acceptance remain to be verified.
