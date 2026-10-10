@@ -48,7 +48,7 @@ print("umask 077")
 print("export ENTRA_ENABLED=true")
 for key in keys:
     value = os.environ[key]
-    if "\\x00" in value or "\\n" in value or "\\r" in value:
+    if any(char in value for char in (chr(0), chr(10), chr(13))):
         raise ValueError(f"Invalid line break in {key}")
     print(f"export {key}={shlex.quote(value)}")
 print(f"VERSION={shlex.quote(version)}")
