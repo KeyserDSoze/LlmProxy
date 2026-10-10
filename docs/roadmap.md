@@ -14,6 +14,11 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - [x] Apply routing, capacity, failover, request-rate governance and metrics to System One.
 - [x] Surface System One deployment/routing in Models & Deployments and Playground.
 - [ ] Validate the exact main head and real target-host update from the previous installed release.
+- [x] Correct NVIDIA GB10 GPU count and unified-memory inventory in Node Agent; use one host RAM pool for CPU/GPU compatibility planning.
+- [x] Expose optional CPU/GPU utilization/temperature/power in Inventory, with automatic refresh and explicit unknown metrics.
+- [x] Bundle experimental native ARM64 AirLLM build selection and Qwen3 4B/8B/32B catalog profiles for Admin installs.
+- [ ] Verify a native AirLLM image build, Qwen3 checkpoint layer conversion and successful non-streaming generation on the real GB10; publish evidence before declaring hardware support validated.
+- [ ] Benchmark real GB10 throughput and memory contention across model sizes; do not advertise true concurrent GPU generation for AirLLM's single worker.
 
 ## M0 — Repository bootstrap — DONE
 
