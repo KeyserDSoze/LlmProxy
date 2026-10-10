@@ -44,6 +44,9 @@ jobs:
           grep -q "downloads/agent/version" distribution/connect-node.sh
           grep -q "COPY distribution/connect-node.sh" docker/Dockerfile
           grep -q "^Restart=always$" distribution/llmproxy-node-agent.service
+          grep -F 'KeepAliveTimeout = TimeSpan.FromSeconds(15)' src/LlmProxy.NodeAgent/OutboundAgentRelayWorker.cs
+          grep -F 'KeepAliveTimeout = TimeSpan.FromSeconds(15)' src/LlmProxy.Api/Program.cs
+          grep -F 'Random.Shared.Next(0, 1000)' src/LlmProxy.NodeAgent/OutboundAgentRelayWorker.cs
           grep -q "^WantedBy=multi-user.target$" distribution/llmproxy-node-agent.service
           grep -q "systemctl enable --now llmproxy-node-agent" distribution/install-node-agent.sh
           grep -q "gateway-connection.json" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs

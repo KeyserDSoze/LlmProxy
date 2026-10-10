@@ -1,5 +1,43 @@
 # Managed hardware and model lifecycle
 
+## Automatic reconnection after network or gateway outages (2026-10-10)
+
+**Outbound / HTTPS + WSS (recommended):** the Linux Node Agent persists the
+node ID and long-lived secret under its root-owned data directory after its
+initial 30-minute invitation is consumed. The invitation is **not** needed on
+reboot or after connectivity returns. Its registration/heartbeat worker retries
+every 10 seconds; the WebSocket relay retries on connection errors and socket
+closure, with bounded exponential backoff (and random jitter) for failed
+connection attempts. Both gateway and Agent use WebSocket Ping/Pong every
+20 seconds with a 15-second Pong deadline to terminate half-open sockets.
+This is a *detection bound after a ping is sent*, not a hard SLA for DNS,
+TLS handshake, reverse proxies or model startup.
+
+The production Docker Compose stack and its Cloudflare tunnel use
+`restart: unless-stopped` and the Linux installers enable Docker at boot.
+The Node Agent is installed as `llmproxy-node-agent.service` with
+`Restart=always` and persists pairing credentials, so neither side needs
+manual re-pairing after ordinary outages. Managed model containers also use
+Docker's `--restart unless-stopped`; models previously stopped intentionally
+are not automatically restarted. Direct mode needs no persistent tunnel:
+the gateway resumes new HTTP probes when network access returns.
+
+Gateway health checks normally run every 10 seconds; a node becomes unhealthy
+after 3 failed checks and healthy after 2 consecutive successes by default.
+The Admin distinguishes heartbeat freshness from actual tunnel connection.
+If other healthy deployments serve the same logical model, the router can use
+them; otherwise requests may fail during the outage. **An interrupted
+in-flight stream/request is not resumed**; clients must issue a new call and
+should not blindly retry non-idempotent operations. An interrupted model
+install job is stored as interrupted and can be retried in Admin; ongoing
+model installations and streams have no transactional resume across host
+reboots. Cloudflare Access policies must allow the Agent's HTTPS heartbeat
+and WSS connections; blocking them is not a self-healing network outage.
+
+Network partition/half-open and gateway restart acceptance tests on real WAN
+hosts are still required to certify end-to-end recovery time.
+
+
 LlmProxy can manage prepared inference hardware without assuming a specific NVIDIA DGX product. A managed node can be a DGX, a conventional x86_64 GPU server, an ARM64 accelerator host, or another Linux machine able to run the configured container runtime.
 
 ## Architecture

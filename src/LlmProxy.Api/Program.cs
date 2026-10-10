@@ -238,7 +238,13 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
         ? Results.Ok(new { status = "ready" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
-app.UseWebSockets();
+// Actively detect stale half-open Agent tunnels after WAN/Cloudflare outages.
+// Without a Pong deadline an unplugged server may remain falsely "connected".
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(20),
+    KeepAliveTimeout = TimeSpan.FromSeconds(15)
+});
 app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);

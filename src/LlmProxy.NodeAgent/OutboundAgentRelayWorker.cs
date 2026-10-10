@@ -21,8 +21,10 @@ public sealed class OutboundAgentRelayWorker(
     {
         if (options.ConnectionMode != "outbound" || string.IsNullOrWhiteSpace(options.GatewayBaseAddress)) return;
         var file = Path.Combine(options.DataDirectory, "gateway-connection.json");
+        var failedAttempts = 0;
         while (!token.IsCancellationRequested)
         {
+            var connected = false;
             try
             {
                 if (!File.Exists(file)) { await Task.Delay(2000, token); continue; }
@@ -36,13 +38,25 @@ public sealed class OutboundAgentRelayWorker(
                 using var socket = new ClientWebSocket();
                 socket.Options.SetRequestHeader("Authorization", "Bearer " + pair.AgentSecret);
                 socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+                // Ping/Pong timeout is essential: a broken WAN path can leave a TCP
+                // socket apparently open forever without a close frame.
+                socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(15);
                 await socket.ConnectAsync(wsUri, token);
+                connected = true;
+                failedAttempts = 0;
                 logger.LogInformation("Outbound management/inference tunnel connected.");
                 await PumpAsync(socket, token);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
             catch (Exception e) { logger.LogWarning("Outbound tunnel reconnect: {Reason}", e.Message); }
-            try { await Task.Delay(3000, token); }
+            // Back off connection failures to avoid overwhelming the gateway after
+            // a site-wide outage. A previously connected session retries quickly.
+            if (!connected) failedAttempts = Math.Min(failedAttempts + 1, 6);
+            var delay = connected
+                ? TimeSpan.FromSeconds(3)
+                : TimeSpan.FromMilliseconds(Math.Min(30_000, 1000 * (1 << Math.Min(failedAttempts, 5)))
+                    + Random.Shared.Next(0, 1000));
+            try { await Task.Delay(delay, token); }
             catch (OperationCanceledException) { break; }
         }
     }
