@@ -86,8 +86,10 @@ set_env_value() {
   local value="$2"
   local tmp
   tmp="$(mktemp)"
-  awk -v key="$key" -v value="$value" '
-    BEGIN { found = 0 }
+  # Passing secret values through awk -v interprets sequences such as \\n
+  # and \\\\; ENVIRON keeps the original bytes intact.
+  LLMPROXY_CONFIG_VALUE="$value" awk -v key="$key" '
+    BEGIN { found = 0; value = ENVIRON["LLMPROXY_CONFIG_VALUE"] }
     index($0, key "=") == 1 { print key "=" value; found = 1; next }
     { print }
     END { if (!found) print key "=" value }
