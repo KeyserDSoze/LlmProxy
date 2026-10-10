@@ -1,4 +1,4 @@
-import type { ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -48,6 +48,7 @@ export const api = {
   updateRoutingTuning: (settings: Omit<RoutingTuningSettings, 'updatedAtUtc'>) =>
     request<RoutingTuningSettings>('/api/admin/routing/tuning', { method: 'PUT', body: JSON.stringify(settings) }),
   nodes: () => request<Node[]>('/api/admin/nodes'),
+  agentDownloads: () => request<AgentDownloads>('/api/admin/node-enrollment/downloads'),
   createAgentInvitation: () => request<AgentPairingInvitation>('/api/admin/node-enrollment/invitations', { method: 'POST' }),
   pairedAgentNodes: () => request<PairedNodeStatus[]>('/api/admin/node-enrollment/nodes'),
   updatePairedAgent: (nodeId: string, version?: string) =>

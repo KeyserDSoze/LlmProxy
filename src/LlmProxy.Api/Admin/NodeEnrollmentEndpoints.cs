@@ -17,6 +17,25 @@ public static class NodeEnrollmentEndpoints
         var admin = app.MapGroup("/api/admin/node-enrollment");
         if (entraEnabled) admin.RequireAuthorization("AdminRead");
 
+        admin.MapGet("/downloads", async (ReleaseDiscoveryService releases, CancellationToken token) =>
+        {
+            var versions = await releases.GetAvailableAsync("0.0.0", token);
+            var current = versions.FirstOrDefault();
+            if (current is null) return Results.Problem("No stable Agent release is available.", statusCode: 503);
+            var version = current.Version;
+            var root = $"https://github.com/KeyserDSoze/LlmProxy/releases/download/v{version}/";
+            return Results.Ok(new
+            {
+                version,
+                bootstrap = root + "llmproxy-connect-node.sh",
+                bootstrapChecksum = root + "llmproxy-connect-node.sh.sha256",
+                x64 = root + $"llmproxy-node-agent-{version}-linux-x64.tar.gz",
+                x64Checksum = root + $"llmproxy-node-agent-{version}-linux-x64.tar.gz.sha256",
+                arm64 = root + $"llmproxy-node-agent-{version}-linux-arm64.tar.gz",
+                arm64Checksum = root + $"llmproxy-node-agent-{version}-linux-arm64.tar.gz.sha256"
+            });
+        });
+
         var invite = admin.MapPost("/invitations", async (
             GatewayDbContext db, ApiKeyHasher hasher, HttpContext context,
             CancellationToken token) =>

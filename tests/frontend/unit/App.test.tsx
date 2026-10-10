@@ -19,6 +19,7 @@ const mockedApi = vi.hoisted(() => ({
   nodes: vi.fn(),
   pairedAgentNodes: vi.fn(),
   createAgentInvitation: vi.fn(),
+  agentDownloads: vi.fn(),
   models: vi.fn(),
   deployments: vi.fn(),
   apiCredentials: vi.fn(),
@@ -84,6 +85,12 @@ describe('admin application', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockedApi.pairedAgentNodes.mockResolvedValue([])
+    mockedApi.agentDownloads.mockResolvedValue({
+      version: '0.2.9',
+      bootstrap: 'https://github.com/KeyserDSoze/LlmProxy/releases/download/v0.2.9/llmproxy-connect-node.sh',
+      x64: 'https://github.com/KeyserDSoze/LlmProxy/releases/download/v0.2.9/llmproxy-node-agent-0.2.9-linux-x64.tar.gz',
+      arm64: 'https://github.com/KeyserDSoze/LlmProxy/releases/download/v0.2.9/llmproxy-node-agent-0.2.9-linux-arm64.tar.gz'
+    })
     mockedApi.benchmarkJobs.mockResolvedValue([])
     mockedApi.startBenchmark.mockResolvedValue({ status: 'pending' })
     mockedApi.adminSession.mockResolvedValue({ canWrite: true, roles: ['LlmProxy.Admin'] })

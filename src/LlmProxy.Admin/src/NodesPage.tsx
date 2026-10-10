@@ -1,13 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
-import type { AgentPairingInvitation, Node, NodeConnectionTest, PairedNodeStatus } from './types'
+import type { AgentDownloads, AgentPairingInvitation, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
 
 export default function NodesPage({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'active' | 'disabled'>('active')
   const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
+  const [agentDownloads, setAgentDownloads] = useState<AgentDownloads | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
   const [pairMode, setPairMode] = useState<'outbound' | 'direct'>('outbound')
   const [directHost, setDirectHost] = useState('')
@@ -56,7 +57,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
 
   async function beginPair() {
     setError(null); setBusy('pair')
-    try { setInvitation(await api.createAgentInvitation()); setPairOpen(true) }
+    try {
+      const [invite, downloads] = await Promise.all([api.createAgentInvitation(), api.agentDownloads()])
+      setInvitation(invite); setAgentDownloads(downloads); setPairOpen(true)
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -185,6 +189,20 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
         <p className="muted">On the Linux server, run this command once as an administrator. The installer verifies the immutable release checksum, starts systemd and enrolls automatically.</p>
         {window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' &&
           <p className="error">Remote enrollment needs HTTPS. Access the Admin through its public HTTPS domain before copying the command.</p>}
+        {agentDownloads && <section className="stack">
+          <strong>Agent release {agentDownloads.version} — download from LLMProxy Admin</strong>
+          <div className="actions">
+            <a className="buttonLink" href={agentDownloads.bootstrap}>Download pairing installer</a>
+            <a className="buttonLink" href={agentDownloads.x64}>Download Agent Linux x64</a>
+            <a className="buttonLink" href={agentDownloads.arm64}>Download Agent Linux ARM64</a>
+          </div>
+          <p className="muted">Archive SHA-256:
+            {' '}<a href={agentDownloads.x64Checksum}>x64</a>
+            {' · '}<a href={agentDownloads.arm64Checksum}>ARM64</a>
+            {' · '}<a href={agentDownloads.bootstrapChecksum}>installer</a>.
+            Downloads are immutable release files. The pairing token is not embedded in the public archive.
+          </p>
+        </section>}
         <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{pairingCommand}</pre>
         <button type="button" onClick={() => void navigator.clipboard.writeText(pairingCommand)}>Copy installation command</button>
         <p className="muted">Invitation expires {invitation ? new Date(invitation.expiresAtUtc).toLocaleString() : 'soon'} and is valid for one registration only.</p>

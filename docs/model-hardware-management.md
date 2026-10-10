@@ -242,3 +242,7 @@ A detached Agent upgrade writes a permission-restricted status marker under `/va
 ### Remaining production acceptance for remote Agents
 
 The current source must be tested on at least two separate Linux hosts or networks using a real HTTPS/WSS ingress: Agent enrollment, heartbeat after reconnect, registry downloads, lifecycle and health, Chat Completions and Responses SSE and tool calls, cancellation under load, and staged/rollback Agent update. CI synthetically verifies tunnel framing but does not substitute for real network/GPU evidence. Remote models should be exercised initially behind **one** gateway API replica until distributed Agent session forwarding is implemented; this limitation is deliberately fail-closed.
+
+### Agent packages in LLMProxy Admin
+
+In **Infrastructure → Fleet & access → Pair Linux agent**, the Admin presents direct version-pinned GitHub Release download links for the checksum-verified Linux x64 and ARM64 Agent archives and the pairing installer, plus each respective SHA-256. The server resolves the latest immutable release through release discovery; the published archive is never repackaged with a reusable enrollment token. The time-limited pairing invitation is separate and must be generated for each new server. After first installation, ordinary changes and upgrades are managed in Admin; a disconnected server is still shown with its last known inventory.

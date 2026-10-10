@@ -107,6 +107,16 @@ export type NodeMaintenanceResponse = {
   warmups?: EndpointProbe[]
 }
 
+export type AgentDownloads = {
+  version: string
+  bootstrap: string
+  bootstrapChecksum: string
+  x64: string
+  x64Checksum: string
+  arm64: string
+  arm64Checksum: string
+}
+
 export type AgentPairingInvitation = { enrollmentToken: string; expiresAtUtc: string }
 export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; desiredAgentVersion?: string | null; agentUpdateStatus?: string | null; tunnelConnected?: boolean }
 
