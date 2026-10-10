@@ -6,8 +6,10 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: false
+  # Only the most recent main commit requires the expensive full-stack gate.
+  # Pull requests remain independent; old main runs are superseded cleanly.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
