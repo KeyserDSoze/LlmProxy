@@ -48,8 +48,16 @@ chmod 0755 "$BUNDLE/distribution/"*.sh "$BUNDLE/distribution/llmproxyctl"
 mkdir -p "$OUT_DIR"
 ARCHIVE="$OUT_DIR/llmproxy-$VERSION-linux.tar.gz"
 tar -C "$STAGE" -czf "$ARCHIVE" "llmproxy-$VERSION"
-# Reject incomplete archives before a GitHub Release can publish them.
-if ! tar -tzf "$ARCHIVE" | grep -Fxq "llmproxy-$VERSION/distribution/llmproxy.service"; then
+# Read the entire archive before checking its contents. Under pipefail,
+# grep -q exits as soon as it finds a match and can SIGPIPE tar; a correct
+# archive would then be incorrectly rejected. Keep both corruption and
+# missing-systemd-unit checks fail-closed.
+MANIFEST="$STAGE/archive-contents.txt"
+if ! tar -tzf "$ARCHIVE" > "$MANIFEST"; then
+  echo "Generated Linux release archive is corrupt or incomplete." >&2
+  exit 4
+fi
+if ! grep -Fx 'llmproxy-'"$VERSION"'/distribution/llmproxy.service' "$MANIFEST" >/dev/null; then
   echo "Release archive is missing the LLMProxy systemd unit." >&2
   exit 4
 fi
