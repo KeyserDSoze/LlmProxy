@@ -114,8 +114,47 @@ if [[ "$VALIDATE_ONLY" == "true" ]]; then
   exit 0
 fi
 
-deploy_log "Pulling immutable container image(s)"
-"${COMPOSE[@]}" pull
+# A full-stack Compose pull starts many independent image downloads at once.
+# On constrained/unstable links this can repeatedly reset large CDN transfers.
+# Pull only LLMProxy's active services, one at a time, with bounded retries.
+# Docker retains successfully downloaded layers across attempts and reruns.
+PULL_MAX_ATTEMPTS="${LLMPROXY_PULL_MAX_ATTEMPTS:-8}"
+if [[ ! "$PULL_MAX_ATTEMPTS" =~ ^[0-9]+$ ]] || (( 10#$PULL_MAX_ATTEMPTS < 1 || 10#$PULL_MAX_ATTEMPTS > 12 )); then
+  echo "LLMPROXY_PULL_MAX_ATTEMPTS must be an integer between 1 and 12." >&2
+  exit 2
+fi
+mapfile -t ACTIVE_SERVICES < <("${COMPOSE[@]}" config --services)
+if (( ${#ACTIVE_SERVICES[@]} == 0 )); then
+  echo "No active Compose services were resolved; refusing deployment." >&2
+  exit 2
+fi
+
+pull_one_service() {
+  local service="$1" attempt=1 delay=3
+  while true; do
+    deploy_log "Pulling image for service $service (attempt $attempt/$PULL_MAX_ATTEMPTS)"
+    # This only limits Compose parallelism. Do not modify daemon.json or
+    # restart the shared Docker daemon: other apps/tunnels must stay running.
+    if COMPOSE_PARALLEL_LIMIT=1 "${COMPOSE[@]}" pull "$service"; then
+      return 0
+    fi
+    if (( attempt >= PULL_MAX_ATTEMPTS )); then
+      echo "Image download failed for $service after $PULL_MAX_ATTEMPTS attempts." >&2
+      echo "Check network/DNS/firewall/CDN access to the Docker registry; cached layers are preserved." >&2
+      return 1
+    fi
+    deploy_log "Image download interrupted for $service; retrying in ${delay}s (cached layers will be reused)"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+    (( delay > 30 )) && delay=30
+  done
+}
+
+deploy_log "Downloading ${#ACTIVE_SERVICES[@]} service images sequentially; existing Docker services are untouched"
+for service in "${ACTIVE_SERVICES[@]}"; do
+  pull_one_service "$service"
+done
 
 deploy_log "Starting/updating containers"
 # Do not --remove-orphans: an unrelated tunnel in a reused Compose namespace
