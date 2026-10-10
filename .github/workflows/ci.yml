@@ -224,6 +224,10 @@ jobs:
           [[ "$ENTRA_SUPER_ADMINS" == ci-admin@example.invalid ]]
           [[ "$ENTRA_CLIENT_SECRET" == ci-fake-entra-client-secret ]]
           [[ "$CLOUDFLARE_TUNNEL_TOKEN" == ci-fake-cloudflare-token ]]
+          # Port choices must cross even sudo environments that strip all
+          # variables, just like the Entra/Cloudflare Secrets.
+          [[ "$GRAFANA_PORT" == 3000 ]]
+          [[ "$LLMPROXY_PORT" == 8080 ]]
           printf 'ok\n' > "$CI_INSTALL_MARKER"
           MOCK
           (cd "$tmp" && sha256sum fixture-bootstrap.sh | sed 's/fixture-bootstrap.sh/llmproxy-bootstrap.sh/' > fixture-bootstrap.sh.sha256)
