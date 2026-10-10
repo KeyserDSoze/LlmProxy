@@ -25,15 +25,15 @@ public static class NodeEnrollmentEndpoints
             if (!File.Exists(path)) return Results.NotFound();
             var bytes = await File.ReadAllBytesAsync(path, token);
             var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
-            return Results.Text(digest + "  connect-node.sh\\n", "text/plain");
+            return Results.Text(digest + "  connect-node.sh\n", "text/plain");
         }).AllowAnonymous();
 
         app.MapGet("/downloads/agent/version", async (ReleaseDiscoveryService releases, CancellationToken token) =>
         {
-            var versions = await releases.GetAvailableAsync("0.0.0", token);
+            var versions = await releases.GetDownloadableAgentVersionsAsync(token);
             return versions.Count == 0
                 ? Results.Problem("No published Linux Agent release is available.", statusCode: 503)
-                : Results.Text(versions[0].Version + "\n", "text/plain");
+                : Results.Text(versions[0] + "\n", "text/plain");
         }).AllowAnonymous();
 
         app.MapGet("/downloads/agent/{version}/{fileName}", async (
@@ -50,8 +50,8 @@ public static class NodeEnrollmentEndpoints
                 _ => null
             };
             if (officialName is null) return Results.NotFound();
-            var releasesList = await releases.GetAvailableAsync("0.0.0", token);
-            if (!releasesList.Any(item => item.Version == version)) return Results.NotFound();
+            var releasesList = await releases.GetDownloadableAgentVersionsAsync(token);
+            if (!releasesList.Contains(version, StringComparer.Ordinal)) return Results.NotFound();
             var releaseAsset = $"https://github.com/KeyserDSoze/LlmProxy/releases/download/v{version}/{officialName}";
             return Results.Redirect(releaseAsset, permanent: false);
         }).AllowAnonymous();
@@ -61,10 +61,9 @@ public static class NodeEnrollmentEndpoints
 
         admin.MapGet("/downloads", async (ReleaseDiscoveryService releases, CancellationToken token) =>
         {
-            var versions = await releases.GetAvailableAsync("0.0.0", token);
-            var current = versions.FirstOrDefault();
-            if (current is null) return Results.Problem("No stable Agent release is available.", statusCode: 503);
-            var version = current.Version;
+            var versions = await releases.GetDownloadableAgentVersionsAsync(token);
+            var version = versions.FirstOrDefault();
+            if (version is null) return Results.Problem("No stable Agent release with both architectures is available.", statusCode: 503);
             var root = $"/downloads/agent/{version}/";
             return Results.Ok(new
             {

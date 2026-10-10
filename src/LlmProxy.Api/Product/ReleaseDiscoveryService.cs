@@ -11,6 +11,37 @@ public sealed class ReleaseDiscoveryService(
 {
     private readonly string _repository = configuration["Updates:Repository"] ?? "KeyserDSoze/LlmProxy";
 
+    /// <summary>
+    /// Lightweight, cached whitelist of stable release versions that really carry
+    /// both Linux Agent architectures, adjacent SHA-256 and public pairing script.
+    /// Used by anonymous download endpoints without evaluating update plans.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetDownloadableAgentVersionsAsync(CancellationToken token)
+    {
+        var key = $"downloadable-agent-releases:{_repository}";
+        if (cache.TryGetValue(key, out IReadOnlyList<string>? cached) && cached is not null)
+            return cached;
+
+        var client = httpClientFactory.CreateClient("github-releases");
+        var entries = await client.GetFromJsonAsync<GitHubRelease[]>(
+            $"https://api.github.com/repos/{_repository}/releases?per_page=100", token) ?? [];
+        var versions = entries.Where(x => !x.Draft && !x.Prerelease)
+            .Select(x => new { Version = NormalizeVersion(x.TagName),
+                Assets = x.Assets?.Select(a => a.Name).ToHashSet(StringComparer.Ordinal) })
+            .Where(x => x.Version is not null && x.Assets is not null &&
+                x.Assets.Contains("llmproxy-connect-node.sh") &&
+                x.Assets.Contains("llmproxy-connect-node.sh.sha256") &&
+                new[] { "linux-x64", "linux-arm64" }.All(arch =>
+                    x.Assets.Contains($"llmproxy-node-agent-{x.Version}-{arch}.tar.gz") &&
+                    x.Assets.Contains($"llmproxy-node-agent-{x.Version}-{arch}.tar.gz.sha256")))
+            .Select(x => x.Version!)
+            .OrderByDescending(ParseVersion)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        cache.Set(key, versions, TimeSpan.FromMinutes(5));
+        return versions;
+    }
+
     public async Task<IReadOnlyList<AvailableProductRelease>> GetAvailableAsync(
         string currentVersion,
         CancellationToken cancellationToken)
