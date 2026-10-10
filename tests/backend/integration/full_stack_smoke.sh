@@ -6,6 +6,8 @@ cd "$ROOT_DIR"
 
 COMPOSE=(docker compose -f docker/docker-compose.full.yml)
 MOCK_PID=""
+REMOTE_AGENT_PID=""
+REMOTE_AGENT_STATE=/tmp/llmproxy-remote-agent-state.json
 PEER_NAME="llmproxy-full-peer"
 
 export POSTGRES_DB=llmproxy
@@ -18,6 +20,7 @@ export REDIS_CAPACITY_LEASE_SECONDS=20
 export REDIS_CAPACITY_RENEW_SECONDS=4
 export LLM_PROXY_API_KEY=full-stack-api-key
 export LLM_PROXY_API_KEY_PEPPER=full-stack-pepper
+export LLMPROXY_UPSTREAM_CREDENTIAL_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 export GRAFANA_ADMIN_USER=admin
 export GRAFANA_ADMIN_PASSWORD=full-stack-grafana
 export GHCR_OWNER=keyserdsoze
@@ -45,6 +48,10 @@ export PROVIDER_MODEL_NAME=bootstrap-model
 cleanup() {
   docker rm -f "$PEER_NAME" >/dev/null 2>&1 || true
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+  if [[ -n "$REMOTE_AGENT_PID" ]]; then
+    kill "$REMOTE_AGENT_PID" >/dev/null 2>&1 || true
+    wait "$REMOTE_AGENT_PID" >/dev/null 2>&1 || true
+  fi
   if [[ -n "$MOCK_PID" ]]; then
     kill "$MOCK_PID" >/dev/null 2>&1 || true
     wait "$MOCK_PID" >/dev/null 2>&1 || true
@@ -201,6 +208,7 @@ if ! docker run -d --name "$PEER_NAME" \
   -e "ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}" \
   -e "Authentication__ApiKey=${LLM_PROXY_API_KEY}" \
   -e "Authentication__ApiKeyPepper=${LLM_PROXY_API_KEY_PEPPER}" \
+  -e "Security__UpstreamCredentialEncryptionKey=${LLMPROXY_UPSTREAM_CREDENTIAL_KEY}" \
   -e Redis__Enabled=true \
   -e "Redis__ConnectionString=redis:6379,password=${REDIS_PASSWORD},abortConnect=false" \
   -e "Redis__KeyPrefix=${REDIS_KEY_PREFIX}" \
@@ -322,6 +330,80 @@ for attempt in {1..50}; do
   sleep 0.1
 done
 [[ "$capacity_released" == "true" ]] || fail_with_diagnostics "Distributed capacity lease was not released before Redis fault injection."
+
+# A real authenticated WSS session on gateway A must be reachable from gateway B via Redis.
+# This runs against both Docker gateways and the actual Redis service; the Agent is a
+# dependency-free simulator, NOT a real GPU or an on-host Docker daemon.
+rm -f "$REMOTE_AGENT_STATE"
+python3 tests/backend/integration/mock_outbound_agent.py \
+  --gateway http://127.0.0.1:8080 --state-file "$REMOTE_AGENT_STATE" \
+  >/tmp/llmproxy-remote-agent.log 2>&1 &
+REMOTE_AGENT_PID="$!"
+for attempt in {1..30}; do
+  if [[ -s "$REMOTE_AGENT_STATE" ]]; then break; fi
+  sleep 1
+done
+[[ -s "$REMOTE_AGENT_STATE" ]] ||
+  fail_with_diagnostics "Fake outbound Agent could not pair and connect over WebSocket."
+outbound_node_id="$(jq -r .nodeId "$REMOTE_AGENT_STATE")"
+outbound_connected=false
+for attempt in {1..30}; do
+  peers="$(curl --fail --silent http://127.0.0.1:8081/api/admin/node-enrollment/nodes || true)"
+  if echo "$peers" | jq -e --arg id "$outbound_node_id" \
+    'any(.[]; .nodeId == $id and .tunnelConnected == true)' >/dev/null 2>&1; then
+    outbound_connected=true
+    break
+  fi
+  sleep 1
+done
+[[ "$outbound_connected" == true ]] ||
+  fail_with_diagnostics "Second replica cannot discover first replica's authenticated Agent tunnel."
+
+remote_overview="$(curl --fail --silent \
+  "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/overview")"
+echo "$remote_overview" | jq -e \
+  '.agentAvailable == true and .hardware.hostname == "ci-outbound-agent"' >/dev/null ||
+  fail_with_diagnostics "Cross-replica management HTTP failed over the encrypted Redis bridge."
+
+catalog_id="$(curl --fail --silent http://127.0.0.1:8081/api/admin/model-management/catalog | jq -r '.[0].id')"
+[[ -n "$catalog_id" && "$catalog_id" != null ]] ||
+  fail_with_diagnostics "No curated model exists for Agent SSE relay smoke."
+installed="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
+  -d '{"force":true,"maxNumSeqs":2}' \
+  "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/models/$catalog_id/install")"
+deployment_id="$(echo "$installed" | jq -r '.deployment.id')"
+[[ -n "$deployment_id" && "$deployment_id" != null ]] ||
+  fail_with_diagnostics "Cross-replica model installation over Agent relay did not register."
+
+started="$(curl --fail --silent -X POST \
+  "http://127.0.0.1:8081/api/admin/model-management/deployments/$deployment_id/start")"
+echo "$started" | jq -e '.state.status == "running"' >/dev/null ||
+  fail_with_diagnostics "Remote Agent start command did not route across gateway replicas."
+
+outbound_healthy=false
+for attempt in {1..30}; do
+  node_list="$(curl --fail --silent http://127.0.0.1:8081/api/admin/nodes || true)"
+  if echo "$node_list" | jq -e --arg id "$outbound_node_id" \
+    'any(.[]; .id == $id and .status == "Healthy")' >/dev/null 2>&1; then
+    outbound_healthy=true
+    break
+  fi
+  sleep 1
+done
+[[ "$outbound_healthy" == true ]] ||
+  fail_with_diagnostics "Remote managed model failed virtual runtime health routing."
+
+request_payload="$(jq -nc --arg model "$catalog_id" \
+  '{model:$model,stream:true,messages:[{role:"user",content:"synthetic Redis relay test"}]}')"
+curl --fail --silent --show-error --no-buffer -H "Authorization: Bearer $LLM_PROXY_API_KEY" \
+  -H 'Content-Type: application/json' -d "$request_payload" \
+  http://127.0.0.1:8081/v1/chat/completions > /tmp/llmproxy-cross-replica-sse.txt ||
+  fail_with_diagnostics "Cross-replica Agent SSE inference returned non-200."
+grep -Fq 'peer-ok' /tmp/llmproxy-cross-replica-sse.txt ||
+  fail_with_diagnostics "Cross-replica streamed response lost its content delta."
+grep -Fq 'data: [DONE]' /tmp/llmproxy-cross-replica-sse.txt ||
+  fail_with_diagnostics "Cross-replica streamed response did not reach SSE completion."
+echo "Authenticated Agent WSS, Redis ownership, remote lifecycle and SSE roundtrip passed."
 
 # If Redis disappears during a long stream, the gateway must abort before its lease can expire and be reused elsewhere.
 loss_stream_file=/tmp/full-stack-capacity-coordination-loss.txt
