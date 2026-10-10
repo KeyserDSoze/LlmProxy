@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Installer-managed Linux host prerequisites — IMPLEMENTED / CI AND HARDWARE VALIDATION PENDING (2026-10-10)
+
+The Agent archive now bundles a host-preparation script that provisions missing Docker via supported distribution packages, configures NVIDIA Container Toolkit on Debian/Ubuntu when a working NVIDIA driver exists, and reports Docker daemon/GPU runtime readiness to Admin. The installer never force-installs a GPU kernel driver or triggers an unattended reboot. Unsupported Linux distributions and missing drivers are surfaced as readiness issues, not claimed fixed.
+
+
 ## Redis multi-replica Agent transport — IMPLEMENTED / CI AND REMOTE ACCEPTANCE PENDING (2026-10-10)
 
 With Redis coordination, gateway replicas publish short-lived owner leases for connected outbound Agent tunnels. Requests to another replica are forwarded through AES-GCM-protected transient Redis pub/sub channels with bounded per-request streaming chunks and cancellation, never persisted as Redis keys or logged. The Admin knows if a local or remote replica owns a tunnel. Without Redis the original single-replica route remains. CI/build, failover race and real cross-network load tests are required before claiming production HA.

@@ -15,6 +15,10 @@ for required in "$BINARY" "$SERVICE" "$ENV_EXAMPLE"; do
   [[ -f "$required" ]] || { echo "Missing release file: $required" >&2; exit 2; }
 done
 
+if [[ -f "$SCRIPT_DIR/prepare-node-host.sh" ]]; then
+  bash "$SCRIPT_DIR/prepare-node-host.sh"
+fi
+
 install -d -m 0755 /opt/llmproxy-node-agent /etc/llmproxy /var/lib/llmproxy-node-agent/huggingface
 install -m 0755 "$BINARY" /opt/llmproxy-node-agent/LlmProxy.NodeAgent
 if [[ -f "$SCRIPT_DIR/update-node-agent.sh" ]]; then
@@ -40,6 +44,9 @@ if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; 
     sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://127.0.0.1:9900|' /etc/llmproxy/node-agent.env
   else
     sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://0.0.0.0:9900|' /etc/llmproxy/node-agent.env
+  fi
+  if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
+    sed -i 's/^NodeAgent__UseNvidiaGpus=.*/NodeAgent__UseNvidiaGpus=false/' /etc/llmproxy/node-agent.env
   fi
   # Explicit new invitation means intentional (re)pairing. Preserve cache and installations,
   # but invalidate only the local gateway identity so a revoked node can re-enroll.
