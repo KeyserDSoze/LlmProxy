@@ -16,7 +16,11 @@ for required in "$BINARY" "$SERVICE" "$ENV_EXAMPLE"; do
 done
 
 if [[ -f "$SCRIPT_DIR/prepare-node-host.sh" ]]; then
-  bash "$SCRIPT_DIR/prepare-node-host.sh"
+  if ! bash "$SCRIPT_DIR/prepare-node-host.sh"; then
+    # Enrollment/visibility must still work when the host cannot yet serve models.
+    # The Admin inventory will show the outstanding prerequisites and can retry.
+    echo "[llmproxy-agent] Host prerequisite preparation incomplete; installing the Agent for remote diagnosis anyway." >&2
+  fi
 fi
 
 install -d -m 0755 /opt/llmproxy-node-agent /etc/llmproxy /var/lib/llmproxy-node-agent/huggingface
