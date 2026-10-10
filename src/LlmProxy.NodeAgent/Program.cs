@@ -14,6 +14,7 @@ Directory.CreateDirectory(options.ModelCacheDirectory);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<HardwareInventoryReader>();
+builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
@@ -29,6 +30,8 @@ app.UseMiddleware<BearerTokenMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "llmproxy-node-agent" }));
 app.MapGet("/v1/system", async (HardwareInventoryReader inventory, CancellationToken cancellationToken) =>
     Results.Ok(await inventory.ReadAsync(cancellationToken)));
+app.MapPost("/v1/system/prepare", async (NodeHostPreparer preparer, CancellationToken token) =>
+    Results.Ok(await preparer.RunAsync(token)));
 app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
     Results.Ok(await manager.ListAsync(cancellationToken)));
 app.MapPost("/v1/models/install", async (InstallRequest request, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>

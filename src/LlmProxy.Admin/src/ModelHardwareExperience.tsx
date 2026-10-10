@@ -73,6 +73,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     } } catch { return null }
   })()
 
+  async function prepareHost() {
+    setBusy('prepare'); setMessage(null); setError(null)
+    try {
+      const result = await api.prepareNodeHost(nodeId)
+      setMessage(result.success ? 'Host prerequisites verified and ready.' :
+        'Host preparation requires attention: ' + result.code)
+      await load()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+
   async function configure(event: FormEvent) { event.preventDefault(); if (!nodeId) return; setBusy('configure'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, bearerToken: bearerToken.trim() || null }); setBearerToken(''); setMessage('Management agent configuration updated.'); setAgentOpen(false); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
   async function clearCredential() { if (!nodeId) return; setBusy('credential'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, clearBearerToken: true }); setBearerToken(''); setMessage('Management-agent bearer removed.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
   async function install(catalogId: string) { setBusy('install:' + catalogId); setMessage(null); setError(null); try {
@@ -97,7 +108,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
 
     {tab === 'inventory' && <section className="panel"><div className="panelTitle"><h2>Hardware inventory</h2><span>{overview?.agentAvailable ? 'Live from management agent' : overview?.inventoryStale ? 'Last reported inventory (offline)' : 'Agent unavailable'}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads'} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label="GPU memory" value={formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div><div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''}</span></div>
       {hardware.readiness && <section className="stack">
-        <strong>Host prerequisites</strong>
+        <div className="actions"><strong>Host prerequisites</strong><button className="secondary"
+          disabled={!canWrite || !overview?.agentAvailable || busy !== null}
+          onClick={() => { if (window.confirm('Host preparation may update packages or restart Docker. Stop all models on this node first. Continue?')) void prepareHost() }}>
+          Prepare / repair host
+        </button></div>
         <div>Docker engine: {hardware.readiness.dockerDaemonReady ? 'ready' : 'not ready'} · NVIDIA driver: {hardware.readiness.nvidiaDriverDetected ? 'detected' : 'not detected'} · NVIDIA toolkit: {hardware.readiness.nvidiaToolkitReady ? 'ready or not needed' : 'missing'}</div>
         {hardware.readiness.issues.map(issue => <p className="notice" key={issue}>{issue}</p>)}
       </section>}<table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>{gpu.name}</strong></td><td>{formatGiB(gpu.memoryTotalGiB)}</td><td>{formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td></tr>)}</tbody></table></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Infrastructure → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}

@@ -62,6 +62,31 @@ public static class NodeModelManagementEndpoints
             }
         });
 
+        var prepare = group.MapPost("/nodes/{id:guid}/prepare", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            if (await db.Deployments.AnyAsync(d => d.NodeId == id && d.Enabled, token))
+                return Results.Conflict(new { error = "stop_active_models_before_host_repair",
+                    message = "Stop or disable active models from Admin before changing Docker host prerequisites." });
+            try
+            {
+                var result = await SendAgentAsync<HostPrepareResult>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Post, "/v1/system/prepare", new { requested = true }, token);
+                AddAudit(db, context, "node.host.prepare", "node", id.ToString(),
+                    new { result.Success, result.Code });
+                await db.SaveChangesAsync(token);
+                return Results.Ok(result);
+            }
+            catch (AgentException e)
+            { return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway); }
+        });
+
         var configure = group.MapPut("/nodes/{id:guid}/configuration", async (
             Guid id,
             ConfigureManagementRequest request,
@@ -344,6 +369,7 @@ public static class NodeModelManagementEndpoints
         if (entraEnabled)
         {
             configure.RequireAuthorization("AdminWrite");
+            prepare.RequireAuthorization("AdminWrite");
             install.RequireAuthorization("AdminWrite");
             start.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");
@@ -524,6 +550,7 @@ public static class NodeModelManagementEndpoints
     public sealed record HostReadiness(
         bool DockerInstalled, bool DockerDaemonReady, bool NvidiaDriverDetected,
         bool NvidiaToolkitReady, IReadOnlyList<string>? Issues);
+    public sealed record HostPrepareResult(bool Success, string Code);
     public sealed record HardwareInventory(
         string Hostname,
         string? OperatingSystem,
