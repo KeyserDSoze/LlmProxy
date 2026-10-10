@@ -48,9 +48,8 @@ if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; 
   else
     sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://0.0.0.0:9900|' /etc/llmproxy/node-agent.env
   fi
-  if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
-    sed -i 's/^NodeAgent__UseNvidiaGpus=.*/NodeAgent__UseNvidiaGpus=false/' /etc/llmproxy/node-agent.env
-  fi
+  # Runtime GPU selection is decided at launch from the live driver/toolkit state.
+  # Keep the configured preference so a later successful Admin host repair takes effect without env edits.
   # Explicit new invitation means intentional (re)pairing. Preserve cache and installations,
   # but invalidate only the local gateway identity so a revoked node can re-enroll.
   if [[ -f /var/lib/llmproxy-node-agent/gateway-connection.json ]]; then

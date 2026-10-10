@@ -11,6 +11,21 @@ public sealed class DockerModelRuntimeManager(
 {
     private readonly SemaphoreSlim _operations = new(1, 1);
 
+    private async Task<bool> HasGpuRuntimeAsync(CancellationToken token)
+    {
+        if (!options.UseNvidiaGpus) return false;
+        try
+        {
+            var driver = await runner.RunAsync("nvidia-smi", ["-L"], TimeSpan.FromSeconds(5), token);
+            if (!driver.Success || string.IsNullOrWhiteSpace(driver.StandardOutput)) return false;
+            var docker = await runner.RunAsync(options.DockerExecutable,
+                ["info", "--format", "{{json .Runtimes}}"], TimeSpan.FromSeconds(5), token);
+            return docker.Success && docker.StandardOutput.Contains("nvidia", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error) when (error is InvalidOperationException or
+            System.ComponentModel.Win32Exception or TimeoutException) { return false; }
+    }
+
     public async Task<ManagedModelsResponse> ListAsync(CancellationToken cancellationToken)
     {
         var rows = await registry.ReadAsync(cancellationToken);
@@ -107,7 +122,11 @@ public sealed class DockerModelRuntimeManager(
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
             var args = new List<string> { "run", "-d", "--name", name, "--restart", "unless-stopped", "--ipc=host" };
-            if (options.UseNvidiaGpus)
+            var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
+            if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang")
+                throw new InvalidOperationException(
+                    "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
+            if (gpuReady)
             {
                 args.Add("--gpus");
                 args.Add("all");

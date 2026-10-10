@@ -260,3 +260,7 @@ The immutable Agent release contains `prepare-node-host.sh`. During initial inst
 ### Host prerequisite repair from Admin
 
 After initial enrollment, **Inventory & model lifecycle → Host prerequisites → Prepare / repair host** requests the Agent to run only its trusted, immutable-release-installed `prepare-node-host.sh` helper. The browser cannot submit arbitrary shell commands. The API audits the request and refuses to modify host packages while a deployment is enabled; the Admin must stop its models first. An explicit browser confirmation warns about Docker restarts. The Agent reports only success/error code and a fresh readiness inventory (never package manager output or secrets). A second concurrent prepare call is rejected. On unsupported systems, the UI explains that prerequisite remediation remains a host-specific operation.
+
+### Dynamic GPU availability at model startup
+
+At each managed model start, the Agent checks `nvidia-smi -L` and Docker's configured runtimes. It passes `--gpus all` only when both are actually ready. vLLM and SGLang startup fail with an actionable Admin repair message if GPU support is required and not available; llama.cpp may run in CPU mode. Repairing NVIDIA prerequisites no longer requires editing `NodeAgent__UseNvidiaGpus` or reinstalling the Agent; the next start checks the current machine state.
