@@ -29,6 +29,20 @@ public static class ManagedRuntimeProfiles
         if (request.CpuOffloadGiB is < 0 or > 1024 or double.NaN or double.PositiveInfinity or double.NegativeInfinity)
             throw new ArgumentOutOfRangeException(nameof(request.CpuOffloadGiB));
 
+        if (!string.IsNullOrEmpty(request.GpuDevices))
+        {
+            if (request.GpuDevices.Length > 80 ||
+                !Regex.IsMatch(request.GpuDevices, @"^[0-9]{1,2}(?:,[0-9]{1,2})*$"))
+                throw new ArgumentException("GPU assignment must be comma-separated numeric indices, e.g. 0,1.");
+            var devices = request.GpuDevices.Split(',');
+            if (devices.Distinct(StringComparer.Ordinal).Count() != devices.Length)
+                throw new ArgumentException("GPU assignment may not repeat a device.");
+            if (request.Runtime is "vllm" or "sglang" && devices.Length < request.TensorParallelSize)
+                throw new ArgumentException("Assigned GPU count is smaller than requested tensor parallel size.");
+            if (request.Runtime == "airllm" && devices.Length != 1)
+                throw new ArgumentException("AirLLM experimental runtime uses exactly one selected GPU.");
+        }
+
         if (request.Runtime == "sglang" && (request.KvCacheDtype is not null || request.CpuOffloadGiB is not null))
             throw new ArgumentException("vLLM-only KV cache and CPU weight offload flags are not supported for SGLang.");
         if (request.Runtime == "airllm")
@@ -67,6 +81,7 @@ public static class ManagedRuntimeProfiles
         record.MaxModelLen == request.MaxModelLen &&
         record.KvCacheDtype == request.KvCacheDtype &&
         record.CpuOffloadGiB == request.CpuOffloadGiB &&
+        record.GpuDevices == request.GpuDevices &&
         record.ExtraArguments.SequenceEqual(request.ExtraArguments ?? []);
 
     public static string Image(ManagedModelRecord record, NodeAgentOptions options) =>

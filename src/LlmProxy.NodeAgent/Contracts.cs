@@ -39,7 +39,8 @@ public sealed record InstallRequest(
     int? MaxModelLen = null,
     string? KvCacheDtype = null,
     double? CpuOffloadGiB = null,
-    string? PublicName = null);
+    string? PublicName = null,
+    string? GpuDevices = null);
 
 public sealed record ManagedModelRecord
 {
@@ -51,6 +52,7 @@ public sealed record ManagedModelRecord
     public int? MaxModelLen { get; init; }
     public string? KvCacheDtype { get; init; }
     public double? CpuOffloadGiB { get; init; }
+    public string? GpuDevices { get; init; }
     public required int Port { get; init; }
     public required int TensorParallelSize { get; init; }
     public IReadOnlyList<string> ExtraArguments { get; init; } = [];
@@ -72,6 +74,7 @@ public sealed record ManagedModelState(
     int? MaxNumSeqs = null,
     int? MaxModelLen = null,
     string? KvCacheDtype = null,
-    double? CpuOffloadGiB = null);
+    double? CpuOffloadGiB = null,
+    string? GpuDevices = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);

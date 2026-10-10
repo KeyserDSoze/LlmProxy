@@ -67,6 +67,18 @@ public sealed class ManagedRuntimeProfilesTests
     }
 
     [Fact]
+    public void Gpu_assignment_is_validated_and_participates_in_profile_identity()
+    {
+        var baseline = new InstallRequest("qwen3-4b", "Qwen/Qwen3-4B", null, 2, [], "vllm", 2, 8192,
+            GpuDevices: "0,1");
+        ManagedRuntimeProfiles.Validate(baseline);
+        Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(baseline with { GpuDevices = "0;rm -rf /" }));
+        Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(baseline with { GpuDevices = "0,0" }));
+        Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(baseline with { GpuDevices = "0" }));
+        Assert.False(ManagedRuntimeProfiles.Matches(ToRecord(baseline), baseline with { GpuDevices = "2,3" }));
+    }
+
+    [Fact]
     public void One_catalog_supports_multiple_profiles_and_identical_reinstallation()
     {
         var first = new InstallRequest("qwen3-4b", "Qwen/Qwen3-4B", null, 1, [], "vllm", 1, 8192);
@@ -100,6 +112,7 @@ public sealed class ManagedRuntimeProfilesTests
         MaxModelLen = r.MaxModelLen,
         KvCacheDtype = r.KvCacheDtype,
         CpuOffloadGiB = r.CpuOffloadGiB,
+        GpuDevices = r.GpuDevices,
         Port = 18000,
         TensorParallelSize = r.TensorParallelSize,
         ExtraArguments = r.ExtraArguments ?? []

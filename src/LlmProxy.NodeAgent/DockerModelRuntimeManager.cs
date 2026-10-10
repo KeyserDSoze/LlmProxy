@@ -76,6 +76,7 @@ public sealed class DockerModelRuntimeManager(
                 MaxModelLen = request.MaxModelLen,
                 KvCacheDtype = request.KvCacheDtype,
                 CpuOffloadGiB = request.CpuOffloadGiB,
+                GpuDevices = request.GpuDevices,
                 Port = port,
                 TensorParallelSize = request.TensorParallelSize,
                 ExtraArguments = request.ExtraArguments?.ToArray() ?? [],
@@ -162,7 +163,7 @@ for index, entry in enumerate(files):
             if (gpuReady)
             {
                 args.Add("--gpus");
-                args.Add("all");
+                args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
             }
             args.Add("-v");
             args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
@@ -383,7 +384,8 @@ for index, entry in enumerate(files):
 
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
-            record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB);
+            record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
+            record.GpuDevices);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 
