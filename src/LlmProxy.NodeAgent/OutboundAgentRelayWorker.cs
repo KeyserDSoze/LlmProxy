@@ -41,7 +41,11 @@ public sealed class OutboundAgentRelayWorker(
                 // Ping/Pong timeout is essential: a broken WAN path can leave a TCP
                 // socket apparently open forever without a close frame.
                 socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(15);
-                await socket.ConnectAsync(wsUri, token);
+                // A gateway that silently drops SYN/TLS handshakes must not
+                // block future reconnect attempts indefinitely.
+                using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                connectTimeout.CancelAfter(TimeSpan.FromSeconds(20));
+                await socket.ConnectAsync(wsUri, connectTimeout.Token);
                 connected = true;
                 failedAttempts = 0;
                 logger.LogInformation("Outbound management/inference tunnel connected.");
