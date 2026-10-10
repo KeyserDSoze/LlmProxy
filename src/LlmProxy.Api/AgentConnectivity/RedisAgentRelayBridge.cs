@@ -57,7 +57,9 @@ public sealed class RedisAgentRelayBridge(
                         if (_active.TryGetValue(frame.Id, out var current)) current.Cancel();
                         return;
                     }
-                    if (frame.Type == "request" && local.IsConnected(frame.NodeId))
+                    // A stale owner lease must respond with an explicit error,
+                    // never leave the requesting gateway waiting for a 30-minute timeout.
+                    if (frame.Type == "request")
                         _ = Task.Run(() => ServeAsync(frame, token), CancellationToken.None);
                 });
                 _ready = true;
