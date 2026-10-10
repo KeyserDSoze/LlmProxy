@@ -39,6 +39,8 @@ jobs:
           grep -F 'set_env_value BOOTSTRAP_ENABLED false' docker/scripts/install-linux.sh
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
+          grep -F 'environment: test' .github/workflows/container.yml >/dev/null
+          grep -F 'test.install.sh.gpg' .github/workflows/container.yml >/dev/null
           grep -q "sha256sum -c" distribution/update-node-agent.sh
           grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
           grep -q "downloads/agent/version" distribution/connect-node.sh
@@ -52,6 +54,48 @@ jobs:
           grep -q "gateway-connection.json" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
           grep -q "File.SetUnixFileMode(_stateFile" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
           grep -q "NodeAgent__EnrollmentToken=" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+
+      - name: Validate protected environment installer with dummy CI secrets
+        shell: bash
+        env:
+          ENTRA_TENANT_ID: 00000000-0000-4000-8000-000000000001
+          ENTRA_CLIENT_ID: 00000000-0000-4000-8000-000000000002
+          ENTRA_SUPER_ADMINS: ci-admin@example.invalid
+          ENTRA_CLIENT_SECRET: ci-fake-entra-client-secret
+          CLOUDFLARE_TUNNEL_TOKEN: ci-fake-cloudflare-token
+          INSTALL_PASSWORD: ci-long-test-fixture-passphrase-not-a-production-secret
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          bash distribution/build-environment-installer.sh test 9.8.7 "$tmp"
+          test -s "$tmp/test.sh"
+          test -s "$tmp/test.install.sh.gpg"
+          bash -n "$tmp/test.sh"
+          (
+            cd "$tmp"
+            sha256sum -c test.sh.sha256
+            sha256sum -c test.install.sh.gpg.sha256
+          )
+          # The ciphertext must not contain the plaintext canary.
+          if grep -aFq 'ci-fake-entra-client-secret' "$tmp/test.install.sh.gpg"; then
+            echo "Protected installer contains unencrypted credential." >&2
+            exit 1
+          fi
+          gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase-fd 3 --output "$tmp/decrypted.sh" \
+            --decrypt "$tmp/test.install.sh.gpg" \
+            3<<<"$INSTALL_PASSWORD"
+          bash -n "$tmp/decrypted.sh"
+          grep -F 'VERSION=9.8.7' "$tmp/decrypted.sh" >/dev/null
+          grep -F 'export ENTRA_CLIENT_SECRET=' "$tmp/decrypted.sh" >/dev/null
+          if gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase-fd 3 --output "$tmp/wrong.sh" \
+            --decrypt "$tmp/test.install.sh.gpg" \
+            3<<<"incorrect-ci-passphrase" >/dev/null 2>&1; then
+            echo "Wrong password unexpectedly decrypted installer." >&2
+            exit 1
+          fi
 
       - name: Validate source and automatic release versioning
         shell: bash
