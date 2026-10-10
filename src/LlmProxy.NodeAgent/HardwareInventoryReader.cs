@@ -10,6 +10,19 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
         var drive = ResolveDrive(options.DataDirectory);
         var gpus = await ReadGpusAsync(cancellationToken);
         var docker = await TryDockerVersionAsync(cancellationToken);
+        var issues = new List<string>();
+        var dockerReady = docker is not null && await IsCommandAvailableAsync(options.DockerExecutable,
+            ["info", "--format", "{{.ServerVersion}}"], cancellationToken);
+        if (docker is null) issues.Add("Docker executable missing: the installer can provision Docker on supported Linux distributions.");
+        else if (!dockerReady) issues.Add("Docker daemon is not available: start or repair docker.service.");
+        var driverPresent = gpus.Count > 0 || Directory.Exists("/proc/driver/nvidia");
+        var toolkitReady = !driverPresent || await IsCommandAvailableAsync("nvidia-ctk", ["--version"], cancellationToken);
+        if (driverPresent && gpus.Count == 0)
+            issues.Add("NVIDIA driver was detected but nvidia-smi did not return usable accelerator data.");
+        if (driverPresent && !toolkitReady)
+            issues.Add("NVIDIA Container Toolkit missing: the Linux host preparer can install it for supported distributions.");
+        var readiness = new HostReadiness(docker is not null, dockerReady,
+            driverPresent, toolkitReady, issues);
 
         return new HardwareInventory(
             Environment.MachineName,
@@ -22,7 +35,8 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
             ToGiB(drive.AvailableFreeSpace),
             gpus,
             "docker",
-            docker);
+            docker,
+            readiness);
     }
 
     private static (long TotalBytes, long AvailableBytes) ReadMemory()
@@ -82,6 +96,17 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
         {
             return [];
         }
+    }
+
+    private async Task<bool> IsCommandAvailableAsync(string executable, string[] args, CancellationToken token)
+    {
+        try
+        {
+            var result = await runner.RunAsync(executable, args, TimeSpan.FromSeconds(8), token);
+            return result.Success;
+        }
+        catch (Exception e) when (e is InvalidOperationException or
+            System.ComponentModel.Win32Exception or TimeoutException) { return false; }
     }
 
     private async Task<string?> TryDockerVersionAsync(CancellationToken cancellationToken)

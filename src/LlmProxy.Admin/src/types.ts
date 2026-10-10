@@ -630,6 +630,13 @@ export type HardwareInventory = {
   gpus?: GpuInventory[] | null
   runtime?: string | null
   runtimeVersion?: string | null
+  readiness?: {
+    dockerInstalled: boolean
+    dockerDaemonReady: boolean
+    nvidiaDriverDetected: boolean
+    nvidiaToolkitReady: boolean
+    issues: string[]
+  } | null
 }
 
 export type ManagedModelState = {

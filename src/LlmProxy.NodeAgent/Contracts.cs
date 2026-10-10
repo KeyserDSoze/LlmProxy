@@ -7,6 +7,13 @@ public sealed record GpuInventory(
     string? DriverVersion,
     string? ComputeCapability);
 
+public sealed record HostReadiness(
+    bool DockerInstalled,
+    bool DockerDaemonReady,
+    bool NvidiaDriverDetected,
+    bool NvidiaToolkitReady,
+    IReadOnlyList<string> Issues);
+
 public sealed record HardwareInventory(
     string Hostname,
     string? OperatingSystem,
@@ -18,7 +25,8 @@ public sealed record HardwareInventory(
     double DiskAvailableGiB,
     IReadOnlyList<GpuInventory> Gpus,
     string? Runtime,
-    string? RuntimeVersion);
+    string? RuntimeVersion,
+    HostReadiness? Readiness = null);
 
 public sealed record InstallRequest(
     string CatalogModelId,

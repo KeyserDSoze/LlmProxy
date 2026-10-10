@@ -518,6 +518,9 @@ public static class NodeModelManagementEndpoints
         string? KvCacheDtype, double? CpuOffloadGiB);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
     public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null);
+    public sealed record HostReadiness(
+        bool DockerInstalled, bool DockerDaemonReady, bool NvidiaDriverDetected,
+        bool NvidiaToolkitReady, IReadOnlyList<string>? Issues);
     public sealed record HardwareInventory(
         string Hostname,
         string? OperatingSystem,
@@ -529,7 +532,8 @@ public static class NodeModelManagementEndpoints
         double DiskAvailableGiB,
         IReadOnlyList<GpuInventory>? Gpus,
         string? Runtime,
-        string? RuntimeVersion);
+        string? RuntimeVersion,
+        HostReadiness? Readiness = null);
     public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState>? Models);
     public sealed record ManagedModelState(
         string InstallationId,
