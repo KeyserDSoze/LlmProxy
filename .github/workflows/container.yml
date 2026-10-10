@@ -111,6 +111,26 @@ jobs:
             exit 4
           fi
 
+      - name: Verify protected test environment configuration and encrypt installer
+        shell: bash
+        env:
+          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+          ENTRA_SUPER_ADMINS: ${{ vars.ENTRA_SUPER_ADMINS }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          INSTALL_PASSWORD: ${{ secrets.password }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Password/credentials are never echoed or written to release assets.
+          bash distribution/build-environment-installer.sh test "$VERSION" dist
+          (
+            cd dist
+            sha256sum -c test.sh.sha256
+            sha256sum -c test.install.sh.gpg.sha256
+          )
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -328,26 +348,6 @@ jobs:
             sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
             sha256sum -c llmproxy-bootstrap.sh.sha256
             sha256sum -c llmproxy-update-plan.json.sha256
-          )
-
-      - name: Build password-protected test environment installer
-        shell: bash
-        env:
-          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
-          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
-          ENTRA_SUPER_ADMINS: ${{ vars.ENTRA_SUPER_ADMINS }}
-          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
-          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-          INSTALL_PASSWORD: ${{ secrets.password }}
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          set -euo pipefail
-          # Password/credentials are never echoed or written to release assets.
-          bash distribution/build-environment-installer.sh test "$VERSION" dist
-          (
-            cd dist
-            sha256sum -c test.sh.sha256
-            sha256sum -c test.install.sh.gpg.sha256
           )
 
       - name: Create immutable GitHub Release
