@@ -580,7 +580,7 @@ export type UserUsageSummary = {
 
 
 export type DeployableModel = {
-  runtime?: 'vllm' | 'llama.cpp' | 'sglang'
+  runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm'
   id: string
   displayName: string
   providerModelName: string
