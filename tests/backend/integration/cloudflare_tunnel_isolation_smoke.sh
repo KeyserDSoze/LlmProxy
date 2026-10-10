@@ -29,6 +29,24 @@ for arg in "$@"; do
   esac
 done
 case "$*" in
+  *" config --services")
+    printf '%s\\n' postgres redis llmproxy
+    [[ "$*" == *"--profile cloudflare"* ]] && printf '%s\\n' cloudflared
+    exit 0 ;;
+  *" pull "*)
+    [[ "${COMPOSE_PARALLEL_LIMIT:-}" == 1 ]] || {
+      echo "Image pulls must be sequential." >&2; exit 13;
+    }
+    service="${*: -1}"
+    [[ "$service" =~ ^(postgres|redis|llmproxy|cloudflared)$ ]] || exit 14
+    if [[ "$service" == redis && ! -e "$MOCK_PULL_RETRY_DIR/redis-once" ]]; then
+      touch "$MOCK_PULL_RETRY_DIR/redis-once"
+      echo "Simulated TCP connection reset while pulling redis" >&2
+      exit 1
+    fi
+    exit 0 ;;
+esac
+case "$*" in
   *" rm -sf cloudflared")
     [[ "$EXPECT_CLOUDFLARE_REMOVAL" == yes ]] || exit 13 ;;
 esac
@@ -59,6 +77,8 @@ ENV
 
 export PATH="$work/mockbin:$PATH"
 export DOCKER_COMMAND_LOG="$log"
+export MOCK_PULL_RETRY_DIR="$work"
+export LLMPROXY_PULL_MAX_ATTEMPTS=3
 export LLMPROXY_DEPLOY_DIR="$work/runtime"
 export LLMPROXY_ENV_FILE="$work/production.env"
 export COMPOSE_PROJECT_NAME=unrelated-cloudflare-project
@@ -68,6 +88,12 @@ export EXPECT_CLOUDFLARE_REMOVAL=no
 bash "$ROOT/docker/scripts/deploy.sh" smoke-version
 grep -F -- '--project-name llmproxy-full' "$log" >/dev/null
 grep -F -- '--profile cloudflare up -d --no-build' "$log" >/dev/null
+# Failed layers are retried for only the affected service, and a successful
+# image is never re-pulled during the same deployment.
+[[ "$(grep -Fc ' pull redis' "$log")" == 2 ]]
+[[ "$(grep -Fc ' pull postgres' "$log")" == 1 ]]
+[[ "$(grep -Fc ' pull llmproxy' "$log")" == 1 ]]
+[[ "$(grep -Fc ' pull cloudflared' "$log")" == 1 ]]
 ! grep -E -- '(^| )(stop|down|prune)( |$)|--remove-orphans|(^| )rm -sf cloudflared' "$log"
 
 # Removing LLMProxy's own token removes only its explicitly scoped service.
@@ -77,6 +103,8 @@ export EXPECT_CLOUDFLARE_REMOVAL=yes
 bash "$ROOT/docker/scripts/deploy.sh" smoke-version
 grep -F -- '--project-name llmproxy-full' "$log" >/dev/null
 grep -F -- '--profile cloudflare rm -sf cloudflared' "$log" >/dev/null
+! grep -F ' pull cloudflared' "$log"
+[[ "$(grep -Fc ' pull redis' "$log")" == 1 ]]
 ! grep -E -- '(^| )(stop|down|prune)( |$)|--remove-orphans' "$log"
 
 echo "Independent Cloudflare tunnels and other Compose projects remain untouched."
