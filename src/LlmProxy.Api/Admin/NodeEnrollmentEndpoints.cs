@@ -56,15 +56,24 @@ public static class NodeEnrollmentEndpoints
             return Results.Ok(new { enrollmentToken = secret, record.ExpiresAtUtc });
         });
 
-        admin.MapGet("/nodes", async (GatewayDbContext db, AgentRelayHub relay, CancellationToken token) =>
+        admin.MapGet("/nodes", async (GatewayDbContext db, AgentRelayHub relay, IServiceProvider services, CancellationToken token) =>
         {
             var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
                 .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus })
                 .ToListAsync(token);
+            var bridge = services.GetService<RedisAgentRelayBridge>();
+            var states = new Dictionary<Guid, bool>();
+            foreach (var record in records.Where(x => x.NodeId.HasValue))
+            {
+                var id = record.NodeId!.Value;
+                if (relay.IsConnected(id)) { states[id] = true; continue; }
+                try { states[id] = bridge is not null && await bridge.HasOwnerAsync(id, token); }
+                catch (Exception) when (!token.IsCancellationRequested) { states[id] = false; }
+            }
             return Results.Ok(records.Select(x => new {
                 x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus,
-                tunnelConnected = x.NodeId.HasValue && relay.IsConnected(x.NodeId.Value)
+                tunnelConnected = x.NodeId.HasValue && states.GetValueOrDefault(x.NodeId.Value)
             }));
         });
 

@@ -246,3 +246,9 @@ The current source must be tested on at least two separate Linux hosts or networ
 ### Agent packages in LLMProxy Admin
 
 In **Infrastructure → Fleet & access → Pair Linux agent**, the Admin presents direct version-pinned GitHub Release download links for the checksum-verified Linux x64 and ARM64 Agent archives and the pairing installer, plus each respective SHA-256. The server resolves the latest immutable release through release discovery; the published archive is never repackaged with a reusable enrollment token. The time-limited pairing invitation is separate and must be generated for each new server. After first installation, ordinary changes and upgrades are managed in Admin; a disconnected server is still shown with its last known inventory.
+
+## Multiple gateway API replicas with Redis (2026-10-10)
+
+When `Redis:Enabled=true` all gateway API replicas share a transient redis-based Agent relay. Each connected outbound Agent session gets an owner key with a ten-second TTL. Requests sent to another replica reach that owner through authenticated, encrypted Redis pub/sub and are streamed back using ephemeral per-request response channels; the bridge does not store raw inference requests in persistent Redis data. A missing owner, saturated buffer, or failed transport errors the stream rather than silently returning an apparently complete response.
+
+The encryption for the relay uses `SensitiveDataProtector` and the `Authentication:ApiKeyPepper` shared by gateway replicas. This secret must be identical across all gateway instances. Network access to Redis must be restricted and protected. Benchmark/reporting data remains metadata-only. Failover reconnects through Agent's existing WSS retry loop; active requests are not transparently resumed after a lost Agent socket.

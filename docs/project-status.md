@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Redis multi-replica Agent transport — IMPLEMENTED / CI AND REMOTE ACCEPTANCE PENDING (2026-10-10)
+
+With Redis coordination, gateway replicas publish short-lived owner leases for connected outbound Agent tunnels. Requests to another replica are forwarded through AES-GCM-protected transient Redis pub/sub channels with bounded per-request streaming chunks and cancellation, never persisted as Redis keys or logged. The Admin knows if a local or remote replica owns a tunnel. Without Redis the original single-replica route remains. CI/build, failover race and real cross-network load tests are required before claiming production HA.
+
+
 ## Remaining acceptance and HA constraints (2026-10-09)
 
 The managed Agent can be paired across networks, remotely managed and controlled from Admin; Admin benchmarks and immutable Agent self-updates have been implemented. They remain subject to full CI and real Linux/GPU acceptance. **The WSS tunnel is still per-API-replica; Redis-backed cross-replica forwarding is NOT implemented in the released code.** A multi-replica cluster must not claim remote Agent inference HA until that backplane and soak tests are complete. Linux Docker/NVIDIA prerequisites still need host preparation, even though no CLI is needed for normal day-to-day model lifecycle operations after Agent setup.

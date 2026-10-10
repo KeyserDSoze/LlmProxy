@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Redis-coordinated cross-replica Agent WSS relay with encrypted transient per-request streaming forwarding, short-lived owner leases and fail-closed missing-owner handling. Requires acceptance testing across independent gateways.
+
 - Cancel ongoing Admin benchmark jobs without CLI access; cancelled and stale jobs cannot write or apply recommendations.
 
 - Administrator-scheduled checksum-verified Node Agent upgrades delivered through paired Agent heartbeats, with independent systemd updater and automatic rollback when service verification fails.

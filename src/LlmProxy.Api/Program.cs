@@ -58,6 +58,8 @@ builder.Services.AddSingleton<IRequestLoadTracker>(services => services.GetRequi
 if (redisEnabled)
 {
     builder.Services.AddSingleton<RedisCoordinationConnection>();
+    builder.Services.AddSingleton<RedisAgentRelayBridge>();
+    builder.Services.AddHostedService(services => services.GetRequiredService<RedisAgentRelayBridge>());
     builder.Services.AddSingleton<RedisNodeMaintenanceCoordinator>();
     builder.Services.AddSingleton<INodeMaintenanceCoordinator>(services => services.GetRequiredService<RedisNodeMaintenanceCoordinator>());
     builder.Services.AddSingleton<IRateLimitCounterStore, RedisRateLimitCounterStore>();

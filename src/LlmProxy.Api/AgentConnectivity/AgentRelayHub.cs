@@ -32,6 +32,9 @@ public sealed class AgentRelayHub
             session.Abort("Node identity revoked by administrator.");
     }
 
+    public Guid[] ConnectedNodes() => _sessions
+        .Where(pair => pair.Value.IsOpen).Select(pair => pair.Key).ToArray();
+
     public bool IsConnected(Guid nodeId) =>
         _sessions.TryGetValue(nodeId, out var session) && session.IsOpen;
 
