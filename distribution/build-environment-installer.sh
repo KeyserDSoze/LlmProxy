@@ -63,7 +63,7 @@ persist_protected_environment() {
   local target="$1"
   (
     umask 077
-    declare -p ENTRA_ENABLED ENTRA_TENANT_ID ENTRA_CLIENT_ID \\
+    declare -p ENTRA_ENABLED ENTRA_TENANT_ID ENTRA_CLIENT_ID \
       ENTRA_SUPER_ADMINS ENTRA_CLIENT_SECRET CLOUDFLARE_TUNNEL_TOKEN > "$target"
   )
   chmod 0600 "$target"
@@ -81,12 +81,12 @@ curl -fsSL --retry 8 --retry-delay 2 --retry-all-errors "$BASE_URL/llmproxy-boot
 sha256sum -c llmproxy-bootstrap.sh.sha256
 persist_protected_environment "$TMP_DIR/privileged-environment.sh"
 if [[ "$(id -u)" -eq 0 ]]; then
-  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \\
-    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \\
+  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \
+    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \
     "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 else
-  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \\
-    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \\
+  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \
+    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \
     "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 fi
 ''')
@@ -106,12 +106,12 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 persist_protected_environment "$TMP_DIR/privileged-environment.sh"
 LLMPROXYCTL="$(command -v llmproxyctl)"
 if [[ "$(id -u)" -eq 0 ]]; then
-  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \\
-    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \\
+  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \
+    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \
     "$LLMPROXYCTL" update "$VERSION"
 else
-  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \\
-    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \\
+  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \
+    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \
     "$LLMPROXYCTL" update "$VERSION"
 fi
 ''')
