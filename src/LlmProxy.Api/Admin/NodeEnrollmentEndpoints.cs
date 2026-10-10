@@ -18,6 +18,16 @@ public static class NodeEnrollmentEndpoints
         // The only variable is a VERIFIED published SemVer; never proxy arbitrary URLs.
         // The checksum belongs to the exact public script in THIS gateway image,
         // not to a potentially newer/different GitHub release.
+        // Explicit endpoint also covers hosts whose StaticFile MIME registry does
+        // not include .sh; no authentication or invitation is required to download.
+        app.MapGet("/downloads/agent/connect-node.sh", (IWebHostEnvironment host) =>
+        {
+            var path = Path.Combine(host.WebRootPath, "downloads", "agent", "connect-node.sh");
+            return File.Exists(path)
+                ? Results.File(path, "text/plain; charset=utf-8")
+                : Results.NotFound();
+        }).AllowAnonymous();
+
         app.MapGet("/downloads/agent/connect-node.sh.sha256", async (
             IWebHostEnvironment host, CancellationToken token) =>
         {
