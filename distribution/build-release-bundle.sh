@@ -24,6 +24,9 @@ cp -a "$ROOT_DIR/docker/scripts" "$BUNDLE/docker/"
 cp "$ROOT_DIR/distribution/install.sh" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/bootstrap.sh" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/llmproxyctl" "$BUNDLE/distribution/"
+# systemd is installed by distribution/install.sh after the containers are
+# healthy; the service unit MUST be inside the immutable release archive.
+cp "$ROOT_DIR/distribution/llmproxy.service" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/install-node-agent.sh" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/llmproxy-node-agent.service" "$BUNDLE/distribution/"
 cp "$ROOT_DIR/distribution/node-agent.env.example" "$BUNDLE/distribution/"
@@ -45,6 +48,11 @@ chmod 0755 "$BUNDLE/distribution/"*.sh "$BUNDLE/distribution/llmproxyctl"
 mkdir -p "$OUT_DIR"
 ARCHIVE="$OUT_DIR/llmproxy-$VERSION-linux.tar.gz"
 tar -C "$STAGE" -czf "$ARCHIVE" "llmproxy-$VERSION"
+# Reject incomplete archives before a GitHub Release can publish them.
+if ! tar -tzf "$ARCHIVE" | grep -Fxq "llmproxy-$VERSION/distribution/llmproxy.service"; then
+  echo "Release archive is missing the LLMProxy systemd unit." >&2
+  exit 4
+fi
 (
   cd "$OUT_DIR"
   sha256sum "$(basename "$ARCHIVE")" > "$(basename "$ARCHIVE").sha256"

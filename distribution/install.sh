@@ -48,6 +48,16 @@ cp -a "$ROOT_DIR/." "$RELEASE_DIR.tmp/"
 rm -rf "$RELEASE_DIR"
 mv "$RELEASE_DIR.tmp" "$RELEASE_DIR"
 
+# Fail *before* downloading images or touching running services if the
+# archive cannot complete final activation. This protects operators from
+# another successful deployment followed by a missing-systemd-unit error.
+for required_file in distribution/llmproxy.service distribution/llmproxyctl distribution/bootstrap.sh; do
+  if [[ ! -f "$RELEASE_DIR/$required_file" ]]; then
+    echo "Incomplete LLMProxy release bundle: missing $required_file." >&2
+    exit 4
+  fi
+done
+
 # The existing installer owns host preparation, secret generation, inference node checks and deployment.
 # Pin the application image to the exact release version represented by this bundle.
 release_log "Starting host preparation and deployment"

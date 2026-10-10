@@ -36,6 +36,17 @@ jobs:
           test -f distribution/llmproxy.service
           grep -Fx 'WantedBy=multi-user.target' distribution/llmproxy.service
           grep -F 'systemctl enable --now llmproxy.service' distribution/install.sh
+          # Reproduce a real immutable Linux bundle build; previous releases
+          # accidentally omitted llmproxy.service despite the source file existing.
+          release_fixture="$(mktemp -d)"
+          trap 'rm -rf "$release_fixture"' EXIT
+          bash distribution/build-release-bundle.sh 9.8.7 "$release_fixture"
+          release_archive="$release_fixture/llmproxy-9.8.7-linux.tar.gz"
+          (cd "$release_fixture" && sha256sum -c llmproxy-9.8.7-linux.tar.gz.sha256)
+          tar -tzf "$release_archive" | grep -Fx 'llmproxy-9.8.7/distribution/llmproxy.service' >/dev/null
+          cmp distribution/llmproxy.service <(tar -xOf "$release_archive" llmproxy-9.8.7/distribution/llmproxy.service)
+          tar -tzf "$release_archive" | grep -Fx 'llmproxy-9.8.7/distribution/llmproxyctl' >/dev/null
+          tar -tzf "$release_archive" | grep -Fx 'llmproxy-9.8.7/distribution/bootstrap.sh' >/dev/null
           grep -F 'set_env_value BOOTSTRAP_ENABLED false' docker/scripts/install-linux.sh
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
