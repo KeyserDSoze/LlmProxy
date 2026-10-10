@@ -53,6 +53,22 @@ for key in keys:
         raise ValueError(f"Invalid line break in {key}")
     print(f"export {key}={shlex.quote(value)}")
 print(f"VERSION={shlex.quote(version)}")
+print(r'''
+# sudo -E is not sufficient on hardened hosts: sudoers may discard custom
+# credential variables. Re-create a permission-restricted export snapshot in
+# the caller's private temporary directory, then source it *after* sudo.
+# Bash's declare -p generates shell-escaped assignments, including backslashes
+# and special characters, without putting any secrets on process argv.
+persist_protected_environment() {
+  local target="$1"
+  (
+    umask 077
+    declare -p ENTRA_ENABLED ENTRA_TENANT_ID ENTRA_CLIENT_ID \\
+      ENTRA_SUPER_ADMINS ENTRA_CLIENT_SECRET CLOUDFLARE_TUNNEL_TOKEN > "$target"
+  )
+  chmod 0600 "$target"
+}
+''')
 
 if action == "install":
     print(r'''
@@ -63,10 +79,15 @@ BASE_URL="https://github.com/KeyserDSoze/LlmProxy/releases/download/v${VERSION}"
 curl -fsSL --retry 8 --retry-delay 2 --retry-all-errors "$BASE_URL/llmproxy-bootstrap.sh" -o llmproxy-bootstrap.sh
 curl -fsSL --retry 8 --retry-delay 2 --retry-all-errors "$BASE_URL/llmproxy-bootstrap.sh.sha256" -o llmproxy-bootstrap.sh.sha256
 sha256sum -c llmproxy-bootstrap.sh.sha256
+persist_protected_environment "$TMP_DIR/privileged-environment.sh"
 if [[ "$(id -u)" -eq 0 ]]; then
-  bash llmproxy-bootstrap.sh --version "$VERSION" --non-interactive
+  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \\
+    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \\
+    "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 else
-  sudo -E bash llmproxy-bootstrap.sh --version "$VERSION" --non-interactive
+  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \\
+    llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \\
+    "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 fi
 ''')
 elif action == "update":
@@ -80,10 +101,18 @@ if ! command -v llmproxyctl >/dev/null 2>&1; then
   echo "LLMProxy is not installed; use the test.sh first-install launcher." >&2
   exit 4
 fi
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+persist_protected_environment "$TMP_DIR/privileged-environment.sh"
+LLMPROXYCTL="$(command -v llmproxyctl)"
 if [[ "$(id -u)" -eq 0 ]]; then
-  llmproxyctl update "$VERSION"
+  bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \\
+    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \\
+    "$LLMPROXYCTL" update "$VERSION"
 else
-  sudo -E llmproxyctl update "$VERSION"
+  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \\
+    llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \\
+    "$LLMPROXYCTL" update "$VERSION"
 fi
 ''')
 else:
