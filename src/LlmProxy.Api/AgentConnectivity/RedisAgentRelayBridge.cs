@@ -66,7 +66,20 @@ public sealed class RedisAgentRelayBridge(
                 {
                     var db = await redis.GetDatabaseAsync(token);
                     foreach (var node in local.ConnectedNodes())
-                        await db.StringSetAsync(OwnerKey(node), _instance, TimeSpan.FromSeconds(10));
+                    {
+                        var key = OwnerKey(node);
+                        var owner = await db.StringGetAsync(key);
+                        if (!owner.HasValue)
+                        {
+                            // Never displace another live gateway; wait for its lease to expire.
+                            await db.StringSetAsync(key, _instance, TimeSpan.FromSeconds(10),
+                                when: When.NotExists);
+                        }
+                        else if (owner == _instance)
+                        {
+                            await db.KeyExpireAsync(key, TimeSpan.FromSeconds(10));
+                        }
+                    }
                 } while (await ticker.WaitForNextTickAsync(token));
                 _ready = false;
                 await sub.UnsubscribeAsync(channel);
