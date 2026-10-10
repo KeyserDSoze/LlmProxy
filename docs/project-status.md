@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Per-hardware persistent Agent recovery and server-specific commands — IMPLEMENTED IN SOURCE / CI PENDING (2026-10-11)
+
+Existing one-time enrollment invitations expire after 30 minutes and are not suitable for reinstall or repair. The API now provisions an encrypted, per-node recoverable token and supports audited AdminWrite reveal/rotation; /api/agent-connection/recover checks that token, preserves the original Node ID, updates the node's operational Agent secret, and does not create new physical nodes, models or deployments. Fleet shows the per-node Agent management/recovery modal and copyable latest-checksummed installer command bound to the existing ID. The Linux installer performs an atomic executable replacement and reboots the Agent service without erasing the data directory; after successful recovery the agent clears bootstrap keys while keeping a root-only gateway-connection.json across restarts. Fleet renders No runtime separately from connectivity for paired machines with the inert 127.0.0.1:1 bootstrap address. Actual existing Spark (401 expired invite) recovery end-to-end is still pending; do not consider it fixed on the hardware until verified.
+
+
 ## GB10 unified-memory discovery, sampled telemetry and experimental AirLLM ARM64 — SOURCE + CI TESTS; TARGET HARDWARE ACCEPTANCE PENDING (2026-10-10)
 
 The paired DGX Spark `spark-1d52` exposes an NVIDIA GB10 with `nvidia-smi` memory.total/free both `[N/A]`. Previously the Agent discarded the device and returned `gpus: []`, making most model profiles falsely `insufficient`. The corrected Agent keeps the GB10 and enumerates other NVIDIA devices through `nvidia-smi -L` fallback, marks unified RAM distinct from dedicated VRAM, and samples CPU activity and available NVIDIA utilization/temperature/power. The Admin now displays GPU count/indices and refreshed metrics. Gateway fit for unified memory uses a single shared CPU+GPU resource budget with host reserve; it does not infer extra VRAM or promise actual model startup.

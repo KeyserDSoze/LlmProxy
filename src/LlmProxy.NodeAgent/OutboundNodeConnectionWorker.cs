@@ -14,6 +14,7 @@ public sealed class OutboundNodeConnectionWorker(
 {
     private sealed record Connection(Guid NodeId, string AgentSecret);
     private readonly string _stateFile = Path.Combine(options.DataDirectory, "gateway-connection.json");
+    private bool _recoveryCompleted;
     private string? _lastUpdateAttempt;
     private DateTimeOffset _lastUpdateAt;
 
@@ -34,6 +35,34 @@ public sealed class OutboundNodeConnectionWorker(
             {
                 var connection = await ReadStateAsync(stoppingToken);
                 var currentInventory = await inventory.ReadAsync(stoppingToken);
+                // An explicit recovery operation reuses the existing gateway node ID.
+                // A restart without a recovery request always uses the durable state.
+                if (!_recoveryCompleted && !string.IsNullOrWhiteSpace(options.RecoveryToken) &&
+                    options.RecoveryNodeId.HasValue && (options.ForceRecovery || connection is null))
+                {
+                    using var response = await client.PostAsJsonAsync(
+                        address + "/api/agent-connection/recover",
+                        new
+                        {
+                            nodeId = options.RecoveryNodeId.Value, recoveryToken = options.RecoveryToken,
+                            mode = options.ConnectionMode, inventory = currentInventory,
+                            managementBaseAddress = options.ConnectionMode == "direct" ?
+                                "http://" + options.AdvertiseHost + ":9900" : null,
+                            agentBearer = options.ConnectionMode == "direct" ? options.BearerToken : null,
+                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3)
+                        }, stoppingToken);
+                    if (!response.IsSuccessStatusCode)
+                        throw new HttpRequestException($"Node recovery rejected: HTTP {(int)response.StatusCode}. Open Fleet > Recover agent and verify the per-node recovery code.");
+                    connection = await response.Content.ReadFromJsonAsync<Connection>(stoppingToken)
+                        ?? throw new InvalidOperationException("Node recovery returned no credential.");
+                    if (connection.NodeId != options.RecoveryNodeId.Value ||
+                        !connection.AgentSecret.StartsWith("lpa_", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Unexpected node identity in recovery response.");
+                    await SaveStateAsync(connection, stoppingToken);
+                    await ClearBootstrapTokensAsync(stoppingToken);
+                    _recoveryCompleted = true;
+                    logger.LogInformation("Restored registered node {NodeId} without creating a duplicate.", connection.NodeId);
+                }
                 if (connection is null)
                 {
                     if (string.IsNullOrWhiteSpace(options.EnrollmentToken))
@@ -56,18 +85,7 @@ public sealed class OutboundNodeConnectionWorker(
                         connection = await response.Content.ReadFromJsonAsync<Connection>(stoppingToken)
                             ?? throw new InvalidOperationException("Node enrollment returned no credential.");
                         await SaveStateAsync(connection, stoppingToken);
-                        // A pairing code is consumed once; remove its plaintext from service config.
-                        const string envFile = "/etc/llmproxy/node-agent.env";
-                        if (File.Exists(envFile))
-                        {
-                            var lines = await File.ReadAllLinesAsync(envFile, stoppingToken);
-                            for (var index = 0; index < lines.Length; index++)
-                                if (lines[index].StartsWith("NodeAgent__EnrollmentToken=", StringComparison.Ordinal))
-                                    lines[index] = "NodeAgent__EnrollmentToken=";
-                            await File.WriteAllLinesAsync(envFile, lines, stoppingToken);
-                            if (OperatingSystem.IsLinux())
-                                File.SetUnixFileMode(envFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                        }
+                        await ClearBootstrapTokensAsync(stoppingToken);
                         logger.LogInformation("Paired node {NodeId} in {Mode} mode.", connection.NodeId, options.ConnectionMode);
                     }
                 }
@@ -155,6 +173,25 @@ public sealed class OutboundNodeConnectionWorker(
         else logger.LogInformation("Scheduled verified Node Agent update to {Version}.", version);
     }
 
+    private static async Task ClearBootstrapTokensAsync(CancellationToken token)
+    {
+        const string envFile = "/etc/llmproxy/node-agent.env";
+        if (!File.Exists(envFile)) return;
+        var lines = await File.ReadAllLinesAsync(envFile, token);
+        for (var index = 0; index < lines.Length; index++)
+        {
+            if (lines[index].StartsWith("NodeAgent__EnrollmentToken=", StringComparison.Ordinal) ||
+                lines[index].StartsWith("NodeAgent__RecoveryToken=", StringComparison.Ordinal) ||
+                lines[index].StartsWith("NodeAgent__RecoveryNodeId=", StringComparison.Ordinal))
+                lines[index] = lines[index][..(lines[index].IndexOf('=') + 1)];
+            if (lines[index].StartsWith("NodeAgent__ForceRecovery=", StringComparison.Ordinal))
+                lines[index] = "NodeAgent__ForceRecovery=false";
+        }
+        await File.WriteAllLinesAsync(envFile, lines, token);
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(envFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
     private async Task<Connection?> ReadStateAsync(CancellationToken token) =>
         File.Exists(_stateFile)
             ? JsonSerializer.Deserialize<Connection>(await File.ReadAllTextAsync(_stateFile, token),
@@ -163,10 +200,20 @@ public sealed class OutboundNodeConnectionWorker(
     private async Task SaveStateAsync(Connection state, CancellationToken token)
     {
         Directory.CreateDirectory(options.DataDirectory);
-        var temp = _stateFile + ".tmp";
-        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(state), token);
-        File.Move(temp, _stateFile, overwrite: true);
         if (OperatingSystem.IsLinux())
-            File.SetUnixFileMode(_stateFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.SetUnixFileMode(options.DataDirectory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var temp = _stateFile + ".tmp";
+        var optionsForFile = new FileStreamOptions
+        {
+            Mode = FileMode.Create, Access = FileAccess.Write
+        };
+        if (OperatingSystem.IsLinux())
+            optionsForFile.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        await using (var stream = new FileStream(temp, optionsForFile))
+            await JsonSerializer.SerializeAsync(stream, state, cancellationToken: token);
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        File.Move(temp, _stateFile, overwrite: true);
     }
 }

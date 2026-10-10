@@ -9,6 +9,11 @@ public sealed class NodeEnrollmentRecord
     public DateTimeOffset? ConsumedAtUtc { get; set; }
     public Guid? NodeId { get; set; }
     public string? AgentSecretHash { get; set; }
+    // Separate, administrator-revealable and rotatable recovery credential.
+    // Agent heartbeat secrets remain hash-only and are never revealed.
+    public string? RecoverySecretHash { get; set; }
+    public string? RecoverySecretCiphertext { get; set; }
+    public DateTimeOffset? RecoverySecretCreatedAtUtc { get; set; }
     public string Mode { get; set; } = "outbound";
     public string? HardwareInventoryJson { get; set; }
     public DateTimeOffset? LastHeartbeatAtUtc { get; set; }

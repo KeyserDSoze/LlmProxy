@@ -24,7 +24,10 @@ if [[ -f "$SCRIPT_DIR/prepare-node-host.sh" ]]; then
 fi
 
 install -d -m 0755 /opt/llmproxy-node-agent /etc/llmproxy /var/lib/llmproxy-node-agent/huggingface
-install -m 0755 "$BINARY" /opt/llmproxy-node-agent/LlmProxy.NodeAgent
+# Replace the executable atomically: overwriting a running Linux binary in-place
+# fails with ETXTBSY and must never reset the stored node identity.
+install -m 0755 "$BINARY" /opt/llmproxy-node-agent/LlmProxy.NodeAgent.staging
+mv -f /opt/llmproxy-node-agent/LlmProxy.NodeAgent.staging /opt/llmproxy-node-agent/LlmProxy.NodeAgent
 if [[ -f "$SCRIPT_DIR/airllm-runtime/Dockerfile" ]]; then
   install -d -m 0755 /opt/llmproxy-node-agent/airllm-runtime
   cp -a "$SCRIPT_DIR/airllm-runtime/." /opt/llmproxy-node-agent/airllm-runtime/
@@ -43,6 +46,35 @@ if [[ ! -f /etc/llmproxy/node-agent.env ]]; then
 else
   chmod 0600 /etc/llmproxy/node-agent.env
   echo "Preserved existing /etc/llmproxy/node-agent.env."
+fi
+
+# Per-node recovery never deletes gateway-connection.json before the gateway
+# accepts the recovery key. The Agent switches secrets only after success.
+if [[ -n "${LLMPROXY_RECOVERY_TOKEN:-}" || -n "${LLMPROXY_RECOVERY_NODE_ID:-}" ]]; then
+  [[ "${LLMPROXY_RECOVERY_TOKEN:-}" =~ ^lpr_[A-Za-z0-9_-]{20,160}$ &&
+     "${LLMPROXY_RECOVERY_NODE_ID:-}" =~ ^[0-9a-fA-F-]{36}$ ]] || {
+    echo "Recovery needs a valid server-specific node ID and recovery key." >&2; exit 3;
+  }
+  [[ -z "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]] || {
+    echo "Use either recovery or a new pairing invitation, not both." >&2; exit 3;
+  }
+  [[ -n "${LLMPROXY_GATEWAY_URL:-}" ]] || { echo "LLMPROXY_GATEWAY_URL is required." >&2; exit 3; }
+  if ! grep -q '^NodeAgent__RecoveryToken=' /etc/llmproxy/node-agent.env; then
+    printf 'NodeAgent__RecoveryToken=\\nNodeAgent__RecoveryNodeId=\\nNodeAgent__ForceRecovery=false\\n' >> /etc/llmproxy/node-agent.env
+  fi
+  sed -i "s|^NodeAgent__GatewayBaseAddress=.*|NodeAgent__GatewayBaseAddress=${LLMPROXY_GATEWAY_URL}|" /etc/llmproxy/node-agent.env
+  sed -i "s|^NodeAgent__RecoveryNodeId=.*|NodeAgent__RecoveryNodeId=${LLMPROXY_RECOVERY_NODE_ID}|" /etc/llmproxy/node-agent.env
+  sed -i "s|^NodeAgent__RecoveryToken=.*|NodeAgent__RecoveryToken=${LLMPROXY_RECOVERY_TOKEN}|" /etc/llmproxy/node-agent.env
+  sed -i 's|^NodeAgent__ForceRecovery=.*|NodeAgent__ForceRecovery=true|' /etc/llmproxy/node-agent.env
+  sed -i "s|^NodeAgent__ConnectionMode=.*|NodeAgent__ConnectionMode=${LLMPROXY_CONNECTION_MODE:-outbound}|" /etc/llmproxy/node-agent.env
+  if [[ "${LLMPROXY_CONNECTION_MODE:-outbound}" == "outbound" ]]; then
+    sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://127.0.0.1:9900|' /etc/llmproxy/node-agent.env
+  fi
+  if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env; then
+    generated_bearer="$(openssl rand -hex 32)"
+    sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/${generated_bearer}/" /etc/llmproxy/node-agent.env
+  fi
+  chmod 0600 /etc/llmproxy/node-agent.env
 fi
 
 # A single installer invocation can carry the invitation without a subsequent manual edit.
@@ -89,6 +121,8 @@ if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env || grep -
   exit 0
 fi
 
-systemctl enable --now llmproxy-node-agent
+systemctl enable llmproxy-node-agent
+# Reload an active service so a recovered/reinstalled binary and settings are used.
+systemctl restart llmproxy-node-agent
 echo "LlmProxy Node Agent installed and started."
 systemctl --no-pager --full status llmproxy-node-agent || true

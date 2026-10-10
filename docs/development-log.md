@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Admin-managed per-node recovery instead of repeated expiring invitations
+
+- Investigated real spark-1d52 failure: systemd Agent active, but repeated POST /api/agent-connection/enroll HTTP 401 means the Agent cannot find or use persisted pairing state and retries an expired/consumed invitation.
+- Added persistent encrypted per-server recovery codes in PostgreSQL, audited reveal/rotation with privileged AdminWrite, and a distinct recover API that rotates the Agent's operational token on its existing node ID.
+- Extended Agent settings, outbound worker, installer and public checksum-verified connect script with explicit recovery ID/token path; persist the replacement secret before clearing bootstrap values, preserve model/data directories and restart an already-running Linux Agent.
+- Fleet UI now provides recover/repair command on each paired server and differentiates Agent connectivity from an undeployed inference runtime.
+- Pending: PR CI, actual Spark repair/heartbeat/tunnel and subsequent reboot/update validation.
+
+
 ## 2026-10-10 — NVIDIA GB10 shared-memory inventory and AirLLM ARM64 build path
 
 - Reproduced observed DGX Spark `NVIDIA GB10, [N/A], [N/A], 580.178.04` misclassification: Node Agent returned `gpus: []` despite functional driver/toolkit.

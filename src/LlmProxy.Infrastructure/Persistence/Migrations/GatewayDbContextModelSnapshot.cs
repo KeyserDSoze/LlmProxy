@@ -64,6 +64,9 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset?>("ConsumedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<Guid?>("NodeId").HasColumnType("uuid");
             b.Property<string>("AgentSecretHash").HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("RecoverySecretHash").HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<string>("RecoverySecretCiphertext").HasMaxLength(4096).HasColumnType("character varying(4096)");
+            b.Property<DateTimeOffset?>("RecoverySecretCreatedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("Mode").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
             b.Property<string>("HardwareInventoryJson").HasColumnType("text");
             b.Property<DateTimeOffset?>("LastHeartbeatAtUtc").HasColumnType("timestamp with time zone");
@@ -73,6 +76,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.HasKey("Id");
             b.HasIndex("InvitationHash").IsUnique();
             b.HasIndex("AgentSecretHash").IsUnique();
+            b.HasIndex("RecoverySecretHash").IsUnique();
             b.HasIndex("NodeId").IsUnique();
             b.ToTable("node_enrollments");
         });

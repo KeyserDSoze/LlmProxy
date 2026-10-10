@@ -18,7 +18,10 @@ public sealed record NodeAgentOptions(
     string SglangDockerImage,
     string? GatewayBaseAddress = null,
     string? EnrollmentToken = null,
-    string ConnectionMode = "outbound")
+    string ConnectionMode = "outbound",
+    Guid? RecoveryNodeId = null,
+    string? RecoveryToken = null,
+    bool ForceRecovery = false)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -39,7 +42,10 @@ public sealed record NodeAgentOptions(
             section["SglangDockerImage"] ?? "lmsysorg/sglang:latest",
             section["GatewayBaseAddress"],
             section["EnrollmentToken"],
-            section["ConnectionMode"] ?? "outbound");
+            section["ConnectionMode"] ?? "outbound",
+            Guid.TryParse(section["RecoveryNodeId"], out var recoveryNodeId) ? recoveryNodeId : null,
+            section["RecoveryToken"],
+            ParseBool(section["ForceRecovery"], false));
     }
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>

@@ -1,3 +1,10 @@
+## Unreleased — Persistent per-server Agent identity and recovery (2026-10-11)
+
+- Infrastructure → Fleet & access now separates **new hardware pairing** (one-use 30-minute invitation) from **existing-node Agent recovery** (persistent, independent per-node recovery key). Administrators can reveal/audit/rotate their own server's encrypted recovery code and copy an HTTPS-based checksum-verified repair/reinstall command at any time.
+- Recovering an existing machine rotates its operational Agent bearer on the **original node ID**; node registration, deployments, routing and model cache are not re-created. A running Agent persists its refreshed secret in root-only state across reboots; bootstrap recovery credentials are cleared after success. Previously enrolled nodes can have a recovery key provisioned lazily.
+- Re-installing a Linux Agent safely replaces its binary atomically and restarts systemd. A registered hardware row with no inference runtime is shown as **No runtime**, separately from Agent online/offline and tunnel connectivity; it remains ineligible for routing until a model starts.
+- Recovery codes are **high-privilege bearer secrets**; endpoint access is AdminWrite, ciphertext is encrypted in PostgreSQL, digests are used for verification, reveal/rotation events are audited, and rotation invalidates previous reinstall commands. Actual Linux reboot/recovery acceptance remains pending.
+
 ## Unreleased — Admin model/runtime downloads and AirLLM experiment (2026-10-10)
 
 - NVIDIA GB10/DGX Spark: Node Agent preserves unified-memory GPU devices when `nvidia-smi` reports `[N/A]` for VRAM, with `nvidia-smi -L` fallback for GPU counting; Admin shows indexed accelerators, unified-versus-dedicated memory, CPU utilization and sampled GPU utilization/temperature/power (when supported), refreshed every 15 seconds.

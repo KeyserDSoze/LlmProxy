@@ -94,9 +94,13 @@ jobs:
           grep -F 'KeepAliveTimeout = TimeSpan.FromSeconds(15)' src/LlmProxy.Api/Program.cs
           grep -F 'Random.Shared.Next(0, 1000)' src/LlmProxy.NodeAgent/OutboundAgentRelayWorker.cs
           grep -q "^WantedBy=multi-user.target$" distribution/llmproxy-node-agent.service
-          grep -q "systemctl enable --now llmproxy-node-agent" distribution/install-node-agent.sh
+          grep -q "systemctl restart llmproxy-node-agent" distribution/install-node-agent.sh
+          grep -q "LlmProxy.NodeAgent.staging" distribution/install-node-agent.sh
+          grep -q 'LLMPROXY_RECOVERY_NODE_ID' distribution/connect-node.sh
+          grep -q 'NodeAgent__RecoveryToken=' distribution/install-node-agent.sh
           grep -q "gateway-connection.json" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
-          grep -q "File.SetUnixFileMode(_stateFile" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q 'File.SetUnixFileMode(temp' src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q 'File.Move(temp, _stateFile, overwrite: true)' src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
           grep -q "NodeAgent__EnrollmentToken=" src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
 
       - name: Validate protected environment installer with dummy CI secrets
