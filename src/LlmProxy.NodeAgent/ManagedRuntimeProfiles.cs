@@ -12,8 +12,8 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
         if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)
             throw new ArgumentException("providerModelName is required and must be at most 300 characters.");
-        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang"))
-            throw new ArgumentException("Unsupported runtime. Only vllm, llama.cpp and sglang are managed.");
+        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang" or "airllm"))
+            throw new ArgumentException("Unsupported runtime. Only vllm, llama.cpp, sglang and experimental airllm are managed.");
         if (request.TensorParallelSize < 1 || request.TensorParallelSize > 64)
             throw new ArgumentOutOfRangeException(nameof(request.TensorParallelSize));
         if (request.Port is < 1024 or > 65535)
@@ -31,6 +31,17 @@ public static class ManagedRuntimeProfiles
 
         if (request.Runtime == "sglang" && (request.KvCacheDtype is not null || request.CpuOffloadGiB is not null))
             throw new ArgumentException("vLLM-only KV cache and CPU weight offload flags are not supported for SGLang.");
+        if (request.Runtime == "airllm")
+        {
+            if (request.TensorParallelSize != 1)
+                throw new ArgumentException("Experimental AirLLM is single worker, tensor-parallel size must be one.");
+            if (request.KvCacheDtype is not null || request.CpuOffloadGiB is not null)
+                throw new ArgumentException("vLLM-only flags are not supported for AirLLM.");
+            if (request.ExtraArguments is { Count: > 0 })
+                throw new ArgumentException("Arbitrary AirLLM startup arguments are not permitted.");
+            if (!Regex.IsMatch(request.ProviderModelName, @"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
+                throw new ArgumentException("AirLLM requires a valid Hugging Face repository ID.");
+        }
         if (request.Runtime == "llama.cpp")
         {
             if (request.TensorParallelSize != 1)
@@ -63,13 +74,19 @@ public static class ManagedRuntimeProfiles
         {
             "llama.cpp" => options.LlamaCppDockerImage,
             "sglang" => options.SglangDockerImage,
+            "airllm" => "llmproxy-airllm:0.1",
             _ => options.DockerImage
         };
 
     public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options)
     {
         var args = new List<string>();
-        if (record.Runtime == "llama.cpp")
+        if (record.Runtime == "airllm")
+        {
+            // Entrypoint in the locally-built, allowlisted serving image.
+            // Queued requests must never be mistaken for GPU-parallel inference.
+        }
+        else if (record.Runtime == "llama.cpp")
         {
             args.AddRange(["--hf-repo", record.ProviderModelName, "--alias", record.ProviderModelName,
                 "--host", "0.0.0.0", "--port", "8080", "--cont-batching", "--metrics"]);

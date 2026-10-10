@@ -81,7 +81,18 @@ public sealed class DockerModelRuntimeManager(
             try
             {
                 report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
-                await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
+                if (record.Runtime == "airllm")
+                {
+                    var buildContext = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
+                    if (!File.Exists(Path.Combine(buildContext, "Dockerfile")))
+                        throw new InvalidOperationException("AirLLM assets are missing from the installed Agent release.");
+                    report?.Invoke(new TransferProgress("container-image", null,
+                        "Building AirLLM experimental serving image", null, null));
+                    await PullCommandAsync(["build", "--pull", "-t",
+                        ManagedRuntimeProfiles.Image(record, options), buildContext], cancellationToken,
+                        line => ParseTransferLine(line, "container-image", report));
+                }
+                else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
                 if (options.PrefetchModels && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
@@ -104,7 +115,7 @@ for index, entry in enumerate(files):
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        options.DockerImage,
+                        record.Runtime == "airllm" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line => ParseTransferLine(line, "model-weights", report));
                 }
@@ -140,7 +151,7 @@ for index, entry in enumerate(files):
 
             var args = new List<string> { "run", "-d", "--name", name, "--restart", "unless-stopped", "--ipc=host" };
             var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
-            if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang")
+            if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
             if (gpuReady)
@@ -150,6 +161,12 @@ for index, entry in enumerate(files):
             }
             args.Add("-v");
             args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
+            if (record.Runtime == "airllm")
+            {
+                args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
+                    "-e", "AIRLLM_MAX_QUEUED=" + (record.MaxNumSeqs ?? 1),
+                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192)]);
+            }
             args.Add("-p");
             var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
             var bindHost = options.ConnectionMode == "outbound" &&
