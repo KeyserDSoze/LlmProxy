@@ -42,8 +42,10 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
     fi
   fi
   if command -v nvidia-ctk >/dev/null 2>&1; then
-    nvidia-ctk runtime configure --runtime=docker
-    systemctl restart docker
+    if ! docker info --format '{{json .Runtimes}}' | grep -qi nvidia; then
+      nvidia-ctk runtime configure --runtime=docker
+      systemctl restart docker
+    fi
   fi
 else
   echo "[llmproxy-agent] No operational NVIDIA driver detected; CPU runtimes remain available."

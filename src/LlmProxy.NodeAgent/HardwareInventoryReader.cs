@@ -15,11 +15,16 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
             ["info", "--format", "{{.ServerVersion}}"], cancellationToken);
         if (docker is null) issues.Add("Docker executable missing: the installer can provision Docker on supported Linux distributions.");
         else if (!dockerReady) issues.Add("Docker daemon is not available: start or repair docker.service.");
+        var nvidiaHardware = gpus.Count > 0 || HasNvidiaPciDevice();
         var driverPresent = gpus.Count > 0 || Directory.Exists("/proc/driver/nvidia");
-        var toolkitReady = !driverPresent || await IsCommandAvailableAsync("nvidia-ctk", ["--version"], cancellationToken);
+        if (nvidiaHardware && !driverPresent)
+            issues.Add("NVIDIA GPU detected on PCI bus, but the kernel driver is missing or unloaded; schedule driver installation/reboot on the host.");
+        var toolkitReady = !nvidiaHardware ||
+            (await IsCommandAvailableAsync("nvidia-ctk", ["--version"], cancellationToken) &&
+             await IsNvidiaDockerRuntimeConfiguredAsync(cancellationToken));
         if (driverPresent && gpus.Count == 0)
             issues.Add("NVIDIA driver was detected but nvidia-smi did not return usable accelerator data.");
-        if (driverPresent && !toolkitReady)
+        if (nvidiaHardware && !toolkitReady)
             issues.Add("NVIDIA Container Toolkit missing: the Linux host preparer can install it for supported distributions.");
         var readiness = new HostReadiness(docker is not null, dockerReady,
             driverPresent, toolkitReady, issues);
@@ -96,6 +101,33 @@ public sealed class HardwareInventoryReader(NodeAgentOptions options, ProcessRun
         {
             return [];
         }
+    }
+
+    private static bool HasNvidiaPciDevice()
+    {
+        const string root = "/sys/bus/pci/devices";
+        if (!Directory.Exists(root)) return false;
+        try
+        {
+            return Directory.EnumerateDirectories(root).Any(path =>
+                File.Exists(Path.Combine(path, "vendor")) &&
+                string.Equals(File.ReadAllText(Path.Combine(path, "vendor")).Trim(), "0x10de",
+                    StringComparison.OrdinalIgnoreCase));
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private async Task<bool> IsNvidiaDockerRuntimeConfiguredAsync(CancellationToken token)
+    {
+        try
+        {
+            var result = await runner.RunAsync(options.DockerExecutable,
+                ["info", "--format", "{{json .Runtimes}}"], TimeSpan.FromSeconds(8), token);
+            return result.Success && result.StandardOutput.Contains("nvidia", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is InvalidOperationException or
+            System.ComponentModel.Win32Exception or TimeoutException) { return false; }
     }
 
     private async Task<bool> IsCommandAvailableAsync(string executable, string[] args, CancellationToken token)

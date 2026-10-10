@@ -136,6 +136,9 @@ public static class NodeModelManagementEndpoints
                 var client = httpClientFactory.CreateClient("node-management");
                 var hardware = await SendAgentAsync<HardwareInventory>(
                     client, node, protector, HttpMethod.Get, "/v1/system", null, cancellationToken);
+                if (hardware.Readiness is { DockerDaemonReady: false })
+                    return Results.Conflict(new { error = "docker_daemon_unavailable",
+                        message = "The remote Agent reports no operational Docker daemon. Check the Node host prerequisite inventory." });
                 var compatibility = EvaluateCompatibility(descriptor, hardware);
                 if (request.MaxModelLen is int requestedContext && requestedContext > descriptor.ContextTokens)
                     return Results.BadRequest(new { error = "context_exceeds_model", maxContextTokens = descriptor.ContextTokens });
