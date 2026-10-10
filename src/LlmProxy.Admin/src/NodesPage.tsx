@@ -191,7 +191,8 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></>}</td>
           <td>{node.maxConcurrency}</td>
           <td className="actions">
-            <button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
+            <button disabled={node.baseAddress === 'http://127.0.0.1:1'} title={node.baseAddress === 'http://127.0.0.1:1' ? 'Start a model before testing inference endpoints.' : undefined}
+              onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
               <button disabled={busy === 'agent-update:' + node.id} onClick={() => void updateAgent(node.id)}>
                 {pairedNodes.some(pair => pair.nodeId === node.id && pair.desiredAgentVersion) ? 'Update queued' : 'Update agent'}
@@ -322,7 +323,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   </div>
 }
 
-function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
+function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase().replace(/\s+/g, '-')}`}><i />{value}</span> }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function healthStreak(node: Node) { return node.consecutiveHealthFailures > 0 ? `${node.consecutiveHealthFailures} fail` : `${node.consecutiveHealthSuccesses} ok` }
