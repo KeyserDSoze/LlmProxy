@@ -111,7 +111,7 @@ total = sum(s.size or 0 for s in files)
 known = bool(files) and all(s.size is not None for s in files)
 done = 0
 for index, entry in enumerate(files):
-    hf_hub_download(repo_id=repo, filename=entry.rfilename, cache_dir='/root/.cache/huggingface')
+    hf_hub_download(repo_id=repo, filename=entry.rfilename, cache_dir='/root/.cache/huggingface/hub')
     done += entry.size or 0
     print('LLMPROXY_PROGRESS:' + json.dumps({'percent': round(100*done/total, 2) if known and total else round(100*(index+1)/len(files), 2), 'completedBytes': done if known else None, 'totalBytes': total if known else None, 'label': (entry.rfilename[:100] + (' (files)' if not known else ''))}), flush=True)
 """.Replace("MODEL_ID", JsonSerializer.Serialize(record.ProviderModelName));
