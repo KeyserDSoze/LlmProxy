@@ -177,81 +177,136 @@ public static class NodeModelManagementEndpoints
                     });
                 }
 
+                var runtime = ResolveRuntime(descriptor, request.Runtime);
+                if (runtime is null)
+                    return Results.BadRequest(new { error = "incompatible_runtime", message = "Choose a runtime compatible with the checkpoint format." });
                 var installRequest = new AgentInstallRequest(
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    descriptor.Runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
+                    runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
                     request.ExtraArguments ?? [],
-                    descriptor.Runtime,
+                    runtime,
                     request.MaxNumSeqs,
                     request.MaxModelLen,
-                    descriptor.Runtime == "vllm" ? request.KvCacheDtype : null,
-                    descriptor.Runtime == "vllm" ? request.CpuOffloadGiB : null);
+                    runtime == "vllm" ? request.KvCacheDtype : null,
+                    runtime == "vllm" ? request.CpuOffloadGiB : null,
+                    request.PublicName);
                 var state = await SendAgentAsync<ManagedModelState>(
                     client, node, protector, HttpMethod.Post, "/v1/models/install", installRequest, cancellationToken);
 
-                var publicName = string.IsNullOrWhiteSpace(request.PublicName) ? descriptor.Id : request.PublicName.Trim();
-                var model = await dbContext.Models.SingleOrDefaultAsync(item => item.PublicName == publicName, cancellationToken);
-                if (model is null)
-                {
-                    model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools);
-                    dbContext.Models.Add(model);
-                }
-                else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal))
-                {
-                    return Results.Conflict(new { error = "logical_model_name_conflict", publicName, model.ProviderModelName });
-                }
-
-                var deployment = await dbContext.Deployments.SingleOrDefaultAsync(
-                    item => item.NodeId == node.Id && item.ManagedInstallationId == state.InstallationId,
-                    cancellationToken);
-                if (deployment is null)
-                {
-                    deployment = new ModelDeployment(node.Id, model.Id);
-                    dbContext.Deployments.Add(deployment);
-                }
-                else if (deployment.ModelId != model.Id)
-                {
-                    return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
-                }
-
-                var runtimeAddress = OutboundRuntimeAddress(node, state);
-                deployment.ConfigureRuntime(runtimeAddress, descriptor.Id, state.InstallationId);
-                if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase)) deployment.Enable();
-                else deployment.Disable();
-
-                AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
-                {
-                    nodeId = node.Id,
-                    node.Name,
-                    catalogModelId = descriptor.Id,
-                    descriptor.ProviderModelName,
-                    publicName,
-                    state.InstallationId,
-                    agentStatus = state.Status,
-                    state.RuntimeBaseAddress,
-                    compatibilityStatus = compatibility.Status,
-                    runtime = descriptor.Runtime,
-                    request.MaxNumSeqs,
-                    request.MaxModelLen,
-                    request.KvCacheDtype,
-                    request.CpuOffloadGiB
-                });
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                return Results.Ok(new
-                {
-                    deployment,
-                    model,
-                    state,
-                    compatibility
-                });
+                return await RegisterManagedInstallationAsync(state, request, descriptor, compatibility,
+                    node, dbContext, httpContext, cancellationToken);
             }
             catch (AgentException exception)
             {
                 return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
             }
+        });
+
+
+        // Background Agent jobs: downloads continue even if the Admin browser disconnects.
+        // Registration happens only after a completed job is finalized (safe/idempotent).
+        var startJob = group.MapPost("/nodes/{id:guid}/models/{catalogId}/install-jobs", async (
+            Guid id, string catalogId, InstallManagedModelRequest request, GatewayDbContext db,
+            IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var descriptor = DeployableModelCatalog.Find(catalogId);
+            if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
+            var runtime = ResolveRuntime(descriptor, request.Runtime);
+            if (runtime is null) return Results.BadRequest(new { error = "incompatible_runtime" });
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.BadRequest(new { error = "management_agent_not_configured" });
+            try
+            {
+                var client = factory.CreateClient("node-management");
+                var hardware = await SendAgentAsync<HardwareInventory>(client, node, protector,
+                    HttpMethod.Get, "/v1/system", null, token);
+                if (hardware.Readiness is { DockerDaemonReady: false })
+                    return Results.Conflict(new { error = "docker_daemon_unavailable" });
+                var compatibility = EvaluateCompatibility(descriptor, hardware);
+                if (request.MaxModelLen is int context && context > descriptor.ContextTokens)
+                    return Results.BadRequest(new { error = "context_exceeds_model", maxContextTokens = descriptor.ContextTokens });
+                if (!request.Force && compatibility.Status == "insufficient")
+                    return Results.BadRequest(new { error = "hardware_insufficient", compatibility });
+                var payload = new AgentInstallRequest(descriptor.Id, descriptor.ProviderModelName,
+                    request.Port, runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
+                    request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
+                    runtime == "vllm" ? request.KvCacheDtype : null,
+                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName);
+                var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Post,
+                    "/v1/models/install-jobs", payload, token);
+                return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{job.Id}", job);
+            }
+            catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
+        });
+
+        group.MapGet("/nodes/{id:guid}/install-jobs", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory, UpstreamCredentialProtector protector,
+            CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Ok(Array.Empty<ModelInstallJob>());
+            try {
+                var jobs = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(factory.CreateClient("node-management"),
+                    node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, token);
+                return Results.Ok(jobs);
+            }
+            catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
+        });
+
+        var finalizeJob = group.MapPost("/nodes/{id:guid}/install-jobs/{jobId:guid}/finalize", async (
+            Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var node = await db.Nodes.SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var client = factory.CreateClient("node-management");
+                var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Get,
+                    "/v1/models/install-jobs/" + jobId, null, token);
+                if (job.Status != "completed" || job.Result is null)
+                    return Results.Conflict(new { error = "job_not_completed" });
+                var descriptor = DeployableModelCatalog.Find(job.Request.CatalogModelId);
+                if (descriptor is null || ResolveRuntime(descriptor, job.Request.Runtime) != job.Result.Runtime ||
+                    job.Result.CatalogModelId != descriptor.Id ||
+                    job.Result.ProviderModelName != descriptor.ProviderModelName)
+                    return Results.Conflict(new { error = "job_model_mismatch" });
+                var request = new InstallManagedModelRequest(job.Request.PublicName,
+                    job.Request.Port, false, job.Request.ExtraArguments, job.Request.MaxNumSeqs,
+                    job.Request.MaxModelLen, job.Request.KvCacheDtype, job.Request.CpuOffloadGiB,
+                    job.Request.Runtime);
+                return await RegisterManagedInstallationAsync(job.Result, request, descriptor,
+                    new ModelCompatibility("unknown", "Installed by the remote Agent", [], job.Request.TensorParallelSize),
+                    node, db, context, token);
+            }
+            catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
+        });
+
+        var cancelJob = group.MapDelete("/nodes/{id:guid}/install-jobs/{jobId:guid}", async (
+            Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            try
+            {
+                // Agent returns Accepted with empty body; send without deserializing a response.
+                var client = factory.CreateClient("node-management");
+                using var request = new HttpRequestMessage(HttpMethod.Delete,
+                    InferenceEndpoint.Combine(node.ManagementBaseAddress!, "/v1/models/install-jobs/" + jobId));
+                protector.ApplyBearer(request, node.ManagementBearerTokenCiphertext);
+                using var response = await client.SendAsync(request, token);
+                return response.IsSuccessStatusCode ? Results.Accepted() : Results.StatusCode((int)response.StatusCode);
+            }
+            catch (HttpRequestException error) { return Results.Problem(error.Message, statusCode: 502); }
         });
 
         var start = group.MapPost("/deployments/{id:guid}/start", async (
@@ -371,12 +426,86 @@ public static class NodeModelManagementEndpoints
             configure.RequireAuthorization("AdminWrite");
             prepare.RequireAuthorization("AdminWrite");
             install.RequireAuthorization("AdminWrite");
+            startJob.RequireAuthorization("AdminWrite");
+            finalizeJob.RequireAuthorization("AdminWrite");
+            cancelJob.RequireAuthorization("AdminWrite");
             start.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");
             remove.RequireAuthorization("AdminWrite");
         }
 
         return endpoints;
+    }
+
+
+    // Shared by synchronous legacy installation and persistent-download finalization.
+    private static async Task<IResult> RegisterManagedInstallationAsync(
+        ManagedModelState state, InstallManagedModelRequest request, DeployableModelDescriptor descriptor,
+        ModelCompatibility compatibility, InferenceNode node, GatewayDbContext dbContext,
+        HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        var publicName = string.IsNullOrWhiteSpace(request.PublicName) ? descriptor.Id : request.PublicName.Trim();
+        var model = await dbContext.Models.SingleOrDefaultAsync(item => item.PublicName == publicName, cancellationToken);
+        if (model is null)
+        {
+            model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools);
+            dbContext.Models.Add(model);
+        }
+        else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal))
+        {
+            return Results.Conflict(new { error = "logical_model_name_conflict", publicName, model.ProviderModelName });
+        }
+         var deployment = await dbContext.Deployments.SingleOrDefaultAsync(
+            item => item.NodeId == node.Id && item.ManagedInstallationId == state.InstallationId,
+            cancellationToken);
+        if (deployment is null)
+        {
+            deployment = new ModelDeployment(node.Id, model.Id);
+            dbContext.Deployments.Add(deployment);
+        }
+        else if (deployment.ModelId != model.Id)
+        {
+            return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
+        }
+         var runtimeAddress = OutboundRuntimeAddress(node, state);
+        deployment.ConfigureRuntime(runtimeAddress, descriptor.Id, state.InstallationId);
+        if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase)) deployment.Enable();
+        else deployment.Disable();
+         AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
+        {
+            nodeId = node.Id,
+            node.Name,
+            catalogModelId = descriptor.Id,
+            descriptor.ProviderModelName,
+            publicName,
+            state.InstallationId,
+            agentStatus = state.Status,
+            state.RuntimeBaseAddress,
+            compatibilityStatus = compatibility.Status,
+            runtime = state.Runtime,
+            request.MaxNumSeqs,
+            request.MaxModelLen,
+            request.KvCacheDtype,
+            request.CpuOffloadGiB
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+         return Results.Ok(new
+        {
+            deployment,
+            model,
+            state,
+            compatibility
+        });
+    }
+
+    private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
+    {
+        var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
+        if (runtime == "llama.cpp")
+            return descriptor.Runtime == "llama.cpp" ? runtime : null;
+        if (runtime is "vllm" or "sglang")
+            return descriptor.Runtime == "llama.cpp" ? null : runtime;
+        return null; // AirLLM requires a separately verified serving image/adapter before exposure.
     }
 
     private static async Task<HardwareInventory?> ReadCachedInventoryAsync(
@@ -541,10 +670,13 @@ public static class NodeModelManagementEndpoints
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
-        string? KvCacheDtype = null, double? CpuOffloadGiB = null);
+        string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
-        string? KvCacheDtype, double? CpuOffloadGiB);
+        string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null);
+    public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
+        double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
+        ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
     public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null);
     public sealed record HostReadiness(

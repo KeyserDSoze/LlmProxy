@@ -38,7 +38,8 @@ public sealed record InstallRequest(
     int? MaxNumSeqs = null,
     int? MaxModelLen = null,
     string? KvCacheDtype = null,
-    double? CpuOffloadGiB = null);
+    double? CpuOffloadGiB = null,
+    string? PublicName = null);
 
 public sealed record ManagedModelRecord
 {
