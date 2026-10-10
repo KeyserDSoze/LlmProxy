@@ -133,7 +133,7 @@ jobs:
               os.execvp("bash", ["bash", "-c",
                   "source distribution/first-install-port-selection.sh; "
                   "echo PORT_RESULT=$GRAFANA_PORT:$LLMPROXY_PORT"])
-          os.write(fd, b"34117\\n18417\\n")
+          os.write(fd, b"34117\n18417\n")
           data = bytearray()
           deadline = time.monotonic() + 15
           while time.monotonic() < deadline:
