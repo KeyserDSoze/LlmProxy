@@ -38,6 +38,14 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   useEffect(() => { if (!nodeId && nodes[0]) setNodeId(nodes[0].id) }, [nodeId, nodes])
   const load = useCallback(async () => { if (!nodeId) { setOverview(null); return } setLoading(true); setError(null); try { const next = await api.modelManagementOverview(nodeId); setOverview(next); setManagementBaseAddress(next.node.managementBaseAddress ?? '') } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setLoading(false) } }, [nodeId])
   useEffect(() => { void load() }, [load])
+  // Fresh host telemetry without requiring the operator to repeatedly press Refresh.
+  useEffect(() => {
+    if (!nodeId || tab !== 'inventory') return
+    const timer = window.setInterval(() => {
+      void api.modelManagementOverview(nodeId).then(setOverview).catch(() => {})
+    }, 15000)
+    return () => window.clearInterval(timer)
+  }, [nodeId, tab])
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
   const benchmarkInstallation = overview?.installations.find(item => item.id === benchmarkDeploymentId) ?? null
@@ -170,7 +178,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         </button></div>
         <div>Docker engine: {hardware.readiness.dockerDaemonReady ? 'ready' : 'not ready'} · NVIDIA driver: {hardware.readiness.nvidiaDriverDetected ? 'detected' : 'not detected'} · NVIDIA toolkit: {hardware.readiness.nvidiaToolkitReady ? 'ready or not needed' : 'missing'}</div>
         {hardware.readiness.issues.map(issue => <p className="notice" key={issue}>{issue}</p>)}
-      </section>}<table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th><th>GPU load</th><th>Temp.</th><th>Power</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>{gpu.name}</strong></td><td>{gpu.memoryType === 'unified' ? 'Shared RAM' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryTotalGiB)}</td><td>{gpu.memoryType === 'unified' ? 'Shared with CPU' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td><td>{gpu.utilizationPercent == null ? '—' : gpu.utilizationPercent.toFixed(0) + '%'}</td><td>{gpu.temperatureCelsius == null ? '—' : gpu.temperatureCelsius.toFixed(0) + ' °C'}</td><td>{gpu.powerWatts == null ? '—' : gpu.powerWatts.toFixed(1) + ' W'}</td></tr>)}</tbody></table></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Infrastructure → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}
+      </section>}<table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th><th>GPU load</th><th>Temp.</th><th>Power</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>#{index} · {gpu.name}</strong></td><td>{gpu.memoryType === 'unified' ? 'Shared RAM' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryTotalGiB)}</td><td>{gpu.memoryType === 'unified' ? 'Shared with CPU' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td><td>{gpu.utilizationPercent == null ? '—' : gpu.utilizationPercent.toFixed(0) + '%'}</td><td>{gpu.temperatureCelsius == null ? '—' : gpu.temperatureCelsius.toFixed(0) + ' °C'}</td><td>{gpu.powerWatts == null ? '—' : gpu.powerWatts.toFixed(1) + ' W'}</td></tr>)}</tbody></table></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Infrastructure → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}
 
     {tab === 'deploy' && <>
       <section className="panel">
