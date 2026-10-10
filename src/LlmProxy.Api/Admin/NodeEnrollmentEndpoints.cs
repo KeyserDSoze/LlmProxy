@@ -111,7 +111,7 @@ public static class NodeEnrollmentEndpoints
         {
             var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
-                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus })
+                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus, x.RecoverySecretCreatedAtUtc, HasRecoverySecret = x.RecoverySecretHash != null })
                 .ToListAsync(token);
             var bridge = services.GetService<RedisAgentRelayBridge>();
             var states = new Dictionary<Guid, bool>();
@@ -124,6 +124,7 @@ public static class NodeEnrollmentEndpoints
             }
             return Results.Ok(records.Select(x => new {
                 x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus,
+                x.RecoverySecretCreatedAtUtc, x.HasRecoverySecret,
                 tunnelConnected = x.NodeId.HasValue && states.GetValueOrDefault(x.NodeId.Value)
             }));
         });
@@ -156,10 +157,62 @@ public static class NodeEnrollmentEndpoints
             return Results.Accepted($"/api/admin/node-enrollment/nodes", new { nodeId, desiredAgentVersion = selected.Version });
         });
 
+        // Per-node recovery is deliberately separate from the 30-minute invitation.
+        // Encrypted-at-rest code is revealable only through audited AdminWrite actions.
+        var revealRecovery = admin.MapPost("/nodes/{nodeId:guid}/recovery/reveal", async (
+            Guid nodeId, GatewayDbContext db, ApiKeyHasher hasher,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var record = await db.NodeEnrollments.SingleOrDefaultAsync(
+                x => x.NodeId == nodeId && x.AgentSecretHash != null, token);
+            if (record is null) return Results.NotFound();
+            if (!protector.IsConfigured) return Results.Problem(
+                "Credential encryption is not configured.", statusCode: 503);
+            if (record.RecoverySecretHash is null || record.RecoverySecretCiphertext is null)
+            {
+                var secret = ApiKeyHasher.GenerateSecret("lpr_");
+                record.RecoverySecretHash = hasher.Hash(secret);
+                record.RecoverySecretCiphertext = protector.Protect(secret);
+                record.RecoverySecretCreatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            var actor = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin";
+            db.AuditEvents.Add(new AuditEvent(actor, "agent.recovery.reveal", "node",
+                nodeId.ToString(), context.Connection.RemoteIpAddress?.ToString(),
+                JsonSerializer.Serialize(new { generated = record.RecoverySecretCreatedAtUtc })));
+            await db.SaveChangesAsync(token);
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new { nodeId, recoveryToken = protector.Unprotect(record.RecoverySecretCiphertext),
+                record.RecoverySecretCreatedAtUtc });
+        });
+
+        var rotateRecovery = admin.MapPost("/nodes/{nodeId:guid}/recovery/rotate", async (
+            Guid nodeId, GatewayDbContext db, ApiKeyHasher hasher,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var record = await db.NodeEnrollments.SingleOrDefaultAsync(
+                x => x.NodeId == nodeId && x.AgentSecretHash != null, token);
+            if (record is null) return Results.NotFound();
+            if (!protector.IsConfigured) return Results.Problem(
+                "Credential encryption is not configured.", statusCode: 503);
+            var secret = ApiKeyHasher.GenerateSecret("lpr_");
+            record.RecoverySecretHash = hasher.Hash(secret);
+            record.RecoverySecretCiphertext = protector.Protect(secret);
+            record.RecoverySecretCreatedAtUtc = DateTimeOffset.UtcNow;
+            db.AuditEvents.Add(new AuditEvent(
+                context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
+                "agent.recovery.rotate", "node", nodeId.ToString(),
+                context.Connection.RemoteIpAddress?.ToString(), "{}"));
+            await db.SaveChangesAsync(token);
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new { nodeId, recoveryToken = secret, record.RecoverySecretCreatedAtUtc });
+        });
+
         if (entraEnabled)
         {
             invite.RequireAuthorization("AdminWrite");
             update.RequireAuthorization("AdminWrite");
+            revealRecovery.RequireAuthorization("AdminWrite");
+            rotateRecovery.RequireAuthorization("AdminWrite");
         }
 
         // The agent endpoints use separate random per-agent credentials and never accept browser cookies as auth.
@@ -218,6 +271,13 @@ public static class NodeEnrollmentEndpoints
             var agentSecret = ApiKeyHasher.GenerateSecret("lpa_");
             invitation.NodeId = node.Id;
             invitation.AgentSecretHash = hasher.Hash(agentSecret);
+            if (protector.IsConfigured)
+            {
+                var recoverySecret = ApiKeyHasher.GenerateSecret("lpr_");
+                invitation.RecoverySecretHash = hasher.Hash(recoverySecret);
+                invitation.RecoverySecretCiphertext = protector.Protect(recoverySecret);
+                invitation.RecoverySecretCreatedAtUtc = now;
+            }
             invitation.LastHeartbeatAtUtc = now;
             invitation.HardwareInventoryJson = request.Inventory.GetRawText();
             invitation.Mode = request.Mode;
@@ -228,6 +288,53 @@ public static class NodeEnrollmentEndpoints
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
             return Results.Ok(new { nodeId = node.Id, agentSecret });
+        });
+
+        // Restore a previously registered node without creating a duplicate physical node.
+        // Recovery rotates the active Agent secret (revoking lost local identity) but
+        // deliberately does not reset deployments, routing, model caches or node ID.
+        agents.MapPost("/recover", async (AgentRecoveryRequest request,
+            GatewayDbContext db, ApiKeyHasher hasher,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            if (request.NodeId == Guid.Empty || string.IsNullOrWhiteSpace(request.RecoveryToken) ||
+                request.RecoveryToken.Length > 200 || !request.RecoveryToken.StartsWith("lpr_", StringComparison.Ordinal) ||
+                request.Inventory.ValueKind != JsonValueKind.Object ||
+                request.Mode is not ("direct" or "outbound"))
+                return Results.BadRequest(new { error = "invalid_recovery_request" });
+            var digest = hasher.Hash(request.RecoveryToken);
+            var record = await db.NodeEnrollments.SingleOrDefaultAsync(
+                x => x.NodeId == request.NodeId && x.RecoverySecretHash == digest &&
+                    x.AgentSecretHash != null && x.Mode == request.Mode, token);
+            if (record is null) return Results.Unauthorized();
+            if (request.AgentVersion?.Length > 80) return Results.BadRequest();
+            if (request.Mode == "direct")
+            {
+                if (!protector.IsConfigured) return Results.Problem(
+                    "Credential encryption is not configured.", statusCode: 503);
+                if (!Uri.TryCreate(request.ManagementBaseAddress, UriKind.Absolute, out var uri) ||
+                    uri.Scheme != Uri.UriSchemeHttp || uri.Port != 9900 ||
+                    string.IsNullOrWhiteSpace(request.AgentBearer) || request.AgentBearer.Length > 2048)
+                    return Results.BadRequest(new { error = "invalid_direct_management_address_or_bearer" });
+            }
+            var node = await db.Nodes.SingleOrDefaultAsync(x => x.Id == request.NodeId, token);
+            if (node is null) return Results.NotFound();
+            var agentSecret = ApiKeyHasher.GenerateSecret("lpa_");
+            record.AgentSecretHash = hasher.Hash(agentSecret);
+            record.LastHeartbeatAtUtc = DateTimeOffset.UtcNow;
+            record.AgentVersion = request.AgentVersion;
+            record.HardwareInventoryJson = request.Inventory.GetRawText();
+            record.DesiredAgentVersion = null;
+            record.AgentUpdateStatus = null;
+            if (request.Mode == "direct")
+            {
+                node.SetManagementBaseAddress(request.ManagementBaseAddress);
+                node.SetManagementBearerTokenCiphertext(protector.Protect(request.AgentBearer!));
+            }
+            db.AuditEvents.Add(new AuditEvent("node-agent", "agent.recovery.accept", "node",
+                request.NodeId.ToString(), null, JsonSerializer.Serialize(new { request.Mode })));
+            await db.SaveChangesAsync(token);
+            return Results.Ok(new { nodeId = request.NodeId, agentSecret });
         });
 
         agents.MapPost("/{nodeId:guid}/heartbeat", async (Guid nodeId,
@@ -287,6 +394,9 @@ public static class NodeEnrollmentEndpoints
 
     public sealed record AgentEnrollmentRequest(
         string Token, string Hostname, string Mode, JsonElement Inventory,
+        string? ManagementBaseAddress, string? AgentBearer, string? AgentVersion);
+    public sealed record AgentRecoveryRequest(
+        Guid NodeId, string RecoveryToken, string Mode, JsonElement Inventory,
         string? ManagementBaseAddress, string? AgentBearer, string? AgentVersion);
     public sealed record AgentHeartbeatRequest(JsonElement Inventory, string? AgentVersion, string? AgentUpdateStatus = null);
     public sealed record AgentUpdateRequest(string? Version = null);
