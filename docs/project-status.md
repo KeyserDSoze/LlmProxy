@@ -1,5 +1,12 @@
 # Project status / handover snapshot
 
+## GB10 unified-memory discovery, sampled telemetry and experimental AirLLM ARM64 — SOURCE + CI TESTS; TARGET HARDWARE ACCEPTANCE PENDING (2026-10-10)
+
+The paired DGX Spark `spark-1d52` exposes an NVIDIA GB10 with `nvidia-smi` memory.total/free both `[N/A]`. Previously the Agent discarded the device and returned `gpus: []`, making most model profiles falsely `insufficient`. The corrected Agent keeps the GB10 and enumerates other NVIDIA devices through `nvidia-smi -L` fallback, marks unified RAM distinct from dedicated VRAM, and samples CPU activity and available NVIDIA utilization/temperature/power. The Admin now displays GPU count/indices and refreshed metrics. Gateway fit for unified memory uses a single shared CPU+GPU resource budget with host reserve; it does not infer extra VRAM or promise actual model startup.
+
+The experiment bundles a native ARM64 AirLLM Dockerfile based on NVIDIA PyTorch iGPU image, automatically chosen by the Agent, plus catalog profiles for Qwen3 4B/8B/32B and custom Hugging Face IDs. The embedded adapter supports only single-generator non-streaming Chat and bounded queueing, **not** production SSE/Responses/tools or proven parallel throughput. Real NVIDIA GB10 ARM64 Docker build, layer conversion and model generation **remain unverified**, including compatibility of the specific pinned base image. All software CI results must remain separate from physical GPU validation. See PR #10 and issue #11.
+
+
 ## More Admin-managed runtime/resource/download settings — IMPLEMENTED IN SOURCE / CI PENDING (2026-10-10)
 
 Infrastructure now supports guarded custom **AirLLM** Hugging Face repositories in addition to the curated Qwen3-4B AirLLM profile. It records the selected runtime for custom-model deployments, so Admin can identify AirLLM and choose the non-streaming experimental benchmark even if the Node Agent is offline. The install wizard also supports optional comma-separated NVIDIA GPU IDs, validated by the Agent against duplicate/malformed device assignments and incompatible tensor-parallel cardinality. The runtime container is limited via Docker's `--gpus device=...`; hardware occupancy/VRAM is still **not reserved**, and concurrent models must not be assumed safe solely from device indexing.
