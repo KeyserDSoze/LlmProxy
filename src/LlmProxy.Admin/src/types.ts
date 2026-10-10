@@ -118,7 +118,8 @@ export type AgentDownloads = {
 }
 
 export type AgentPairingInvitation = { enrollmentToken: string; expiresAtUtc: string }
-export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; desiredAgentVersion?: string | null; agentUpdateStatus?: string | null; tunnelConnected?: boolean }
+export type PairedNodeStatus = { nodeId: string; mode: 'direct' | 'outbound'; lastHeartbeatAtUtc?: string | null; agentVersion?: string | null; desiredAgentVersion?: string | null; agentUpdateStatus?: string | null; tunnelConnected?: boolean; hasRecoverySecret?: boolean; recoverySecretCreatedAtUtc?: string | null }
+export type AgentRecoverySecret = { nodeId: string; recoveryToken: string; recoverySecretCreatedAtUtc?: string | null }
 
 export type ManagedBenchmarkJob = {
   id: string
