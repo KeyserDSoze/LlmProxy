@@ -132,8 +132,18 @@ public static class NodeEnrollmentEndpoints
             if (consumed != 1)
                 return Results.Unauthorized();
 
-            if (!protector.IsConfigured) return Results.Problem(
-                "Upstream credential encryption is not configured.", statusCode: 503);
+            // The outbound tunnel authenticates with its own hashed node secret and
+            // does not store a provider/management bearer. Only direct mode needs
+            // configured encryption for its local management credential.
+            if (request.Mode == "direct")
+            {
+                if (!protector.IsConfigured) return Results.Problem(
+                    "Management credential encryption is not configured.", statusCode: 503);
+                if (!Uri.TryCreate(request.ManagementBaseAddress, UriKind.Absolute, out var managementUri) ||
+                    managementUri.Scheme != Uri.UriSchemeHttp || managementUri.Port != 9900 ||
+                    string.IsNullOrWhiteSpace(request.AgentBearer) || request.AgentBearer.Length > 2048)
+                    return Results.BadRequest(new { error = "invalid_direct_management_address_or_bearer" });
+            }
 
             var invitation = await db.NodeEnrollments.SingleAsync(x => x.InvitationHash == inviteHash, token);
             var machine = string.IsNullOrWhiteSpace(request.Hostname) ? "unidentified-agent" : request.Hostname.Trim();
