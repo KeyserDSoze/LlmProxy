@@ -1,0 +1,17 @@
+# DGX Spark / NVIDIA GB10: native ARM64 container, never x86 emulation.
+# NVIDIA's iGPU PyTorch release includes CUDA/PyTorch support for Grace Blackwell.
+# Experimental pending actual GB10 runtime/model compatibility acceptance.
+FROM nvcr.io/nvidia/pytorch:25.10-py3-igpu
+ENV PYTHONUNBUFFERED=1 HF_HOME=/root/.cache/huggingface
+# Preserve NVIDIA's GPU-enabled torch. AirLLM 4.0.0 declares torch>=2.4,
+# so install its other runtime dependencies first and AirLLM without dependency
+# resolution that might replace NVIDIA's sm_121-compatible torch build.
+RUN python -m pip install --no-cache-dir \
+    "transformers==4.57.1" "accelerate>=1.0,<2" \
+    "fastapi==0.116.1" "uvicorn==0.35.0" \
+    "sentencepiece" "scipy" "safetensors" "huggingface-hub" "tqdm" && \
+    python -m pip install --no-cache-dir --no-deps "airllm==4.0.0"
+WORKDIR /app
+COPY server.py /app/server.py
+EXPOSE 8000
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
