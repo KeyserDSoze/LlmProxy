@@ -51,8 +51,13 @@ public sealed class DockerModelRuntimeManager(
             if (existing is not null)
             {
                 var running = await IsRunningAsync(existing, cancellationToken);
-                return ToState(existing, running ? "running" : existing.Status,
-                    running ? RuntimeAddress(existing.Port) : null);
+                if (running || existing.Status == "stopped")
+                    return ToState(existing, running ? "running" : existing.Status,
+                        running ? RuntimeAddress(existing.Port) : null);
+                // A failed/cancelled/reboot-interrupted install must be retryable.
+                // Keep the downloaded cache, but rebuild the incomplete installation.
+                await registry.RemoveAsync(existing.InstallationId, cancellationToken);
+                rows = await registry.ReadAsync(cancellationToken);
             }
 
             // A different runtime profile receives a distinct installation and port.

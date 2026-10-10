@@ -17,6 +17,7 @@ public sealed class ModelInstallJobManager
     private readonly Dictionary<Guid, ModelInstallJob> _jobs;
     private readonly Dictionary<Guid, CancellationTokenSource> _cancel = [];
     private readonly string _file;
+    private DateTimeOffset _lastProgressPersistedUtc = DateTimeOffset.MinValue;
     private readonly SemaphoreSlim _singleInstall = new(1, 1);
     private readonly DockerModelRuntimeManager _manager;
     private readonly IHostApplicationLifetime _host;
@@ -50,6 +51,12 @@ public sealed class ModelInstallJobManager
         {
             if (_jobs.Values.Count(x => x.Status is "queued" or "running") >= 4)
                 throw new InvalidOperationException("Four pending/running installation jobs are already queued.");
+            if (_jobs.Count > 100)
+            {
+                foreach (var old in _jobs.Values.Where(x => x.Status is not ("queued" or "running"))
+                    .OrderBy(x => x.CreatedAtUtc).Take(_jobs.Count - 100).ToArray())
+                    _jobs.Remove(old.Id);
+            }
             var job = new ModelInstallJob(Guid.NewGuid(), request, "queued", "queued",
                 null, "Waiting for host installation slot", null, null, null, null, DateTimeOffset.UtcNow);
             _jobs.Add(job.Id, job);
@@ -120,12 +127,15 @@ public sealed class ModelInstallJobManager
             var next = update(original);
             if (next == original) return;
             // UI needs visible state, but there is no need to write every terminal carriage return.
-            if (original.Stage == next.Stage && original.Status == next.Status &&
-                original.Detail == next.Detail &&
-                original.Percent is double oldPct && next.Percent is double newPct &&
-                Math.Abs(newPct - oldPct) < 1) return;
+            var stageChanged = original.Stage != next.Stage || original.Status != next.Status;
+            var meaningfulPercent = original.Percent is double previous && next.Percent is double current
+                ? Math.Abs(current - previous) >= 1 : original.Percent != next.Percent;
+            if (!stageChanged && DateTimeOffset.UtcNow - _lastProgressPersistedUtc < TimeSpan.FromSeconds(1))
+                return;
+            if (!stageChanged && !meaningfulPercent && original.Detail == next.Detail) return;
             _jobs[id] = next;
             Save();
+            _lastProgressPersistedUtc = DateTimeOffset.UtcNow;
         }
     }
 
