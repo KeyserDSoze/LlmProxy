@@ -22,9 +22,9 @@ public sealed class UnifiedMemoryCompatibilityTests
     [Fact]
     public void Nvidia_list_fallback_counts_multiple_gpus_without_inventing_vram()
     {
-        const string inventory = "GPU 0: NVIDIA GB10 (UUID: GPU-001)\\nGPU 1: NVIDIA RTX 4090 (UUID: GPU-002)\\n";
+        const string inventory = "GPU 0: NVIDIA GB10 (UUID: GPU-001)\nGPU 1: NVIDIA RTX 4090 (UUID: GPU-002)\n";
 
-        var gpus = HardwareInventoryReader.ParseNvidiaSmiList(inventory.Replace("\\\\n", "\\n"));
+        var gpus = HardwareInventoryReader.ParseNvidiaSmiList(inventory);
 
         Assert.Equal(2, gpus.Count);
         Assert.Equal("unified", gpus[0].MemoryType);
