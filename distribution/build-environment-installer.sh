@@ -85,7 +85,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
     llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \
     "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 else
-  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \
+  sudo -E bash -c 'set -Eeuo pipefail; source "$1"; shift; exec bash "$@"' \
     llmproxy-protected-bootstrap "$TMP_DIR/privileged-environment.sh" \
     "$TMP_DIR/llmproxy-bootstrap.sh" --version "$VERSION" --non-interactive
 fi
@@ -110,7 +110,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
     llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \
     "$LLMPROXYCTL" update "$VERSION"
 else
-  sudo bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \
+  sudo -E bash -c 'set -Eeuo pipefail; source "$1"; shift; exec "$@"' \
     llmproxy-protected-update "$TMP_DIR/privileged-environment.sh" \
     "$LLMPROXYCTL" update "$VERSION"
 fi
