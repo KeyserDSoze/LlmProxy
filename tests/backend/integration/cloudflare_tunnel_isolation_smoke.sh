@@ -30,8 +30,8 @@ for arg in "$@"; do
 done
 case "$*" in
   *" config --services")
-    printf '%s\\n' postgres redis llmproxy
-    [[ "$*" == *"--profile cloudflare"* ]] && printf '%s\\n' cloudflared
+    printf '%s\n' postgres redis llmproxy
+    [[ "$*" == *"--profile cloudflare"* ]] && printf '%s\n' cloudflared
     exit 0 ;;
   *" pull "*)
     [[ "${COMPOSE_PARALLEL_LIMIT:-}" == 1 ]] || {
