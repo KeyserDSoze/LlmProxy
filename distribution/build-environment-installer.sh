@@ -17,10 +17,6 @@ for required in ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_SUPER_ADMINS ENTRA_CLIENT_
     exit 3
   fi
 done
-if [[ "${#PASSWORD}" -lt 20 ]]; then
-  echo "GitHub environment Secret PASSWORD must be at least 20 characters (use a long random passphrase)." >&2
-  exit 3
-fi
 command -v gpg >/dev/null && command -v python3 >/dev/null && command -v sha256sum >/dev/null || {
   echo "Release runner requires gpg, python3 and sha256sum." >&2
   exit 2

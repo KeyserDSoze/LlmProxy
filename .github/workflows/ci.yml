@@ -74,11 +74,17 @@ jobs:
           ENTRA_SUPER_ADMINS: ci-admin@example.invalid
           ENTRA_CLIENT_SECRET: ci-fake-entra-client-secret
           CLOUDFLARE_TUNNEL_TOKEN: ci-fake-cloudflare-token
-          PASSWORD: ci-long-test-fixture-passphrase-not-a-production-secret
+          PASSWORD: x
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
+          # Empty passwords fail closed, but even one character is accepted.
+          if PASSWORD='' bash distribution/build-environment-installer.sh test 9.8.7 "$tmp/empty" > "$tmp/empty-password.log" 2>&1; then
+            echo "Empty password unexpectedly accepted." >&2
+            exit 1
+          fi
+          grep -F 'Missing GitHub environment Secret: PASSWORD' "$tmp/empty-password.log" >/dev/null
           bash distribution/build-environment-installer.sh test 9.8.7 "$tmp"
           test -s "$tmp/test.sh"
           test -s "$tmp/test.install.sh.gpg"

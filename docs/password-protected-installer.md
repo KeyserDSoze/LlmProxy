@@ -14,7 +14,7 @@ All six values are **Secrets** (do not create any Environment Variables):
 | `ENTRA_SUPER_ADMINS` | Admin UPN/emails separated by commas **or** semicolons; `oid:GUID` also supported |
 | `ENTRA_CLIENT_SECRET` | Rotated Microsoft Entra application Client Secret |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Rotated dedicated Cloudflare Tunnel connector token |
-| `PASSWORD` | Strong random install/update decryption passphrase of at least 20 characters |
+| `PASSWORD` | Any non-empty install/update decryption password; one character is accepted |
 
 The same `PASSWORD` decrypts both scripts for the **same release**.
 `ENTRA_ENABLED=true` is built in. Version comes from the immutable release
@@ -72,7 +72,9 @@ temporary directory, checks Bash syntax and executes it. It never prints the
 password. GnuPG uses AES-256 and iterated SHA-512 S2K with MDC; an incorrect
 password fails before executing decrypted code. Checksums detect corruption
 but **are not independent digital signatures**. Restrict GitHub release
-write access and protect the `test` environment. A high-entropy passphrase
-is essential because public ciphertext permits offline password attempts.
+write access and protect the `test` environment. **Short or predictable passwords
+are insecure:** the public ciphertext permits offline password guessing and
+may expose Entra and Cloudflare credentials. A long, random passphrase is
+strongly recommended even though it is no longer mandatory.
 Protect the Linux host: privileged processes can access decrypted script
 contents and the resulting `0600` application environment file.
