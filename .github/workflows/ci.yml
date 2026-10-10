@@ -201,6 +201,29 @@ jobs:
             exit 1
           fi
 
+      - name: Validate lossless Entra secret persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          # The user-supplied client secret may contain literal backslashes;
+          # awk -v value would silently turn e.g. backslash+n into a newline.
+          for source in docker/scripts/install-linux.sh distribution/llmproxyctl; do
+            (
+              ENV_FILE="$tmp/$(basename "$source").env"
+              printf 'ENTRA_CLIENT_SECRET=old\n' > "$ENV_FILE"
+              eval "$(sed -n '/^set_env_value() {/,/^}/p' "$source")"
+              value='ci\\n-keep\\\\two\\t'
+              set_env_value ENTRA_CLIENT_SECRET "$value"
+              actual="$(sed -n 's/^ENTRA_CLIENT_SECRET=//p' "$ENV_FILE")"
+              [[ "$actual" == "$value" ]] || {
+                echo "Lossy secret persistence in $source" >&2
+                exit 1
+              }
+            )
+          done
+
       - name: Validate source and automatic release versioning
         shell: bash
         run: |
