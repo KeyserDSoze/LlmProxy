@@ -141,11 +141,49 @@ jobs:
           cat > "$tmp/mockbin/sudo" <<'MOCK'
           #!/usr/bin/env bash
           set -euo pipefail
-          [[ "$1" == -E ]] || exit 1
+          [[ "$1" == -E && "$2" == bash && "$3" == -c ]] || exit 1
           shift
-          exec "$@"
+          # Simulate a hardened sudoers configuration that deliberately strips
+          # all application Secrets. Only the private snapshot may restore them.
+          exec env -i PATH="$PATH" \
+            CI_UPDATE_MARKER="${CI_UPDATE_MARKER:-}" CI_INSTALL_MARKER="${CI_INSTALL_MARKER:-}" "$@"
           MOCK
-          chmod 0755 "$tmp/mockbin/llmproxyctl" "$tmp/mockbin/sudo"
+          cat > "$tmp/mockbin/curl" <<'MOCK'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          url=""
+          dest=""
+          while [[ $# -gt 0 ]]; do
+            case "$1" in
+              -o) dest="$2"; shift 2 ;;
+              https://github.com/*) url="$1"; shift ;;
+              *) shift ;;
+            esac
+          done
+          case "$url" in
+            */llmproxy-bootstrap.sh) cp "$CI_FIXTURE_DIR/fixture-bootstrap.sh" "$dest" ;;
+            */llmproxy-bootstrap.sh.sha256) cp "$CI_FIXTURE_DIR/fixture-bootstrap.sh.sha256" "$dest" ;;
+            *) echo "Unexpected download in privileged fixture" >&2; exit 2 ;;
+          esac
+          MOCK
+          cat > "$tmp/fixture-bootstrap.sh" <<'MOCK'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [[ "$1" == --version && "$2" == 9.8.7 && "$3" == --non-interactive ]]
+          [[ "$ENTRA_ENABLED" == true ]]
+          [[ "$ENTRA_TENANT_ID" == 00000000-0000-4000-8000-000000000001 ]]
+          [[ "$ENTRA_CLIENT_ID" == 00000000-0000-4000-8000-000000000002 ]]
+          [[ "$ENTRA_SUPER_ADMINS" == ci-admin@example.invalid ]]
+          [[ "$ENTRA_CLIENT_SECRET" == ci-fake-entra-client-secret ]]
+          [[ "$CLOUDFLARE_TUNNEL_TOKEN" == ci-fake-cloudflare-token ]]
+          printf 'ok\n' > "$CI_INSTALL_MARKER"
+          MOCK
+          (cd "$tmp" && sha256sum fixture-bootstrap.sh | sed 's/fixture-bootstrap.sh/llmproxy-bootstrap.sh/' > fixture-bootstrap.sh.sha256)
+          chmod 0755 "$tmp/mockbin/llmproxyctl" "$tmp/mockbin/sudo" "$tmp/mockbin/curl"
+          # Actual decrypted first-install and update scripts must both retain
+          # all five Secrets even when sudo provides an otherwise empty environment.
+          CI_FIXTURE_DIR="$tmp" CI_INSTALL_MARKER="$tmp/verified-install" PATH="$tmp/mockbin:$PATH" bash "$tmp/decrypted.sh"
+          grep -qx ok "$tmp/verified-install"
           CI_UPDATE_MARKER="$tmp/verified-update" PATH="$tmp/mockbin:$PATH" bash "$tmp/decrypted-update.sh"
           grep -qx ok "$tmp/verified-update"
           if gpg --batch --yes --quiet --pinentry-mode loopback \
