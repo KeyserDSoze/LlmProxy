@@ -33,6 +33,773 @@ jobs:
           bash -n distribution/connect-node.sh
           grep -q 'downloads/agent/version' distribution/connect-node.sh
           grep -q 'COPY distribution/connect-node.sh' docker/Dockerfile
+          # Once paired, reboot must not require a second invitation.
+          grep -q '^Restart=always
+          test -f distribution/llmproxy-node-agent.service
+          grep -q "sha256sum -c" distribution/connect-node.sh
+          grep -q "sha256sum -c" distribution/update-node-agent.sh
+          grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
+
+      - name: Validate source and automatic release versioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          test "$(bash docker/scripts/validate-release-version.sh "$SOURCE_VERSION")" = "$SOURCE_VERSION"
+          test "$(bash docker/scripts/validate-release-version.sh "0.0.1")" = "0.0.1"
+          if bash docker/scripts/validate-release-version.sh "not-semver" >/dev/null 2>&1; then
+            echo "Version validator accepted an invalid release version." >&2
+            exit 1
+          fi
+
+          EMPTY_TAGS="$(mktemp)"
+          TAGS="$(mktemp)"
+          trap 'rm -f "$EMPTY_TAGS" "$TAGS"' EXIT
+          test "$(bash docker/scripts/next-release-version.sh patch "$EMPTY_TAGS")" = "0.0.1"
+          printf '%s\n' v0.0.1 v0.0.9 v0.1.2 v0.1.3-rc.1 junk > "$TAGS"
+          test "$(bash docker/scripts/next-release-version.sh patch "$TAGS")" = "0.1.3"
+          test "$(bash docker/scripts/next-release-version.sh minor "$TAGS")" = "0.2.0"
+          test "$(bash docker/scripts/next-release-version.sh major "$TAGS")" = "1.0.0"
+
+      - name: Validate tagged-release source gate
+        shell: bash
+        run: |
+          GOOD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          cat > /tmp/validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 10, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 11, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 99, "name": "CI", "event": "pull_request", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          test "$(bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/validating-runs.json)" = "11"
+
+          cat > /tmp/non-validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 20, "name": "CI", "event": "push", "head_branch": "feature", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 21, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "failure"},
+              {"id": 22, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          if bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/non-validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted workflow runs that do not validate the requested main SHA." >&2
+            exit 1
+          fi
+
+          if bash docker/scripts/validate-release-main-ci.sh "not-a-sha" /tmp/validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted an invalid source SHA." >&2
+            exit 1
+          fi
+
+      - name: Validate Linux host tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash docker/scripts/install-linux.sh --validate-only
+          bash docker/scripts/install-linux.sh --validate-only --skip-dgx-check >/dev/null
+          bash docker/scripts/install-linux.sh --validate-only --dgx-url http://127.0.0.1:8000 >/dev/null
+          bash docker/scripts/install-linux.sh --help >/dev/null
+          bash docker/scripts/environment-acceptance.sh --validate-only
+          bash docker/scripts/environment-acceptance.sh --help >/dev/null
+          bash -n distribution/install.sh
+          bash -n distribution/bootstrap.sh
+          bash -n distribution/llmproxyctl
+          bash -n distribution/install-node-agent.sh
+          bash -n distribution/install-update-agent.sh
+          jq -e '.schemaVersion == 1 and (.mode == "standard" or .mode == "custom") and (.operatorCommand | type == "string")' distribution/update-plan.json >/dev/null
+          UPDATE_PLAN_MODE="$(jq -r '.mode' distribution/update-plan.json)"
+          if [[ "$UPDATE_PLAN_MODE" == "custom" ]]; then
+            test -f distribution/update.sh
+            bash -n distribution/update.sh
+          fi
+          grep -F 'AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new' distribution/install-update-agent.sh >/dev/null
+          grep -F 'mv -f "$AGENT_TEMP" "$AGENT_TARGET"' distribution/install-update-agent.sh >/dev/null
+          test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
+          grep -F 'resolve_update_path "$version"' distribution/llmproxyctl >/dev/null
+          grep -F '"$BOOTSTRAP" --version "$step" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'refusing to skip an unknown intermediate update' distribution/llmproxyctl >/dev/null
+          grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
+          bash -n distribution/build-release-bundle.sh
+          grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'Using public GitHub Release download' distribution/bootstrap.sh >/dev/null
+          grep -F 'stage 1 "Inspecting Linux host"' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'bootstrap FAILED' distribution/bootstrap.sh >/dev/null
+
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          RELEASE_DIR="$(mktemp -d)"
+          DUMMY_UPDATE_AGENT_X64="$(mktemp)"
+          DUMMY_UPDATE_AGENT_ARM64="$(mktemp)"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_X64"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_ARM64"
+          chmod 0755 "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+          UPDATE_AGENT_X64_BINARY="$DUMMY_UPDATE_AGENT_X64" \
+          UPDATE_AGENT_ARM64_BINARY="$DUMMY_UPDATE_AGENT_ARM64" \
+            bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
+          (
+            cd "$RELEASE_DIR"
+            sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
+            sha256sum -c llmproxy-bootstrap.sh.sha256
+            sha256sum -c llmproxy-update-plan.json.sha256
+          )
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-plan.json" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-update-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-update-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-arm64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
+          rm -rf "$RELEASE_DIR" "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore LlmProxy.slnx
+
+      - name: Build
+        run: dotnet build LlmProxy.slnx -c Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj -c Release --no-build --no-restore
+
+      - name: Benchmark harness tests
+        run: dotnet test tests/performance/LlmProxy.Benchmark.Tests/LlmProxy.Benchmark.Tests.csproj -c Release --no-build --no-restore
+
+  frontend:
+    name: Frontend unit and Playwright tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install admin dependencies
+        working-directory: src/LlmProxy.Admin
+        run: npm install --no-audit --no-fund
+
+      - name: Build admin UI
+        working-directory: src/LlmProxy.Admin
+        run: npm run build
+
+      - name: Install frontend test dependencies
+        working-directory: tests/frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Vitest
+        working-directory: tests/frontend
+        run: npm test
+
+      - name: Install Playwright Chromium
+        working-directory: tests/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright E2E
+        working-directory: tests/frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  integration:
+    name: Docker and PostgreSQL integration
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Retry independent registry base image prefetch
+        shell: bash
+        run: |
+          # auth.docker.io can briefly return 504 even when all source/tests are healthy.
+          # Pre-pulling here keeps transient registry failures out of the release gate.
+          for attempt in 1 2 3 4 5; do
+            if docker pull public.ecr.aws/docker/library/node:22-alpine; then exit 0; fi
+            echo "Docker Hub unavailable; retry $attempt/5" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+
+      - name: Validate quickstart Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-quickstart-postgres
+          LLM_PROXY_API_KEY: ci-quickstart-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-quickstart-pepper
+        run: docker compose -f docker/docker-compose.quickstart.yml config >/dev/null
+
+      - name: Validate full-stack Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-full-postgres
+          REDIS_PASSWORD: ci-full-redis
+          LLM_PROXY_API_KEY: ci-full-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-full-pepper
+          LLMPROXY_UPSTREAM_CREDENTIAL_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+          GRAFANA_ADMIN_PASSWORD: ci-full-grafana
+        run: docker compose -f docker/docker-compose.full.yml config >/dev/null
+
+      - name: Validate Linux production deployment path
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n docker/scripts/deploy.sh
+          bash -n docker/scripts/install-linux.sh
+          bash -n docker/scripts/environment-acceptance.sh
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          prepare_env() {
+            local target="$1"
+            sed \
+              -e 's/CHANGE_ME_POSTGRES_PASSWORD/ci-postgres/' \
+              -e 's/CHANGE_ME_REDIS_PASSWORD/ci-redis/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY/ci-api-key/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY_PEPPER/ci-pepper/' \
+              -e 's/CHANGE_ME_UPSTREAM_CREDENTIAL_KEY/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/' \
+              -e 's/CHANGE_ME_GRAFANA_ADMIN_PASSWORD/ci-grafana/' \
+              -e 's#CHANGE_ME_INFERENCE_NODE_BASE_ADDRESS#http://127.0.0.1:8000#' \
+              -e 's/CHANGE_ME_TO_VLLM_MODEL_NAME/ci-provider-model/' \
+              docker/.env.production.example > "$target"
+          }
+
+          prepare_env "$TMP_DIR/private.env"
+          if LLMPROXY_DEPLOY_DIR="$TMP_DIR/private-runtime" \
+             LLMPROXY_ENV_FILE="$TMP_DIR/private.env" \
+             LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+               bash docker/scripts/deploy.sh sha-ci-private >"$TMP_DIR/private.out" 2>&1; then
+            echo "Production without Entra unexpectedly passed deployment validation." >&2
+            exit 1
+          fi
+          grep -F "Production requires ENTRA_ENABLED=true" "$TMP_DIR/private.out" >/dev/null
+
+          prepare_env "$TMP_DIR/public.env"
+          sed -i \
+            -e 's/^ENTRA_ENABLED=false$/ENTRA_ENABLED=true/' \
+            -e 's/^ENTRA_TENANT_ID=$/ENTRA_TENANT_ID=ci-tenant/' \
+            -e 's/^ENTRA_CLIENT_ID=$/ENTRA_CLIENT_ID=ci-client/' \
+            -e 's/^ENTRA_CLIENT_SECRET=$/ENTRA_CLIENT_SECRET=ci-secret/' \
+            -e 's/^CLOUDFLARE_TUNNEL_TOKEN=$/CLOUDFLARE_TUNNEL_TOKEN=ci-tunnel-token/' \
+            "$TMP_DIR/public.env"
+          LLMPROXY_DEPLOY_DIR="$TMP_DIR/public-runtime" \
+          LLMPROXY_ENV_FILE="$TMP_DIR/public.env" \
+          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+            bash docker/scripts/deploy.sh sha-ci-public
+
+      - name: Environment acceptance harness smoke
+        shell: bash
+        run: bash tests/backend/integration/environment_acceptance_smoke.sh
+
+      - name: Validate production image build and identity
+        shell: bash
+        run: |
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker build -f docker/Dockerfile \
+            --build-arg "LLMPROXY_VERSION=$VERSION" \
+            --build-arg "LLMPROXY_BUILD_SHA=$GITHUB_SHA" \
+            --build-arg "LLMPROXY_BUILD_DATE=$BUILD_DATE" \
+            -t llmproxy:ci .
+
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' llmproxy:ci)" = "$VERSION"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' llmproxy:ci)" = "$GITHUB_SHA"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.created" }}' llmproxy:ci)" = "$BUILD_DATE"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_SHA=$GITHUB_SHA"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_DATE=$BUILD_DATE"
+
+      - name: Backend integration smoke suite
+        run: bash tests/backend/integration/smoke.sh
+
+      - name: inference hardware telemetry smoke suite
+        run: bash tests/backend/integration/hardware_smoke.sh
+
+      - name: Capacity and backpressure smoke suite
+        run: bash tests/backend/integration/capacity_smoke.sh
+
+      - name: Usage governance and rate-limit smoke suite
+        run: bash tests/backend/integration/governance_smoke.sh
+
+      - name: Upstream bearer credential smoke suite
+        run: bash tests/backend/integration/upstream_auth_smoke.sh
+
+      - name: Route catalog PostgreSQL outage smoke suite
+        run: bash tests/backend/integration/route_catalog_smoke.sh
+
+      - name: Data retention smoke suite
+        run: bash tests/backend/integration/retention_smoke.sh
+
+      - name: Backup and clean-target restore smoke suite
+        run: bash tests/backend/integration/backup_restore_smoke.sh
+
+      - name: PowerShell backup and restore smoke suite
+        run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
+
+
+  full_stack:
+    name: Redis + OpenTelemetry + Grafana full-stack gate
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Retry Docker Hub base image prefetch
+        shell: bash
+        run: |
+          # auth.docker.io can briefly return 504 even when all source/tests are healthy.
+          # Pre-pulling here keeps transient registry failures out of the release gate.
+          for attempt in 1 2 3 4 5; do
+            if docker pull node:22-alpine; then exit 0; fi
+            echo "Docker Hub unavailable; retry $attempt/5" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+
+      - name: Run full-stack smoke
+        run: bash tests/backend/integration/full_stack_smoke.sh
+
+      - name: Run transactional outbox recovery smoke
+        run: bash tests/backend/integration/runtime_outbox_smoke.sh
+
+      - name: Run distributed output-token budget smoke
+        run: bash tests/backend/integration/token_budget_redis_smoke.sh
+
+      - name: Run cross-replica credential rotation smoke
+        run: bash tests/backend/integration/credential_rotation_smoke.sh
+
+      - name: Run safe node maintenance smoke
+        run: bash tests/backend/integration/node_maintenance_smoke.sh
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-stack-diagnostics
+          path: |
+            /tmp/full-stack-headers.txt
+            /tmp/full-stack-chat.json
+            /tmp/full-stack-trace.json
+            /tmp/full-stack-rate-*.*
+            /tmp/full-stack-capacity-*
+            /tmp/runtime-outbox-*.*
+            /tmp/token-budget-*.*
+            /tmp/credential-rotation-*.*
+            /tmp/maintenance-*.*
+            /tmp/llmproxy-full-stack-mock.log
+            /tmp/llmproxy-outbox-mock.log
+            /tmp/llmproxy-token-budget-mock.log
+            /tmp/llmproxy-rotation-mock.log
+            /tmp/llmproxy-maintenance-mock.log
+          if-no-files-found: ignore
+          retention-days: 7
+ distribution/llmproxy-node-agent.service
+          grep -q '^WantedBy=multi-user.target
+          test -f distribution/llmproxy-node-agent.service
+          grep -q "sha256sum -c" distribution/connect-node.sh
+          grep -q "sha256sum -c" distribution/update-node-agent.sh
+          grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml
+
+      - name: Validate source and automatic release versioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          test "$(bash docker/scripts/validate-release-version.sh "$SOURCE_VERSION")" = "$SOURCE_VERSION"
+          test "$(bash docker/scripts/validate-release-version.sh "0.0.1")" = "0.0.1"
+          if bash docker/scripts/validate-release-version.sh "not-semver" >/dev/null 2>&1; then
+            echo "Version validator accepted an invalid release version." >&2
+            exit 1
+          fi
+
+          EMPTY_TAGS="$(mktemp)"
+          TAGS="$(mktemp)"
+          trap 'rm -f "$EMPTY_TAGS" "$TAGS"' EXIT
+          test "$(bash docker/scripts/next-release-version.sh patch "$EMPTY_TAGS")" = "0.0.1"
+          printf '%s\n' v0.0.1 v0.0.9 v0.1.2 v0.1.3-rc.1 junk > "$TAGS"
+          test "$(bash docker/scripts/next-release-version.sh patch "$TAGS")" = "0.1.3"
+          test "$(bash docker/scripts/next-release-version.sh minor "$TAGS")" = "0.2.0"
+          test "$(bash docker/scripts/next-release-version.sh major "$TAGS")" = "1.0.0"
+
+      - name: Validate tagged-release source gate
+        shell: bash
+        run: |
+          GOOD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          cat > /tmp/validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 10, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 11, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 99, "name": "CI", "event": "pull_request", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          test "$(bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/validating-runs.json)" = "11"
+
+          cat > /tmp/non-validating-runs.json <<'JSON'
+          {
+            "workflow_runs": [
+              {"id": 20, "name": "CI", "event": "push", "head_branch": "feature", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success"},
+              {"id": 21, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "failure"},
+              {"id": 22, "name": "CI", "event": "push", "head_branch": "main", "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "conclusion": "success"}
+            ]
+          }
+          JSON
+
+          if bash docker/scripts/validate-release-main-ci.sh "$GOOD_SHA" /tmp/non-validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted workflow runs that do not validate the requested main SHA." >&2
+            exit 1
+          fi
+
+          if bash docker/scripts/validate-release-main-ci.sh "not-a-sha" /tmp/validating-runs.json >/dev/null 2>&1; then
+            echo "Tagged-release source gate accepted an invalid source SHA." >&2
+            exit 1
+          fi
+
+      - name: Validate Linux host tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash docker/scripts/install-linux.sh --validate-only
+          bash docker/scripts/install-linux.sh --validate-only --skip-dgx-check >/dev/null
+          bash docker/scripts/install-linux.sh --validate-only --dgx-url http://127.0.0.1:8000 >/dev/null
+          bash docker/scripts/install-linux.sh --help >/dev/null
+          bash docker/scripts/environment-acceptance.sh --validate-only
+          bash docker/scripts/environment-acceptance.sh --help >/dev/null
+          bash -n distribution/install.sh
+          bash -n distribution/bootstrap.sh
+          bash -n distribution/llmproxyctl
+          bash -n distribution/install-node-agent.sh
+          bash -n distribution/install-update-agent.sh
+          jq -e '.schemaVersion == 1 and (.mode == "standard" or .mode == "custom") and (.operatorCommand | type == "string")' distribution/update-plan.json >/dev/null
+          UPDATE_PLAN_MODE="$(jq -r '.mode' distribution/update-plan.json)"
+          if [[ "$UPDATE_PLAN_MODE" == "custom" ]]; then
+            test -f distribution/update.sh
+            bash -n distribution/update.sh
+          fi
+          grep -F 'AGENT_TEMP=/opt/llmproxy-update-agent/.LlmProxy.UpdateAgent.new' distribution/install-update-agent.sh >/dev/null
+          grep -F 'mv -f "$AGENT_TEMP" "$AGENT_TARGET"' distribution/install-update-agent.sh >/dev/null
+          test "$(LLMPROXY_INSTALL_DIR=/tmp/llmproxyctl-ci bash distribution/llmproxyctl config-path)" = "/tmp/llmproxyctl-ci/.env"
+          grep -F 'resolve_update_path "$version"' distribution/llmproxyctl >/dev/null
+          grep -F '"$BOOTSTRAP" --version "$step" --skip-docker-install --skip-node-check --non-interactive --upgrade' distribution/llmproxyctl >/dev/null
+          grep -F 'refusing to skip an unknown intermediate update' distribution/llmproxyctl >/dev/null
+          grep -F 'migrate_legacy_env_value DGX_NODE_BASE_ADDRESS INFERENCE_NODE_BASE_ADDRESS' docker/scripts/install-linux.sh >/dev/null
+          bash -n distribution/build-release-bundle.sh
+          grep -F 'latest-install.log' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'LlmProxy installation FAILED' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'Using public GitHub Release download' distribution/bootstrap.sh >/dev/null
+          grep -F 'stage 1 "Inspecting Linux host"' docker/scripts/install-linux.sh >/dev/null
+          grep -F 'bootstrap FAILED' distribution/bootstrap.sh >/dev/null
+
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          RELEASE_DIR="$(mktemp -d)"
+          DUMMY_UPDATE_AGENT_X64="$(mktemp)"
+          DUMMY_UPDATE_AGENT_ARM64="$(mktemp)"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_X64"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$DUMMY_UPDATE_AGENT_ARM64"
+          chmod 0755 "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+          UPDATE_AGENT_X64_BINARY="$DUMMY_UPDATE_AGENT_X64" \
+          UPDATE_AGENT_ARM64_BINARY="$DUMMY_UPDATE_AGENT_ARM64" \
+            bash distribution/build-release-bundle.sh "$VERSION" "$RELEASE_DIR"
+          (
+            cd "$RELEASE_DIR"
+            sha256sum -c "llmproxy-$VERSION-linux.tar.gz.sha256"
+            sha256sum -c llmproxy-bootstrap.sh.sha256
+            sha256sum -c llmproxy-update-plan.json.sha256
+          )
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxyctl" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-plan.json" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-update-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-update-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-x64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/update-agent/linux-arm64/LlmProxy.UpdateAgent" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/install-node-agent.sh" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/distribution/llmproxy-node-agent.service" >/dev/null
+          tar -tzf "$RELEASE_DIR/llmproxy-$VERSION-linux.tar.gz" | grep -F "llmproxy-$VERSION/docker/docker-compose.full.yml" >/dev/null
+          rm -rf "$RELEASE_DIR" "$DUMMY_UPDATE_AGENT_X64" "$DUMMY_UPDATE_AGENT_ARM64"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore LlmProxy.slnx
+
+      - name: Build
+        run: dotnet build LlmProxy.slnx -c Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/backend/LlmProxy.UnitTests/LlmProxy.UnitTests.csproj -c Release --no-build --no-restore
+
+      - name: Benchmark harness tests
+        run: dotnet test tests/performance/LlmProxy.Benchmark.Tests/LlmProxy.Benchmark.Tests.csproj -c Release --no-build --no-restore
+
+  frontend:
+    name: Frontend unit and Playwright tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install admin dependencies
+        working-directory: src/LlmProxy.Admin
+        run: npm install --no-audit --no-fund
+
+      - name: Build admin UI
+        working-directory: src/LlmProxy.Admin
+        run: npm run build
+
+      - name: Install frontend test dependencies
+        working-directory: tests/frontend
+        run: npm install --no-audit --no-fund
+
+      - name: Vitest
+        working-directory: tests/frontend
+        run: npm test
+
+      - name: Install Playwright Chromium
+        working-directory: tests/frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright E2E
+        working-directory: tests/frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  integration:
+    name: Docker and PostgreSQL integration
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Retry independent registry base image prefetch
+        shell: bash
+        run: |
+          # auth.docker.io can briefly return 504 even when all source/tests are healthy.
+          # Pre-pulling here keeps transient registry failures out of the release gate.
+          for attempt in 1 2 3 4 5; do
+            if docker pull public.ecr.aws/docker/library/node:22-alpine; then exit 0; fi
+            echo "Docker Hub unavailable; retry $attempt/5" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+
+      - name: Validate quickstart Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-quickstart-postgres
+          LLM_PROXY_API_KEY: ci-quickstart-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-quickstart-pepper
+        run: docker compose -f docker/docker-compose.quickstart.yml config >/dev/null
+
+      - name: Validate full-stack Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-full-postgres
+          REDIS_PASSWORD: ci-full-redis
+          LLM_PROXY_API_KEY: ci-full-api-key
+          LLM_PROXY_API_KEY_PEPPER: ci-full-pepper
+          LLMPROXY_UPSTREAM_CREDENTIAL_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+          GRAFANA_ADMIN_PASSWORD: ci-full-grafana
+        run: docker compose -f docker/docker-compose.full.yml config >/dev/null
+
+      - name: Validate Linux production deployment path
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n docker/scripts/deploy.sh
+          bash -n docker/scripts/install-linux.sh
+          bash -n docker/scripts/environment-acceptance.sh
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+
+          prepare_env() {
+            local target="$1"
+            sed \
+              -e 's/CHANGE_ME_POSTGRES_PASSWORD/ci-postgres/' \
+              -e 's/CHANGE_ME_REDIS_PASSWORD/ci-redis/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY/ci-api-key/' \
+              -e 's/CHANGE_ME_LLM_PROXY_API_KEY_PEPPER/ci-pepper/' \
+              -e 's/CHANGE_ME_UPSTREAM_CREDENTIAL_KEY/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/' \
+              -e 's/CHANGE_ME_GRAFANA_ADMIN_PASSWORD/ci-grafana/' \
+              -e 's#CHANGE_ME_INFERENCE_NODE_BASE_ADDRESS#http://127.0.0.1:8000#' \
+              -e 's/CHANGE_ME_TO_VLLM_MODEL_NAME/ci-provider-model/' \
+              docker/.env.production.example > "$target"
+          }
+
+          prepare_env "$TMP_DIR/private.env"
+          if LLMPROXY_DEPLOY_DIR="$TMP_DIR/private-runtime" \
+             LLMPROXY_ENV_FILE="$TMP_DIR/private.env" \
+             LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+               bash docker/scripts/deploy.sh sha-ci-private >"$TMP_DIR/private.out" 2>&1; then
+            echo "Production without Entra unexpectedly passed deployment validation." >&2
+            exit 1
+          fi
+          grep -F "Production requires ENTRA_ENABLED=true" "$TMP_DIR/private.out" >/dev/null
+
+          prepare_env "$TMP_DIR/public.env"
+          sed -i \
+            -e 's/^ENTRA_ENABLED=false$/ENTRA_ENABLED=true/' \
+            -e 's/^ENTRA_TENANT_ID=$/ENTRA_TENANT_ID=ci-tenant/' \
+            -e 's/^ENTRA_CLIENT_ID=$/ENTRA_CLIENT_ID=ci-client/' \
+            -e 's/^ENTRA_CLIENT_SECRET=$/ENTRA_CLIENT_SECRET=ci-secret/' \
+            -e 's/^CLOUDFLARE_TUNNEL_TOKEN=$/CLOUDFLARE_TUNNEL_TOKEN=ci-tunnel-token/' \
+            "$TMP_DIR/public.env"
+          LLMPROXY_DEPLOY_DIR="$TMP_DIR/public-runtime" \
+          LLMPROXY_ENV_FILE="$TMP_DIR/public.env" \
+          LLMPROXY_DEPLOY_VALIDATE_ONLY=true \
+            bash docker/scripts/deploy.sh sha-ci-public
+
+      - name: Environment acceptance harness smoke
+        shell: bash
+        run: bash tests/backend/integration/environment_acceptance_smoke.sh
+
+      - name: Validate production image build and identity
+        shell: bash
+        run: |
+          VERSION="$(bash docker/scripts/validate-release-version.sh)"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker build -f docker/Dockerfile \
+            --build-arg "LLMPROXY_VERSION=$VERSION" \
+            --build-arg "LLMPROXY_BUILD_SHA=$GITHUB_SHA" \
+            --build-arg "LLMPROXY_BUILD_DATE=$BUILD_DATE" \
+            -t llmproxy:ci .
+
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' llmproxy:ci)" = "$VERSION"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' llmproxy:ci)" = "$GITHUB_SHA"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.created" }}' llmproxy:ci)" = "$BUILD_DATE"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_SHA=$GITHUB_SHA"
+          docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' llmproxy:ci | grep -Fx "LLMPROXY_BUILD_DATE=$BUILD_DATE"
+
+      - name: Backend integration smoke suite
+        run: bash tests/backend/integration/smoke.sh
+
+      - name: inference hardware telemetry smoke suite
+        run: bash tests/backend/integration/hardware_smoke.sh
+
+      - name: Capacity and backpressure smoke suite
+        run: bash tests/backend/integration/capacity_smoke.sh
+
+      - name: Usage governance and rate-limit smoke suite
+        run: bash tests/backend/integration/governance_smoke.sh
+
+      - name: Upstream bearer credential smoke suite
+        run: bash tests/backend/integration/upstream_auth_smoke.sh
+
+      - name: Route catalog PostgreSQL outage smoke suite
+        run: bash tests/backend/integration/route_catalog_smoke.sh
+
+      - name: Data retention smoke suite
+        run: bash tests/backend/integration/retention_smoke.sh
+
+      - name: Backup and clean-target restore smoke suite
+        run: bash tests/backend/integration/backup_restore_smoke.sh
+
+      - name: PowerShell backup and restore smoke suite
+        run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
+
+
+  full_stack:
+    name: Redis + OpenTelemetry + Grafana full-stack gate
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Retry Docker Hub base image prefetch
+        shell: bash
+        run: |
+          # auth.docker.io can briefly return 504 even when all source/tests are healthy.
+          # Pre-pulling here keeps transient registry failures out of the release gate.
+          for attempt in 1 2 3 4 5; do
+            if docker pull node:22-alpine; then exit 0; fi
+            echo "Docker Hub unavailable; retry $attempt/5" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+
+      - name: Run full-stack smoke
+        run: bash tests/backend/integration/full_stack_smoke.sh
+
+      - name: Run transactional outbox recovery smoke
+        run: bash tests/backend/integration/runtime_outbox_smoke.sh
+
+      - name: Run distributed output-token budget smoke
+        run: bash tests/backend/integration/token_budget_redis_smoke.sh
+
+      - name: Run cross-replica credential rotation smoke
+        run: bash tests/backend/integration/credential_rotation_smoke.sh
+
+      - name: Run safe node maintenance smoke
+        run: bash tests/backend/integration/node_maintenance_smoke.sh
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-stack-diagnostics
+          path: |
+            /tmp/full-stack-headers.txt
+            /tmp/full-stack-chat.json
+            /tmp/full-stack-trace.json
+            /tmp/full-stack-rate-*.*
+            /tmp/full-stack-capacity-*
+            /tmp/runtime-outbox-*.*
+            /tmp/token-budget-*.*
+            /tmp/credential-rotation-*.*
+            /tmp/maintenance-*.*
+            /tmp/llmproxy-full-stack-mock.log
+            /tmp/llmproxy-outbox-mock.log
+            /tmp/llmproxy-token-budget-mock.log
+            /tmp/llmproxy-rotation-mock.log
+            /tmp/llmproxy-maintenance-mock.log
+          if-no-files-found: ignore
+          retention-days: 7
+ distribution/llmproxy-node-agent.service
+          grep -q 'systemctl enable --now llmproxy-node-agent' distribution/install-node-agent.sh
+          grep -q 'gateway-connection.json' src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q 'File.SetUnixFileMode(_stateFile' src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
+          grep -q 'NodeAgent__EnrollmentToken=' src/LlmProxy.NodeAgent/OutboundNodeConnectionWorker.cs
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
           grep -q "sha256sum -c" distribution/update-node-agent.sh
