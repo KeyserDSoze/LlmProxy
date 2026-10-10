@@ -51,7 +51,8 @@ public sealed class InferenceBenchmarkWorker(
                 throw new InvalidOperationException("The managed runtime is no longer enabled or has no target.");
             var node = await db.Nodes.AsNoTracking().SingleAsync(n => n.Id == deployment.NodeId, token);
             var model = await db.Models.AsNoTracking().SingleAsync(m => m.Id == deployment.ModelId, token);
-            var isAirllm = string.Equals(deployment.CatalogModelId, "qwen3-4b-airllm", StringComparison.Ordinal);
+            var isAirllm = string.Equals(deployment.CatalogModelId, "qwen3-4b-airllm", StringComparison.Ordinal) ||
+                string.Equals(deployment.CatalogModelId, "custom:airllm", StringComparison.Ordinal);
             var options = new BenchmarkOptions
             {
                 Target = new Uri(deployment.RuntimeBaseAddress),

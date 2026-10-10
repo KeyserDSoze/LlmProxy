@@ -477,7 +477,8 @@ public static class NodeModelManagementEndpoints
             return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
         }
          var runtimeAddress = OutboundRuntimeAddress(node, state);
-        deployment.ConfigureRuntime(runtimeAddress, descriptor.Id, state.InstallationId);
+        deployment.ConfigureRuntime(runtimeAddress,
+            descriptor.Id == "custom" ? "custom:" + state.Runtime : descriptor.Id, state.InstallationId);
         if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase)) deployment.Enable();
         else deployment.Disable();
          AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
@@ -609,7 +610,9 @@ public static class NodeModelManagementEndpoints
                     agentStatus = agentState?.Status ?? (deployment.Enabled ? "unknown" : "stopped"),
                     agentState,
                     runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
-                    runtime = agentState?.Runtime ?? DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm"
+                    runtime = agentState?.Runtime ?? (deployment.CatalogModelId?.StartsWith("custom:", StringComparison.Ordinal) == true
+                        ? deployment.CatalogModelId["custom:".Length..]
+                        : DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm")
                 };
             })
         };
