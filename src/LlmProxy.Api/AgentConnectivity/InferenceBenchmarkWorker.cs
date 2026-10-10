@@ -51,16 +51,20 @@ public sealed class InferenceBenchmarkWorker(
                 throw new InvalidOperationException("The managed runtime is no longer enabled or has no target.");
             var node = await db.Nodes.AsNoTracking().SingleAsync(n => n.Id == deployment.NodeId, token);
             var model = await db.Models.AsNoTracking().SingleAsync(m => m.Id == deployment.ModelId, token);
+            var isAirllm = string.Equals(deployment.CatalogModelId, "qwen3-4b-airllm", StringComparison.Ordinal);
             var options = new BenchmarkOptions
             {
                 Target = new Uri(deployment.RuntimeBaseAddress),
                 Model = model.ProviderModelName,
                 ConcurrencyLevels = [1, 2, 4, 8, 12, 16],
-                RequestsPerLevel = 40,
-                WarmupRequests = 2,
-                RequestTimeout = TimeSpan.FromSeconds(60),
+                RequestsPerLevel = isAirllm ? 16 : 40,
+                WarmupRequests = isAirllm ? 1 : 2,
+                MaxOutputTokens = isAirllm ? 8 : 128,
+                Streaming = !isAirllm,
+                RequestTimeout = TimeSpan.FromSeconds(isAirllm ? 120 : 60),
                 DelayBetweenLevels = TimeSpan.FromSeconds(2),
-                MaxP95TtftMilliseconds = job.MaxP95TtftMilliseconds,
+                MaxP95TtftMilliseconds = isAirllm ? null : job.MaxP95TtftMilliseconds,
+                MinOutputTokensPerSecondPerSlot = isAirllm ? 0.01 : null,
                 MinSuccessRatePercent = job.MinSuccessRatePercent
             };
             using var client = clients.CreateClient("vllm");

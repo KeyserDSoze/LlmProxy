@@ -247,9 +247,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>
       <div className="stack">
         <p className="muted">{benchmarkInstallation?.runtime ?? 'unknown'} · {benchmarkInstallation?.logicalModel ?? 'unknown'}</p>
-        <p className="muted">The sweep runs 40 requests at concurrency 1, 2, 4, 8, 12, and 16. It measures streamed completions and does not automatically change the production limits.</p>
+        <p className="muted">{benchmarkInstallation?.runtime === 'airllm'
+          ? 'AirLLM non-streaming experimental sweep: 16 requests at concurrency 1, 2, 4, 8, 12 and 16, 8 output tokens each. Measures completed throughput and queues, not concurrent token generation. TTFT is unavailable.'
+          : 'The sweep runs 40 requests at concurrency 1, 2, 4, 8, 12 and 16. It measures streamed completions and does not automatically change production limits.'}</p>
         <div className="formGridTwo">
-          <label>Maximum P95 TTFT (ms)<input aria-label="Benchmark P95 TTFT limit" type="number" min="100" max="300000" value={benchmarkP95} onChange={e => setBenchmarkP95(Number(e.target.value))}/></label>
+          {benchmarkInstallation?.runtime !== 'airllm' && <label>Maximum P95 TTFT (ms)<input aria-label="Benchmark P95 TTFT limit" type="number" min="100" max="300000" value={benchmarkP95} onChange={e => setBenchmarkP95(Number(e.target.value))}/></label>}
           <label>Minimum success rate (%)<input aria-label="Benchmark success threshold" type="number" min="1" max="100" step="1" value={benchmarkSuccess} onChange={e => setBenchmarkSuccess(Number(e.target.value))}/></label>
         </div>
         <button className="primary" disabled={!canWrite || benchmarkBusy || recentBenchmark?.status === 'running' || recentBenchmark?.status === 'pending'} onClick={() => void runBenchmark()}>{benchmarkBusy ? 'Scheduling…' : 'Start benchmark on this deployment'}</button>
