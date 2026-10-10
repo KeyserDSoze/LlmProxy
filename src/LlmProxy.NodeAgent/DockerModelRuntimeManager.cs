@@ -281,6 +281,23 @@ for index, entry in enumerate(files):
             catch (JsonException) {}
             return;
         }
+        // Hugging Face tqdm emits carriage-return-delimited percent for the current file.
+        // Distinguish *file* progress from overall completed-weight bytes, emitted separately.
+        if (stage == "model-weights")
+        {
+            var fileProgress = Regex.Match(line,
+                @"(?<file>[^:\r\n]{1,100}):\s*(?<percent>\d{1,3}(?:\.\d+)?)%\|",
+                RegexOptions.IgnoreCase);
+            if (fileProgress.Success &&
+                double.TryParse(fileProgress.Groups["percent"].Value,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var percent))
+            {
+                report(new TransferProgress("model-file", Math.Min(100, percent),
+                    "Downloading " + fileProgress.Groups["file"].Value.Trim(), null, null));
+                return;
+            }
+        }
         // Docker pull prints per-layer numbers, not a reliable total image percentage.
         // Provide visible per-layer progress, explicitly labelled as such.
         var numbers = Regex.Match(line, @"([0-9]+(?:\.[0-9]+)?)\s*(B|kB|MB|GB)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*(B|kB|MB|GB)", RegexOptions.IgnoreCase);
