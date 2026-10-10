@@ -40,6 +40,14 @@ jobs:
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh
           grep -F 'environment: test' .github/workflows/container.yml >/dev/null
+          # No host-wide Cloudflare tunnel cleanup, even when a shell exports
+          # a conflicting Compose project. Keep other tunnels' boot policy.
+          grep -F -- '--project-name llmproxy-full' docker/scripts/deploy.sh >/dev/null
+          grep -F -- '--project-name llmproxy-full' distribution/llmproxyctl >/dev/null
+          ! grep -F -- '--remove-orphans' docker/scripts/deploy.sh | grep -v '^#'
+          ! grep -F -- '--remove-orphans' distribution/llmproxyctl
+          ! grep -E 'systemctl (stop|disable|restart) cloudflared|docker (stop|rm) cloudflared' docker/scripts/deploy.sh distribution/llmproxyctl distribution/install.sh
+          grep -A4 '^  cloudflared:' docker/docker-compose.full.yml | grep -F 'restart: unless-stopped' >/dev/null
           grep -F 'test.install.sh.gpg' .github/workflows/container.yml >/dev/null
           grep -q "sha256sum -c" distribution/update-node-agent.sh
           grep -q "llmproxy-connect-node.sh" .github/workflows/container.yml

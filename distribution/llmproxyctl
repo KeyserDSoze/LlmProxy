@@ -49,7 +49,9 @@ compose() {
     echo "Runtime compose file not found: $RUNTIME_COMPOSE" >&2
     exit 2
   fi
-  local args=(docker compose --env-file "$ENV_FILE" -f "$RUNTIME_COMPOSE")
+  # This is LLMProxy's own project, regardless of the invoking shell's
+  # COMPOSE_PROJECT_NAME. Never manage another application's cloudflared.
+  local args=(docker compose --project-name llmproxy-full --env-file "$ENV_FILE" -f "$RUNTIME_COMPOSE")
   if [[ -n "$(read_env CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
     args+=(--profile cloudflare)
   fi
@@ -196,7 +198,7 @@ case "$cmd" in
     ;;
   start)
     require_root
-    compose up -d --no-build --remove-orphans
+    compose up -d --no-build
     ;;
   stop)
     require_root

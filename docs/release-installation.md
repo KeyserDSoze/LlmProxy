@@ -306,6 +306,33 @@ llmproxyctl health
 
 After public HTTPS and Entra login work, go to **Infrastructure → Fleet & access → Pair Linux agent**. This generates a 30-minute pairing invitation and a one-command installer for the remote GPU server. The Node Agent itself also registers as a systemd service, restarts automatically, and does not require re-pairing after reboot.
 
+### Coexistence with existing Cloudflare tunnels
+
+The bundled Cloudflare connector is **only one Docker Compose service**:
+`llmproxy-full/cloudflared`. The installation and `llmproxyctl` explicitly
+select `--project-name llmproxy-full`, even if the operator's shell has a
+different `COMPOSE_PROJECT_NAME`. Starting and updating LLMProxy does **not**
+perform a global `docker stop`, `docker rm`, `docker compose down`,
+`docker system prune`, or `systemctl stop/disable cloudflared`.
+It also avoids `--remove-orphans`, so it cannot inadvertently clean up
+unrecognized services just because they share a Compose namespace.
+
+If the tunnel token is removed from the LLMProxy environment, only
+`cloudflared` in **LLMProxy's own Compose project** is removed. All host
+Cloudflare services and containers belonging to other Compose projects remain
+running and retain their `systemd`/`restart: unless-stopped` autostart
+settings. The LLMProxy connector itself has `restart: unless-stopped`
+and the host Docker daemon is enabled for boot. This isolation applies to
+ordinary installation, version updates, `llmproxyctl start/stop/restart`
+and rollback; do not use host-wide `docker prune` as a manual uninstall step.
+
+Use a **dedicated Cloudflare Tunnel token** and **distinct public hostname**
+for LLMProxy. Reusing another application's tunnel/token or DNS hostname can
+cause Cloudflare to send requests to the wrong connector even though
+neither container is stopped. This software cannot guarantee that
+an operator's separately installed tunnel has a working boot service,
+but it does not disable one.
+
 ## Cloudflare Tunnel and Entra ID
 
 When the bundled `cloudflared` service is used, publish exactly one Cloudflare origin:

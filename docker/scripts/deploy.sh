@@ -95,7 +95,9 @@ install -m 0644 "$SOURCE_DOCKER_DIR/docker-compose.full.yml" "$RUNTIME_DIR/docke
 cp -a "$SOURCE_DOCKER_DIR/observability/." "$RUNTIME_DIR/observability/"
 
 export LLMPROXY_IMAGE_TAG="$IMAGE_TAG"
-COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$RUNTIME_DIR/docker-compose.full.yml")
+# Explicitly select the product-owned Compose namespace. Ambient
+# COMPOSE_PROJECT_NAME must never redirect this deployment to another app.
+COMPOSE=(docker compose --project-name llmproxy-full --env-file "$ENV_FILE" -f "$RUNTIME_DIR/docker-compose.full.yml")
 if [[ -n "$CLOUDFLARE_TOKEN" ]]; then
   COMPOSE+=(--profile cloudflare)
 fi
@@ -116,13 +118,17 @@ deploy_log "Pulling immutable container image(s)"
 "${COMPOSE[@]}" pull
 
 deploy_log "Starting/updating containers"
-"${COMPOSE[@]}" up -d --no-build --remove-orphans
+# Do not --remove-orphans: an unrelated tunnel in a reused Compose namespace
+# must never be stopped or removed as a side effect of deploying LLMProxy.
+"${COMPOSE[@]}" up -d --no-build
 deploy_log "Containers started; waiting for gateway health"
 
 if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
   # If a previous deployment enabled the profile and the token was deliberately removed,
   # make sure the public tunnel does not stay running.
-  docker compose --env-file "$ENV_FILE" -f "$RUNTIME_DIR/docker-compose.full.yml" --profile cloudflare rm -sf cloudflared >/dev/null 2>&1 || true
+  # Only our explicitly named Compose service; never touch host cloudflared
+  # or any other project's tunnel, service, restart policy, or container.
+  "${COMPOSE[@]}" --profile cloudflare rm -sf cloudflared >/dev/null 2>&1 || true
 fi
 
 PORT="$(read_env_value LLMPROXY_PORT)"
