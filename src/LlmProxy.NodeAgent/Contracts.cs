@@ -5,7 +5,11 @@ public sealed record GpuInventory(
     double MemoryTotalGiB,
     double MemoryFreeGiB,
     string? DriverVersion,
-    string? ComputeCapability);
+    string? ComputeCapability,
+    string MemoryType = "dedicated",
+    double? UtilizationPercent = null,
+    double? TemperatureCelsius = null,
+    double? PowerWatts = null);
 
 public sealed record HostReadiness(
     bool DockerInstalled,
@@ -26,7 +30,8 @@ public sealed record HardwareInventory(
     IReadOnlyList<GpuInventory> Gpus,
     string? Runtime,
     string? RuntimeVersion,
-    HostReadiness? Readiness = null);
+    HostReadiness? Readiness = null,
+    double? CpuUtilizationPercent = null);
 
 public sealed record InstallRequest(
     string CatalogModelId,

@@ -90,11 +90,17 @@ public sealed class DockerModelRuntimeManager(
                 if (record.Runtime == "airllm")
                 {
                     var buildContext = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
-                    if (!File.Exists(Path.Combine(buildContext, "Dockerfile")))
-                        throw new InvalidOperationException("AirLLM assets are missing from the installed Agent release.");
+                    var dockerfile = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture
+                        == System.Runtime.InteropServices.Architecture.Arm64
+                        ? "Dockerfile.arm64" : "Dockerfile";
+                    var selectedDockerfile = Path.Combine(buildContext, dockerfile);
+                    if (!File.Exists(selectedDockerfile))
+                        throw new InvalidOperationException("AirLLM " + dockerfile +
+                            " is missing from the installed Node Agent release.");
                     report?.Invoke(new TransferProgress("container-image", null,
-                        "Building AirLLM experimental serving image", null, null));
-                    await PullCommandAsync(["build", "--pull", "-t",
+                        "Building AirLLM experimental image for " +
+                        System.Runtime.InteropServices.RuntimeInformation.OSArchitecture, null, null));
+                    await PullCommandAsync(["build", "--pull", "--file", selectedDockerfile, "-t",
                         ManagedRuntimeProfiles.Image(record, options), buildContext], cancellationToken,
                         line => ParseTransferLine(line, "container-image", report));
                 }

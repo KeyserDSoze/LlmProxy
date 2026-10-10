@@ -1,5 +1,9 @@
 ## Unreleased — Admin model/runtime downloads and AirLLM experiment (2026-10-10)
 
+- NVIDIA GB10/DGX Spark: Node Agent preserves unified-memory GPU devices when `nvidia-smi` reports `[N/A]` for VRAM, with `nvidia-smi -L` fallback for GPU counting; Admin shows indexed accelerators, unified-versus-dedicated memory, CPU utilization and sampled GPU utilization/temperature/power (when supported), refreshed every 15 seconds.
+- Hardware fit for shared-memory accelerators now budgets CPU and GPU estimates against the **same available RAM pool**, leaving host headroom; unknown GPU memory is reported as unknown instead of zero VRAM.
+- Experimental AirLLM can be installed via Admin on ARM64 hosts using a dedicated NVIDIA PyTorch iGPU base-image build profile, alongside x64. Curated Qwen3-4B/8B/32B layer-streaming profiles and guarded custom Hugging Face models are exposed; actual GB10 build/start/generation and model-specific compatibility are **not yet hardware-validated**. SSE, Responses and tools remain unsupported.
+
 - Admin Infrastructure: selectable compatible inference runtime, advanced execution profile fields, guarded custom Hugging Face models including experimental AirLLM, and per-model NVIDIA GPU-index assignment.
 - Paired Linux Node Agent: persistent asynchronous image/model download jobs, per-stage/per-file progress, status/cancellation and explicit interrupted state after restart; Agent relay management allowlist updated for remote job APIs. Agent self-update archive downloads additionally expose measured percentage when size is known, and installation/checksum/health phases.
 - Experimental AirLLM 4.0.0: source-bundled Linux Agent Docker build and a bounded single-worker, non-streaming Chat adapter, initial Qwen3-4B catalog profile. Not production-validated; no SSE, Responses or tool calling.

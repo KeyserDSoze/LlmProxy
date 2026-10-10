@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-10 — NVIDIA GB10 shared-memory inventory and AirLLM ARM64 build path
+
+- Reproduced observed DGX Spark `NVIDIA GB10, [N/A], [N/A], 580.178.04` misclassification: Node Agent returned `gpus: []` despite functional driver/toolkit.
+- Preserved unified-memory NVIDIA GPUs in the Agent inventory, added `nvidia-smi -L` fallback counting and optional CPU/GPU utilization/temperature/power samples.
+- Recomputed gateway compatibility with a shared available-RAM budget and reserved host headroom, avoiding double-counted CPU/GPU memory; updated Admin counts, GPU indices and 15-second inventory refresh.
+- Added AirLLM native ARM64 Dockerfile selection for Node Agent install jobs and experimental Qwen3-8B/32B entries alongside 4B/custom, plus regression tests and CI asset checks.
+- Opened PR #10. Hardware-specific container compatibility, first-run layer conversion, non-streaming inference, model perf and concurrent-client behavior remain **real-host validation pending** (issue #11). No supported assertion that AirLLM has already run on GB10.
+
+
 ## 2026-10-10 — Public Agent binaries and installer on custom LLMProxy domain
 
 - Added no-login public Linux Agent installer served by gateway origin, with allowlisted redirects for immutable x64/ARM64 releases and SHA-256.

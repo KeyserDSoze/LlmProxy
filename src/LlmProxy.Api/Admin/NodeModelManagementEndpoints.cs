@@ -617,28 +617,63 @@ public static class NodeModelManagementEndpoints
             })
         };
 
-    private static ModelCompatibility EvaluateCompatibility(DeployableModelDescriptor model, HardwareInventory? hardware)
+    public static ModelCompatibility EvaluateCompatibility(DeployableModelDescriptor model, HardwareInventory? hardware)
     {
         if (hardware is null)
             return new("unknown", "Hardware inventory unavailable.", ["Connect the management agent to calculate fit."], 1);
 
-        var gpuCount = hardware.Gpus?.Count ?? 0;
-        var freeGpu = hardware.Gpus?.Sum(gpu => gpu.MemoryFreeGiB) ?? 0;
-        var totalGpu = hardware.Gpus?.Sum(gpu => gpu.MemoryTotalGiB) ?? 0;
+        var gpus = hardware.Gpus ?? [];
+        var gpuCount = gpus.Count;
+        var freeGpu = gpus.Sum(gpu => gpu.MemoryFreeGiB);
+        var totalGpu = gpus.Sum(gpu => gpu.MemoryTotalGiB);
+        var unifiedMemory = gpuCount > 0 && gpus.All(gpu => gpu.MemoryType == "unified");
+        var unknownGpuMemory = gpus.Any(gpu => gpu.MemoryType == "unknown");
         var reasons = new List<string>();
 
         if (gpuCount < model.MinimumGpuCount)
             reasons.Add($"Needs at least {model.MinimumGpuCount} GPU(s); {gpuCount} detected.");
-        if (freeGpu < model.MinimumGpuMemoryGiB)
-            reasons.Add($"Needs about {model.MinimumGpuMemoryGiB:0.#} GiB free aggregate GPU memory; {freeGpu:0.#} GiB is free ({totalGpu:0.#} GiB total).");
-        if (hardware.SystemMemoryAvailableGiB < model.MinimumSystemMemoryGiB)
-            reasons.Add($"Needs about {model.MinimumSystemMemoryGiB:0.#} GiB free system RAM; {hardware.SystemMemoryAvailableGiB:0.#} GiB is free.");
+
+        // DGX Spark / GB10 has physically shared CPU/GPU memory, NOT a second
+        // pool of dedicated GPU VRAM. Require the combined model memory budgets
+        // from a single available-RAM pool and keep host headroom untouched.
+        var hostReserve = Math.Max(8d, hardware.SystemMemoryTotalGiB * 0.10d);
+        var sharedBudget = Math.Max(0d, hardware.SystemMemoryAvailableGiB - hostReserve);
+        if (unifiedMemory)
+        {
+            var minimumShared = model.MinimumGpuMemoryGiB + model.MinimumSystemMemoryGiB;
+            if (sharedBudget < minimumShared)
+                reasons.Add($"Needs about {minimumShared:0.#} GiB combined CPU/GPU unified memory " +
+                    $"({model.MinimumSystemMemoryGiB:0.#} RAM + {model.MinimumGpuMemoryGiB:0.#} GPU estimate); " +
+                    $"{sharedBudget:0.#} GiB is available after reserving {hostReserve:0.#} GiB for the host.");
+        }
+        else
+        {
+            // Unknown GPU memory is not zero VRAM: it cannot be used to prove
+            // either sufficient or insufficient GPU capacity.
+            if (!unknownGpuMemory && freeGpu < model.MinimumGpuMemoryGiB)
+                reasons.Add($"Needs about {model.MinimumGpuMemoryGiB:0.#} GiB free aggregate GPU memory; {freeGpu:0.#} GiB is free ({totalGpu:0.#} GiB total).");
+            if (hardware.SystemMemoryAvailableGiB < model.MinimumSystemMemoryGiB)
+                reasons.Add($"Needs about {model.MinimumSystemMemoryGiB:0.#} GiB free system RAM; {hardware.SystemMemoryAvailableGiB:0.#} GiB is free.");
+        }
+
         if (hardware.DiskAvailableGiB < model.DiskGiB)
             reasons.Add($"Needs about {model.DiskGiB:0.#} GiB free disk; {hardware.DiskAvailableGiB:0.#} GiB is free.");
 
         var suggestedTp = Math.Max(1, Math.Min(gpuCount == 0 ? 1 : gpuCount, model.RecommendedGpuCount));
         if (reasons.Count > 0)
             return new("insufficient", "Below one or more minimum planning requirements.", reasons, suggestedTp);
+
+        if (!unifiedMemory && unknownGpuMemory && freeGpu < model.MinimumGpuMemoryGiB)
+            return new("unknown", "NVIDIA GPU detected, but available GPU memory could not be measured.",
+                ["Inspect the accelerator on the host before installing a model."], suggestedTp);
+
+        if (unifiedMemory)
+        {
+            var recommendedShared = model.RecommendedGpuMemoryGiB + model.RecommendedSystemMemoryGiB;
+            return sharedBudget >= recommendedShared && gpuCount >= model.RecommendedGpuCount
+                ? new("fits", $"Unified CPU/GPU RAM budget {sharedBudget:0.#} GiB (after {hostReserve:0.#} GiB host reserve) meets the recommended combined {recommendedShared:0.#} GiB planning estimate. Not dedicated VRAM.", [], suggestedTp)
+                : new("tight", $"Unified CPU/GPU RAM budget {sharedBudget:0.#} GiB (after {hostReserve:0.#} GiB host reserve) meets the minimum, but not the recommended combined {recommendedShared:0.#} GiB estimate.", ["Benchmark startup, context length and concurrency on this unified-memory host."], suggestedTp);
+        }
 
         var recommended =
             freeGpu >= model.RecommendedGpuMemoryGiB &&
@@ -720,7 +755,7 @@ public static class NodeModelManagementEndpoints
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
-    public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null);
+    public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null, string MemoryType = "dedicated", double? UtilizationPercent = null, double? TemperatureCelsius = null, double? PowerWatts = null);
     public sealed record HostReadiness(
         bool DockerInstalled, bool DockerDaemonReady, bool NvidiaDriverDetected,
         bool NvidiaToolkitReady, IReadOnlyList<string>? Issues);
@@ -737,7 +772,8 @@ public static class NodeModelManagementEndpoints
         IReadOnlyList<GpuInventory>? Gpus,
         string? Runtime,
         string? RuntimeVersion,
-        HostReadiness? Readiness = null);
+        HostReadiness? Readiness = null,
+        double? CpuUtilizationPercent = null);
     public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState>? Models);
     public sealed record ManagedModelState(
         string InstallationId,

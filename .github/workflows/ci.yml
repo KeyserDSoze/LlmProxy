@@ -31,6 +31,10 @@ jobs:
           bash -n distribution/update-node-agent.sh
           python3 -m py_compile distribution/airllm-runtime/server.py
           test -s distribution/airllm-runtime/Dockerfile
+          test -s distribution/airllm-runtime/Dockerfile.arm64
+          grep -F 'nvcr.io/nvidia/pytorch:25.10-py3-igpu' distribution/airllm-runtime/Dockerfile.arm64
+          grep -F 'Dockerfile.arm64' src/LlmProxy.NodeAgent/DockerModelRuntimeManager.cs
+          grep -F 'ParseNvidiaSmiList' src/LlmProxy.NodeAgent/HardwareInventoryReader.cs
           grep -F 'distribution/airllm-runtime' .github/workflows/container.yml >/dev/null
           bash -n distribution/prepare-node-host.sh
           test -f distribution/llmproxy.service
