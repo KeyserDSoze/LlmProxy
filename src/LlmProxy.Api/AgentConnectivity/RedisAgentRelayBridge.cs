@@ -46,7 +46,7 @@ public sealed class RedisAgentRelayBridge(
                 var sub = await redis.GetSubscriberAsync(token);
                 _subscriber = sub;
                 var channel = RedisChannel.Literal(Queue(_instance));
-                await sub.SubscribeAsync(channel, (_, value) =>
+                await sub.SubscribeAsync(channel, (incomingChannel, value) =>
                 {
                     Frame? frame;
                     try { frame = Decode(value); }
@@ -117,7 +117,7 @@ public sealed class RedisAgentRelayBridge(
                 catch (Exception) { }
             }
         }
-        await sub.SubscribeAsync(receiver, (_, value) =>
+        await sub.SubscribeAsync(receiver, (incomingChannel, value) =>
         {
             Frame? frame;
             try { frame = Decode(value); }
