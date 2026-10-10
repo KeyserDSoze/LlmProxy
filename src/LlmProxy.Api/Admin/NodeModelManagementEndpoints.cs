@@ -504,7 +504,8 @@ public static class NodeModelManagementEndpoints
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")
-            return descriptor.Runtime == "llama.cpp" || (runtime == "airllm" && descriptor.ProviderModelName != "Qwen/Qwen3-4B")
+            return descriptor.Runtime == "llama.cpp" || descriptor.Runtime == "airllm" && runtime != "airllm" ||
+                runtime == "airllm" && descriptor.Runtime != "airllm"
                 ? null : runtime;
         return null;
     }

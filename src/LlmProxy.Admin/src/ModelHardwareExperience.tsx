@@ -196,9 +196,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <select aria-label="Install inference engine" value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
             {overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp'
               ? <option value="llama.cpp">llama.cpp (GGUF)</option>
+              : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'airllm'
+              ? <option value="airllm">AirLLM (experimental layer streaming)</option>
               : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option>
-                {overview?.catalog.find(item => item.model.id === installCatalogId)?.model.providerModelName === 'Qwen/Qwen3-4B' &&
-                  <option value="airllm">AirLLM (experimental layer streaming)</option>}</>}
+                }</>}
           </select>
         </label>
         {runtimeChoice === 'airllm' && <p className="notice">Experimental AirLLM: the Agent builds the AirLLM serving image and downloads model weights. Only non-streaming Chat is supported. One generator processes a bounded request queue, so concurrent clients do not imply parallel generation. Benchmark against vLLM before using production traffic.</p>}

@@ -99,8 +99,9 @@ public sealed class OutboundAgentRelayWorker(
             port = 9900;
             localPath = path["/management".Length..];
             isManagement = true;
-            var valid = (frame.Method == "GET" && localPath is "/health" or "/v1/system" or "/v1/models") ||
-                (frame.Method == "POST" && (localPath is "/v1/models/install" or "/v1/system/prepare" ||
+            var valid = (frame.Method == "GET" && (localPath is "/health" or "/v1/system" or "/v1/models" or "/v1/models/install-jobs" ||
+                    localPath.StartsWith("/v1/models/install-jobs/", StringComparison.Ordinal))) ||
+                (frame.Method == "POST" && (localPath is "/v1/models/install" or "/v1/models/install-jobs" or "/v1/system/prepare" ||
                     (localPath.StartsWith("/v1/models/", StringComparison.Ordinal) &&
                      (localPath.EndsWith("/start", StringComparison.Ordinal) || localPath.EndsWith("/stop", StringComparison.Ordinal))))) ||
                 (frame.Method == "DELETE" && localPath.StartsWith("/v1/models/", StringComparison.Ordinal));
