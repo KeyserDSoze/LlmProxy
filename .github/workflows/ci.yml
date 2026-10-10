@@ -116,6 +116,32 @@ jobs:
           grep -F 'llmproxyctl update "$VERSION"' "$tmp/decrypted-update.sh" >/dev/null
           grep -F 'export ENTRA_CLIENT_SECRET=' "$tmp/decrypted-update.sh" >/dev/null
           grep -F 'VERSION=9.8.7' "$tmp/decrypted-update.sh" >/dev/null
+          # Execute the decrypted update against a harmless fake ctl/sudo.
+          # This verifies that all five Settings reach the update command
+          # and that the release-pinned version is the exact expected value.
+          mkdir -p "$tmp/mockbin"
+          cat > "$tmp/mockbin/llmproxyctl" <<'MOCK'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [[ "$1" == update && "$2" == 9.8.7 ]]
+          [[ "$ENTRA_ENABLED" == true ]]
+          [[ "$ENTRA_TENANT_ID" == 00000000-0000-4000-8000-000000000001 ]]
+          [[ "$ENTRA_CLIENT_ID" == 00000000-0000-4000-8000-000000000002 ]]
+          [[ "$ENTRA_SUPER_ADMINS" == ci-admin@example.invalid ]]
+          [[ "$ENTRA_CLIENT_SECRET" == ci-fake-entra-client-secret ]]
+          [[ "$CLOUDFLARE_TUNNEL_TOKEN" == ci-fake-cloudflare-token ]]
+          printf 'ok\n' > "$CI_UPDATE_MARKER"
+          MOCK
+          cat > "$tmp/mockbin/sudo" <<'MOCK'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [[ "$1" == -E ]] || exit 1
+          shift
+          exec "$@"
+          MOCK
+          chmod 0755 "$tmp/mockbin/llmproxyctl" "$tmp/mockbin/sudo"
+          CI_UPDATE_MARKER="$tmp/verified-update" PATH="$tmp/mockbin:$PATH" bash "$tmp/decrypted-update.sh"
+          grep -qx ok "$tmp/verified-update"
           if gpg --batch --yes --quiet --pinentry-mode loopback \
             --passphrase-fd 3 --output "$tmp/wrong.sh" \
             --decrypt "$tmp/test.install.sh.gpg" \
