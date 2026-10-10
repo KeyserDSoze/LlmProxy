@@ -616,6 +616,7 @@ export type GpuInventory = {
   memoryFreeGiB: number
   driverVersion?: string | null
   computeCapability?: string | null
+  memoryType?: 'dedicated' | 'unified' | 'unknown'
 }
 
 export type HardwareInventory = {
