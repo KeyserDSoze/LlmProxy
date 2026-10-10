@@ -56,6 +56,17 @@ public sealed class ManagedRuntimeProfilesTests
     }
 
     [Fact]
+    public void Airllm_profile_accepts_one_worker_and_rejects_vllm_flags()
+    {
+        var request = new InstallRequest("qwen3-4b-airllm", "Qwen/Qwen3-4B", null, 1, [], "airllm", 4, 8192);
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.Equal("llmproxy-airllm:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request with { TensorParallelSize = 2 }));
+        Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request with { KvCacheDtype = "fp8" }));
+    }
+
+    [Fact]
     public void One_catalog_supports_multiple_profiles_and_identical_reinstallation()
     {
         var first = new InstallRequest("qwen3-4b", "Qwen/Qwen3-4B", null, 1, [], "vllm", 1, 8192);
