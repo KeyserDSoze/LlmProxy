@@ -25,6 +25,10 @@ fi
 
 install -d -m 0755 /opt/llmproxy-node-agent /etc/llmproxy /var/lib/llmproxy-node-agent/huggingface
 install -m 0755 "$BINARY" /opt/llmproxy-node-agent/LlmProxy.NodeAgent
+if [[ -f "$SCRIPT_DIR/airllm-runtime/Dockerfile" ]]; then
+  install -d -m 0755 /opt/llmproxy-node-agent/airllm-runtime
+  cp -a "$SCRIPT_DIR/airllm-runtime/." /opt/llmproxy-node-agent/airllm-runtime/
+fi
 if [[ -f "$SCRIPT_DIR/prepare-node-host.sh" ]]; then
   install -m 0755 "$SCRIPT_DIR/prepare-node-host.sh" /opt/llmproxy-node-agent/prepare-node-host.sh
 fi

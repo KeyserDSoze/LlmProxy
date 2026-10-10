@@ -18,6 +18,7 @@ MAX_CONTEXT = max(256, min(262144, int(os.getenv("AIRLLM_MAX_CONTEXT", "8192")))
 QUEUE_LIMIT = max(1, min(128, int(os.getenv("AIRLLM_MAX_QUEUED", "1"))))
 engine = None
 load_error = None
+ready = False
 worker = asyncio.Lock()
 queued = 0
 completed = 0
@@ -77,9 +78,10 @@ def _infer(messages, length, temperature):
 @asynccontextmanager
 async def lifespan(app):
     async def warmup():
-        global load_error
+        global load_error, ready
         try:
             await asyncio.to_thread(_load)
+            ready = True
         except Exception as exc:
             load_error = type(exc).__name__ + ": " + str(exc)[:160]
     task = asyncio.create_task(warmup())
@@ -94,7 +96,7 @@ app = FastAPI(title="LLMProxy AirLLM experimental", lifespan=lifespan)
 async def health():
     if load_error:
         raise HTTPException(503, "Model initialization failed: " + load_error)
-    if engine is None:
+    if not ready:
         raise HTTPException(503, "Converting and preparing model layers")
     return {"status": "ok", "engine": "airllm", "experimental": True}
 
@@ -124,7 +126,7 @@ async def chat(body: Chat, request: Request):
         for m in body.messages
     ):
         raise HTTPException(422, "Invalid prompt")
-    if engine is None or load_error:
+    if not ready or load_error:
         raise HTTPException(503, "AirLLM not ready")
     async with guard:
         if queued >= QUEUE_LIMIT:

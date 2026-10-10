@@ -281,6 +281,7 @@ jobs:
             cp distribution/install-node-agent.sh "$STAGE/"
             cp distribution/update-node-agent.sh "$STAGE/"
             cp distribution/prepare-node-host.sh "$STAGE/"
+            cp -R distribution/airllm-runtime "$STAGE/airllm-runtime"
             chmod 0755 "$STAGE/LlmProxy.NodeAgent" "$STAGE/install-node-agent.sh" "$STAGE/update-node-agent.sh" "$STAGE/prepare-node-host.sh"
             ARCHIVE="dist/llmproxy-node-agent-$VERSION-$RID.tar.gz"
             tar -C "$STAGE" -czf "$ARCHIVE" .
