@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+# Only the failing source line/exit code is logged; command strings and API secrets are not.
+trap 'rc=$?; printf "[full-stack] failed at script line %s (exit %s)\\n" "$LINENO" "$rc" >&2' ERR
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT_DIR"
