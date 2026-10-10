@@ -193,7 +193,7 @@ public static class NodeModelManagementEndpoints
                     request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null,
-                    request.PublicName);
+                    request.PublicName, request.GpuDevices);
                 var state = await SendAgentAsync<ManagedModelState>(
                     client, node, protector, HttpMethod.Post, "/v1/models/install", installRequest, cancellationToken);
 
@@ -239,7 +239,7 @@ public static class NodeModelManagementEndpoints
                     request.Port, runtime is "llama.cpp" or "airllm" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
-                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName);
+                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices);
                 var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Post,
                     "/v1/models/install-jobs", payload, token);
                 return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{job.Id}", job);
@@ -282,7 +282,8 @@ public static class NodeModelManagementEndpoints
                     new InstallManagedModelRequest(job.Request.PublicName, job.Request.Port, true,
                         job.Request.ExtraArguments, job.Request.MaxNumSeqs, job.Request.MaxModelLen,
                         job.Request.KvCacheDtype, job.Request.CpuOffloadGiB, job.Request.Runtime,
-                        job.Request.TensorParallelSize, job.Request.ProviderModelName));
+                        job.Request.TensorParallelSize, job.Request.ProviderModelName,
+                    job.Request.GpuDevices));
                 if (descriptor is null || ResolveRuntime(descriptor, job.Request.Runtime) != job.Result.Runtime ||
                     job.Result.CatalogModelId != descriptor.Id ||
                     job.Result.ProviderModelName != descriptor.ProviderModelName)
@@ -706,10 +707,12 @@ public static class NodeModelManagementEndpoints
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
-        int? TensorParallelSize = null, string? ProviderModelName = null);
+        int? TensorParallelSize = null, string? ProviderModelName = null,
+        string? GpuDevices = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
-        string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null);
+        string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null,
+        string? GpuDevices = null);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
@@ -745,6 +748,7 @@ public static class NodeModelManagementEndpoints
         int? MaxNumSeqs = null,
         int? MaxModelLen = null,
         string? KvCacheDtype = null,
-        double? CpuOffloadGiB = null);
+        double? CpuOffloadGiB = null,
+        string? GpuDevices = null);
     private sealed class AgentException(string message) : Exception(message);
 }

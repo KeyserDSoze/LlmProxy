@@ -645,6 +645,7 @@ export type ManagedModelState = {
   maxModelLen?: number | null
   kvCacheDtype?: string | null
   cpuOffloadGiB?: number | null
+  gpuDevices?: string | null
   installationId: string
   catalogModelId?: string | null
   providerModelName?: string | null
