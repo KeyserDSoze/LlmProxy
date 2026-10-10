@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace LlmProxy.NodeAgent;
 
@@ -39,7 +40,7 @@ public sealed class DockerModelRuntimeManager(
         return new ManagedModelsResponse(states);
     }
 
-    public async Task<ManagedModelState> InstallAsync(InstallRequest request, CancellationToken cancellationToken)
+    public async Task<ManagedModelState> InstallAsync(InstallRequest request, CancellationToken cancellationToken, Action<TransferProgress>? report = null)
     {
         ManagedRuntimeProfiles.Validate(request);
         await _operations.WaitAsync(cancellationToken);
@@ -79,20 +80,36 @@ public sealed class DockerModelRuntimeManager(
 
             try
             {
-                await RequireDockerAsync(["pull", ManagedRuntimeProfiles.Image(record, options)], cancellationToken);
+                report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
+                await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
                 if (options.PrefetchModels && record.Runtime != "llama.cpp")
                 {
-                    var script = $"from huggingface_hub import snapshot_download; snapshot_download({JsonSerializer.Serialize(record.ProviderModelName)})";
-                    await RequireDockerAsync(
+                    report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
+                    var script = """
+import json
+from huggingface_hub import HfApi, hf_hub_download
+repo = MODEL_ID
+siblings = HfApi().model_info(repo, files_metadata=True).siblings
+files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
+total = sum(s.size or 0 for s in files)
+known = bool(files) and all(s.size is not None for s in files)
+done = 0
+for index, entry in enumerate(files):
+    hf_hub_download(repo_id=repo, filename=entry.rfilename, cache_dir='/root/.cache/huggingface')
+    done += entry.size or 0
+    print('LLMPROXY_PROGRESS:' + json.dumps({'percent': round(100*done/total, 2) if known and total else round(100*(index+1)/len(files), 2), 'completedBytes': done if known else None, 'totalBytes': total if known else None, 'label': (entry.rfilename[:100] + (' (files)' if not known else ''))}), flush=True)
+""".Replace("MODEL_ID", JsonSerializer.Serialize(record.ProviderModelName));
+                    await PullCommandAsync(
                     [
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         options.DockerImage,
                         "-c", script
-                    ], cancellationToken);
+                    ], cancellationToken, line => ParseTransferLine(line, "model-weights", report));
                 }
 
+                report?.Invoke(new TransferProgress("ready", 100, "Runtime and model files prepared", null, null));
                 record.Status = "stopped";
                 record.Error = null;
                 await registry.UpsertAsync(record, cancellationToken);
@@ -213,6 +230,53 @@ public sealed class DockerModelRuntimeManager(
             cancellationToken);
         return result.Success && string.Equals(result.StandardOutput.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
+
+    private async Task PullWithProgressAsync(string image, CancellationToken token, Action<TransferProgress>? report) =>
+        await PullCommandAsync(["pull", image], token, line => ParseTransferLine(line, "container-image", report));
+
+    private async Task PullCommandAsync(IReadOnlyList<string> args, CancellationToken token, Action<string> progress)
+    {
+        var result = await runner.RunStreamingAsync(options.DockerExecutable, args,
+            TimeSpan.FromMinutes(options.CommandTimeoutMinutes), token, progress);
+        if (!result.Success)
+            throw new InvalidOperationException($"Docker download failed ({result.ExitCode}): {Trim(result.StandardError)}");
+    }
+
+    // Percentages describe the current Docker layer or the measured Hugging Face file set.
+    // Never invent an overall progress percentage when the upstream lacks total bytes.
+    private static void ParseTransferLine(string line, string stage, Action<TransferProgress>? report)
+    {
+        if (report is null) return;
+        if (line.StartsWith("LLMPROXY_PROGRESS:", StringComparison.Ordinal))
+        {
+            try
+            {
+                var data = JsonSerializer.Deserialize<ProgressSnapshot>(line["LLMPROXY_PROGRESS:".Length..],
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (data is not null)
+                    report(new TransferProgress(stage, data.Percent, data.Label ?? "Downloading weights", data.CompletedBytes, data.TotalBytes));
+            }
+            catch (JsonException) {}
+            return;
+        }
+        // Docker pull prints per-layer numbers, not a reliable total image percentage.
+        // Provide visible per-layer progress, explicitly labelled as such.
+        var numbers = Regex.Match(line, @"([0-9]+(?:\.[0-9]+)?)\s*(B|kB|MB|GB)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*(B|kB|MB|GB)", RegexOptions.IgnoreCase);
+        if (numbers.Success)
+        {
+            static double Factor(string unit) => unit.ToUpperInvariant() switch {
+                "GB" => 1000d*1000d*1000d, "MB" => 1000d*1000d, "KB" => 1000d, _ => 1d };
+            var current = (long)(double.Parse(numbers.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) * Factor(numbers.Groups[2].Value));
+            var total = (long)(double.Parse(numbers.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) * Factor(numbers.Groups[4].Value));
+            if (total > 0)
+            {
+                report(new TransferProgress(stage, Math.Round(Math.Min(100, current * 100d / total), 1),
+                    "Docker layer " + line.Trim()[..Math.Min(20, line.Trim().Length)], current, total));
+            }
+        }
+    }
+
+    private sealed record ProgressSnapshot(double? Percent, long? CompletedBytes, long? TotalBytes, string? Label);
 
     private async Task RequireDockerAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {

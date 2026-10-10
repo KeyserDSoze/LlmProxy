@@ -17,6 +17,7 @@ builder.Services.AddSingleton<HardwareInventoryReader>();
 builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
+builder.Services.AddSingleton<ModelInstallJobManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
 builder.Services.AddHostedService<OutboundAgentRelayWorker>();
@@ -34,6 +35,17 @@ app.MapPost("/v1/system/prepare", async (NodeHostPreparer preparer, Cancellation
     Results.Ok(await preparer.RunAsync(token)));
 app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
     Results.Ok(await manager.ListAsync(cancellationToken)));
+app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
+app.MapGet("/v1/models/install-jobs/{id:guid}", (Guid id, ModelInstallJobManager jobs) =>
+    jobs.Get(id) is { } job ? Results.Ok(job) : Results.NotFound());
+app.MapPost("/v1/models/install-jobs", (InstallRequest request, ModelInstallJobManager jobs) =>
+{
+    try { return Results.Accepted(value: jobs.Enqueue(request)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapDelete("/v1/models/install-jobs/{id:guid}", (Guid id, ModelInstallJobManager jobs) =>
+    jobs.Cancel(id) ? Results.Accepted() : Results.NotFound());
 app.MapPost("/v1/models/install", async (InstallRequest request, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
 {
     try { return Results.Ok(await manager.InstallAsync(request, cancellationToken)); }
