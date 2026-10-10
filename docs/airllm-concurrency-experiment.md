@@ -1,6 +1,6 @@
 # AirLLM multi-user / layer-streaming experiment (P0)
 
-**Decision: 2026-10-10.** AirLLM is a top-priority experimental inference runtime for LLMProxy, not an optional future investigation. Its key hypothesis is whether streaming a checkpoint **one layer (or required MoE expert) at a time** can make larger models usable and/or improve sustainable concurrent users on the **same physical Linux server**. These are two **different** hypotheses; both must be measured. Status: **PLANNED — no deployable AirLLM Node Agent adapter, packaged serving container, or validated multi-user result yet.**
+**Decision: 2026-10-10.** AirLLM is a top-priority experimental inference runtime for LLMProxy, not an optional future investigation. Its key hypothesis is whether streaming a checkpoint **one layer (or required MoE expert) at a time** can make larger models usable and/or improve sustainable concurrent users on the **same physical Linux server**. These are two **different** hypotheses; both must be measured. Status: **LAB ADAPTER IMPLEMENTED IN SOURCE / CI & GPU ACCEPTANCE PENDING.** A version-pinned Python HTTP shim and Docker build assets are bundled with Node Agent releases, with Admin selection of one AirLLM/Qwen3-4B checkpoint and background transfers. Streaming, Responses, tools, true layer batching, and GPU acceptance are not yet validated.
 
 ## Upstream and scope
 
@@ -60,3 +60,9 @@ Do not count merely accepted/queued clients as simultaneous *serving*. Sustainab
 - [ ] Admin shows measured recommendation, flags low-confidence results and requires human approval to change live physical/deployment capacity.
 
 **Release rule:** Do not claim AirLLM is installable or improves throughput until the runtime/serving adapter exists, checks are green, and hardware experiments demonstrate it. Keep the existing vLLM/llama.cpp/SGLang paths unchanged until then.
+
+
+## Lab adapter implementation checkpoint (2026-10-10)
+
+Source: `distribution/airllm-runtime/Dockerfile`, `server.py`, `LlmProxy.NodeAgent/ManagedRuntimeProfiles.cs`, `DockerModelRuntimeManager.cs`. The Admin's job mechanism builds the experimental image on the paired host and prefetches weights. The image exposes real non-streaming Chat, health and model discovery; SSE and Responses deliberately report unsupported rather than pretending to stream. The interpreter-level model lock has one active generator; `maxNumSeqs` is currently a **queue admission cap**, not parallel GPU generation. No parallelism win can be claimed until comparison with vLLM on identical hardware and requests. Status stays experimental even if ordinary CI passes.
+

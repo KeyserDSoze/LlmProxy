@@ -174,9 +174,9 @@ Hardware E: model-2
 
 A request for `model-1` can route only to A/B. A request for `model-2` can route only to A/C/D/E. If A hosts the runtimes on different ports, deployment-specific runtime addresses keep the pools separate even though the physical node is shared.
 
-## Priority AirLLM engine: experimental, not yet installable (2026-10-10)
+## Priority AirLLM engine: source-installable lab adapter, target-hardware validation pending (2026-10-10)
 
-AirLLM is a **P0 managed-runtime target** because its layer/expert weight streaming may make a larger model feasible on a limited-memory host, and its layer reuse/batching potential must be measured for real multi-user inference. The current Agent allowlist still supports only `vllm`, `llama.cpp`, and `sglang`; do not describe AirLLM as working in the Admin install catalog yet. Implement a reproducible, pinned AirLLM serving image/HTTP adapter with explicit health, OpenAI Chat/Responses compatibility, SSE completion and cancellation; a bounded single-worker queue first, then experiment with safe batching, if supported. Expose its measured resource usage, effective throughput and sustainable concurrency alongside the vLLM baseline, rather than treating low GPU memory as proof of more simultaneous users. See [AirLLM concurrency experiment](airllm-concurrency-experiment.md).
+AirLLM is a **P0 managed-runtime target** because its layer/expert weight streaming may make a larger model feasible on a limited-memory host, and its layer reuse/batching potential must be measured for real multi-user inference. The Agent allowlist now includes experimental `airllm`. Infrastructure provides a separate Qwen3-4B AirLLM catalog profile (non-streaming Chat only). An Agent release bundles a Dockerfile and Python adapter, builds the container on the target machine, and downloads weights into the Agent-managed cache. This path is source-implemented but has not yet passed real Linux GPU acceptance; do not describe it as production-ready. Implement a reproducible, pinned AirLLM serving image/HTTP adapter with explicit health, OpenAI Chat/Responses compatibility, SSE completion and cancellation; a bounded single-worker queue first, then experiment with safe batching, if supported. Expose its measured resource usage, effective throughput and sustainable concurrency alongside the vLLM baseline, rather than treating low GPU memory as proof of more simultaneous users. See [AirLLM concurrency experiment](airllm-concurrency-experiment.md).
 
 ## Multi-runtime launch profiles (initial implementation, 2026-10-09)
 
@@ -281,3 +281,13 @@ After enrollment, the Agent persists its node ID and credential at `/var/lib/llm
 For public bootstrap integrity, `/downloads/agent/connect-node.sh.sha256` is calculated against the exact static script in the deployed gateway image rather than a GitHub Release copy, which might belong to a different software version. Archives remain checked against the published immutable release SHA-256 assets.
 
 The public version endpoint uses a five-minute cached GitHub release asset manifest, only lists immutable stable releases that contain both Agent archives, their SHA-256 files, and the bootstrap. This avoids scanning historical upgrade plans on every unauthenticated download request. The quickstart integration suite checks anonymous bootstrap download and validates the live gateway-hosted script against its own public checksum.
+
+
+## Background transfer jobs and selectable runtime profiles (2026-10-10)
+
+**Infrastructure → Inventory & model lifecycle → Deploy models** now queues downloads/installation on the paired Agent instead of holding an HTTP request open for Docker pulls. The job status is persisted under the Agent's protected data directory, remains queryable across browser sessions, and reports image-build/pull progress and per-file weight download progress, plus failure and cancellation states. An Agent reboot marks interrupted jobs explicitly; reissuing the installation preserves already cached image/model files. The Admin auto-finalizes completed jobs into logical-model deployments on its next successful polling cycle. Closing the UI does **not** stop an Agent job; however the registration in the gateway only occurs when Admin subsequently reconnects and finalizes it. Automated server-side reconciliation is future work.
+
+A custom Hugging Face repository can be entered by Admin using an explicit repository ID (not a URL) and vLLM/SGLang/llama.cpp serving. The Admin must explicitly accept unverified model license, hardware sizing and features; custom models start with streaming/tool support **not declared**, and operator benchmarking is essential. AirLLM remains restricted to its curated Qwen3-4B experimental entry until more models pass compatibility testing.
+
+Reported Docker percentage applies to a **single current image layer**, not overall pull; weight percentage is based on Hugging Face metadata for completed files and can stall while one large file downloads. Other operations can be indeterminate. Do not present any stage percentage as an overall wall-clock completion estimate.
+
