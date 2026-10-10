@@ -5,7 +5,8 @@ public sealed record GpuInventory(
     double MemoryTotalGiB,
     double MemoryFreeGiB,
     string? DriverVersion,
-    string? ComputeCapability);
+    string? ComputeCapability,
+    string MemoryType = "dedicated");
 
 public sealed record HostReadiness(
     bool DockerInstalled,
