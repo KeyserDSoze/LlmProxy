@@ -205,7 +205,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <label>Inference engine
           <select aria-label="Install inference engine" value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
             {installCatalogId === 'custom'
-              ? <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option><option value="llama.cpp">llama.cpp (GGUF :quant)</option></>
+              ? <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option><option value="llama.cpp">llama.cpp (GGUF :quant)</option><option value="airllm">AirLLM layer streaming (experimental)</option></>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp'
               ? <option value="llama.cpp">llama.cpp (GGUF)</option>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'airllm'
@@ -221,7 +221,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           </label>
           <label><input type="checkbox" checked={customConfirmed} onChange={event => setCustomConfirmed(event.target.checked)} />
             I have reviewed the model license and accept that sizing, compatibility, and serving capabilities are unverified.</label>
-          <p className="notice">Custom models are an opt-in test installation. Streaming and tool calling are not advertised without verification. No direct arbitrary URLs or shell commands are accepted.</p>
+          <p className="notice">Custom models are opt-in test installations. Streaming and tool calling are not advertised without verification; AirLLM runs one experimental generator with a bounded queue. No direct arbitrary URLs or shell commands are accepted.</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">Experimental AirLLM: the Agent builds the AirLLM serving image and downloads model weights. Only non-streaming Chat is supported. One generator processes a bounded request queue, so concurrent clients do not imply parallel generation. Benchmark against vLLM before using production traffic.</p>}
         {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && <label>GPU tensor parallel size

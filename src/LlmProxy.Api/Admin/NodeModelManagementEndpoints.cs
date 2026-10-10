@@ -513,7 +513,7 @@ public static class NodeModelManagementEndpoints
         // Explicit Admin-only unsafe/unknown-hardware opt-in. No arbitrary repository URLs or shell.
         if (!request.Force || string.IsNullOrWhiteSpace(request.PublicName) ||
             request.PublicName.Length > 160 ||
-            request.Runtime is not ("vllm" or "sglang" or "llama.cpp") ||
+            request.Runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
             string.IsNullOrWhiteSpace(request.ProviderModelName) ||
             !System.Text.RegularExpressions.Regex.IsMatch(request.ProviderModelName,
                 @"^[A-Za-z0-9][A-Za-z0-9_.-]{0,98}/[A-Za-z0-9][A-Za-z0-9_.-]{0,98}(:[A-Za-z0-9_.-]{1,50})?$"))
