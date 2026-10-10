@@ -43,7 +43,7 @@ public sealed class AgentRelayStreamingTests
         // A session can finish normally if cancellation is observed between
         // reads, or throw if a pending receive observes the canceled token.
         // Both paths must remove the disconnected Agent from the gateway.
-        try { await accepting.WaitAsync(TimeSpan.FromSeconds(2)); }
+        try { await accepting.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken); }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         Assert.False(hub.IsConnected(node));
     }
