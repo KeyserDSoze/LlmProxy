@@ -291,3 +291,12 @@ A custom Hugging Face repository can be entered by Admin using an explicit repos
 
 Reported Docker percentage applies to a **single current image layer**, not overall pull; weight percentage is based on Hugging Face metadata for completed files and can stall while one large file downloads. Other operations can be indeterminate. Do not present any stage percentage as an overall wall-clock completion estimate.
 
+
+## Dedicated per-model GPUs and Agent update progress (2026-10-10)
+
+The Admin install profile can optionally select an allowlisted group of numeric NVIDIA GPU indices (for example `0` or `0,1`). They are carried in the persisted profile and used as Docker's explicit GPU device list rather than `--gpus all`. Validation rejects duplicate/malformed indices and tensor-parallel settings that request more GPUs than selected; actual device existence and availability must still be checked on the Linux host. This is GPU *selection*, **not** a GPU memory reservation system or proof of safe multi-tenant concurrency. AirLLM is experimental single-GPU.
+
+Under Infrastructure → Fleet & access, Agent upgrade status now includes download/verification/extraction/install/health phases. A real archive-download percentage appears when GitHub returns a valid Content-Length; otherwise the UI explicitly avoids claiming a numerical percentage. Existing reboot and rollback behavior is preserved, and progress is sampled on the authenticated Agent heartbeat. Update download cancellation/resume and generalized progress for llama.cpp lazy GGUF downloads are not yet implemented.
+
+Experimental AirLLM can be selected for unverified custom Hugging Face checkpoint IDs with explicit administrator acknowledgement. Its current adapter remains non-streaming Chat with one generator worker; no measured parallel efficiency is claimed.
+

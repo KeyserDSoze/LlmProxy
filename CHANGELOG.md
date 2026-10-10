@@ -1,7 +1,7 @@
 ## Unreleased — Admin model/runtime downloads and AirLLM experiment (2026-10-10)
 
-- Admin Infrastructure: selectable compatible inference runtime, advanced execution profile fields, and guarded custom Hugging Face model repository installation.
-- Paired Linux Node Agent: persistent asynchronous image/model download jobs, per-stage progress, status/cancellation and explicit interrupted state after restart; Agent relay management allowlist updated for remote job APIs.
+- Admin Infrastructure: selectable compatible inference runtime, advanced execution profile fields, guarded custom Hugging Face models including experimental AirLLM, and per-model NVIDIA GPU-index assignment.
+- Paired Linux Node Agent: persistent asynchronous image/model download jobs, per-stage/per-file progress, status/cancellation and explicit interrupted state after restart; Agent relay management allowlist updated for remote job APIs. Agent self-update archive downloads additionally expose measured percentage when size is known, and installation/checksum/health phases.
 - Experimental AirLLM 4.0.0: source-bundled Linux Agent Docker build and a bounded single-worker, non-streaming Chat adapter, initial Qwen3-4B catalog profile. Not production-validated; no SSE, Responses or tool calling.
 - The Admin finalizes downloads into deployment records when it observes successful completion. Full autonomous reconciliation and GPU performance acceptance are not yet complete.
 

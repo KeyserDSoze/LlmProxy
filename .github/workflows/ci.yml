@@ -29,6 +29,9 @@ jobs:
           bash -n distribution/connect-node.sh
           bash -n distribution/install-node-agent.sh
           bash -n distribution/update-node-agent.sh
+          python3 -m py_compile distribution/airllm-runtime/server.py
+          test -s distribution/airllm-runtime/Dockerfile
+          grep -F 'distribution/airllm-runtime' .github/workflows/container.yml >/dev/null
           bash -n distribution/prepare-node-host.sh
           test -f distribution/llmproxy-node-agent.service
           grep -q "sha256sum -c" distribution/connect-node.sh

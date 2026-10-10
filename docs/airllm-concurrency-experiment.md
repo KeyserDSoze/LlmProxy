@@ -66,3 +66,8 @@ Do not count merely accepted/queued clients as simultaneous *serving*. Sustainab
 
 Source: `distribution/airllm-runtime/Dockerfile`, `server.py`, `LlmProxy.NodeAgent/ManagedRuntimeProfiles.cs`, `DockerModelRuntimeManager.cs`. The Admin's job mechanism builds the experimental image on the paired host and prefetches weights. The image exposes real non-streaming Chat, health and model discovery; SSE and Responses deliberately report unsupported rather than pretending to stream. The interpreter-level model lock has one active generator; `maxNumSeqs` is currently a **queue admission cap**, not parallel GPU generation. No parallelism win can be claimed until comparison with vLLM on identical hardware and requests. Status stays experimental even if ordinary CI passes.
 
+
+## Multiple model choices and GPU assignment (2026-10-10)
+
+The Admin now allows custom Hugging Face AirLLM checkpoints through an explicit unverified/experimental opt-in, rather than limiting all experiments to Qwen3-4B. Custom deployments persist an `airllm` runtime marker, and Admin benchmarking uses non-streaming completion throughput with no fabricated TTFT. Optional GPU index assignment restricts Docker to the selected NVIDIA device so benchmarks can isolate a single GPU. It does **not** reserve GPU memory or prevent contention from other processes. AirLLM remains single-worker and is not yet a layer-aware batched concurrent serving engine.
+
