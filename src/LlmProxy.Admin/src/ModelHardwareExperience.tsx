@@ -1,7 +1,7 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import { Modal, Tabs } from './UiPrimitives'
-import type { ManagedBenchmarkJob, ModelManagementOverview, Node } from './types'
+import type { ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, Node } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
   const [tab, setTab] = useState<'inventory' | 'deploy'>('inventory')
@@ -13,6 +13,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
+  const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp'>('vllm')
+  const [tensorParallelSize, setTensorParallelSize] = useState(1)
+  const [extraArgumentsText, setExtraArgumentsText] = useState('')
+  const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
+  const finalizing = useRef(new Set<string>())
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
   const [maxModelLen, setMaxModelLen] = useState(8192)
   const [kvCacheDtype, setKvCacheDtype] = useState<'auto' | 'fp8'>('auto')
@@ -42,6 +47,37 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     const timer = window.setInterval(poll, 3000)
     return () => { active = false; window.clearInterval(timer) }
   }, [benchmarkDeploymentId])
+
+  useEffect(() => {
+    if (!nodeId) { setDownloadJobs([]); return }
+    let active = true
+    const poll = async () => {
+      try {
+        const jobs = await api.installJobs(nodeId)
+        if (!active) return
+        setDownloadJobs(jobs)
+        for (const job of jobs) {
+          if (!active || !canWrite || job.status !== 'completed' || !job.result?.installationId) continue
+          if (overview?.installations.some(item => item.managedInstallationId === job.result?.installationId)) continue
+          const key = nodeId + ':' + job.id
+          if (finalizing.current.has(key)) continue
+          finalizing.current.add(key)
+          try {
+            await api.finalizeModelInstall(nodeId, job.id)
+            if (!active) return
+            setMessage('Download completed; deployment registered. You can start the model.')
+            await Promise.all([load(), refresh()])
+          } catch (reason) {
+            finalizing.current.delete(key)
+            if (active) setError('Deployment registration: ' + (reason instanceof Error ? reason.message : String(reason)))
+          }
+        }
+      } catch { /* Agent offline; retain last known job list. */ }
+    }
+    void poll()
+    const timer = window.setInterval(() => { void poll() }, 2500)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [nodeId, canWrite, load, refresh, overview?.installations])
 
   async function cancelBenchmark() {
     if (!recentBenchmark) return
@@ -86,19 +122,31 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
 
   async function configure(event: FormEvent) { event.preventDefault(); if (!nodeId) return; setBusy('configure'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, bearerToken: bearerToken.trim() || null }); setBearerToken(''); setMessage('Management agent configuration updated.'); setAgentOpen(false); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
   async function clearCredential() { if (!nodeId) return; setBusy('credential'); setMessage(null); setError(null); try { await api.configureNodeManagement(nodeId, { managementBaseAddress: managementBaseAddress.trim() || null, clearBearerToken: true }); setBearerToken(''); setMessage('Management-agent bearer removed.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
-  async function install(catalogId: string) { setBusy('install:' + catalogId); setMessage(null); setError(null); try {
-    const runtime = overview?.catalog.find(item => item.model.id === catalogId)?.model.runtime ?? 'vllm'
-    await api.installManagedModel(nodeId, catalogId, {
-      publicName: logicalAlias.trim() || null,
-      port: installPort ? Number(installPort) : null,
-      maxNumSeqs, maxModelLen,
-      kvCacheDtype: runtime === 'vllm' ? kvCacheDtype : null,
-      cpuOffloadGiB: runtime === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null
-    })
-    setInstallCatalogId(null)
-    setMessage('Model installation registered. Start it and benchmark the real concurrency before increasing capacity.')
-    await Promise.all([load(), refresh()])
-  } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
+  async function install(catalogId: string) {
+    setBusy('install:' + catalogId); setMessage(null); setError(null)
+    try {
+      const job = await api.queueModelInstall(nodeId, catalogId, {
+        publicName: logicalAlias.trim() || null,
+        port: installPort ? Number(installPort) : null,
+        runtime: runtimeChoice,
+        tensorParallelSize: runtimeChoice === 'llama.cpp' ? 1 : tensorParallelSize,
+        extraArguments: extraArgumentsText.split('\n').map(arg => arg.trim()).filter(Boolean),
+        maxNumSeqs, maxModelLen,
+        kvCacheDtype: runtimeChoice === 'vllm' ? kvCacheDtype : null,
+        cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null
+      })
+      setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
+      setInstallCatalogId(null)
+      setMessage('Background download scheduled. Follow image and model progress below; you can leave the page.')
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+  async function cancelInstall(jobId: string) {
+    setBusy('cancel:' + jobId)
+    try { await api.cancelModelInstall(nodeId, jobId); setDownloadJobs(await api.installJobs(nodeId)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
   async function action(kind: 'start' | 'stop' | 'remove', deploymentId: string) { setBusy(kind + ':' + deploymentId); setMessage(null); setError(null); try { if (kind === 'start') await api.startManagedDeployment(deploymentId); if (kind === 'stop') await api.stopManagedDeployment(deploymentId); if (kind === 'remove') await api.removeManagedDeployment(deploymentId); setMessage(kind === 'start' ? 'Model started and enabled for routing.' : kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed model removed from the hardware.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
 
   return <div className="stack compactPage modelHardware">
@@ -117,19 +165,56 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {hardware.readiness.issues.map(issue => <p className="notice" key={issue}>{issue}</p>)}
       </section>}<table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>{gpu.name}</strong></td><td>{formatGiB(gpu.memoryTotalGiB)}</td><td>{formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td></tr>)}</tbody></table></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Infrastructure → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}
 
-    {tab === 'deploy' && <><section className="panel"><div className="panelTitle"><div><h2>Deployable model catalog</h2><span>Curated runtimes with conservative serving estimates.</span></div><span>Fit uses current free RAM / VRAM / disk</span></div><div className="tableScroll"><table><thead><tr><th>Model</th><th>License</th><th>Size</th><th>Context</th><th>GPU plan</th><th>RAM / disk</th><th>Fit</th><th>Action</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">Runtime: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">Model card</a></td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div></td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id} onClick={() => { setInstallCatalogId(item.model.id); setMaxModelLen(8192); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div></td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
+    {tab === 'deploy' && <>
+      <section className="panel">
+        <div className="panelTitle"><h2>Downloads & installations</h2><span>Persistent Linux Agent jobs</span></div>
+        {downloadJobs.length === 0 ? <p className="muted">No recent downloads on this node.</p> :
+          <div className="stack">{downloadJobs.slice(0, 20).map(job => <div className="notice" key={job.id}>
+            <div className="actions"><strong>{job.request.catalogModelId} · {job.request.runtime}</strong><Status value={job.status}/>
+              {(job.status === 'queued' || job.status === 'running') &&
+                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>Cancel</button>}
+            </div>
+            <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
+            {job.percent != null ? <div className="stack">
+              <progress max="100" value={Math.min(100, Math.max(0, job.percent))} aria-label={'Download stage progress ' + job.request.catalogModelId} style={{width: '100%'}} />
+              <strong>{job.percent.toFixed(1)}% <span className="muted">of current stage/file</span></strong>
+            </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
+            {job.completedBytes != null && job.totalBytes != null &&
+              <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
+            {job.status === 'completed' && <p className="muted">Download complete; deployment registration is automatic while Admin is open.</p>}
+            {job.error && <p className="error">{job.error}</p>}
+          </div>)}</div>}
+      </section>
+      <section className="panel"><div className="panelTitle"><div><h2>Deployable model catalog</h2><span>Curated runtimes with conservative serving estimates.</span></div><span>Fit uses current free RAM / VRAM / disk</span></div><div className="tableScroll"><table><thead><tr><th>Model</th><th>License</th><th>Size</th><th>Context</th><th>GPU plan</th><th>RAM / disk</th><th>Fit</th><th>Action</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">Runtime: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">Model card</a></td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div></td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id} onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div></td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' : 'Disabled'}</td><td className="actions"><button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'} onClick={() => void action('start', item.id)}>Start</button><button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button><button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Remove</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
 
     <Modal open={installCatalogId !== null} title="Install inference profile" description="An installation profile controls runtime behavior, not the gateway physical concurrency ceiling." onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
-        <div className="notice">{overview?.catalog.find(item => item.model.id === installCatalogId)?.model.displayName} · {overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime ?? 'vllm'}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        <div className="notice">{overview?.catalog.find(item => item.model.id === installCatalogId)?.model.displayName} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        <label>Inference engine
+          <select aria-label="Install inference engine" value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
+            {overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp'
+              ? <option value="llama.cpp">llama.cpp (GGUF)</option>
+              : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option></>}
+          </select>
+        </label>
+        <p className="muted">AirLLM requires a separately validated serving adapter before being listed as installable.</p>
+        {runtimeChoice !== 'llama.cpp' && <label>GPU tensor parallel size
+          <input aria-label="Tensor parallel size" type="number" min="1" max="64" value={tensorParallelSize}
+            onChange={event => setTensorParallelSize(Number(event.target.value))} required />
+        </label>}
+        <label>Advanced runtime arguments (one argument per line)
+          <textarea aria-label="Additional runtime arguments" rows={3} value={extraArgumentsText}
+            onChange={event => setExtraArgumentsText(event.target.value)}
+            placeholder={"--gpu-memory-utilization\\n0.85"} />
+        </label>
         <label>Logical model alias (optional, default is catalog ID)<input aria-label="Install logical model alias" maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
         <p className="muted">Reuse an existing logical alias only for the same provider checkpoint ID. Multiple deployments under one alias share a routing pool; each retains its own capacity limit.</p>
         <label>Dedicated host port (optional, auto-assigned otherwise)<input aria-label="Install runtime port" type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
         <label>Maximum concurrent sequences<input aria-label="Runtime maximum sequences" type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>
-        <label>{overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp' ? 'Total context pool (tokens, shared among slots)' : 'Maximum context per request (tokens)'}<input aria-label="Runtime maximum context" type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>
-        {(overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime ?? 'vllm') === 'vllm' && <>
+        <label>{runtimeChoice === 'llama.cpp' ? 'Total context pool (tokens, shared among slots)' : 'Maximum context per request (tokens)'}<input aria-label="Runtime maximum context" type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>
+        {runtimeChoice === 'vllm' && <>
           <label>KV cache precision<select aria-label="Runtime KV cache precision" value={kvCacheDtype} onChange={event => setKvCacheDtype(event.target.value as 'auto' | 'fp8')}><option value="auto">Auto (baseline)</option><option value="fp8">FP8 (requires runtime/model support)</option></select></label>
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}

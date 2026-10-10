@@ -1,4 +1,4 @@
-import type { AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -205,6 +205,11 @@ export const api = {
     request<{ id: string; managementBaseAddress?: string | null; hasManagementCredential: boolean }>(`/api/admin/model-management/nodes/${nodeId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
   installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null }) =>
     request<unknown>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install`, { method: 'POST', body: JSON.stringify(body) }),
+  installJobs: (nodeId: string) => request<ModelInstallJob[]>(`/api/admin/model-management/nodes/${nodeId}/install-jobs`),
+  queueModelInstall: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null }) =>
+    request<ModelInstallJob>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install-jobs`, { method: 'POST', body: JSON.stringify(body) }),
+  finalizeModelInstall: (nodeId: string, jobId: string) => request<unknown>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/finalize`, { method: 'POST' }),
+  cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
   stopManagedDeployment: (deploymentId: string) =>

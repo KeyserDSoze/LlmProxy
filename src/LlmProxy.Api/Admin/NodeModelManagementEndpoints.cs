@@ -184,7 +184,7 @@ public static class NodeModelManagementEndpoints
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
+                    runtime == "llama.cpp" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [],
                     runtime,
                     request.MaxNumSeqs,
@@ -232,7 +232,7 @@ public static class NodeModelManagementEndpoints
                 if (!request.Force && compatibility.Status == "insufficient")
                     return Results.BadRequest(new { error = "hardware_insufficient", compatibility });
                 var payload = new AgentInstallRequest(descriptor.Id, descriptor.ProviderModelName,
-                    request.Port, runtime == "llama.cpp" ? 1 : Math.Max(1, compatibility.SuggestedTensorParallelSize),
+                    request.Port, runtime == "llama.cpp" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName);
@@ -670,7 +670,8 @@ public static class NodeModelManagementEndpoints
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
-        string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null);
+        string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
+        int? TensorParallelSize = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null);

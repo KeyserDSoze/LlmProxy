@@ -684,6 +684,20 @@ export type ManagedInstallation = {
   agentState?: ManagedModelState | null
 }
 
+export type ModelInstallJob = {
+  id: string
+  request: { catalogModelId: string; providerModelName: string; runtime: string; publicName?: string | null }
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  stage: string
+  percent?: number | null
+  detail: string
+  completedBytes?: number | null
+  totalBytes?: number | null
+  result?: ManagedModelState | null
+  error?: string | null
+  createdAtUtc: string
+  completedAtUtc?: string | null
+}
 export type ModelManagementOverview = {
   node: {
     id: string
