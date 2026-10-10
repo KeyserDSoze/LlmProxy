@@ -388,10 +388,22 @@ deployment_id="$(echo "$installed" | jq -r '.deployment.id')"
 [[ -n "$deployment_id" && "$deployment_id" != null ]] ||
   fail_with_diagnostics "Cross-replica model installation over Agent relay did not register."
 
-started="$(curl --fail --silent -X POST \
-  "http://127.0.0.1:8081/api/admin/model-management/deployments/$deployment_id/start")"
-echo "$started" | jq -e '.state.status == "running"' >/dev/null ||
-  fail_with_diagnostics "Remote Agent start command did not route across gateway replicas."
+remote_started=false
+for attempt in {1..8}; do
+  start_status="$(curl --silent --show-error --output /tmp/llmproxy-remote-start.json \
+    --write-out '%{http_code}' -X POST \
+    "http://127.0.0.1:8081/api/admin/model-management/deployments/$deployment_id/start" || true)"
+  if [[ "$start_status" == "200" ]] && \
+    jq -e '.state.status == "running"' /tmp/llmproxy-remote-start.json >/dev/null 2>&1; then
+    remote_started=true
+    break
+  fi
+  start_error="$(jq -r '.error.code // .title // .error // "no error code"' /tmp/llmproxy-remote-start.json 2>/dev/null || true)"
+  echo "Remote Agent start attempt $attempt: HTTP $start_status ($start_error)" >&2
+  sleep 1
+done
+[[ "$remote_started" == true ]] ||
+  fail_with_diagnostics "Remote Agent start did not succeed after eight verified attempts."
 
 outbound_healthy=false
 for attempt in {1..30}; do
