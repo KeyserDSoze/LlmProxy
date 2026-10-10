@@ -40,7 +40,12 @@ public sealed class AgentRelayStreamingTests
         socket.Inbound.Writer.TryWrite(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { type = "done", id })));
         Assert.Equal("data: {\"choices\":[]}\n\ndata: [DONE]\n\n", await text);
         lifetime.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await accepting);
+        // A session can finish normally if cancellation is observed between
+        // reads, or throw if a pending receive observes the canceled token.
+        // Both paths must remove the disconnected Agent from the gateway.
+        try { await accepting.WaitAsync(TimeSpan.FromSeconds(2)); }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        Assert.False(hub.IsConnected(node));
     }
 
     private sealed class InMemorySocket : WebSocket
