@@ -361,11 +361,22 @@ done
 [[ "$outbound_connected" == true ]] ||
   fail_with_diagnostics "Second replica cannot discover first replica's authenticated Agent tunnel."
 
-remote_overview="$(curl --fail --silent \
-  "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/overview")"
-echo "$remote_overview" | jq -e \
-  '.agentAvailable == true and .hardware.hostname == "ci-outbound-agent"' >/dev/null ||
-  fail_with_diagnostics "Cross-replica management HTTP failed over the encrypted Redis bridge."
+# Pub/sub owner leases are transient during first paired WebSocket handshake.
+# Retry brief startup races, but fail definitively if the second API cannot read
+# live inventory from the Agent on the first API within this bounded window.
+remote_overview_ready=false
+for attempt in {1..20}; do
+  remote_overview="$(curl --fail --silent \
+    "http://127.0.0.1:8081/api/admin/model-management/nodes/$outbound_node_id/overview" || true)"
+  if echo "$remote_overview" | jq -e \
+    '.agentAvailable == true and .hardware.hostname == "ci-outbound-agent"' >/dev/null 2>&1; then
+    remote_overview_ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "$remote_overview_ready" == true ]] ||
+  fail_with_diagnostics "Cross-replica management HTTP failed over encrypted Redis after 20 retries."
 
 catalog_id="$(curl --fail --silent http://127.0.0.1:8081/api/admin/model-management/catalog | jq -r '.[0].id')"
 [[ -n "$catalog_id" && "$catalog_id" != null ]] ||
