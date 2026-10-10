@@ -253,12 +253,16 @@ done
 peer_sync_before_policy="$(curl --fail --silent http://127.0.0.1:8081/api/admin/runtime-sync)"
 peer_version_before_policy="$(echo "$peer_sync_before_policy" | jq -r '.lastAppliedVersion // 0')"
 
+# Redis uses fixed wall-clock buckets (TIME % WindowSeconds). A one-minute
+# window can roll over between the second and third request, making an
+# otherwise correct distributed limiter appear to allow an extra request.
+RATE_WINDOW_SECONDS=600
 policy_json="$(curl --fail --silent -X POST -H 'Content-Type: application/json' \
-  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":60,\"enabled\":true}" \
+  -d "{\"apiCredentialId\":\"${credential_id}\",\"logicalModel\":\"agic-code-fast\",\"requestsPerWindow\":2,\"windowSeconds\":${RATE_WINDOW_SECONDS},\"enabled\":true}" \
   http://127.0.0.1:8080/api/admin/rate-limits)"
 policy_id="$(echo "$policy_json" | jq -r '.id')"
 policy_redis_field="${policy_id//-/}"
-echo "$policy_json" | jq -e '.requestsPerWindow == 2 and .windowSeconds == 60 and .enabled == true' >/dev/null
+echo "$policy_json" | jq -e --argjson window "$RATE_WINDOW_SECONDS" '.requestsPerWindow == 2 and .windowSeconds == $window and .enabled == true' >/dev/null
 
 policy_converged=false
 for attempt in {1..50}; do
@@ -273,6 +277,13 @@ for attempt in {1..50}; do
 done
 [[ "$policy_converged" == "true" ]] || fail_with_diagnostics "Rate-limit policy did not converge to Redis and the peer gateway before shared-counter validation."
 
+# Ensure the three-request sequence fits wholly in one Redis time bucket.
+# Only pause when the current bucket is within 20 seconds of expiration.
+window_remaining=$(( RATE_WINDOW_SECONDS - ($(date +%s) % RATE_WINDOW_SECONDS) ))
+if (( window_remaining <= 20 )); then
+  echo "Waiting ${window_remaining}s for a fresh Redis rate-limit test window." >&2
+  sleep $((window_remaining + 1))
+fi
 shared1="$(call_model 8080 /tmp/full-stack-rate-a)"
 [[ "$shared1" == "200" ]] || fail_with_diagnostics "Expected first globally governed request to succeed; got ${shared1}."
 wait_capacity_released || fail_with_diagnostics "Capacity lease from first rate-limit probe did not release."
