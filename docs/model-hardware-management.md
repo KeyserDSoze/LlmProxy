@@ -1,3 +1,11 @@
+## Existing hardware Agent recovery and reinstall
+
+A 30-minute `lpe_` invitation is **only** for registering new hardware. Once paired, the Agent stores a private operational bearer in `<NodeAgent:DataDirectory>/gateway-connection.json` (root-only on Linux) and reuses that identity across reboots and ordinary updates. A model runtime is NOT required for a healthy Agent heartbeat; an enrolled hardware node without one shows **No runtime** and is not routable.
+
+For a missing or invalid local identity, go to **Infrastructure → Fleet & access → Agent setup / recovery** on the existing hardware row. An AdminWrite user can create/reveal the server's independent `lpr_` recovery key (encrypted in the database), copy the displayed checksummed download/reinstall command, and run it on the exact Linux machine. The Agent sends `nodeId + recoveryToken` to `/api/agent-connection/recover`. The gateway verifies the key and matching mode, rotates the short-lived operational identity for that **same** physical Node ID, preserves model/deployment configuration, and audits recovery without plaintext secrets. The Agent saves its new local identity and clears bootstrap recovery/invitation codes from the environment file after success. A bare service reboot never rotates either code.
+
+A recovery key is persistent until an administrator explicitly rotates it. Treat it as a high-privilege secret: revealing it is audited, copying the command exposes its value to shell history/process listings, and rotation invalidates previously copied repair commands. Keep shell history private or run the command through a protected operator session. Ordinary fleet updates use **Update agent** while online; an offline machine may use the repair command to reinstall the latest published Agent release without creating a second physical node. Full reinvocation may restart the agent service: stop any active inference deployments before using it. Do not delete `gateway-connection.json` or use a new `lpe_` invitation to fix an existing node.
+
 # Managed hardware and model lifecycle
 
 ## Automatic reconnection after network or gateway outages (2026-10-10)
