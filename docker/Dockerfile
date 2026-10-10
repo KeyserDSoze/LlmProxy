@@ -36,5 +36,7 @@ EXPOSE 8080
 COPY --from=api-build /app/publish ./
 COPY --from=admin-build /admin/dist ./wwwroot/admin
 COPY distribution/install-node-agent.sh ./wwwroot/admin/downloads/install-node-agent.sh
+# Public, read-only bootstrap; hosted by each installation domain before auth middleware.
+COPY distribution/connect-node.sh ./wwwroot/downloads/agent/connect-node.sh
 USER $APP_UID
 ENTRYPOINT ["dotnet", "LlmProxy.Api.dll"]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Only HTTPS GitHub releases + a SHA256-verified immutable agent archive are installed.
+# Public gateway downloads (without authentication); pairing requires a separate short-lived token.
 : "${LLMPROXY_GATEWAY_URL:?Set LLMPROXY_GATEWAY_URL to the HTTPS LlmProxy address}"
 : "${LLMPROXY_ENROLLMENT_TOKEN:?Set LLMPROXY_ENROLLMENT_TOKEN from Admin pairing invitation}"
 if [[ "$(id -u)" != 0 ]]; then echo "This installer requires sudo." >&2; exit 1; fi
@@ -13,17 +13,20 @@ esac
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
-release="$(curl --retry 3 -fsSL https://api.github.com/repos/KeyserDSoze/LlmProxy/releases/latest)"
-tag="$(printf '%s\n' "$release" | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "No verified stable release found." >&2; exit 3
+gateway="${LLMPROXY_GATEWAY_URL%/}"
+if [[ ! "$gateway" =~ ^https://[a-zA-Z0-9._:-]+$ &&
+      ! "$gateway" =~ ^http://(localhost|127\.0\.0\.1)(:[0-9]+)?$ ]]; then
+  echo "An HTTPS LlmProxy domain is required." >&2; exit 3
 fi
-version="${tag#v}"
+version="$(curl --retry 3 -fsSL "$gateway/downloads/agent/version" | tr -d '\\r\\n')"
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "No verified stable release found on LlmProxy." >&2; exit 3
+fi
 archive="llmproxy-node-agent-${version}-${rid}.tar.gz"
-base="https://github.com/KeyserDSoze/LlmProxy/releases/download/${tag}/${archive}"
+base="$gateway/downloads/agent/$version/$rid.tar.gz"
 mkdir -p dist unpacked
-curl --retry 3 -fsSL "$base" -o "dist/$archive"
-curl --retry 3 -fsSL "$base.sha256" -o "dist/$archive.sha256"
+curl --retry 3 -fLsS "$base" -o "dist/$archive"
+curl --retry 3 -fLsS "$base.sha256" -o "dist/$archive.sha256"
 sha256sum -c "dist/$archive.sha256"
 tar -xzf "dist/$archive" -C unpacked
 cd unpacked

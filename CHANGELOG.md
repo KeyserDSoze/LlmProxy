@@ -8,6 +8,8 @@ The project follows Semantic Versioning from the first formal preview release on
 
 ### Added
 
+- Public same-domain Linux Agent installer and version-pinned archive download links, usable with curl without login; Admin-only 30-minute pairing invitations remain mandatory to enroll a node.
+
 - Redis-coordinated cross-replica Agent WSS relay with encrypted transient per-request streaming forwarding, short-lived owner leases and fail-closed missing-owner handling. Requires acceptance testing across independent gateways.
 
 - Cancel ongoing Admin benchmark jobs without CLI access; cancelled and stale jobs cannot write or apply recommendations.

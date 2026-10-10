@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-10 — Public Agent binaries and installer on custom LLMProxy domain
+
+- Added no-login public Linux Agent installer served by gateway origin, with allowlisted redirects for immutable x64/ARM64 releases and SHA-256.
+- Pair wizard generates the install command from its real origin and offers independent `curl` binary download commands.
+- Bootstrap uses domain-hosted version resolution, pinned archive and checksum redirects, then validates SHA-256 before installation.
+- Verified persisted enrollment identity, invitation removal, systemd boot and automatic tunnel reconnect in source.
+
+
 ## 2026-10-09 — Explicit completion boundary
 
 Completed in source: Admin-initiated benchmark queue/results/cancellation, paired Agent update scheduling and rollback/status, immutable pairing installer and direct/outbound WSS Agent management. Remaining: cross-replica Agent backplane (NOT present), Linux dependency automation for more distributions, real hardware and separated-network acceptance. Full CI must pass for a release; older v0.2.3 predates this work.

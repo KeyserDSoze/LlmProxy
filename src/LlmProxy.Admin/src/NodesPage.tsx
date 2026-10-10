@@ -45,7 +45,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [error, setError] = useState<string | null>(null)
 
   const pairingCommand = invitation
-    ? `curl -fsSL https://github.com/KeyserDSoze/LlmProxy/releases/latest/download/llmproxy-connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
+    ? `curl -fsSL ${window.location.origin}/downloads/agent/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
     : ''
 
   async function updateAgent(nodeId: string) {
@@ -196,7 +196,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             <a className="buttonLink" href={agentDownloads.x64}>Download Agent Linux x64</a>
             <a className="buttonLink" href={agentDownloads.arm64}>Download Agent Linux ARM64</a>
           </div>
-          <p className="muted">Archive SHA-256:
+          <p className="muted">Download publicly accessible on this LLMProxy domain. No login or pairing code is needed to obtain the installer or archives; the time-limited invitation is required only to register a node.</p>
+          <p className="mono" style={{ overflowWrap: 'anywhere' }}>curl -fLsS {window.location.origin}{agentDownloads.x64} -o llmproxy-node-agent-linux-x64.tar.gz</p>
+          <p className="mono" style={{ overflowWrap: 'anywhere' }}>curl -fLsS {window.location.origin}{agentDownloads.arm64} -o llmproxy-node-agent-linux-arm64.tar.gz</p>
+        <p className="muted">Archive SHA-256:
             {' '}<a href={agentDownloads.x64Checksum}>x64</a>
             {' · '}<a href={agentDownloads.arm64Checksum}>ARM64</a>
             {' · '}<a href={agentDownloads.bootstrapChecksum}>installer</a>.

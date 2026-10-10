@@ -14,6 +14,37 @@ public static class NodeEnrollmentEndpoints
 {
     public static IEndpointRouteBuilder MapNodeEnrollmentEndpoints(this IEndpointRouteBuilder app, bool entraEnabled)
     {
+        // Public distribution: no Admin login and no pairing secret is required to download.
+        // The only variable is a VERIFIED published SemVer; never proxy arbitrary URLs.
+        app.MapGet("/downloads/agent/version", async (ReleaseDiscoveryService releases, CancellationToken token) =>
+        {
+            var versions = await releases.GetAvailableAsync("0.0.0", token);
+            return versions.Count == 0
+                ? Results.Problem("No published Linux Agent release is available.", statusCode: 503)
+                : Results.Text(versions[0].Version + "\n", "text/plain");
+        }).AllowAnonymous();
+
+        app.MapGet("/downloads/agent/{version}/{fileName}", async (
+            string version, string fileName, ReleaseDiscoveryService releases, CancellationToken token) =>
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                return Results.NotFound();
+            var officialName = fileName switch
+            {
+                "linux-x64.tar.gz" => $"llmproxy-node-agent-{version}-linux-x64.tar.gz",
+                "linux-x64.tar.gz.sha256" => $"llmproxy-node-agent-{version}-linux-x64.tar.gz.sha256",
+                "linux-arm64.tar.gz" => $"llmproxy-node-agent-{version}-linux-arm64.tar.gz",
+                "linux-arm64.tar.gz.sha256" => $"llmproxy-node-agent-{version}-linux-arm64.tar.gz.sha256",
+                "connect-node.sh.sha256" => "llmproxy-connect-node.sh.sha256",
+                _ => null
+            };
+            if (officialName is null) return Results.NotFound();
+            var releasesList = await releases.GetAvailableAsync("0.0.0", token);
+            if (!releasesList.Any(item => item.Version == version)) return Results.NotFound();
+            var releaseAsset = $"https://github.com/KeyserDSoze/LlmProxy/releases/download/v{version}/{officialName}";
+            return Results.Redirect(releaseAsset, permanent: false);
+        }).AllowAnonymous();
+
         var admin = app.MapGroup("/api/admin/node-enrollment");
         if (entraEnabled) admin.RequireAuthorization("AdminRead");
 
@@ -23,16 +54,16 @@ public static class NodeEnrollmentEndpoints
             var current = versions.FirstOrDefault();
             if (current is null) return Results.Problem("No stable Agent release is available.", statusCode: 503);
             var version = current.Version;
-            var root = $"https://github.com/KeyserDSoze/LlmProxy/releases/download/v{version}/";
+            var root = $"/downloads/agent/{version}/";
             return Results.Ok(new
             {
                 version,
-                bootstrap = root + "llmproxy-connect-node.sh",
-                bootstrapChecksum = root + "llmproxy-connect-node.sh.sha256",
-                x64 = root + $"llmproxy-node-agent-{version}-linux-x64.tar.gz",
-                x64Checksum = root + $"llmproxy-node-agent-{version}-linux-x64.tar.gz.sha256",
-                arm64 = root + $"llmproxy-node-agent-{version}-linux-arm64.tar.gz",
-                arm64Checksum = root + $"llmproxy-node-agent-{version}-linux-arm64.tar.gz.sha256"
+                bootstrap = "/downloads/agent/connect-node.sh",
+                bootstrapChecksum = root + "connect-node.sh.sha256",
+                x64 = root + "linux-x64.tar.gz",
+                x64Checksum = root + "linux-x64.tar.gz.sha256",
+                arm64 = root + "linux-arm64.tar.gz",
+                arm64Checksum = root + "linux-arm64.tar.gz.sha256"
             });
         });
 

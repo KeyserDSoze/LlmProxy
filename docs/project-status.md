@@ -1,5 +1,10 @@
 # Project status / handover snapshot
 
+## Public domain-hosted Linux Agent distribution — IMPLEMENTED / VALIDATION PENDING (2026-10-10)
+
+The Admin pairing wizard now offers an origin-derived public `curl` installer and direct public Agent archive URLs (x64/ARM64 and SHA-256). The gateway exposes only the inert installer via public StaticFiles and allowlisted version-pinned redirects to published official artifacts. Enrollment still requires a one-time 30-minute Admin invitation; systemd and root-protected locally persisted node credentials survive reboots without a new pairing. Exact-head CI and published-image acceptance remain to be verified.
+
+
 ## Installer-managed Linux host prerequisites — IMPLEMENTED / CI AND HARDWARE VALIDATION PENDING (2026-10-10)
 
 The Agent archive now bundles a host-preparation script that provisions missing Docker via supported distribution packages, configures NVIDIA Container Toolkit on Debian/Ubuntu when a working NVIDIA driver exists, and reports Docker daemon/GPU runtime readiness to Admin. The installer never force-installs a GPU kernel driver or triggers an unattended reboot. Unsupported Linux distributions and missing drivers are surfaced as readiness issues, not claimed fixed.
