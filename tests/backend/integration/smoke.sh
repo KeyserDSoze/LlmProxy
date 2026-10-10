@@ -93,12 +93,16 @@ if ! "${COMPOSE[@]}" up -d --build; then
 fi
 wait_ready
 
-# Public Linux distribution never requests a login; a public bootstrap must
-# not be confused with the Admin-only one-time pairing invitation.
+# Public bootstrap is downloadable without any cookie, bearer, or pairing code.
+public_agent_tmp="$(mktemp -d)"
 curl --fail --silent http://127.0.0.1:8080/downloads/agent/connect-node.sh \
-  | grep --quiet '^#!/usr/bin/env bash'
+  -o "$public_agent_tmp/connect-node.sh"
 curl --fail --silent http://127.0.0.1:8080/downloads/agent/connect-node.sh.sha256 \
-  | grep -Eq '^[0-9a-f]{64}  connect-node.sh | grep --quiet '"status":"ok"'
+  -o "$public_agent_tmp/connect-node.sh.sha256"
+grep --quiet '^#!/usr/bin/env bash' "$public_agent_tmp/connect-node.sh"
+(cd "$public_agent_tmp" && sha256sum --check connect-node.sh.sha256)
+rm -rf "$public_agent_tmp"
+curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet '"status":"ok"'
 curl --fail --silent http://127.0.0.1:8080/healthz | grep --quiet 'WeightedRoundRobin'
 curl --fail --silent http://127.0.0.1:8080/api/admin/routing | grep --quiet 'WeightedRoundRobin'
 
