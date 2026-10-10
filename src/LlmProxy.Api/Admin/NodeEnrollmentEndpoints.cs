@@ -252,7 +252,8 @@ public static class NodeEnrollmentEndpoints
             // restarting a working Linux node in an automatic retry loop.
             if (record.DesiredAgentVersion == request.AgentVersion ||
                 record.DesiredAgentVersion is string desired &&
-                request.AgentUpdateStatus == "failed:" + desired)
+                (request.AgentUpdateStatus == "failed:" + desired ||
+                    request.AgentUpdateStatus?.StartsWith("failed:" + desired + ":", StringComparison.Ordinal) == true))
                 record.DesiredAgentVersion = null;
             await db.SaveChangesAsync(token);
             return Results.Ok(new { status = "connected", desiredAgentVersion = record.DesiredAgentVersion });

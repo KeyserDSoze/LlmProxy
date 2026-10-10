@@ -117,7 +117,15 @@ public sealed class OutboundNodeConnectionWorker(
             if (status is not ("running" or "failed" or "succeeded") ||
                 version is null || !System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$"))
                 return null;
-            return status + ":" + version;
+            // Optional phase/percentage is informational; never pretend progress when
+            // a remote registry omits Content-Length.
+            var stage = data.RootElement.TryGetProperty("stage", out var stageJson) ? stageJson.GetString() : null;
+            var percent = data.RootElement.TryGetProperty("percent", out var pctJson) &&
+                pctJson.ValueKind == JsonValueKind.Number && pctJson.TryGetInt32(out var p) && p is >= 0 and <= 100
+                ? p.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+            if (stage is null || !System.Text.RegularExpressions.Regex.IsMatch(stage, @"^[a-z]{3,24}$"))
+                return status + ":" + version;
+            return status + ":" + version + ":" + stage + (percent is null ? "" : ":" + percent);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException)
         { return null; }
