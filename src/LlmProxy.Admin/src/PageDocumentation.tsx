@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useT } from './uiPreferences'
 
 const help: Record<string, { title: string; body: ReactNode }> = {
   dashboard: { title: 'Dashboard', body: <><p>Operational summary of the gateway: fleet health, active requests, logical models, deployments and recent inference latency.</p><p>Use this page to decide where to drill down. It does not change runtime configuration.</p></> },
@@ -24,9 +25,10 @@ const help: Record<string, { title: string; body: ReactNode }> = {
 }
 
 export default function PageDocumentation({ page }: { page: string }) {
+  const t = useT()
   const item = help[page] ?? { title: 'This page', body: <p>Operational controls and information for LlmProxy.</p> }
   return <details className="pageDocumentation">
-    <summary>Page documentation · {item.title}</summary>
+    <summary>{t('help.documentation')} · {item.title}</summary>
     <div className="pageDocumentationBody">{item.body}</div>
   </details>
 }
