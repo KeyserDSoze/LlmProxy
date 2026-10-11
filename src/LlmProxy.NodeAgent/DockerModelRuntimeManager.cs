@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -92,8 +93,10 @@ public sealed class DockerModelRuntimeManager(
                     await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else if (record.Runtime == "faster-whisper")
                     await EnsureWhisperImageAsync(record, cancellationToken, report);
+                else if (record.Runtime == "laya")
+                    await EnsureLayaImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
-                if ((options.PrefetchModels || record.Runtime == "faster-whisper") && record.Runtime != "llama.cpp")
+                if ((options.PrefetchModels || record.Runtime is "faster-whisper" or "laya") && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
                     var script = """
@@ -119,7 +122,7 @@ for index, entry in enumerate(files):
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        record.Runtime is "airllm" or "faster-whisper" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
+                        record.Runtime is "airllm" or "faster-whisper" or "laya" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line =>
                     {
@@ -191,6 +194,23 @@ for index, entry in enumerate(files):
             token, line => ParseTransferLine(line, "container-image", report));
     }
 
+    private async Task EnsureLayaImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "laya-runtime");
+        var dockerfile = Path.Combine(directory, "Dockerfile");
+        if (!File.Exists(dockerfile))
+            throw new InvalidOperationException("Laya runtime adapter is not installed in the Node Agent release.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building experimental CPU Laya serving image for host architecture", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
+            token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
@@ -201,6 +221,8 @@ for index, entry in enumerate(files):
                 await EnsureAirLlmImageAsync(record, cancellationToken);
             else if (record.Runtime == "faster-whisper")
                 await EnsureWhisperImageAsync(record, cancellationToken);
+            else if (record.Runtime == "laya")
+                await EnsureLayaImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
@@ -209,7 +231,7 @@ for index, entry in enumerate(files):
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
-            if (gpuReady && record.Runtime != "faster-whisper")
+            if (gpuReady && record.Runtime is not ("faster-whisper" or "laya"))
             {
                 args.Add("--gpus");
                 args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
@@ -222,6 +244,19 @@ for index, entry in enumerate(files):
                     "-e", "WHISPER_CPU_THREADS=4"]);
                 if (record.SourceRevision is { Length: 40 } sha)
                     args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+            }
+            if (record.Runtime == "laya")
+            {
+                if (record.ProviderModelName != "convaiinnovations/laya" ||
+                    record.SourceRevision is not { Length: 40 } sha ||
+                    !Regex.IsMatch(sha, "^[a-f0-9]{40}$"))
+                    throw new InvalidOperationException("Managed Laya requires a downloaded, pinned English checkpoint revision.");
+                var snapshot = "/root/.cache/huggingface/hub/models--convaiinnovations--laya/snapshots/" + sha;
+                args.AddRange(["-e", "LAYA_MODELS=english",
+                    "-e", "LAYA_DEFAULT_MODEL=english",
+                    "-e", "LAYA_EXTRA_MODELS=" + JsonSerializer.Serialize(new Dictionary<string, string> { ["english"] = snapshot }),
+                    "-e", "LAYA_MAX_CONCURRENT=1",
+                    "-e", "HF_HUB_OFFLINE=1"]);
             }
             if (record.Runtime == "airllm")
             {
@@ -242,6 +277,7 @@ for index, entry in enumerate(files):
             {
                 await RequireDockerAsync(args, cancellationToken);
                 await WaitForHealthyAsync(record.Port, cancellationToken);
+                if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
                 record.Status = "running";
                 record.RuntimeBaseAddress = RuntimeAddress(record.Port);
                 record.Error = null;
@@ -424,6 +460,63 @@ for index, entry in enumerate(files):
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException)
         {
+        }
+    }
+
+    // Laya's /health returns 200 even when no checkpoint is resident. Confirm
+    // that the actual typed classifier responds before enabling gateway routing.
+    private async Task VerifyLayaInferenceAsync(int port, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(options.StartupTimeoutMinutes));
+        var client = httpClientFactory.CreateClient("runtime-health");
+        var address = $"http://127.0.0.1:{port}";
+        var probe = new
+        {
+            state = "The client was charged twice for a purchase.",
+            questions = new Dictionary<string, object>
+            {
+                ["team"] = new {
+                    type = "choice",
+                    instructions = "Which team should handle this?",
+                    criteria = new { billing = "billing and refunds", general = "general questions" }
+                }
+            }
+        };
+        while (true)
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            try
+            {
+                using var status = await client.GetAsync(address + "/health", timeout.Token);
+                if (status.IsSuccessStatusCode)
+                {
+                    using var health = await JsonDocument.ParseAsync(
+                        await status.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+                    if (health.RootElement.TryGetProperty("loaded", out var loaded) &&
+                        loaded.ValueKind == JsonValueKind.Array &&
+                        loaded.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String &&
+                            item.GetString() == "english"))
+                    {
+                        using var response = await client.PostAsJsonAsync(
+                            address + "/v1/systemone", probe, timeout.Token);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            using var result = await JsonDocument.ParseAsync(
+                                await response.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+                            if (result.RootElement.TryGetProperty("answers", out var answers) &&
+                                answers.ValueKind == JsonValueKind.Object &&
+                                answers.TryGetProperty("team", out var answer) &&
+                                answer.TryGetProperty("probabilities", out var probabilities) &&
+                                probabilities.ValueKind == JsonValueKind.Object)
+                                return;
+                        }
+                    }
+                }
+            }
+            catch (HttpRequestException) { }
+            catch (JsonException) { }
+            await Task.Delay(TimeSpan.FromSeconds(2), timeout.Token);
         }
     }
 
