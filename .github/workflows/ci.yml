@@ -36,6 +36,8 @@ jobs:
           grep -F 'distribution/faster-whisper-runtime' .github/workflows/container.yml >/dev/null
           test -s distribution/airllm-runtime/Dockerfile
           test -s distribution/airllm-runtime/Dockerfile.arm64
+          test -s distribution/laya-runtime/Dockerfile
+          grep -F 'distribution/laya-runtime' .github/workflows/container.yml >/dev/null
           grep -F 'nvcr.io/nvidia/pytorch:25.10-py3-igpu' distribution/airllm-runtime/Dockerfile.arm64
           grep -F 'Dockerfile.arm64' src/LlmProxy.NodeAgent/DockerModelRuntimeManager.cs
           grep -F 'ParseNvidiaSmiList' src/LlmProxy.NodeAgent/HardwareInventoryReader.cs
