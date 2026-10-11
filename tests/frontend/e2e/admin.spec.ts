@@ -721,3 +721,27 @@ test('compact model-management and Admin tables do not force whole-page horizont
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+
+test('Italian model discovery, deployment lifecycle and fleet pages use one persisted locale', async ({ page }) => {
+  await installAdminApi(page)
+  await page.route('**/api/admin/model-management/hugging-face?*', route => json(route, {
+    source: 'Hugging Face Hub', discoveredAtUtc: '2026-10-11T18:00:00Z',
+    verifiedForLocalRuntime: false, models: []
+  }))
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
+  await expect(page.getByRole('heading', { name: 'Catalogo modelli installabili' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Download e installazioni' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Modelli installati su questo hardware' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
+  await page.goto('/admin/infrastructure?section=fleet')
+  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Server e accesso/ })).toHaveAttribute('aria-selected', 'true')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Persone e accessi' })).toHaveCount(0)
+  await expect(page.getByText('Concorrenza fisica')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
+})
