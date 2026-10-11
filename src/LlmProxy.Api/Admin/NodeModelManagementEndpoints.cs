@@ -24,13 +24,13 @@ public static class NodeModelManagementEndpoints
 
         // Model facts and runtime API support must be presented separately.
         // No network fetch or unverified capability inference for custom IDs.
-        group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen) =>
+        group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens) =>
         {
             if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
                 runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
-                maxModelLen is < 256 or > 262144)
+                maxModelLen is < 256 or > 262144 || maxOutputTokens is < 1 or > 4096)
                 return Results.BadRequest(new { error = "invalid_capability_lookup" });
-            return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen));
+            return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen, maxOutputTokens));
         });
 
         group.MapGet("/nodes/{id:guid}/overview", async (
@@ -204,7 +204,7 @@ public static class NodeModelManagementEndpoints
                     request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null,
-                    request.PublicName, request.GpuDevices);
+                    request.PublicName, request.GpuDevices, request.MaxOutputTokens);
                 var state = await SendAgentAsync<ManagedModelState>(
                     client, node, protector, HttpMethod.Post, "/v1/models/install", installRequest, cancellationToken);
 
@@ -250,7 +250,7 @@ public static class NodeModelManagementEndpoints
                     request.Port, runtime is "llama.cpp" or "airllm" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
-                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices);
+                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens);
                 var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Post,
                     "/v1/models/install-jobs", payload, token);
                 return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{job.Id}", job);
@@ -294,7 +294,7 @@ public static class NodeModelManagementEndpoints
                         job.Request.ExtraArguments, job.Request.MaxNumSeqs, job.Request.MaxModelLen,
                         job.Request.KvCacheDtype, job.Request.CpuOffloadGiB, job.Request.Runtime,
                         job.Request.TensorParallelSize, job.Request.ProviderModelName,
-                    job.Request.GpuDevices));
+                    job.Request.GpuDevices, job.Request.MaxOutputTokens));
                 if (descriptor is null || ResolveRuntime(descriptor, job.Request.Runtime) != job.Result.Runtime ||
                     job.Result.CatalogModelId != descriptor.Id ||
                     job.Result.ProviderModelName != descriptor.ProviderModelName)
@@ -302,7 +302,7 @@ public static class NodeModelManagementEndpoints
                 var request = new InstallManagedModelRequest(job.Request.PublicName,
                     job.Request.Port, false, job.Request.ExtraArguments, job.Request.MaxNumSeqs,
                     job.Request.MaxModelLen, job.Request.KvCacheDtype, job.Request.CpuOffloadGiB,
-                    job.Request.Runtime);
+                    job.Request.Runtime, MaxOutputTokens: job.Request.MaxOutputTokens);
                 return await RegisterManagedInstallationAsync(job.Result, request, descriptor,
                     new ModelCompatibility("unknown", "Installed by the remote Agent", [], job.Request.TensorParallelSize),
                     node, db, context, token);
@@ -449,6 +449,51 @@ public static class NodeModelManagementEndpoints
             }
         });
 
+        var configureProfile = group.MapPut("/deployments/{id:guid}/configuration", async (
+            Guid id, ManagedProfileUpdate settings,
+            GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            if (settings.MaxModelLen is < 256 or > 262144 ||
+                settings.MaxNumSeqs is < 1 or > 128 ||
+                settings.MaxOutputTokens is < 1 or > 4096)
+                return Results.BadRequest(new { error = "invalid_runtime_limits" });
+            var deployment = await db.Deployments.FindAsync([id], token);
+            if (deployment is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
+                return Results.BadRequest(new { error = "not_a_managed_installation" });
+            var node = await db.Nodes.FindAsync([deployment.NodeId], token);
+            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var client = factory.CreateClient("node-management");
+                var existing = await SendAgentAsync<ManagedModelsResponse>(
+                    client, node, protector, HttpMethod.Get, "/v1/models", null, token);
+                var state = existing.Models?.FirstOrDefault(x =>
+                    string.Equals(x.InstallationId, deployment.ManagedInstallationId, StringComparison.Ordinal));
+                if (state is null) return Results.Conflict(new { error = "installation_not_found" });
+                if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase))
+                    return Results.Conflict(new { error = "stop_runtime_first",
+                        message = "Stop the runtime before changing input/output limits. No model files will be deleted." });
+                var descriptor = DeployableModelCatalog.Find(deployment.CatalogModelId ?? "");
+                if (descriptor is not null && settings.MaxModelLen > descriptor.ContextTokens)
+                    return Results.BadRequest(new { error = "context_exceeds_supported_profile", maxContextTokens = descriptor.ContextTokens });
+                if (state.Runtime != "airllm" && settings.MaxOutputTokens is not null)
+                    return Results.BadRequest(new { error = "output_cap_supported_by_airllm_only",
+                        message = "For vLLM/SGLang/llama.cpp, output tokens are controlled by each inference request within the context window." });
+                var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/configuration";
+                var updated = await SendAgentAsync<ManagedModelState>(client, node, protector,
+                    HttpMethod.Put, path, settings, token);
+                deployment.Disable();
+                AddAudit(db, context, "model.runtime.configure", "deployment", id.ToString(),
+                    new { node.Id, deployment.ManagedInstallationId, settings.MaxModelLen, settings.MaxNumSeqs, settings.MaxOutputTokens });
+                await db.SaveChangesAsync(token);
+                return Results.Ok(new { deployment, state = updated });
+            }
+            catch (AgentException e) { return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway); }
+        });
+
         var stop = group.MapPost("/deployments/{id:guid}/stop", async (
             Guid id,
             GatewayDbContext dbContext,
@@ -534,6 +579,7 @@ public static class NodeModelManagementEndpoints
             activate.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");
             remove.RequireAuthorization("AdminWrite");
+            configureProfile.RequireAuthorization("AdminWrite");
         }
 
         return endpoints;
@@ -690,7 +736,7 @@ public static class NodeModelManagementEndpoints
                 model = item,
                 compatibility = EvaluateCompatibility(item, hardware),
                 capabilities = ModelCapabilitiesCatalog.Resolve(item.ProviderModelName, item.Runtime,
-                    item.Runtime == "airllm" ? item.ContextTokens : null)
+                    item.Runtime == "airllm" ? 8192 : null)
             }),
             installations = deployments.Select(deployment =>
             {
@@ -718,7 +764,7 @@ public static class NodeModelManagementEndpoints
                     runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
                     runtime = installedRuntime,
                     capabilities = ModelCapabilitiesCatalog.Resolve(providerName, installedRuntime,
-                        agentState?.MaxModelLen)
+                        agentState?.MaxModelLen, agentState?.MaxOutputTokens)
                 };
             })
         };
@@ -847,16 +893,17 @@ public static class NodeModelManagementEndpoints
             JsonSerializer.Serialize(details)));
     }
 
+    public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens);
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
         int? TensorParallelSize = null, string? ProviderModelName = null,
-        string? GpuDevices = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null,
-        string? GpuDevices = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
@@ -894,6 +941,6 @@ public static class NodeModelManagementEndpoints
         int? MaxModelLen = null,
         string? KvCacheDtype = null,
         double? CpuOffloadGiB = null,
-        string? GpuDevices = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null);
     private sealed class AgentException(string message) : Exception(message);
 }
