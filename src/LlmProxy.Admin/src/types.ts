@@ -595,6 +595,7 @@ export type ModelCapabilityProfile = {
   streaming: ModelCapabilityFeature
   vision: ModelCapabilityFeature
   thinking: ModelCapabilityFeature
+  audioTranscription?: ModelCapabilityFeature | null
   nativeContextTokens?: number | null
   extendedContextTokens?: number | null
   servingContextTokens?: number | null
