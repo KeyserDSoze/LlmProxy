@@ -108,8 +108,9 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
         bool flag(string property) => obj.TryGetProperty(property, out var v) &&
             v.ValueKind == JsonValueKind.True;
         bool gated = obj.TryGetProperty("gated", out var gatedValue) &&
-            gatedValue.ValueKind is JsonValueKind.True or JsonValueKind.String &&
-            gatedValue.ToString() is not ("false" or "");
+            (gatedValue.ValueKind == JsonValueKind.True ||
+             gatedValue.ValueKind == JsonValueKind.String &&
+             gatedValue.ToString() is not ("false" or ""));
         string? license = null;
         if (obj.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
             license = tags.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
