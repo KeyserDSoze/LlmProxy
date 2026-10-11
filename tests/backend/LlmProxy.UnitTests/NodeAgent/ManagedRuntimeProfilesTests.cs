@@ -159,6 +159,24 @@ public sealed class ManagedRuntimeProfilesTests
             request with { MaxNumSeqs = 2 }));
     }
 
+    [Fact]
+    public void Laya_only_accepts_curated_english_cpu_profile()
+    {
+        var request = new InstallRequest("laya-english-cpu", "convaiinnovations/laya",
+            null, 1, [], "laya", 1);
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Equal("llmproxy-laya:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ProviderModelName = "untrusted/laya" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 512 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--unsafe"] }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",
