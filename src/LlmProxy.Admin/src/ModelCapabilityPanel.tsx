@@ -52,7 +52,7 @@ export default function ModelCapabilityPanel({ profile }: { profile: ModelCapabi
     <div className="tableScroll">
       <table>
         <thead><tr><th>Capability</th><th>Base model</th><th>Installed runtime</th><th>Details</th></tr></thead>
-        <tbody>{checks.map(item => <FeatureRow key={item.key} label={item.label} feature={profile[item.key]} />)}</tbody>
+        <tbody>{profile.audioTranscription && <FeatureRow label="Audio transcription / English translation" feature={profile.audioTranscription} />}{checks.map(item => <FeatureRow key={item.key} label={item.label} feature={profile[item.key]} />)}</tbody>
       </table>
     </div>
     <p><strong>Context:</strong> {profile.nativeContextTokens?.toLocaleString() ?? 'unknown'} native tokens

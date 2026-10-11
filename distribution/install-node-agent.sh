@@ -32,6 +32,10 @@ if [[ -f "$SCRIPT_DIR/airllm-runtime/Dockerfile" ]]; then
   install -d -m 0755 /opt/llmproxy-node-agent/airllm-runtime
   cp -a "$SCRIPT_DIR/airllm-runtime/." /opt/llmproxy-node-agent/airllm-runtime/
 fi
+if [[ -f "$SCRIPT_DIR/faster-whisper-runtime/Dockerfile" ]]; then
+  install -d -m 0755 /opt/llmproxy-node-agent/faster-whisper-runtime
+  cp -a "$SCRIPT_DIR/faster-whisper-runtime/." /opt/llmproxy-node-agent/faster-whisper-runtime/
+fi
 if [[ -f "$SCRIPT_DIR/prepare-node-host.sh" ]]; then
   install -m 0755 "$SCRIPT_DIR/prepare-node-host.sh" /opt/llmproxy-node-agent/prepare-node-host.sh
 fi

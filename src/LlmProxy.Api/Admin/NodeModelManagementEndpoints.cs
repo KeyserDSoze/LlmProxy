@@ -217,6 +217,16 @@ public static class NodeModelManagementEndpoints
             CancellationToken cancellationToken) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            // Whisper is a dedicated audio server: never pass Chat context,
+            // quantization, GPU or arbitrary launch flags to its Agent profile.
+            if (descriptor?.Runtime == "faster-whisper" &&
+                (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                 request.GpuDevices is not null || request.KvCacheDtype is not null ||
+                 request.CpuOffloadGiB is not null || request.ExtraArguments is { Count: > 0 } ||
+                 request.MaxNumSeqs is not null and not 1 ||
+                 request.TensorParallelSize is not null and not 1))
+                return Results.BadRequest(new { error = "invalid_audio_runtime_settings",
+                    message = "Whisper CPU accepts one worker and no Chat token/GPU/runtime flags." });
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
 
             var node = await dbContext.Nodes.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -254,7 +264,7 @@ public static class NodeModelManagementEndpoints
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    runtime is "llama.cpp" or "airllm" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
+                    runtime is "llama.cpp" or "airllm" or "faster-whisper" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [],
                     runtime,
                     request.MaxNumSeqs,
@@ -282,6 +292,16 @@ public static class NodeModelManagementEndpoints
             IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            // Whisper is a dedicated audio server: never pass Chat context,
+            // quantization, GPU or arbitrary launch flags to its Agent profile.
+            if (descriptor?.Runtime == "faster-whisper" &&
+                (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                 request.GpuDevices is not null || request.KvCacheDtype is not null ||
+                 request.CpuOffloadGiB is not null || request.ExtraArguments is { Count: > 0 } ||
+                 request.MaxNumSeqs is not null and not 1 ||
+                 request.TensorParallelSize is not null and not 1))
+                return Results.BadRequest(new { error = "invalid_audio_runtime_settings",
+                    message = "Whisper CPU accepts one worker and no Chat token/GPU/runtime flags." });
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
             var runtime = ResolveRuntime(descriptor, request.Runtime);
             if (runtime is null) return Results.BadRequest(new { error = "incompatible_runtime" });
@@ -653,10 +673,10 @@ public static class NodeModelManagementEndpoints
         var model = await dbContext.Models.SingleOrDefaultAsync(item => item.PublicName == publicName, cancellationToken);
         if (model is null)
         {
-            model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools);
+            model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools, descriptor.Surface);
             dbContext.Models.Add(model);
         }
-        else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal))
+        else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal) || model.Surface != descriptor.Surface)
         {
             return Results.Conflict(new { error = "logical_model_name_conflict", publicName, model.ProviderModelName });
         }
@@ -732,6 +752,9 @@ public static class NodeModelManagementEndpoints
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
+        if (descriptor.Runtime == "faster-whisper")
+            return runtime == "faster-whisper" ? runtime : null;
+        if (runtime == "faster-whisper") return null;
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")

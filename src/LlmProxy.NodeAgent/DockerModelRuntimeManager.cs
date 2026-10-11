@@ -90,8 +90,10 @@ public sealed class DockerModelRuntimeManager(
                 report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
                 if (record.Runtime == "airllm")
                     await EnsureAirLlmImageAsync(record, cancellationToken, report);
+                else if (record.Runtime == "faster-whisper")
+                    await EnsureWhisperImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
-                if (options.PrefetchModels && record.Runtime != "llama.cpp")
+                if ((options.PrefetchModels || record.Runtime == "faster-whisper") && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
                     var script = """
@@ -117,7 +119,7 @@ for index, entry in enumerate(files):
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        record.Runtime == "airllm" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
+                        record.Runtime is "airllm" or "faster-whisper" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line =>
                     {
@@ -172,6 +174,23 @@ for index, entry in enumerate(files):
             "-t", image, directory], token, line => ParseTransferLine(line, "container-image", report));
     }
 
+    private async Task EnsureWhisperImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "faster-whisper-runtime");
+        var dockerfile = Path.Combine(directory, "Dockerfile");
+        if (!File.Exists(dockerfile))
+            throw new InvalidOperationException("Whisper runtime adapter is not installed in the Node Agent release.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building CPU Whisper adapter for host architecture (x64/arm64)", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
+            token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
@@ -180,6 +199,8 @@ for index, entry in enumerate(files):
             var record = await RequireRecordAsync(installationId, cancellationToken);
             if (record.Runtime == "airllm")
                 await EnsureAirLlmImageAsync(record, cancellationToken);
+            else if (record.Runtime == "faster-whisper")
+                await EnsureWhisperImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
@@ -188,13 +209,20 @@ for index, entry in enumerate(files):
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
-            if (gpuReady)
+            if (gpuReady && record.Runtime != "faster-whisper")
             {
                 args.Add("--gpus");
                 args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
             }
             args.Add("-v");
             args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
+            if (record.Runtime == "faster-whisper")
+            {
+                args.AddRange(["-e", "WHISPER_MODEL_ID=" + record.ProviderModelName,
+                    "-e", "WHISPER_CPU_THREADS=4"]);
+                if (record.SourceRevision is { Length: 40 } sha)
+                    args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+            }
             if (record.Runtime == "airllm")
             {
                 args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
