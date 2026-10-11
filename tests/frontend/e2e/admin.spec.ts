@@ -779,3 +779,74 @@ test('image and audio models are published as isolated API surfaces, never as Ch
       supportsStreaming: false, supportsTools: false }
   ])
 })
+
+
+test('curated CPU Whisper uses audio-only runtime settings during installation', async ({ page }) => {
+  await installAdminApi(page)
+  let queued: Record<string, unknown> | null = null
+  await page.route('**/api/admin/model-management/nodes/*/overview', route =>
+    json(route, {
+      node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+      agentAvailable: true,
+      hardware: {
+        hostname: 'spark-test', cpuLogicalCores: 20, systemMemoryTotalGiB: 120,
+        systemMemoryAvailableGiB: 80, diskTotalGiB: 1200, diskAvailableGiB: 800,
+        gpus: [], readiness: { dockerDaemonReady: true }
+      },
+      catalog: [{
+        model: {
+          id: 'whisper-tiny-cpu', displayName: 'Whisper Tiny — Speech-to-text (CPU)',
+          providerModelName: 'Systran/faster-whisper-tiny',
+          family: 'Whisper', runtime: 'faster-whisper', surface: 'AudioTranscription',
+          license: 'MIT', sourceUrl: 'https://huggingface.co/Systran/faster-whisper-tiny',
+          parameterBillions: 0.039, contextTokens: 448, precision: 'int8 CPU',
+          minimumGpuMemoryGiB: 0, recommendedGpuMemoryGiB: 0, minimumGpuCount: 0,
+          minimumSystemMemoryGiB: 2, diskGiB: 1, notes: 'CPU-only transcription',
+          supportsTools: false, supportsStreaming: false
+        },
+        compatibility: { status: 'fits', summary: 'CPU has sufficient RAM', suggestedTensorParallelSize: 1, reasons: [] },
+      }],
+      installations: []
+    }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => {
+    if (route.request().method() !== 'POST') return json(route, [])
+    queued = route.request().postDataJSON() as Record<string, unknown>
+    return json(route, { id: 'job-whisper', status: 'queued', stage: 'queued', percent: null,
+      detail: 'Queued', request: { catalogModelId: 'whisper-tiny-cpu', runtime: 'faster-whisper' } })
+  })
+  await page.route('**/api/admin/model-management/capabilities?*', route =>
+    json(route, {
+      providerModelName: 'Systran/faster-whisper-tiny', runtime: 'faster-whisper',
+      source: 'Whisper', modelCardUrl: 'https://huggingface.co/Systran/faster-whisper-tiny',
+      chat: { model: 'unsupported', serving: 'unsupported', explanation: 'Audio only' },
+      toolCalling: { model: 'unsupported', serving: 'unsupported', explanation: 'Audio only' },
+      streaming: { model: 'unsupported', serving: 'unsupported', explanation: 'Audio only' },
+      vision: { model: 'unsupported', serving: 'unsupported', explanation: 'Audio only' },
+      thinking: { model: 'unsupported', serving: 'unsupported', explanation: 'Audio only' },
+      audioTranscription: { model: 'supported', serving: 'supported', explanation: 'STT' },
+      notes: 'CPU only'
+    }))
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  const whisper = page.getByRole('row').filter({ hasText: 'Whisper Tiny — Speech-to-text (CPU)' })
+  await expect(whisper.getByText('CPU-only')).toBeVisible()
+  await expect(whisper.getByText('Audio ≤25 MiB')).toBeVisible()
+  await whisper.getByRole('button', { name: 'Install' }).click()
+  const modal = page.getByRole('dialog', { name: 'Install inference profile' })
+  await expect(modal.getByRole('combobox', { name: 'Motore di inferenza' })).toHaveCount(0)
+  await expect(modal.getByRole('combobox', { name: 'Install inference engine' })).toHaveValue('faster-whisper')
+  await expect(modal.getByText('Speech-to-text / English translation (CPU)')).toBeVisible()
+  await expect(modal.getByLabel('Runtime maximum context')).toHaveCount(0)
+  await expect(modal.getByLabel('Tensor parallel size')).toHaveCount(0)
+  await expect(modal.getByLabel('Install maximum output tokens')).toHaveCount(0)
+  await modal.getByRole('button', { name: 'Download & install' }).click()
+  await expect(page.getByText(/Background download scheduled/)).toBeVisible()
+  expect(queued).toMatchObject({
+    runtime: 'faster-whisper',
+    maxNumSeqs: 1,
+    maxModelLen: null,
+    maxOutputTokens: null,
+    gpuDevices: null,
+    extraArguments: [],
+    tensorParallelSize: 1
+  })
+})
