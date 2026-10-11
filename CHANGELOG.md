@@ -1,3 +1,9 @@
+## Unreleased — Restore the chosen hardware after F5 (2026-10-11)
+
+- Inventory & model lifecycle now encodes the physical node ID in a `node=` URL parameter alongside `section=inventory&tab=deploy`. Selecting another machine updates browser history; F5 and back/forward restore that exact node and its model page.
+- Deep links targeting a deleted/unknown node no longer silently fall back to an unrelated server. In-flight inventory responses from previously selected nodes are discarded, preventing stale hardware compatibility and incorrect installation targeting.
+- Playwright coverage exercises two independent hardware nodes, reload, forward/back navigation and invalid deep links.
+
 ## Unreleased — Explain offline model installs and restore Admin navigation (2026-10-11)
 
 - Deploy models explains why `FITS` from cached hardware does not permit installation when the management Agent and outbound tunnel are offline, with a Retry connection action and a direct switch to Fleet & access recovery.
