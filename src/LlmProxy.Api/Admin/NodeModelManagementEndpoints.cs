@@ -219,7 +219,7 @@ public static class NodeModelManagementEndpoints
             var descriptor = ResolveDescriptor(catalogId, request);
             // Whisper is a dedicated audio server: never pass Chat context,
             // quantization, GPU or arbitrary launch flags to its Agent profile.
-            if (descriptor?.Runtime == "faster-whisper" &&
+            if (descriptor?.Runtime is ("faster-whisper" or "kokoro") &&
                 (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
                  request.GpuDevices is not null || request.KvCacheDtype is not null ||
                  request.CpuOffloadGiB is not null || request.ExtraArguments is { Count: > 0 } ||
@@ -752,9 +752,9 @@ public static class NodeModelManagementEndpoints
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
-        if (descriptor.Runtime == "faster-whisper")
-            return runtime == "faster-whisper" ? runtime : null;
-        if (runtime == "faster-whisper") return null;
+        if (descriptor.Runtime is "faster-whisper" or "kokoro")
+            return runtime == descriptor.Runtime ? runtime : null;
+        if (runtime is "faster-whisper" or "kokoro") return null;
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")
