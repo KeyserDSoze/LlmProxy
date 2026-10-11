@@ -84,7 +84,7 @@ public static class NodeModelManagementEndpoints
         group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens) =>
         {
             if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
-                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
+                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm" or "diffusers") ||
                 maxModelLen is < 256 or > 262144 || maxOutputTokens is < 1 or > 4096)
                 return Results.BadRequest(new { error = "invalid_capability_lookup" });
             return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen, maxOutputTokens));
@@ -219,6 +219,14 @@ public static class NodeModelManagementEndpoints
             var descriptor = ResolveDescriptor(catalogId, request);
             // Whisper is a dedicated audio server: never pass Chat context,
             // quantization, GPU or arbitrary launch flags to its Agent profile.
+            if (descriptor?.Runtime == "diffusers" &&
+                (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                 request.KvCacheDtype is not null || request.CpuOffloadGiB is not null ||
+                 request.ExtraArguments is { Count: > 0 } ||
+                 request.MaxNumSeqs is not null and not 1 ||
+                 request.TensorParallelSize is not null and not 1))
+                return Results.BadRequest(new { error = "invalid_image_runtime_settings",
+                    message = "Diffusers uses one NVIDIA GPU and accepts no Chat context or arbitrary runtime flags." });
             if (descriptor?.Runtime == "faster-whisper" &&
                 (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
                  request.GpuDevices is not null || request.KvCacheDtype is not null ||
@@ -752,9 +760,9 @@ public static class NodeModelManagementEndpoints
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
-        if (descriptor.Runtime == "faster-whisper")
-            return runtime == "faster-whisper" ? runtime : null;
-        if (runtime == "faster-whisper") return null;
+        if (descriptor.Runtime is "faster-whisper" or "diffusers")
+            return runtime == descriptor.Runtime ? runtime : null;
+        if (runtime is "faster-whisper" or "diffusers") return null;
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")
