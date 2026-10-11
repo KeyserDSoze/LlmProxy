@@ -20,6 +20,7 @@ namespace LlmProxy.Api.Multimodal;
 /// </summary>
 public static class MultimodalEndpoints
 {
+    public const string LogicalModelItem = "LlmProxy.Multimodal.LogicalModel";
     private const int MaxJsonBytes = 1024 * 1024;
     private const int MaxAudioUploadBytes = 25 * 1024 * 1024;
     private const int MaxFormFields = 24;
@@ -158,6 +159,8 @@ public static class MultimodalEndpoints
                 await FailAsync(context, status, error, "A valid logical model name is required.");
                 return;
             }
+
+            context.Items[LogicalModelItem] = model;
 
             if (credentialId is Guid caller)
             {
