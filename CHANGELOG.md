@@ -1,3 +1,9 @@
+## Unreleased — Recover a running AirLLM runtime whose routing never activated (2026-10-11)
+
+- Managed runtime dashboard distinguishes **Docker container Running** from **healthy + routable**. A long AirLLM layer warmup or interrupted Start request can leave its container running while LLMProxy deployment stays Disabled and the hardware node still reads No Runtime.
+- Admin adds **Check health & activate** for running-but-disabled managed deployments. Gateway verifies the Agent's exact managed installation and probes its real runtime `/health` before enabling routing or updating the outbound node service root, without restarting Docker or redownloading model weights.
+- Warmup/failure health responses leave routing disabled and return a clear diagnostic instead of implying inference is ready. Backend and browser regression tests cover the divergent states.
+
 ## Unreleased — Restore the chosen hardware after F5 (2026-10-11)
 
 - Inventory & model lifecycle now encodes the physical node ID in a `node=` URL parameter alongside `section=inventory&tab=deploy`. Selecting another machine updates browser history; F5 and back/forward restore that exact node and its model page.
