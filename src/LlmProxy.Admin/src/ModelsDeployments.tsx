@@ -1,12 +1,13 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { Deployment, Model, Node } from './types'
 
 type Surface = 'OpenAi' | 'SystemOne'
 
 export default function ModelsDeployments({ models, deployments, nodes, canWrite, refresh }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void> }) {
-  const [tab, setTab] = useState<'models' | 'nodes'>('models')
+  const [tab, setTab] = useRouteTab<'models' | 'nodes'>('tab', ['models', 'nodes'], 'models')
   const [publishOpen, setPublishOpen] = useState(false)
   const [deployModel, setDeployModel] = useState<Model | null>(null)
   const [manageNode, setManageNode] = useState<Node | null>(null)
