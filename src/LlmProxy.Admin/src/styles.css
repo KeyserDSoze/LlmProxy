@@ -142,3 +142,15 @@ main{padding:12px 10px 44px}
 .modalBody{padding:12px}
 }
 @media(prefers-reduced-motion:reduce){.sidebar{transition:none}*{scroll-behavior:auto!important}}
+
+/* The personal portal contains only one destination; on phones the visible header
+   replaces its noninteractive sidebar while preferences remain accessible. */
+@media(max-width:820px){.userPortalSidebar{display:none}.userPortalSidebar~main{width:100%}
+.userPortalSidebar~main>header{display:flex;flex-wrap:wrap;gap:12px}
+.userPortalSidebar~main>header .shellHeaderControls{width:100%;justify-content:space-between}
+}
+/* Avoid tiny text and overwide modal actions on touch devices. */
+@media(max-width:600px){.modalActions{flex-wrap:wrap;justify-content:flex-end}
+.modalActions>button{min-height:42px}.actions>button,.actions>a{min-height:36px}
+.formPanel input,.formPanel select,.formPanel textarea{font-size:16px}
+}
