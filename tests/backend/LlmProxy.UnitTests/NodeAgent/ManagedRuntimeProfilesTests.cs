@@ -159,6 +159,24 @@ public sealed class ManagedRuntimeProfilesTests
             request with { MaxNumSeqs = 2 }));
     }
 
+    [Fact]
+    public void Kokoro_only_accepts_pinned_english_cpu_profile()
+    {
+        var request = new InstallRequest("kokoro-english-cpu", "hexgrad/Kokoro-82M",
+            null, 1, [], "kokoro", 1);
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.Equal("llmproxy-kokoro:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ProviderModelName = "untrusted/kokoro" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 8192 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--unsafe"] }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",
