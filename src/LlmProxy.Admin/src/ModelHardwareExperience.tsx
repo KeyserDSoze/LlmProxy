@@ -59,7 +59,6 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       setInstallCapabilities(null)
       return
     }
-    if (runtimeChoice === 'laya') { setInstallCapabilities(null); return }
     let active = true
     const timeout = window.setTimeout(() => {
       void api.inspectModelCapabilities(installProviderName, runtimeChoice, isNonChatRuntime ? null : maxModelLen, runtimeChoice === 'airllm' ? maxOutputTokens : null)
