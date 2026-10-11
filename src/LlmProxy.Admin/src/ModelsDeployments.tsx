@@ -4,7 +4,7 @@ import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { Deployment, Model, Node } from './types'
 
-type Surface = 'OpenAi' | 'SystemOne'
+type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
 
 export default function ModelsDeployments({ models, deployments, nodes, canWrite, refresh }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void> }) {
   const [tab, setTab] = useRouteTab<'models' | 'nodes'>('tab', ['models', 'nodes'], 'models')
@@ -52,7 +52,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
         surface
       })
       setPublicName(''); setProviderModelName(''); setSurface('OpenAi'); setPublishOpen(false)
-      setMessage(`${surface === 'SystemOne' ? 'System One' : 'OpenAI'} logical model published.`)
+      setMessage(`${surface === 'SystemOne' ? 'System One' : surface === 'ImageGeneration' ? 'Image' : surface === 'SpeechSynthesis' ? 'TTS' : surface === 'AudioTranscription' ? 'STT' : 'OpenAI Chat'} logical model published.`)
       await refresh()
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
@@ -60,8 +60,8 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   async function deploy(event: FormEvent) {
     event.preventDefault(); if (!deployModel || !nodeId) return
-    if (modelSurface(deployModel) === 'SystemOne' && !runtimeBaseAddress.trim()) {
-      setError('A System One classifier must have an explicit runtime service root. Use the dedicated classifier setup.')
+    if (modelSurface(deployModel) !== 'OpenAi' && !runtimeBaseAddress.trim()) {
+      setError('A non-Chat workload needs an explicit OpenAI-compatible runtime service root on this server.')
       return
     }
     setBusy('deploy'); setError(null)
@@ -71,8 +71,8 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   async function deployEverywhere(model: Model) {
     const existing = new Set((deploymentsByModel.get(model.id) ?? []).map(item => item.nodeId))
-    if (modelSurface(model) === 'SystemOne') {
-      setError('System One requires an explicit classifier service root on every target. Connect each deployment through the System One setup instead.')
+    if (modelSurface(model) !== 'OpenAi') {
+      setError('Images, audio and classifier deployments require a known runtime service root on each target. Configure every node explicitly.')
       return
     }
     const targets = activeNodes.filter(node => !existing.has(node.id))
@@ -107,6 +107,12 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   async function deployOnManagedNode(model: Model) {
     if (!manageNode) return
+    if (modelSurface(model) !== 'OpenAi') {
+      setError('Images, audio and classifiers require an explicit runtime root. Open the model deployment form.')
+      setManageNode(null)
+      openDeploy(model)
+      return
+    }
     setBusy(`node:${model.id}`); setError(null)
     try { await api.createDeployment({ nodeId: manageNode.id, modelId: model.id, weight: 1 }); await refresh() }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
@@ -128,12 +134,12 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
           const enabledCount = modelDeployments.filter(item => item.enabled).length
           const kind = modelSurface(model)
           return <tr key={model.id}>
-            <td><strong>{model.publicName}</strong><div className="muted">{kind === 'SystemOne' ? 'Selected by X-LlmProxy-Model (or default).' : 'Client-facing OpenAI model name.'}</div></td>
-            <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{kind === 'SystemOne' ? 'SYSTEM ONE' : 'OPENAI'}</span></td>
+            <td><strong>{model.publicName}</strong><div className="muted">{kind === 'SystemOne' ? 'Selected by X-LlmProxy-Model (or default).' : kind === 'OpenAi' ? 'Client-facing OpenAI Chat/Responses model name.' : 'Specify this public model name in the matching OpenAI Images/Audio API.'}</div></td>
+            <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{kind === 'SystemOne' ? 'SYSTEM ONE' : kind === 'ImageGeneration' ? 'IMAGE' : kind === 'SpeechSynthesis' ? 'TTS' : kind === 'AudioTranscription' ? 'STT' : 'CHAT'}</span></td>
             <td className="mono">{model.providerModelName}</td>
-            <td>{kind === 'SystemOne' ? 'typed classifier' : [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic'}</td>
+            <td>{kind === 'SystemOne' ? 'typed classifier' : kind === 'ImageGeneration' ? 'text → image' : kind === 'SpeechSynthesis' ? 'text → audio' : kind === 'AudioTranscription' ? 'audio → text' : [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic'}</td>
             <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
-            <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind !== 'SystemOne' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
+            <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind === 'OpenAi' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
               {canWrite && kind === 'SystemOne' && <a href="/admin/system-one">Connect classifier →</a>}</td>
           </tr>
         })}
@@ -156,17 +162,18 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
     <Modal open={publishOpen} title="Publish logical model" description="Choose the API surface first; routing and deployment controls are shared." onClose={() => setPublishOpen(false)}>
       <form className="formPanel" onSubmit={publish}>
-        <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option></select></label>
+        <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option></select></label>
         <label>Logical name<input value={publicName} onChange={event => setPublicName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'systemone-laya' : 'agic-code-fast'} /></label>
         <label>Provider / runtime model name<input value={providerModelName} onChange={event => setProviderModelName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'convaiinnovations/laya' : 'Qwen/...'} /></label>
         {surface === 'SystemOne' && <p><a href="/admin/system-one">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}
-        <div className="notice">{surface === 'SystemOne' ? 'System One requests keep their typed payload unchanged. The logical model selects eligible deployments; the provider name is inventory metadata.' : 'OpenAI requests rewrite the logical model to the provider model name before forwarding.'}</div>
+        {surface !== 'OpenAi' && surface !== 'SystemOne' && <p className="notice">This publishes an API model alias. It does not download or launch an image/audio runtime. Connect an existing runtime that implements the selected OpenAI endpoint and has a healthy /health endpoint. Hardware-specific auto-installation is not available yet.</p>}
+        <div className="notice">{surface === 'SystemOne' ? 'System One requests keep their typed payload unchanged. The logical model selects eligible deployments; the provider name is inventory metadata.' : 'Image/audio and Chat requests rewrite the logical model to the provider model name before forwarding; the server must implement that specific API.'}</div>
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setPublishOpen(false)}>Cancel</button><button className="primary" disabled={busy === 'publish'}>Publish model</button></div>
       </form>
     </Modal>
 
     <Modal open={Boolean(deployModel)} title={`Deploy · ${deployModel?.publicName ?? ''}`} description="Create a routing deployment on another active node." onClose={() => setDeployModel(null)}>
-      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root {deployModel && modelSurface(deployModel) === 'SystemOne' ? '(required for classifier)' : '(optional)'}<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy' || !!(deployModel && modelSurface(deployModel) === 'SystemOne' && !runtimeBaseAddress.trim())}>Create deployment</button></div></form>
+      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root {deployModel && modelSurface(deployModel) !== 'OpenAi' ? '(required for this non-Chat runtime)' : '(optional)'}<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy' || !!(deployModel && modelSurface(deployModel) !== 'OpenAi' && !runtimeBaseAddress.trim())}>Create deployment</button></div></form>
     </Modal>
 
     <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>
