@@ -300,7 +300,21 @@ public static class DeployableModelCatalog
             false, false,
             ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
             "CPU-only speech transcription/translation-to-English. Real audio correctness and runtime performance are not certified yet.",
-            "faster-whisper", ModelSurface.AudioTranscription)
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "kokoro-english-cpu",
+            "Kokoro — English voice af_heart (CPU, experimental)",
+            "hexgrad/Kokoro-82M",
+            "Kokoro TTS",
+            "Apache-2.0 model; review espeak redistribution",
+            "https://huggingface.co/hexgrad/Kokoro-82M",
+            0.082, 512, "FP32 CPU",
+            0, 0, 4, 8, 2, 0, 0,
+            false, false,
+            ["text-to-speech", "english", "voice-af_heart", "wav", "cpu", "experimental", "arm64"],
+            "Experimental text-to-speech: one curated voice af_heart, WAV only, speed 0.5–2. " +
+            "No Chat context or voice cloning. Real audio correctness and third-party licensing review required.",
+            "kokoro", ModelSurface.SpeechSynthesis)
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>
