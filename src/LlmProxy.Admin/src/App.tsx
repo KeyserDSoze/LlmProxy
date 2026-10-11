@@ -223,7 +223,7 @@ function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
     { title: 'Connect a classifier', summary: 'Register an existing System One service, choose a node and publish its endpoint.', view: 'system-one', action: 'System One setup' },
     { title: 'Add a server', summary: 'Pair a Linux Agent, inspect physical hardware and manage capacity.', view: 'infrastructure', action: 'Manage hardware' },
     { title: 'Expose a model', summary: 'Review logical names, deployed runtimes and routing status.', view: 'models', action: 'Models & routes' },
-    { title: 'Verify a request', summary: 'Test deployed Chat or System One models using the production gateway path.', view: 'playground', action: 'Open Playground' }
+    { title: 'Verify a request', summary: 'Test deployed Chat or System One models using the production gateway path.', view: 'playground', action: 'Try model requests' }
   ]
   return <section className="panel uxStartPanel">
     <div className="panelTitle"><div><h2>What do you want to do?</h2>
