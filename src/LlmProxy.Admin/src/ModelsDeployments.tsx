@@ -60,6 +60,10 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   async function deploy(event: FormEvent) {
     event.preventDefault(); if (!deployModel || !nodeId) return
+    if (modelSurface(deployModel) === 'SystemOne' && !runtimeBaseAddress.trim()) {
+      setError('A System One classifier must have an explicit runtime service root. Use the dedicated classifier setup.')
+      return
+    }
     setBusy('deploy'); setError(null)
     try { await api.createDeployment({ nodeId, modelId: deployModel.id, weight: 1, runtimeBaseAddress: runtimeBaseAddress.trim() || null }); setDeployModel(null); setMessage('Deployment created and available to routing.'); await refresh() }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
@@ -67,6 +71,10 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   async function deployEverywhere(model: Model) {
     const existing = new Set((deploymentsByModel.get(model.id) ?? []).map(item => item.nodeId))
+    if (modelSurface(model) === 'SystemOne') {
+      setError('System One requires an explicit classifier service root on every target. Connect each deployment through the System One setup instead.')
+      return
+    }
     const targets = activeNodes.filter(node => !existing.has(node.id))
     if (targets.length === 0) { setMessage(`${model.publicName} is already deployed on every active node.`); return }
     setBusy(`all:${model.id}`); setError(null)
@@ -106,7 +114,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar modelExplainer">
-      <div><h2>Logical model topology</h2><p>OpenAI and System One workloads share the same model → deployment → node topology. OpenAI models serve chat/responses; System One models serve typed classifier requests on <span className="mono">/v1/systemone</span>.</p></div>
+      <div><h2>Published models & routing</h2><p>These are the names your clients call. A logical model alone does not install weights or start a runtime; each model needs a healthy deployment on a server. OpenAI Chat and System One classifiers are different API protocols.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/system-one">Connect a System One classifier →</a></div></div>
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error">{error}</div>}
@@ -125,7 +133,8 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
             <td className="mono">{model.providerModelName}</td>
             <td>{kind === 'SystemOne' ? 'typed classifier' : [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic'}</td>
             <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
-            <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}</td>
+            <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind !== 'SystemOne' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
+              {canWrite && kind === 'SystemOne' && <a href="/admin/system-one">Connect classifier →</a>}</td>
           </tr>
         })}
         {models.length === 0 && <tr><td colSpan={6} className="muted">No logical models published yet.</td></tr>}
@@ -150,13 +159,14 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
         <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option></select></label>
         <label>Logical name<input value={publicName} onChange={event => setPublicName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'systemone-laya' : 'agic-code-fast'} /></label>
         <label>Provider / runtime model name<input value={providerModelName} onChange={event => setProviderModelName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'convaiinnovations/laya' : 'Qwen/...'} /></label>
+        {surface === 'SystemOne' && <p><a href="/admin/system-one">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}
         <div className="notice">{surface === 'SystemOne' ? 'System One requests keep their typed payload unchanged. The logical model selects eligible deployments; the provider name is inventory metadata.' : 'OpenAI requests rewrite the logical model to the provider model name before forwarding.'}</div>
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setPublishOpen(false)}>Cancel</button><button className="primary" disabled={busy === 'publish'}>Publish model</button></div>
       </form>
     </Modal>
 
     <Modal open={Boolean(deployModel)} title={`Deploy · ${deployModel?.publicName ?? ''}`} description="Create a routing deployment on another active node." onClose={() => setDeployModel(null)}>
-      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root (optional)<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy'}>Create deployment</button></div></form>
+      <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root {deployModel && modelSurface(deployModel) === 'SystemOne' ? '(required for classifier)' : '(optional)'}<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy' || !!(deployModel && modelSurface(deployModel) === 'SystemOne' && !runtimeBaseAddress.trim())}>Create deployment</button></div></form>
     </Modal>
 
     <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>
