@@ -135,6 +135,30 @@ public sealed class ManagedRuntimeProfilesTests
             request with { MaxOutputTokens = 256 }));
     }
 
+    [Theory]
+    [InlineData("whisper-tiny-cpu", "Systran/faster-whisper-tiny")]
+    [InlineData("whisper-base-cpu", "Systran/faster-whisper-base")]
+    [InlineData("whisper-small-cpu", "Systran/faster-whisper-small")]
+    public void Whisper_profiles_allow_only_paired_CTranslate2_checkpoints(string catalog, string repo)
+    {
+        var request = new InstallRequest(catalog, repo, null, 1, [], "faster-whisper", 1);
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.Equal("llmproxy-faster-whisper:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { CatalogModelId = "whisper-tiny-cpu", ProviderModelName = "random/whisper-cpu" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 8192 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxOutputTokens = 256 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--unsafe"] }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxNumSeqs = 2 }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",
