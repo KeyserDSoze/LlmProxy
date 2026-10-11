@@ -603,7 +603,7 @@ export type ModelCapabilityProfile = {
 }
 
 export type DeployableModel = {
-  runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm'
+  runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm' | 'faster-whisper'
   id: string
   displayName: string
   providerModelName: string
@@ -623,6 +623,7 @@ export type DeployableModel = {
   supportsStreaming: boolean
   supportsTools: boolean
   tags: string[]
+  surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
   notes: string
 }
 
