@@ -84,7 +84,7 @@ public static class NodeModelManagementEndpoints
         group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens) =>
         {
             if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
-                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
+                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm" or "laya") ||
                 maxModelLen is < 256 or > 262144 || maxOutputTokens is < 1 or > 4096)
                 return Results.BadRequest(new { error = "invalid_capability_lookup" });
             return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen, maxOutputTokens));
