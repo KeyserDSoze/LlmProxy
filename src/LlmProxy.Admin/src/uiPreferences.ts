@@ -235,6 +235,7 @@ const en = {
   'systemOne.modelName': 'Model',
   'systemOne.nodeName': 'Deployed on',
   'systemOne.next': 'Next step',
+  'modal.close': 'Close',
   'help.documentation': 'Page documentation'
 } as const
 
@@ -395,6 +396,7 @@ const it: Record<keyof typeof en, string> = {
   'systemOne.modelName': 'Modello',
   'systemOne.nodeName': 'Installato su',
   'systemOne.next': 'Passaggio successivo',
+  'modal.close': 'Chiudi',
   'help.documentation': 'Documentazione pagina'
 }
 
