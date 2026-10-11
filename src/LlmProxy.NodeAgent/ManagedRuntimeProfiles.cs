@@ -24,6 +24,14 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentOutOfRangeException(nameof(request.MaxNumSeqs), "Allowed concurrent sequence configuration: 1–128.");
         if (request.MaxModelLen is < 256 or > 262144)
             throw new ArgumentOutOfRangeException(nameof(request.MaxModelLen));
+        if (request.MaxOutputTokens is not null &&
+            (request.Runtime != "airllm" || request.MaxOutputTokens is < 1 or > 4096))
+            throw new ArgumentOutOfRangeException(nameof(request.MaxOutputTokens),
+                "Maximum output token configuration is supported by AirLLM only (1–4096).");
+        if (request.Runtime == "airllm" && request.MaxOutputTokens is int output &&
+            output > (request.MaxModelLen ?? 8192))
+            throw new ArgumentOutOfRangeException(nameof(request.MaxOutputTokens),
+                "Maximum output cannot exceed the configured model context.");
         if (request.KvCacheDtype is not null && request.KvCacheDtype is not ("auto" or "fp8"))
             throw new ArgumentException("KV cache dtype must be auto or fp8.");
         if (request.CpuOffloadGiB is < 0 or > 1024 or double.NaN or double.PositiveInfinity or double.NegativeInfinity)
