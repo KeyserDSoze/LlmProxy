@@ -337,3 +337,23 @@ test('authentication failures surface the Entra ID sign-in action', async ({ pag
 test('authorization failures do not invite an authentication loop', async ({ page }) => {
   await page.route('**/api/admin/**', route => route.fulfill({ status: 403, body: '' })); await page.goto('/'); await expect(page.getByText(/Access denied/)).toBeVisible(); await expect(page.getByRole('link', { name: 'Sign in with Entra ID' })).toHaveCount(0)
 })
+
+test('admin navigation preserves top-level pages and infrastructure tabs across refresh and history', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await expect(page).toHaveURL(/\/admin\/infrastructure$/)
+  await page.getByRole('tab', { name: /Inventory & model lifecycle/ }).click()
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory$/)
+  await page.getByRole('tab', { name: /Deploy models/ }).click()
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+  await page.reload()
+  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Routing', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/routing$/)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Smart-routing tuning' })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+})
