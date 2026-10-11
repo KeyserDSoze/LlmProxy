@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRouteTab } from './adminNavigation'
 import HardwareExperience from './HardwareExperience'
 import ModelHardwareExperience from './ModelHardwareExperience'
 import NodesPage from './NodesPage'
@@ -15,7 +15,7 @@ export default function InfrastructureExperience({ nodes, models, deployments, h
   canWrite: boolean
   refresh: () => Promise<void>
 }) {
-  const [section, setSection] = useState<Section>('fleet')
+  const [section, setSection] = useRouteTab<Section>('section', ['fleet', 'capacity', 'inventory'], 'fleet')
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar">
@@ -37,7 +37,7 @@ export default function InfrastructureExperience({ nodes, models, deployments, h
 
     {section === 'fleet' && <NodesPage nodes={nodes} canWrite={canWrite} refresh={refresh} embedded />}
     {section === 'capacity' && <HardwareExperience nodes={nodes} hardware={hardware} canWrite={canWrite} refresh={refresh} embedded />}
-    {section === 'inventory' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} embedded />}
+    {section === 'inventory' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} embedded onRecoverAgent={() => setSection("fleet")} />}
 
     <section className="panel infrastructureGuide">
       <div><strong>People & access</strong><span>Users & Access decides who may use personal LlmProxy credentials. A shared Copilot organization key does not identify the individual developer.</span></div>
