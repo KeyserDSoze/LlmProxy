@@ -3,7 +3,8 @@ import { api } from './api'
 import { useRouteHardware, useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel from './ModelCapabilityPanel'
-import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, Node } from './types'
+import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
+import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, onRecoverAgent }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; onRecoverAgent?: () => void }) {
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], 'inventory')
@@ -29,6 +30,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const finalizing = useRef(new Set<string>())
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
   const [maxModelLen, setMaxModelLen] = useState(8192)
+  const [maxOutputTokens, setMaxOutputTokens] = useState(256)
+  const [editingInstall, setEditingInstall] = useState<ManagedInstallation | null>(null)
+  const [editContext, setEditContext] = useState(8192)
+  const [editSequences, setEditSequences] = useState(1)
+  const [editOutput, setEditOutput] = useState(256)
+  const [upstreamRevisions, setUpstreamRevisions] = useState<ModelRevisionStatus[]>([])
+  const [revisionBusy, setRevisionBusy] = useState(false)
   const [kvCacheDtype, setKvCacheDtype] = useState<'auto' | 'fp8'>('auto')
   const [cpuOffloadGiB, setCpuOffloadGiB] = useState(0)
   const [logicalAlias, setLogicalAlias] = useState('')
@@ -50,18 +58,18 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     }
     let active = true
     const timeout = window.setTimeout(() => {
-      void api.inspectModelCapabilities(installProviderName, runtimeChoice, maxModelLen)
+      void api.inspectModelCapabilities(installProviderName, runtimeChoice, maxModelLen, runtimeChoice === 'airllm' ? maxOutputTokens : null)
         .then(profile => { if (active) setInstallCapabilities(profile) })
         .catch(() => { if (active) setInstallCapabilities(null) })
     }, 350)
     return () => { active = false; window.clearTimeout(timeout) }
-  }, [installCatalogId, installProviderName, runtimeChoice, maxModelLen])
+  }, [installCatalogId, installProviderName, runtimeChoice, maxModelLen, maxOutputTokens])
 
 
   useEffect(() => {
     // Hardware can change via dropdown or browser history; never show a stale
     // inventory or let an old request re-enable installation on another node.
-    setOverview(null); setDownloadJobs([]); setInstallCatalogId(null)
+    setOverview(null); setDownloadJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setEditingInstall(null)
     setMessage(null); setError(null)
   }, [nodeId])
   const load = useCallback(async () => {
@@ -191,6 +199,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         gpuDevices: gpuDevices.trim() || null,
         extraArguments: extraArgumentsText.split('\n').map(arg => arg.trim()).filter(Boolean),
         maxNumSeqs, maxModelLen,
+        maxOutputTokens: runtimeChoice === 'airllm' ? maxOutputTokens : null,
         kvCacheDtype: runtimeChoice === 'vllm' ? kvCacheDtype : null,
         cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null
       })
@@ -212,13 +221,52 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       if (kind === 'start') await api.startManagedDeployment(deploymentId)
       if (kind === 'activate') await api.activateManagedDeployment(deploymentId)
       if (kind === 'stop') await api.stopManagedDeployment(deploymentId)
-      if (kind === 'remove') await api.removeManagedDeployment(deploymentId)
+      if (kind === 'remove') {
+        if (!window.confirm('Uninstall this runtime container and remove its deployment? Cached downloaded model weights are retained for reuse.')) return
+        await api.removeManagedDeployment(deploymentId)
+      }
       setMessage(kind === 'start' ? 'Model started and enabled for routing.' :
         kind === 'activate' ? 'Runtime /health verified; existing model enabled for routing.' :
-        kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed model removed from the hardware.')
+        kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed runtime uninstalled; cached model files are preserved.')
       await Promise.all([load(), refresh()])
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
+  }
+
+  function openProfileEdit(item: ManagedInstallation) {
+    setEditingInstall(item)
+    setEditContext(item.agentState?.maxModelLen ?? 8192)
+    setEditSequences(item.agentState?.maxNumSeqs ?? 1)
+    setEditOutput(item.agentState?.maxOutputTokens ?? 256)
+    setMessage(null); setError(null)
+  }
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault()
+    if (!editingInstall) return
+    setBusy('edit:' + editingInstall.id); setError(null)
+    try {
+      await api.configureManagedDeployment(editingInstall.id, {
+        maxModelLen: editContext, maxNumSeqs: editSequences,
+        maxOutputTokens: editingInstall.runtime === 'airllm' ? editOutput : null
+      })
+      setEditingInstall(null)
+      setMessage('Runtime limits updated without deleting model weights. Press Start to apply the new limits.')
+      await Promise.all([load(), refresh()])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+  async function checkRevisions() {
+    setRevisionBusy(true); setError(null)
+    try { setUpstreamRevisions(await api.checkManagedModelUpdates(nodeId)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setRevisionBusy(false) }
+  }
+  function reviewHubModel(repoId: string) {
+    setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+    setCustomRepository(repoId); setCustomConfirmed(false)
+    setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
+    setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
+    setTensorParallelSize(1); setGpuDevices('')
   }
 
   return <div className="stack compactPage modelHardware">
@@ -269,12 +317,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <div className="actions"><span>Fit estimates use last reported RAM / VRAM / disk; live Agent required to install</span>
             <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? 'Connect or recover the Node Agent in Fleet & access first.' : undefined}
-              onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>Install custom Hugging Face model</button>
+              onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>Install custom Hugging Face model</button>
           </div></div><div className="tableScroll"><table><thead><tr><th>Model</th><th>License</th><th>Size</th><th>Context</th><th>GPU plan</th><th>RAM / disk</th><th>Fit</th><th>Action</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">Runtime: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">Model card</a>{item.capabilities && <>
               {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>Capabilities</button>
             </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">Inventory cached · Agent connection needed</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
               title={!canWrite ? 'Administrator write access required.' : !overview?.agentAvailable ? 'Node Agent offline: open Fleet & access and restore the existing node connection.' : hardware?.readiness?.dockerDaemonReady === false ? 'Docker daemon is not ready on this node.' : item.compatibility.status === 'insufficient' ? 'Model minimum hardware requirements not met.' : 'Install this model on the selected node'}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
             {item.capabilities && <button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model', profile: item.capabilities! })}>Capabilities & client setup</button>}</td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' :
