@@ -22,7 +22,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
   const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
-  const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp' | 'airllm' | 'faster-whisper'>('vllm')
+  const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp' | 'airllm' | 'faster-whisper' | 'diffusers'>('vllm')
+  const isMediaRuntime = runtimeChoice === 'faster-whisper' || runtimeChoice === 'diffusers'
   const [tensorParallelSize, setTensorParallelSize] = useState(1)
   const [gpuDevices, setGpuDevices] = useState('')
   const [extraArgumentsText, setExtraArgumentsText] = useState('')
@@ -60,7 +61,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     }
     let active = true
     const timeout = window.setTimeout(() => {
-      void api.inspectModelCapabilities(installProviderName, runtimeChoice, runtimeChoice === 'faster-whisper' ? null : maxModelLen, runtimeChoice === 'airllm' ? maxOutputTokens : null)
+      void api.inspectModelCapabilities(installProviderName, runtimeChoice, isMediaRuntime ? null : maxModelLen, runtimeChoice === 'airllm' ? maxOutputTokens : null)
         .then(profile => { if (active) setInstallCapabilities(profile) })
         .catch(() => { if (active) setInstallCapabilities(null) })
     }, 350)
@@ -197,11 +198,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         force: catalogId === 'custom' ? customConfirmed : false,
         port: installPort ? Number(installPort) : null,
         runtime: runtimeChoice,
-        tensorParallelSize: runtimeChoice === 'llama.cpp' || runtimeChoice === 'airllm' || runtimeChoice === 'faster-whisper' ? 1 : tensorParallelSize,
-        gpuDevices: runtimeChoice === 'faster-whisper' ? null : gpuDevices.trim() || null,
-        extraArguments: runtimeChoice === 'faster-whisper' ? [] : extraArgumentsText.split('\n').map(arg => arg.trim()).filter(Boolean),
-        maxNumSeqs: runtimeChoice === 'faster-whisper' ? 1 : maxNumSeqs,
-        maxModelLen: runtimeChoice === 'faster-whisper' ? null : maxModelLen,
+        tensorParallelSize: runtimeChoice === 'llama.cpp' || runtimeChoice === 'airllm' || isMediaRuntime ? 1 : tensorParallelSize,
+        gpuDevices: runtimeChoice === 'faster-whisper' ? null : runtimeChoice === 'diffusers' ? (gpuDevices.trim() || '0') : gpuDevices.trim() || null,
+        extraArguments: isMediaRuntime ? [] : extraArgumentsText.split('\n').map(arg => arg.trim()).filter(Boolean),
+        maxNumSeqs: isMediaRuntime ? 1 : maxNumSeqs,
+        maxModelLen: isMediaRuntime ? null : maxModelLen,
         maxOutputTokens: runtimeChoice === 'airllm' ? maxOutputTokens : null,
         kvCacheDtype: runtimeChoice === 'vllm' ? kvCacheDtype : null,
         cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null
@@ -323,9 +324,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>{t('catalog.custom')}</button>
           </div></div><div className="tableScroll"><table><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
               {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>{t('catalog.capabilities')}</button>
-            </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' : formatTokens(item.model.contextTokens)}</td><td>{item.model.runtime === 'faster-whisper' ? 'CPU-only' : <>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec</>}<div className="muted">{item.model.runtime === 'faster-whisper' ? 'x64 / ARM64 · int8 CPU' : `${item.model.minimumGpuCount} GPU min · TP ${item.compatibility.suggestedTensorParallelSize}`}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
+            </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' : item.model.runtime === 'diffusers' ? 'Images 512–1024' : formatTokens(item.model.contextTokens)}</td><td>{item.model.runtime === 'faster-whisper' ? 'CPU-only' : item.model.runtime === 'diffusers' ? 'NVIDIA CUDA GPU' : <>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec</>}<div className="muted">{item.model.runtime === 'faster-whisper' ? 'x64 / ARM64 · int8 CPU' : `${item.model.minimumGpuCount} GPU min · TP ${item.compatibility.suggestedTensorParallelSize}`}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
               title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ? t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ? t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ? t('catalog.insufficient') : t('catalog.installHere')}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'diffusers' ? 'diffusers' : item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' || item.model.runtime === 'diffusers' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>
       <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />
       <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
         <div className="actions"><span>{t('catalog.editTip')}</span>
@@ -349,10 +350,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               title={t('catalog.healthTip')}
               onClick={() => void action('activate', item.id)}>{t('catalog.activate')}</button>}
           <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>{t('catalog.stop')}</button>
-          <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || item.runtime === 'faster-whisper' || item.agentStatus.toLowerCase() === 'running'}
-            title={item.runtime === 'faster-whisper' ? 'Whisper CPU has a fixed one-worker profile with no Chat token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
+          <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || (item.runtime === 'faster-whisper' || item.runtime === 'diffusers') || item.agentStatus.toLowerCase() === 'running'}
+            title={item.runtime === 'faster-whisper' || item.runtime === 'diffusers' ? 'Media runtime has fixed concurrency and no Chat token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
             onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></section></>}
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && item.runtime !== 'diffusers' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></section></>}
 
     <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
       description="Automatically detected from known model declarations and the installed serving adapter."
@@ -389,6 +390,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        {runtimeChoice === 'diffusers' && <div className="notice"><strong>Image generation / SSD-1B (experimental GPU)</strong><p>Installs the curated Apache-2.0 checkpoint on an NVIDIA CUDA node. OpenAI POST /v1/images/generations returns base64 PNG: 512, 768 or 1024 square; one image per request. Real GPU inference and safety checks are required before production.</p></div>}
         {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
@@ -404,6 +406,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               ? <option value="airllm">AirLLM (experimental layer streaming)</option>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'faster-whisper'
               ? <option value="faster-whisper">Whisper (CPU speech-to-text / translation)</option>
+              : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'diffusers'
+              ? <option value="diffusers">Diffusers (SSD-1B image generation / NVIDIA GPU)</option>
               : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option></>}
           </select>
         </label>
@@ -418,11 +422,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <p className="notice">{t('model.licenseNotice')}</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
-        {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && runtimeChoice !== 'faster-whisper' && <label>{t('model.tensorParallel')}
+        {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && !isMediaRuntime && <label>{t('model.tensorParallel')}
           <input aria-label="Tensor parallel size" type="number" min="1" max="64" value={tensorParallelSize}
             onChange={event => setTensorParallelSize(Number(event.target.value))} required />
         </label>}
-        {runtimeChoice !== 'airllm' && runtimeChoice !== 'faster-whisper' && <label>{t('model.advancedArguments')} (one argument per line)
+        {runtimeChoice !== 'airllm' && !isMediaRuntime && <label>{t('model.advancedArguments')} (one argument per line)
           <textarea aria-label={t('model.advancedArguments')} rows={3} value={extraArgumentsText}
             onChange={event => setExtraArgumentsText(event.target.value)}
             placeholder={"--gpu-memory-utilization\\n0.85"} />
@@ -432,23 +436,23 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             onChange={event => setGpuDevices(event.target.value)}
             placeholder="All GPUs (existing default)" pattern="[0-9]{1,2}(,[0-9]{1,2})*" />
         </label>}
-        {runtimeChoice !== 'faster-whisper' && <p className="muted">{t('model.gpuHelp')}</p>}
+        {runtimeChoice !== 'faster-whisper' && <p className="muted">{runtimeChoice === 'diffusers' ? 'SSD-1B runs on one NVIDIA GPU. Enter a single index (defaults to GPU 0).' : t('model.gpuHelp')}</p>}
         <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
         <p className="muted">{t('model.logicalHelp')}</p>
         <label>{t('model.port')} (optional)<input aria-label={t('model.port')} type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
-        {runtimeChoice !== 'faster-whisper' && <p className="notice"><strong>{t('model.defaults')}:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>}
-        {runtimeChoice !== 'faster-whisper' && <label>{t('model.sequences')}<input aria-label={t('model.sequences')} type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>}
-        {runtimeChoice !== 'faster-whisper' && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
+        {!isMediaRuntime && <p className="notice"><strong>{t('model.defaults')}:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>}
+        {!isMediaRuntime && <label>{t('model.sequences')}<input aria-label={t('model.sequences')} type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>}
+        {!isMediaRuntime && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
         {runtimeChoice === 'airllm' && <label>{t('model.maxOutput')}
           <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
             value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
         </label>}
-        {runtimeChoice !== 'airllm' && runtimeChoice !== 'faster-whisper' && <p className="muted">{t('model.perRequestOutput')}</p>}
+        {runtimeChoice !== 'airllm' && !isMediaRuntime && <p className="muted">{t('model.perRequestOutput')}</p>}
         {runtimeChoice === 'vllm' && <>
           <label>KV cache precision<select aria-label="Runtime KV cache precision" value={kvCacheDtype} onChange={event => setKvCacheDtype(event.target.value as 'auto' | 'fp8')}><option value="auto">Auto (baseline)</option><option value="fp8">FP8 (requires runtime/model support)</option></select></label>
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
-        {runtimeChoice !== 'faster-whisper' && <p className="muted">{t('model.profileInfo')}</p>}
+        {!isMediaRuntime && <p className="muted">{t('model.profileInfo')}</p>}
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
