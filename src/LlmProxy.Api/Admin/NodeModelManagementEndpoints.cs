@@ -385,9 +385,7 @@ public static class NodeModelManagementEndpoints
                 if (state is null)
                     return Results.Conflict(new { error = "installation_missing",
                         message = "The Agent no longer has this installation; reinstall on the selected hardware." });
-                if (!string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase) ||
-                    string.IsNullOrWhiteSpace(state.RuntimeBaseAddress) ||
-                    state.Port is not >= 1024 and <= 65535)
+                if (!IsAgentRuntimeRunnable(state))
                     return Results.Conflict(new { error = "runtime_not_running",
                         message = "The Agent reports that this runtime is not running. Start it before activating routing.",
                         agentStatus = state.Status, agentError = state.Error });
@@ -643,6 +641,11 @@ public static class NodeModelManagementEndpoints
     private static bool IsOutboundNode(InferenceNode node) =>
         Uri.TryCreate(node.ManagementBaseAddress, UriKind.Absolute, out var uri) &&
         AgentRelayHub.TryParseNode(uri, out var nodeId) && nodeId == node.Id;
+
+    public static bool IsAgentRuntimeRunnable(ManagedModelState state) =>
+        string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(state.RuntimeBaseAddress) &&
+        state.Port is >= 1024 and <= 65535;
 
     private static string? OutboundRuntimeAddress(InferenceNode node, ManagedModelState state) =>
         IsOutboundNode(node)
