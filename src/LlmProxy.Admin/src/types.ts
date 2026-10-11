@@ -671,6 +671,8 @@ export type ManagedModelState = {
   runtime?: string
   maxNumSeqs?: number | null
   maxModelLen?: number | null
+  maxOutputTokens?: number | null
+  sourceRevision?: string | null
   kvCacheDtype?: string | null
   cpuOffloadGiB?: number | null
   gpuDevices?: string | null
