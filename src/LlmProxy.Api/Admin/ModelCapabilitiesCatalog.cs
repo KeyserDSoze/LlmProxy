@@ -22,7 +22,8 @@ public static class ModelCapabilitiesCatalog
         int? ExtendedContextTokens,
         int? ServingContextTokens,
         int? MaximumOutputTokens,
-        string Notes);
+        string Notes,
+        Feature? AudioTranscription = null);
 
     public static Profile Resolve(string providerModelName, string runtime, int? maxModelLen = null, int? maxOutputTokens = null)
     {
@@ -41,6 +42,21 @@ public static class ModelCapabilitiesCatalog
             : name.Contains('/') && name.Length <= 220
                 ? "https://huggingface.co/" + name
                 : null;
+
+        if (serving == "faster-whisper")
+        {
+            var unsupported = new Feature("unsupported", "unsupported",
+                "This checkpoint and runtime handle audio input only, not Chat, vision, tools, image generation or TTS.");
+            return new Profile(name, serving, "Systran faster-whisper CTranslate2 checkpoints + local CPU adapter",
+                modelCardUrl, unsupported, unsupported, unsupported, unsupported, unsupported,
+                null, null, null, null,
+                "Speech transcription and English translation only. Audio upload limit 25 MiB. " +
+                "CPU int8 on x64/ARM64; no promised GPU speedup or Chat token context. " +
+                "Verify actual audio latency and transcript correctness before routing traffic.",
+                new Feature("supported", "supported",
+                    "OpenAI-compatible POST /v1/audio/transcriptions and /v1/audio/translations, " +
+                    "file upload with json, verbose_json, text, srt or vtt output."));
+        }
 
         // Runtime properties are adapter/API facts; model properties are separate.
         // Unknown checkpoints never inherit Qwen3 claims from similar-looking names.
