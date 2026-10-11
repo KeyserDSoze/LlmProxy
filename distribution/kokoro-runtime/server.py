@@ -48,6 +48,9 @@ async def lifespan(_app: FastAPI):
     )
     _pipeline = KPipeline(lang_code="a", repo_id=MODEL_ID, model=model, device="cpu")
     _pipeline.voices[VOICE] = torch.load(str(voice), map_location="cpu", weights_only=True)
+    probe = await asyncio.to_thread(_synthesize, "Hello from LlmProxy.", 1.0)
+    if not probe.startswith(b"RIFF") or len(probe) < 1000:
+        raise RuntimeError("Kokoro produced no valid voice samples during readiness")
     yield
     _pipeline = None
 
