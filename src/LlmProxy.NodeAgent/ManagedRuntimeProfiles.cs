@@ -87,6 +87,7 @@ public static class ManagedRuntimeProfiles
         record.TensorParallelSize == request.TensorParallelSize &&
         record.MaxNumSeqs == request.MaxNumSeqs &&
         record.MaxModelLen == request.MaxModelLen &&
+        record.MaxOutputTokens == request.MaxOutputTokens &&
         record.KvCacheDtype == request.KvCacheDtype &&
         record.CpuOffloadGiB == request.CpuOffloadGiB &&
         record.GpuDevices == request.GpuDevices &&
