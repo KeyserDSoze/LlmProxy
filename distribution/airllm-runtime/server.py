@@ -61,7 +61,7 @@ def _infer(messages, length, temperature):
         prompt = tok.apply_chat_template(turns, tokenize=False, add_generation_prompt=True)
     else:
         prompt = "\n".join(f"{m.role}: {m.content}" for m in messages) + "\nassistant:"
-    ids = tok(prompt, return_tensors="pt", truncation=True, max_length=MAX_CONTEXT)["input_ids"]
+    ids = tok(prompt, return_tensors="pt", truncation=False)["input_ids"]
     prompt_length = int(ids.shape[-1])
     if prompt_length + length > MAX_CONTEXT:
         raise ValueError("Requested prompt + output exceeds configured context budget")
