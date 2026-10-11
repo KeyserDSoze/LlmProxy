@@ -196,7 +196,7 @@ describe('admin application', () => {
 
   it('navigates to the inference node management view and tests the complete service root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Infrastructure' })); await user.click(screen.getByRole('button', { name: 'Test' }))
+    await user.click(screen.getByRole('button', { name: 'Servers & hardware' })); await user.click(screen.getByRole('button', { name: 'Test' }))
     expect(await screen.findByText('✓ Connection test: inference-01')).toBeInTheDocument()
     expect(screen.getByText(/vllm\/v1\/chat\/completions/)).toBeInTheDocument()
     expect(screen.getByText(/upstream auth configured/)).toBeInTheDocument()
@@ -204,7 +204,7 @@ describe('admin application', () => {
 
   it('shows hardware telemetry and can update the separate DCGM root', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Infrastructure' }))
+    await user.click(screen.getByRole('button', { name: 'Servers & hardware' }))
     await user.click(screen.getByRole('tab', { name: /Capacity & telemetry/ }))
     expect(await screen.findByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeInTheDocument()
     expect(screen.getByText('60.0% avg · 80.0% max')).toBeInTheDocument()
@@ -223,7 +223,7 @@ describe('admin application', () => {
 
   it('edits the physical simultaneous-request ceiling from Infrastructure', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Infrastructure' }))
+    await user.click(screen.getByRole('button', { name: 'Servers & hardware' }))
     await user.click(screen.getByRole('tab', { name: /Capacity & telemetry/ }))
     await user.click(screen.getByRole('tab', { name: /Physical capacity/ }))
     await user.click(await screen.findByRole('button', { name: 'Edit capacity' }))
@@ -250,7 +250,7 @@ describe('admin application', () => {
   })
 
   it('shows inference observability by model, node and request', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Request Metrics' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Request metrics' }))
     expect(screen.getByRole('heading', { name: 'Inference observability', exact: true })).toBeInTheDocument()
     expect(await screen.findByText('Chat Completions · SSE')).toBeInTheDocument()
     expect(screen.getByText('2 · failover')).toBeInTheDocument()
@@ -268,7 +268,7 @@ describe('admin application', () => {
     expect(screen.getByRole('heading', { name: 'System One classifier' })).toBeInTheDocument()
     expect(screen.getByLabelText('System One logical model')).toHaveValue('systemone-laya')
 
-    await user.click(screen.getByRole('button', { name: 'Request Audit' }))
+    await user.click(screen.getByRole('button', { name: 'Request audit' }))
     expect(await screen.findByRole('heading', { name: 'Request / response audit' })).toBeInTheDocument()
     expect(screen.getByText('Chat Completions')).toBeInTheDocument()
     expect(screen.getByText(/Allowed .*11 years/)).toBeInTheDocument()
@@ -276,7 +276,7 @@ describe('admin application', () => {
 
   it('manages end-user provisioning and access', async () => {
     const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01')
-    await user.click(screen.getByRole('button', { name: 'Users & Access' }))
+    await user.click(screen.getByRole('button', { name: 'Users & access' }))
     expect(await screen.findByText('Example User')).toBeInTheDocument()
     expect(screen.getByText('12', { exact: true })).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Provisioning & identity' }))
@@ -287,7 +287,7 @@ describe('admin application', () => {
   })
 
   it('shows the administrative audit trail', async () => {
-    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Administrative Audit' }))
+    const user = userEvent.setup(); render(<App />); await screen.findByText('inference-01'); await user.click(screen.getByRole('button', { name: 'Administrative audit' }))
     expect(screen.getByText('admin@agic.it')).toBeInTheDocument()
     expect(screen.getByText('routing.update')).toBeInTheDocument()
   })
