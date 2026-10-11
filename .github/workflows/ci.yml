@@ -28,6 +28,7 @@ jobs:
           set -euo pipefail
           bash -n distribution/connect-node.sh
           bash -n distribution/install-node-agent.sh
+          bash tests/node-agent-recovery-env.sh
           bash -n distribution/update-node-agent.sh
           python3 -m py_compile distribution/airllm-runtime/server.py
           test -s distribution/airllm-runtime/Dockerfile
