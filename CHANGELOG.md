@@ -1,3 +1,12 @@
+## Unreleased — Editable runtime limits and public Hugging Face model discovery (2026-10-11)
+
+- AirLLM allows explicitly configured `maxOutputTokens` (1–4096; default 256) and `maxModelLen` up to the documented Qwen3 native context of 32,768, subject to hardware and performance acceptance. Generation now rejects prompt + output requests that exceed its configured context instead of silently truncating the prompt. Larger limits increase latency and memory demand.
+- Installation wizard visibly shows defaults and permits changing context, sequence queue size and AirLLM output cap **before** downloading. Installed models expose a stopped-only **Edit limits** operation that keeps cached weights and model identity; next Start applies settings. vLLM/SGLang/llama.cpp output remains caller-controlled `max_tokens` within their context and is not presented as a fixed installed cap.
+- Add explicit **Uninstall** confirmation; removes the deployment and runtime container, while safely retaining shared Hugging Face cache to avoid deleting weights used by other models.
+- Search the public Hugging Face Hub by trending, recently updated and downloads using a bounded, cached read-only service. Discovered models are presented as **unverified candidates**, requiring manual custom installation review/confirmation. Display source license when available, repository SHA, popularity, last modification and a link to the official model card.
+- New installations record the *downloaded/cached revision SHA* (when the Agent prefetches weights), and Admin can compare it with the latest Hugging Face revision without upgrading automatically. Legacy/unknown revisions remain untracked, never reported as outdated by guesswork.
+- AirLLM serving image now uses adapter image revision 0.2, rebuilding the adapter on the next Start when necessary while preserving downloaded model files.
+
 ## Unreleased — Model capability discovery based on model and runtime (2026-10-11)
 
 - New automatically populated **Capabilities** views in Deploy models: open the catalog, inspect an already installed model or expand the install dialog to compare checkpoint declarations against actual serving adapter support (Chat, structured tool calling, SSE, vision, thinking).

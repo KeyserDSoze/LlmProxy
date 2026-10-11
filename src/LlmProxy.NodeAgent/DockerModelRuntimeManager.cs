@@ -74,6 +74,7 @@ public sealed class DockerModelRuntimeManager(
                 Runtime = request.Runtime,
                 MaxNumSeqs = request.MaxNumSeqs,
                 MaxModelLen = request.MaxModelLen,
+                MaxOutputTokens = request.MaxOutputTokens,
                 KvCacheDtype = request.KvCacheDtype,
                 CpuOffloadGiB = request.CpuOffloadGiB,
                 GpuDevices = request.GpuDevices,
@@ -88,22 +89,7 @@ public sealed class DockerModelRuntimeManager(
             {
                 report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
                 if (record.Runtime == "airllm")
-                {
-                    var buildContext = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
-                    var dockerfile = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture
-                        == System.Runtime.InteropServices.Architecture.Arm64
-                        ? "Dockerfile.arm64" : "Dockerfile";
-                    var selectedDockerfile = Path.Combine(buildContext, dockerfile);
-                    if (!File.Exists(selectedDockerfile))
-                        throw new InvalidOperationException("AirLLM " + dockerfile +
-                            " is missing from the installed Node Agent release.");
-                    report?.Invoke(new TransferProgress("container-image", null,
-                        "Building AirLLM experimental image for " +
-                        System.Runtime.InteropServices.RuntimeInformation.OSArchitecture, null, null));
-                    await PullCommandAsync(["build", "--pull", "--file", selectedDockerfile, "-t",
-                        ManagedRuntimeProfiles.Image(record, options), buildContext], cancellationToken,
-                        line => ParseTransferLine(line, "container-image", report));
-                }
+                    await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
                 if (options.PrefetchModels && record.Runtime != "llama.cpp")
                 {
@@ -112,16 +98,20 @@ public sealed class DockerModelRuntimeManager(
 import json
 from huggingface_hub import HfApi, hf_hub_download
 repo = MODEL_ID
-siblings = HfApi().model_info(repo, files_metadata=True).siblings
+info = HfApi().model_info(repo, files_metadata=True)
+revision = info.sha
+print('LLMPROXY_SOURCE_SHA:' + revision, flush=True)
+siblings = info.siblings
 files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
 total = sum(s.size or 0 for s in files)
 known = bool(files) and all(s.size is not None for s in files)
 done = 0
 for index, entry in enumerate(files):
-    hf_hub_download(repo_id=repo, filename=entry.rfilename, cache_dir='/root/.cache/huggingface/hub')
+    hf_hub_download(repo_id=repo, filename=entry.rfilename, revision=revision, cache_dir='/root/.cache/huggingface/hub')
     done += entry.size or 0
     print('LLMPROXY_PROGRESS:' + json.dumps({'percent': round(100*done/total, 2) if known and total else round(100*(index+1)/len(files), 2), 'completedBytes': done if known else None, 'totalBytes': total if known else None, 'label': (entry.rfilename[:100] + (' (files)' if not known else ''))}), flush=True)
 """.Replace("MODEL_ID", JsonSerializer.Serialize(record.ProviderModelName));
+                    string? cachedSourceRevision = null;
                     await PullCommandAsync(
                     [
                         "run", "--rm",
@@ -129,7 +119,17 @@ for index, entry in enumerate(files):
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         record.Runtime == "airllm" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
-                    ], cancellationToken, line => ParseTransferLine(line, "model-weights", report));
+                    ], cancellationToken, line =>
+                    {
+                        if (line.StartsWith("LLMPROXY_SOURCE_SHA:", StringComparison.Ordinal))
+                        {
+                            var revision = line["LLMPROXY_SOURCE_SHA:".Length..].Trim();
+                            if (Regex.IsMatch(revision, "^[a-fA-F0-9]{40}$")) cachedSourceRevision = revision.ToLowerInvariant();
+                        }
+                        ParseTransferLine(line, "model-weights", report);
+                    });
+                    if (cachedSourceRevision is not null)
+                        record = record with { SourceRevision = cachedSourceRevision };
                 }
 
                 report?.Invoke(new TransferProgress("ready", 100, "Runtime and model files prepared", null, null));
@@ -152,12 +152,34 @@ for index, entry in enumerate(files):
         }
     }
 
+    private async Task EnsureAirLlmImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        // A changed server.py must not use the previous AirLLM serving image.
+        // Image version is bumped for adapter API changes; local weights persist.
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
+        var file = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+            System.Runtime.InteropServices.Architecture.Arm64 ? "Dockerfile.arm64" : "Dockerfile";
+        if (!File.Exists(Path.Combine(directory, file)))
+            throw new InvalidOperationException("AirLLM runtime adapter " + file + " is not installed.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building updated AirLLM serving image without deleting model weights", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", Path.Combine(directory, file),
+            "-t", image, directory], token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
         try
         {
             var record = await RequireRecordAsync(installationId, cancellationToken);
+            if (record.Runtime == "airllm")
+                await EnsureAirLlmImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
@@ -177,7 +199,8 @@ for index, entry in enumerate(files):
             {
                 args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
                     "-e", "AIRLLM_MAX_QUEUED=" + (record.MaxNumSeqs ?? 1),
-                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192)]);
+                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192),
+                    "-e", "AIRLLM_MAX_OUTPUT_TOKENS=" + (record.MaxOutputTokens ?? 256)]);
             }
             args.Add("-p");
             var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
@@ -229,6 +252,36 @@ for index, entry in enumerate(files):
         {
             _operations.Release();
         }
+    }
+
+    public async Task<ManagedModelState> ConfigureAsync(string installationId,
+        ManagedProfileUpdate update, CancellationToken cancellationToken)
+    {
+        await _operations.WaitAsync(cancellationToken);
+        try
+        {
+            var record = await RequireRecordAsync(installationId, cancellationToken);
+            if (await IsRunningAsync(record, cancellationToken))
+                throw new InvalidOperationException(
+                    "Stop this installation from LLMProxy before editing runtime limits. Model files are kept.");
+            var request = new InstallRequest(record.CatalogModelId, record.ProviderModelName,
+                record.Port, record.TensorParallelSize, record.ExtraArguments,
+                record.Runtime, update.MaxNumSeqs, update.MaxModelLen,
+                record.KvCacheDtype, record.CpuOffloadGiB, null, record.GpuDevices,
+                update.MaxOutputTokens);
+            ManagedRuntimeProfiles.Validate(request);
+            var changed = record with {
+                MaxModelLen = update.MaxModelLen,
+                MaxNumSeqs = update.MaxNumSeqs,
+                MaxOutputTokens = update.MaxOutputTokens,
+                Status = "stopped",
+                RuntimeBaseAddress = null,
+                Error = null
+            };
+            await registry.UpsertAsync(changed, cancellationToken);
+            return ToState(changed, "stopped", null);
+        }
+        finally { _operations.Release(); }
     }
 
     public async Task RemoveAsync(string installationId, CancellationToken cancellationToken)
@@ -391,7 +444,7 @@ for index, entry in enumerate(files):
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
-            record.GpuDevices);
+            record.GpuDevices, record.MaxOutputTokens, record.SourceRevision);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 

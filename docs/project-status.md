@@ -1,5 +1,14 @@
 # Project status / handover snapshot
 
+## Managed runtime limits + HF Hub discovery — SOURCE / CI PENDING (2026-10-11)
+
+- User requests larger context/output limits and ability to inspect defaults, adjust configuration at installation time or after stopping an installed runtime, and explicitly uninstall. AirLLM previous server maximum generated output was hardcoded 256; new `AIRLLM_MAX_OUTPUT_TOKENS` cap allows 1–4096 with shared prompt+completion context enforcement. Qwen3 native max 32,768 without unverified YaRN tuning. vLLM/SGLang/llama.cpp already receive per-request max_tokens; no supported global max output profile override.
+- Version 0.2 AirLLM adapter image is built when required by a new/updated Agent without removing weights. Editing an installed runtime is permitted only when stopped and requests are validated at both Gateway and Agent; Agent registry persists changes across reboot. Changes take effect at next Start.
+- New read-only Hugging Face Hub discovery uses trusted HTTPS endpoint, bounded sorting/search/limit and cache; models discovered are not guaranteed to install. A custom model still requires explicit license/sizing confirmation. Prefetched checkpoint file revisions are pinned for downloads and recorded in model registry; revisions are compared only where recorded. This reports cached revision (not guaranteed to be a fully pinned running container for every engine), does not install untrusted updates, and does not delete shared cache when uninstalling.
+- Real Spark acceptance pending for >256 generated tokens and long context.
+
+# Project status / handover snapshot
+
 ## Runtime-aware model capability declarations — SOURCE / CI PENDING (2026-10-11)
 
 Qwen3-8B model card supports text Chat, tool calling and thinking, with 32K native context and up to 131K with appropriately configured YaRN. Our experimental AirLLM adapter only implements non-streaming text Chat, no structured tools, no vision and no per-request structured thinking controls; MAX_CONTEXT defaults to 8192 and Chat max_tokens is capped at 256. Admin exposes distinct model vs serving API capability reports, including source, model/serving context/output limits and safe copyable settings for third-party model configuration. Declared or potentially enabled features remain unverified until a live endpoint test proves them; the report never modifies third-party client settings or promises tool/SSE support from model weights alone. Exact known Qwen3 IDs are curated; unknown HF IDs remain unverified rather than guessed. Await backend and browser CI before release.

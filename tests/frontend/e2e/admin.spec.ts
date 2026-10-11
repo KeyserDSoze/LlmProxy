@@ -512,3 +512,79 @@ test('AirLLM installation advertises real runtime capabilities and client limits
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   await expect(page.getByText('Automatically detected capabilities & client token limits')).toBeVisible()
 })
+
+
+test('live HF discovery and saved AirLLM token limits preserve downloaded model files', async ({ page }) => {
+  await installAdminApi(page)
+  const deployments = [{
+    id: 'deployment-airllm', modelId: 'model-airllm',
+    logicalModel: 'qwen3-8b-airllm', providerModelName: 'Qwen/Qwen3-8B',
+    catalogModelId: 'qwen3-8b-airllm', managedInstallationId: 'qwen3-airllm-abcdef',
+    agentStatus: 'stopped', runtime: 'airllm', enabled: false,
+    agentState: { status: 'stopped', runtime: 'airllm', maxNumSeqs: 4, maxModelLen: 8192,
+      maxOutputTokens: 256, sourceRevision: 'aaaaabbbbbccccccdddddeeeeefffff0000011111' }
+  }]
+  const hubModels = [{
+    id: 'Qwen/Qwen3-8B', revision: 'a'.repeat(40),
+    lastModified: '2026-10-01T10:00:00Z', downloads: 2000, likes: 300,
+    gated: false, private: false, license: 'apache-2.0',
+    url: 'https://huggingface.co/Qwen/Qwen3-8B'
+  }]
+  let savedLimits: unknown = null
+  await page.route('**/api/admin/model-management/hugging-face?*', route =>
+    json(route, { source: 'Hugging Face Hub', verifiedForLocalRuntime: false,
+      discoveredAtUtc: '2026-10-11T10:00:00Z', models: hubModels }))
+  await page.route('**/api/admin/model-management/nodes/*/upstream-updates', route =>
+    json(route, [{
+      installationId: 'qwen3-airllm-abcdef', providerModelName: 'Qwen/Qwen3-8B',
+      sourceRevision: 'aaaaabbbbbccccccdddddeeeeefffff0000011111',
+      update: { updatedUpstream: true, message: 'A changed repository commit exists.' }
+    }]))
+  await page.route('**/api/admin/model-management/deployments/*/configuration', async route => {
+    savedLimits = route.request().postDataJSON()
+    await json(route, {})
+  })
+  await page.route('**/api/admin/model-management/nodes/*/overview', route =>
+    json(route, {
+      node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+      agentAvailable: true,
+      hardware: { hostname: 'spark-test', cpuLogicalCores: 20,
+        systemMemoryTotalGiB: 120, systemMemoryAvailableGiB: 50,
+        diskTotalGiB: 1600, diskAvailableGiB: 1000, gpus: [],
+        readiness: { dockerDaemonReady: true } },
+      catalog: [{
+        model: {
+          id: 'qwen3-8b-airllm', providerModelName: 'Qwen/Qwen3-8B',
+          displayName: 'Qwen3 8B AirLLM', runtime: 'airllm', contextTokens: 32768,
+          license: 'Apache-2.0', sourceUrl: 'https://huggingface.co/Qwen/Qwen3-8B',
+          parameterBillions: 8, precision: 'BF16', minimumGpuMemoryGiB: 4,
+          recommendedGpuMemoryGiB: 8, minimumGpuCount: 1,
+          minimumSystemMemoryGiB: 24, diskGiB: 54, notes: 'Experimental'
+        },
+        compatibility: { status: 'fits', summary: 'Fits', suggestedTensorParallelSize: 1 }
+      }],
+      installations: deployments
+    }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
+  await page.route('**/api/admin/model-management/capabilities?*', route => json(route, {
+    providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm', maximumOutputTokens: 1024
+  }))
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
+  await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Check Hugging Face updates' }).click()
+  await expect(page.getByText('A changed repository commit exists.')).toBeVisible()
+  await page.getByRole('button', { name: 'Edit limits' }).click()
+  const edit = page.getByRole('dialog', { name: /Edit runtime limits/ })
+  await edit.getByLabel('Edit runtime context').fill('16384')
+  await edit.getByLabel('Edit maximum output tokens').fill('1024')
+  await edit.getByLabel('Edit runtime sequences').fill('2')
+  await edit.getByRole('button', { name: 'Save limits' }).click()
+  await expect(page.getByText(/Runtime limits updated without deleting model weights/)).toBeVisible()
+  expect(savedLimits).toEqual({ maxModelLen: 16384, maxNumSeqs: 2, maxOutputTokens: 1024 })
+  await page.getByRole('button', { name: 'Install', exact: true }).click()
+  const install = page.getByRole('dialog', { name: 'Install inference profile' })
+  await expect(install.getByText(/Selected defaults:/)).toBeVisible()
+  await expect(install.getByLabel('Runtime maximum context')).toHaveValue('8192')
+  await expect(install.getByLabel('Install maximum output tokens')).toHaveValue('256')
+})

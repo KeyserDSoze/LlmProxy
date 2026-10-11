@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Configurable context/output caps, profile edits, Hub discovery and revision checks
+
+- Audit revealed AirLLM server.py max_tokens hardcoded at 256 and catalog AirLLM default context 8192; raised the curated native upper planning context to 32768 for text Qwen3. Added explicit per-install output cap 1–4096 (default remains 256) and shared prompt+completion context validation.
+- Added persistent MaxOutputTokens on Agent registry and gateway install/finalization contracts, plus stopped-only edit endpoint and button. Retain cached weights and model identity on edited profiles; restart to apply. Changed UI remove to confirmed Uninstall, leaving shared HF cache intact.
+- Added bounded HTTPS Hugging Face model discovery (trending/updated/downloads, public metadata, gated filtering) and manual review workflow. Track model cache commit hashes for fresh installs and compare with latest Hub SHA without silent upgrades.
+- Added regression coverage; real Spark follow-up testing pending.
+
+# Development log
+
 ## 2026-10-11 — Capability guidance for Qwen3-8B on AirLLM and other managed runtimes
 
 - User showed a third-party model configuration asking for Tool calling, Streaming, Vision, Thinking and max input/output limits. Qwen3-8B supports tool use and thinking as checkpoint characteristics, but AirLLM's LLMProxy adapter has neither SSE nor structured tool calling nor validated structured thinking control.

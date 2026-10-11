@@ -59,6 +59,15 @@ app.MapPost("/v1/models/{installationId}/start", async (string installationId, D
     catch (Exception exception) when (exception is InvalidOperationException or TimeoutException or OperationCanceledException)
     { return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway); }
 });
+app.MapPut("/v1/models/{installationId}/configuration", async (
+    string installationId, ManagedProfileUpdate profile,
+    DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await manager.ConfigureAsync(installationId, profile, cancellationToken)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
+});
 app.MapPost("/v1/models/{installationId}/stop", async (string installationId, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
 {
     try { return Results.Ok(await manager.StopAsync(installationId, cancellationToken)); }

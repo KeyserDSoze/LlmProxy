@@ -671,6 +671,8 @@ export type ManagedModelState = {
   runtime?: string
   maxNumSeqs?: number | null
   maxModelLen?: number | null
+  maxOutputTokens?: number | null
+  sourceRevision?: string | null
   kvCacheDtype?: string | null
   cpuOffloadGiB?: number | null
   gpuDevices?: string | null
@@ -728,6 +730,39 @@ export type ModelInstallJob = {
   createdAtUtc: string
   completedAtUtc?: string | null
 }
+export type HuggingFaceModel = {
+  id: string
+  revision?: string | null
+  lastModified?: string | null
+  downloads: number
+  likes: number
+  trendingScore?: number | null
+  pipelineTag?: string | null
+  gated: boolean
+  private: boolean
+  license?: string | null
+  url: string
+}
+export type HuggingFaceDiscoveryResponse = {
+  source: string
+  discoveredAtUtc: string
+  verifiedForLocalRuntime: boolean
+  models: HuggingFaceModel[]
+}
+export type ModelRevisionStatus = {
+  installationId: string
+  providerModelName: string
+  sourceRevision?: string | null
+  update: {
+    id: string
+    cachedRevision?: string | null
+    latestRevision?: string | null
+    updatedUpstream?: boolean | null
+    message: string
+    lastModified?: string | null
+  }
+}
+
 export type ModelManagementOverview = {
   node: {
     id: string
