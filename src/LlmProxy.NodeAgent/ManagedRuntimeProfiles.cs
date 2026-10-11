@@ -73,7 +73,7 @@ public static class ManagedRuntimeProfiles
                     "whisper-base-cpu" => request.ProviderModelName != "Systran/faster-whisper-base",
                     "whisper-small-cpu" => request.ProviderModelName != "Systran/faster-whisper-small",
                     _ => true
-                })
+                }))
                 throw new ArgumentException("Whisper runtime only allows matching curated CTranslate2 checkpoints.");
             if (request.TensorParallelSize != 1 || request.GpuDevices is not null ||
                 request.MaxNumSeqs is not null and not 1 ||
