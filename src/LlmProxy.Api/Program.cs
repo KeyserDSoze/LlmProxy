@@ -41,6 +41,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReleaseDiscoveryService>();
+builder.Services.AddSingleton<HuggingFaceDiscoveryService>();
 builder.Services.AddSingleton<AgentRelayHub>();
 builder.Services.AddTransient<AgentRelayHttpHandler>();
 builder.Services.AddSingleton<UpdateAgentClient>();
@@ -142,6 +143,12 @@ builder.Services.AddHttpClient("maintenance", client => client.Timeout = TimeSpa
 builder.Services.AddHttpClient("runtime-metrics", client => client.Timeout = TimeSpan.FromSeconds(3)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHttpClient("hardware-metrics", client => client.Timeout = TimeSpan.FromSeconds(3)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHttpClient("node-management", client => client.Timeout = TimeSpan.FromMinutes(30)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("huggingface-hub", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(12);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LlmProxy-ModelDiscovery/1.0");
+    client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
+});
 builder.Services.AddHttpClient("github-releases", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
