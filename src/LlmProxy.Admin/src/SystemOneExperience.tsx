@@ -5,8 +5,8 @@ import type { Deployment, Model, Node } from './types'
 
 /**
  * System One is a typed classifier API surface, not a supported generic
- * Hugging Face model runtime. This is deliberately a CONNECTION workflow,
- * never a fake model download/install action.
+ * Hugging Face model runtime. This page retains the connection workflow for
+ * external classifiers and links to the separately managed CPU Laya catalog.
  */
 export default function SystemOneExperience({ models, deployments, nodes, canWrite, refresh }: {
   models: Model[]
@@ -114,6 +114,12 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
           <a href="/admin/playground?tab=classifier">{t('systemOne.test')} →</a>
         </div>
       </div>
+    </section>
+
+    <section className="panel">
+      <div className="panelTitle"><div><h2>{t('systemOne.installLaya')}</h2>
+        <span>{t('systemOne.installLayaHint')}</span></div></div>
+      <a className="secondary" href="/admin/catalog?tab=deploy">{t('systemOne.installLaya')} →</a>
     </section>
 
     <section className="panel formPanel">
