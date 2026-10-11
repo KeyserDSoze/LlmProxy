@@ -27,6 +27,8 @@ alias. Curated supported parameters:
 Unsupported image edits/variations, URL output, multi-image batches and
 custom image repository scripts are explicitly *not* available.
 
+To run binary-aware acceptance after deploying a model, export the Gateway URL, API key and published logical alias, then run `bash tests/hardware/multimodal-smoke.sh images`. The same script supports `tts`, `stt` (requires a speech audio file), and `systemone` with their corresponding aliases. It verifies actual binary/image/audio formats, but not semantic quality. Never commit the API key.
+
 **Acceptance before release or production:** native amd64/GB10 ARM64 Docker
 build and pinned dependency checks; verify checkpoint snapshot and true local
 offline restart; generated PNG dimensions and decode; rejection cases; GPU OOM,
