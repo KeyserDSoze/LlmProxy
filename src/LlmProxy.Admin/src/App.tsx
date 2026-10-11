@@ -172,13 +172,13 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
           <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>{t('nav.catalog')}</NavItem>
-          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => navigate('models')}>{t('nav.models')}</NavItem>
+          <NavItem icon="models" active={view === 'models'} onClick={() => navigate('models')}>{t('nav.models')}</NavItem>
           <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOne')}</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
           <div className="navGroupLabel">{t('nav.infrastructure')}</div>
-          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>{t('nav.infrastructure')}</NavItem>
+          <NavItem icon="nodes" active={view === 'infrastructure'} onClick={() => navigate('infrastructure')}>{t('nav.infrastructure')}</NavItem>
 
           <div className="navGroupLabel">{t('nav.accessGroup')}</div>
           <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>{t('nav.credentials')}</NavItem>
@@ -682,11 +682,7 @@ const titleKeys: Record<View, TranslationKey> = {
   catalog: 'page.catalog.title',
   'system-one': 'page.systemOne.title',
   infrastructure: 'page.infrastructure.title',
-  nodes: 'page.infrastructure.title',
-  hardware: 'page.infrastructure.title',
-  'model-management': 'page.infrastructure.title',
   models: 'page.models.title',
-  deployments: 'page.models.title',
   routing: 'page.routing.title',
   credentials: 'page.credentials.title',
   users: 'page.users.title',
@@ -703,11 +699,7 @@ const descriptionKeys: Record<View, TranslationKey> = {
   catalog: 'page.catalog.desc',
   'system-one': 'page.systemOne.desc',
   infrastructure: 'page.infrastructure.desc',
-  nodes: 'page.infrastructure.desc',
-  hardware: 'page.infrastructure.desc',
-  'model-management': 'page.infrastructure.desc',
   models: 'page.models.desc',
-  deployments: 'page.models.desc',
   routing: 'page.routing.desc',
   credentials: 'page.credentials.desc',
   users: 'page.users.desc',
