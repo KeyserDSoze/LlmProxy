@@ -76,7 +76,7 @@ export function Modal({ open, title, description, onClose, children, className }
     <section ref={panel} tabIndex={-1} className={panelClassName} role="dialog" aria-modal="true" aria-label={title}>
       <div className="modalHeader">
         <div><h2>{title}</h2>{description && <p>{description}</p>}</div>
-        <button type="button" className="iconButton" aria-label={t('nav.close') + ' · ' + title} onClick={onClose}>×</button>
+        <button type="button" className="iconButton" aria-label={t('modal.close') + ' ' + title} onClick={onClose}>×</button>
       </div>
       <div className="modalBody">{children}</div>
     </section>
