@@ -1,5 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { api } from './api'
+import { useT } from './uiPreferences'
 import type { Deployment, Model, Node } from './types'
 
 /**
@@ -14,6 +15,7 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
   canWrite: boolean
   refresh: () => Promise<void>
 }) {
+  const t = useT()
   const classifiers = useMemo(() => models.filter(model => model.surface === 'SystemOne'), [models])
   const activeNodes = useMemo(() => nodes.filter(node => node.enabled), [nodes])
   const nodeName = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
@@ -41,10 +43,10 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
       const url = new URL(runtimeRoot.trim())
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
           url.search || url.hash)
-        urlError = 'Use an HTTP(S) service root without username, password, query or fragment.'
+        urlError = t('systemOne.urlInvalid')
       if (url.pathname.endsWith('/v1/systemone'))
-        urlError = 'Provide the service root only; LLMProxy adds /v1/systemone automatically.'
-    } catch { urlError = 'Enter a complete HTTP(S) service root URL.' }
+        urlError = t('systemOne.urlPath')
+    } catch { urlError = t('systemOne.urlInvalid') }
   }
   const canSubmit = canWrite && !busy && !!nodeId && !!runtimeRoot.trim() &&
     !urlError && !duplicate && !alreadyOnNode &&
@@ -72,13 +74,12 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
         weight: 1, maxConcurrency
       })
       setPendingModel(null)
-      setSuccess(`System One route for "${model.publicName}" created on "${nodeName.get(nodeId) ?? nodeId}". Check actual classifier responses in the Playground before production use.`)
+      setSuccess(`${t('systemOne.successPrefix')} "${model.publicName}" — ${nodeName.get(nodeId) ?? nodeId}. ${t('systemOne.successSuffix')}`)
       setMode('existing'); setExistingId(model.id); setRuntimeRoot('')
       await refresh()
     } catch (reason) {
       setError((reason instanceof Error ? reason.message : String(reason)) +
-        (model ? ' The logical model exists, but the deployment is not confirmed. Retry the connection, or select this existing classifier after refreshing.' :
-          ' No deployment was created. Please correct the model or server configuration.'))
+        (model ? ' ' + t('systemOne.unknown') : ' ' + t('systemOne.createFailed')))
     } finally { setBusy(false) }
   }
 
@@ -88,107 +89,104 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
   return <div className="stack compactPage">
     <section className="panel pageToolbar">
       <div>
-        <h2>System One classifiers</h2>
-        <p>Connect a classifier service and publish it through the typed <code>POST /v1/systemone</code> API. These workloads use the same nodes, routing policies and capacity admission as Chat models.</p>
+        <h2>{t('systemOne.title')}</h2>
+        <p>{t('systemOne.intro')}</p>
       </div>
       <div className="capacityLegend">
-        <strong>{classifiers.length} classifier{classifiers.length === 1 ? '' : 's'}</strong>
-        <span>{activeRoutes.length} routes enabled</span>
+        <strong>{classifiers.length} {t('systemOne.modelName')}</strong>
+        <span>{activeRoutes.length} {t('systemOne.routeEnabled')}</span>
       </div>
     </section>
 
     <section className="panel">
-      <div className="panelTitle"><div><h2>What can LLMProxy do here?</h2>
-        <span>Choose the right operation before touching a server.</span></div></div>
+      <div className="panelTitle"><div><h2>{t('systemOne.what.title')}</h2><span>{t('systemOne.what.desc')}</span></div></div>
       <div className="uxPathGrid">
-        <div className="uxTask"><strong>1 · Have a System One service running</strong>
-          <p>This API surface is a typed classifier protocol, not an inference engine. The current Node Agent does not install or start a System One runtime or download Laya automatically.</p>
-          <span className="muted">The service must implement <code>POST /v1/systemone</code>.</span>
+        <div className="uxTask"><strong>1 · {t('systemOne.step1.title')}</strong>
+          <p>{t('systemOne.step1.desc')}</p>
+          <span className="muted">POST /v1/systemone</span>
         </div>
-        <div className="uxTask"><strong>2 · Connect it to hardware</strong>
-          <p>Choose the registered node that hosts/reaches the classifier and provide its runtime service root. LLMProxy will route only to this deployment.</p>
-          <a href="/admin/infrastructure?section=fleet">Set up hardware / agent →</a>
+        <div className="uxTask"><strong>2 · {t('systemOne.step2.title')}</strong>
+          <p>{t('systemOne.step2.desc')}</p>
+          <a href="/admin/infrastructure?section=fleet">{t('systemOne.serverLink')} →</a>
         </div>
-        <div className="uxTask"><strong>3 · Validate and enable traffic</strong>
-          <p>Publish the logical alias, then test the actual classifier response. Configure routing, authentication and capacity before giving clients the API endpoint.</p>
-          <a href="/admin/playground?tab=classifier">Open classifier Playground →</a>
+        <div className="uxTask"><strong>3 · {t('systemOne.step3.title')}</strong>
+          <p>{t('systemOne.step3.desc')}</p>
+          <a href="/admin/playground?tab=classifier">{t('systemOne.test')} →</a>
         </div>
       </div>
     </section>
 
     <section className="panel formPanel">
-      <div className="panelTitle"><div><h2>Connect a System One runtime</h2>
-        <span>Guided setup · publishes a logical model and creates a physical routing deployment.</span></div></div>
+      <div className="panelTitle"><div><h2>{t('systemOne.setup.title')}</h2><span>{t('systemOne.setup.desc')}</span></div></div>
       {success && <div className="notice" role="status">{success}</div>}
       {error && <div className="error" role="alert">{error}</div>}
-      {activeNodes.length === 0 && <div className="notice">No enabled nodes. <a href="/admin/infrastructure?section=fleet">Register/enable hardware first →</a></div>}
+      {activeNodes.length === 0 && <div className="notice">{t('systemOne.unavailable')} <a href="/admin/infrastructure?section=fleet">{t('systemOne.serverLink')} →</a></div>}
       <form onSubmit={event => void connect(event)}>
-        <div className="uxStep"><strong>Step 1 — Classifier identity</strong>
-          <label>Model registration
-            <select aria-label="System One model registration" value={mode} onChange={event => {
+        <div className="uxStep"><strong>{t('systemOne.step.identity')}</strong>
+          <label>{t('systemOne.mode')}
+            <select aria-label={t('systemOne.mode')} value={mode} onChange={event => {
               setMode(event.target.value as 'create' | 'existing'); setPendingModel(null); setError(null)
             }}>
-              <option value="create">Publish a new System One alias</option>
-              <option value="existing" disabled={classifiers.length === 0}>Add a deployment to an existing classifier</option>
+              <option value="create">{t('systemOne.mode.new')}</option>
+              <option value="existing" disabled={classifiers.length === 0}>{t('systemOne.mode.existing')}</option>
             </select>
           </label>
           {mode === 'create' ? <>
-            <label>Logical model name (seen by API clients)
-              <input aria-label="System One logical name" value={logicalName}
+            <label>{t('systemOne.logical')}
+              <input aria-label={t('systemOne.logical')} value={logicalName}
                 onChange={event => setLogicalName(event.target.value)} required
                 disabled={!!pendingModel} placeholder="systemone-laya" />
             </label>
-            <label>Upstream model identity (metadata only)
-              <input aria-label="System One provider name" value={providerName}
+            <label>{t('systemOne.provider')}
+              <input aria-label={t('systemOne.provider')} value={providerName}
                 onChange={event => setProviderName(event.target.value)} required
                 disabled={!!pendingModel} placeholder="convaiinnovations/laya" />
             </label>
-            {duplicate && <div className="notice">This alias already exists. Select "Add a deployment to an existing classifier" instead.</div>}
-            {pendingModel && <div className="notice">Alias published. Connection is pending; you can retry without creating another model.</div>}
-          </> : <label>Existing System One model
-            <select aria-label="Existing System One model" value={existingId}
+            {duplicate && <div className="notice">{t('systemOne.aliasUsed')}</div>}
+            {pendingModel && <div className="notice">{t('systemOne.pending')}</div>}
+          </> : <label>{t('systemOne.existing')}
+            <select aria-label={t('systemOne.existing')} value={existingId}
               onChange={event => setExistingId(event.target.value)} required>
-              <option value="">Select classifier</option>
+              <option value="">{t('systemOne.select')}</option>
               {classifiers.map(model => <option value={model.id} key={model.id}>{model.publicName}</option>)}
             </select>
           </label>}
         </div>
 
-        <div className="uxStep"><strong>Step 2 — Runtime location</strong>
-          <label>Hardware node
-            <select aria-label="System One target node" value={nodeId} onChange={event => setNodeId(event.target.value)} required>
-              <option value="">Choose an enabled node</option>
+        <div className="uxStep"><strong>{t('systemOne.step.location')}</strong>
+          <label>{t('systemOne.hardware')}
+            <select aria-label={t('systemOne.hardware')} value={nodeId} onChange={event => setNodeId(event.target.value)} required>
+              <option value="">{t('systemOne.selectServer')}</option>
               {activeNodes.map(node => <option key={node.id} value={node.id}>{node.name} ({node.status})</option>)}
             </select>
           </label>
-          <label>Classifier service root
-            <input aria-label="System One service root" value={runtimeRoot}
+          <label>{t('systemOne.root')}
+            <input aria-label={t('systemOne.root')} value={runtimeRoot}
               onChange={event => setRuntimeRoot(event.target.value)} type="url"
               placeholder="http://10.0.0.21:8002" required />
           </label>
           {urlError && <div className="error">{urlError}</div>}
-          <p className="muted">This address must be reachable by LLMProxy (or through a supported node relay). Do not append <code>/v1/systemone</code>; the gateway adds that path. Creating a deployment does not install software on the node.</p>
-          {alreadyOnNode && <div className="notice">This logical model already has a manual deployment on that node. Open Model routes to manage it.</div>}
-          <label>Maximum concurrent classifier requests
-            <input aria-label="System One concurrency" type="number" min="1" max="10000"
+          <p className="muted">{t('systemOne.rootHelp')}</p>
+          {alreadyOnNode && <div className="notice">{t('systemOne.already')}</div>}
+          <label>{t('systemOne.limit')}
+            <input aria-label={t('systemOne.limit')} type="number" min="1" max="10000"
               value={maxConcurrency} onChange={event => setMaxConcurrency(Number(event.target.value))} required />
           </label>
         </div>
-        <div className="uxStep"><strong>Step 3 — Publish, then test</strong>
-          <p>No files will be downloaded. After creation, routing eligibility still depends on the node and runtime health. Test a real classifier request before treating this as production-ready.</p>
+        <div className="uxStep"><strong>{t('systemOne.step.publish')}</strong>
+          <p>{t('systemOne.publishInfo')}</p>
           <div className="actions">
-            <button className="primary" disabled={!canSubmit}>{busy ? 'Connecting…' : 'Connect and publish classifier'}</button>
-            <a href="/admin/models">Inspect all model routes →</a>
+            <button className="primary" disabled={!canSubmit}>{busy ? t('systemOne.submit.busy') : t('systemOne.submit')}</button>
+            <a href="/admin/models">{t('systemOne.modelRoutes')} →</a>
           </div>
         </div>
       </form>
     </section>
 
     <section className="panel">
-      <div className="panelTitle"><div><h2>Registered System One models</h2>
-        <span>The list is filtered to classifier models. Chat models remain in the Models workspace.</span></div></div>
+      <div className="panelTitle"><div><h2>{t('systemOne.registered')}</h2><span>{t('systemOne.results')}</span></div></div>
       <div className="tableScroll"><table><thead><tr>
-        <th>Logical model</th><th>Provider identity</th><th>Deployed on</th><th>Routing enabled</th><th>Next step</th>
+        <th>{t('systemOne.modelName')}</th><th>{t('systemOne.endpoint')}</th><th>{t('systemOne.nodeName')}</th><th>{t('systemOne.routeEnabled')}</th><th>{t('systemOne.next')}</th>
       </tr></thead><tbody>
         {classifiers.map(model => {
           const routes = deployments.filter(dep => dep.modelId === model.id)
@@ -197,15 +195,15 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
             <td className="mono">{model.providerModelName}</td>
             <td>{routes.map(route => <div key={route.id}>
               <strong>{nodeName.get(route.nodeId) ?? route.nodeId}</strong>
-              <div className="muted mono">{route.runtimeBaseAddress ?? nodes.find(node => node.id === route.nodeId)?.baseAddress ?? 'No service root'}</div>
+              <div className="muted mono">{route.runtimeBaseAddress ?? nodes.find(node => node.id === route.nodeId)?.baseAddress ?? t('systemOne.none')}</div>
             </div>)}
-            {routes.length === 0 && <span className="muted">No runtime connected</span>}</td>
+            {routes.length === 0 && <span className="muted">{t('systemOne.none')}</span>}</td>
             <td>{routes.filter(dep => dep.enabled).length} / {routes.length}</td>
-            <td><a href="/admin/models?tab=models">Manage routes →</a></td>
+            <td><a href="/admin/models?tab=models">{t('systemOne.modelRoutes')} →</a></td>
           </tr>
         })}
         {classifiers.length === 0 && <tr><td colSpan={5} className="muted">
-          No System One models registered. Use the guided connection above after preparing a compatible classifier runtime.
+          {t('systemOne.empty')}
         </td></tr>}
       </tbody></table></div>
     </section>
