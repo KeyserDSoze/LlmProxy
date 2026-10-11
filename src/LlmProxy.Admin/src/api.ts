@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus } from './types'
 import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
@@ -204,13 +204,17 @@ export const api = {
     request<ManagedBenchmarkJob>(`/api/admin/benchmarks/deployments/${deploymentId}`, { method: 'POST', body: JSON.stringify(body) }),
   prepareNodeHost: (nodeId: string) =>
     request<{ success: boolean; code: string }>(`/api/admin/model-management/nodes/${nodeId}/prepare`, { method: 'POST' }),
+  discoverHuggingFaceModels: (search: string, sort: 'trending' | 'downloads' | 'recent', limit = 20) =>
+    request<HuggingFaceDiscoveryResponse>(`/api/admin/model-management/hugging-face?search=${encodeURIComponent(search)}&sort=${sort}&limit=${limit}`),
+  checkManagedModelUpdates: (nodeId: string) =>
+    request<ModelRevisionStatus[]>(`/api/admin/model-management/nodes/${nodeId}/upstream-updates`),
   modelManagementOverview: (nodeId: string) =>
     request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
-  inspectModelCapabilities: (providerModelName: string, runtime: string, maxModelLen?: number | null) =>
-    request<ModelCapabilityProfile>(`/api/admin/model-management/capabilities?providerModelName=${encodeURIComponent(providerModelName)}&runtime=${encodeURIComponent(runtime)}${maxModelLen ? '&maxModelLen=' + maxModelLen : ''}`),
+  inspectModelCapabilities: (providerModelName: string, runtime: string, maxModelLen?: number | null, maxOutputTokens?: number | null) =>
+    request<ModelCapabilityProfile>(`/api/admin/model-management/capabilities?providerModelName=${encodeURIComponent(providerModelName)}&runtime=${encodeURIComponent(runtime)}${maxModelLen ? '&maxModelLen=' + maxModelLen : ''}${maxOutputTokens ? '&maxOutputTokens=' + maxOutputTokens : ''}`),
   configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
     request<{ id: string; managementBaseAddress?: string | null; hasManagementCredential: boolean }>(`/api/admin/model-management/nodes/${nodeId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
-  installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null }) =>
+  installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null }) =>
     request<unknown>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install`, { method: 'POST', body: JSON.stringify(body) }),
   installJobs: (nodeId: string) => request<ModelInstallJob[]>(`/api/admin/model-management/nodes/${nodeId}/install-jobs`),
   queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null }) =>
@@ -219,6 +223,8 @@ export const api = {
   cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
+  configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null }) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
   activateManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/activate`, { method: 'POST' }),
   stopManagedDeployment: (deploymentId: string) =>
