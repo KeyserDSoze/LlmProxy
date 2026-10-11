@@ -158,7 +158,7 @@ export type Model = {
   providerModelName: string
   supportsStreaming: boolean
   supportsTools: boolean
-  surface: 'OpenAi' | 'SystemOne'
+  surface: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
   enabled: boolean
 }
 
