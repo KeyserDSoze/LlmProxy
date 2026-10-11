@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 
 export type AdminView =
-  | 'dashboard' | 'infrastructure' | 'nodes' | 'hardware' | 'model-management'
-  | 'models' | 'deployments' | 'catalog' | 'system-one' | 'routing' | 'credentials' | 'users'
+  | 'dashboard' | 'infrastructure'
+  | 'models' | 'catalog' | 'system-one' | 'routing' | 'credentials' | 'users'
   | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
 
 const knownViews: readonly AdminView[] = [
-  'dashboard', 'infrastructure', 'nodes', 'hardware', 'model-management',
-  'models', 'deployments', 'catalog', 'system-one', 'routing', 'credentials', 'users',
+  'dashboard', 'infrastructure',
+  'models', 'catalog', 'system-one', 'routing', 'credentials', 'users',
   'metrics', 'playground', 'logs', 'audit', 'help', 'governance', 'releases'
 ]
 
@@ -16,16 +16,11 @@ export function viewFromAdminPath(pathname: string): AdminView {
   const match = /^\/admin(?:\/([^/]+))?$/i.exec(path)
   if (!match) return 'dashboard'
   const segment = match[1] || 'dashboard'
-  if (segment === 'model-management' || segment === 'hardware' || segment === 'nodes') return 'infrastructure'
-  if (segment === 'deployments') return 'models'
   return knownViews.includes(segment as AdminView) ? segment as AdminView : 'dashboard'
 }
 
 export function urlForAdminView(view: AdminView): string {
-  const normalized = view === 'nodes' || view === 'hardware' || view === 'model-management'
-    ? 'infrastructure'
-    : view === 'deployments' ? 'models' : view
-  return '/admin/' + normalized
+  return '/admin/' + view
 }
 
 // A query parameter records the tab of the currently displayed workspace.

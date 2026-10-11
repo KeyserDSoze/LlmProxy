@@ -239,14 +239,14 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
   await expect(page.getByText('inference-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
-  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await page.getByRole('button', { name: 'Add hardware node' }).click()
   await page.getByLabel('Name').fill('inference-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
   const row = page.getByRole('row').filter({ hasText: 'inference-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: inference-02')).toBeVisible()
 })
 
 test('infrastructure exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await expect(page.getByRole('heading', { name: 'Servers, agents & hardware', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /Capacity & telemetry/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
@@ -278,7 +278,7 @@ test('infrastructure exposes telemetry, physical capacity and explicit capacity 
 })
 
 test('inference observability exposes latency, token and failover telemetry', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Request Metrics' }).click()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Request metrics' }).click()
   await expect(page.getByRole('heading', { name: 'Inference observability', exact: true })).toBeVisible(); await expect(page.getByText('Chat Completions · SSE')).toBeVisible(); await expect(page.getByText('2 · failover')).toBeVisible()
 })
 
@@ -302,7 +302,7 @@ test('admin playground tests models and System One and full-body logs are inspec
   await page.getByRole('button', { name: 'Run classifier test' }).click()
   await expect(page.getByRole('strong').filter({ hasText: /^systemone-laya$/ })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Request Audit' }).click()
+  await page.getByRole('button', { name: 'Request audit' }).click()
   await expect(page.getByRole('heading', { name: 'Request / response audit' })).toBeVisible()
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
@@ -313,7 +313,7 @@ test('admin playground tests models and System One and full-body logs are inspec
 
 test('admin controls automatic versus manual end-user provisioning and can disable users', async ({ page }) => {
   await installAdminApi(page); await page.goto('/')
-  await page.getByRole('button', { name: 'Users & Access' }).click()
+  await page.getByRole('button', { name: 'Users & access' }).click()
   await expect(page.getByText('Example User')).toBeVisible()
   await page.getByRole('tab', { name: 'Provisioning & identity' }).click()
   await expect(page.getByRole('heading', { name: 'User provisioning policy' })).toBeVisible()
@@ -327,7 +327,7 @@ test('admin controls automatic versus manual end-user provisioning and can disab
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true, level: 1 })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true, level: 1 })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
@@ -341,7 +341,7 @@ test('authorization failures do not invite an authentication loop', async ({ pag
 test('admin navigation preserves top-level pages and infrastructure tabs across refresh and history', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
   await page.getByRole('tab', { name: /Hardware inventory & runtimes/ }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
@@ -593,7 +593,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
 test('task-based navigation exposes direct model installation and System One deep links', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/admin/dashboard')
-  await expect(page.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What would you like to do?' })).toBeVisible()
   await expect(page.getByText('Models & inference', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Browse models' }).click()
@@ -608,7 +608,7 @@ test('task-based navigation exposes direct model installation and System One dee
   await page.getByRole('button', { name: 'System One classifiers' }).click()
   await expect(page).toHaveURL(/\/admin\/system-one$/)
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
-  await expect(page.getByText(/current Node Agent does not install or start a System One runtime/)).toBeVisible()
+  await expect(page.getByText(/Node Agent does not yet install Laya automatically/)).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await page.goBack()
@@ -639,7 +639,7 @@ test('guided System One connection creates only a classifier alias and a specifi
   await page.getByLabel('System One service root').fill('http://10.0.0.21:8500')
   await page.getByLabel('System One concurrency').fill('2')
   await page.getByRole('button', { name: 'Connect and publish classifier' }).click()
-  await expect(page.getByRole('status')).toContainText('route for "laya-on-spark" created')
+  await expect(page.getByRole('status')).toContainText('route registered: "laya-on-spark"')
   expect(modelsCreated).toEqual([{
     publicName: 'laya-on-spark', providerModelName: 'convaiinnovations/laya',
     surface: 'SystemOne', supportsStreaming: false, supportsTools: false
@@ -662,4 +662,86 @@ test('System One does not offer unverified deploy-to-all routing or missing serv
   await expect(form.getByRole('button', { name: 'Create deployment' })).toBeDisabled()
   await form.getByLabel('Runtime service root').fill('http://10.0.0.21:8500')
   await expect(form.getByRole('button', { name: 'Create deployment' })).toBeEnabled()
+})
+
+
+test('responsive Admin navigation fits a phone, remains keyboard accessible and preserves the route', async ({ page }) => {
+  await installAdminApi(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'true')
+  const navigation = page.getByRole('navigation', { name: 'Admin navigation' })
+  await navigation.getByRole('button', { name: 'System One classifiers' }).click()
+  await expect(page).toHaveURL(/\/admin\/system-one$/)
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'false')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test('Italian and light appearance survive reload and update browser language, with dark/theme switching', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/dashboard')
+  await page.getByRole('combobox', { name: 'Theme' }).last().selectOption('light')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+  await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
+  await expect(page.getByRole('heading', { name: 'Panoramica gateway' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Cosa vuoi fare?' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
+  await page.getByRole('button', { name: 'Classificatori System One' }).click()
+  await expect(page.getByRole('heading', { name: 'Collega un runtime System One' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Collega un runtime System One' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+  await page.getByRole('combobox', { name: 'Tema' }).last().selectOption('dark')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  await page.getByRole('combobox', { name: 'Lingua' }).last().selectOption('en')
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+})
+
+test('compact model-management and Admin tables do not force whole-page horizontal scrolling', async ({ page }) => {
+  await installAdminApi(page)
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/admin/models')
+  await expect(page.getByRole('heading', { name: 'Models & deployments', exact: true, level: 1 })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.goto('/admin/infrastructure?section=capacity')
+  await expect(page.getByRole('tab', { name: /Capacity & telemetry/ })).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+
+test('Italian model discovery, deployment lifecycle and fleet pages use one persisted locale', async ({ page }) => {
+  await installAdminApi(page)
+  await page.route('**/api/admin/model-management/hugging-face?*', route => json(route, {
+    source: 'Hugging Face Hub', discoveredAtUtc: '2026-10-11T18:00:00Z',
+    verifiedForLocalRuntime: false, models: []
+  }))
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
+  await expect(page.getByRole('heading', { name: 'Catalogo modelli installabili' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Download e installazioni' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Modelli installati su questo hardware' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
+  await page.goto('/admin/infrastructure?section=fleet')
+  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Server e accesso/ })).toHaveAttribute('aria-selected', 'true')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Persone e accessi' })).toHaveCount(0)
+  await expect(page.getByText('Concorrenza fisica')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
 })

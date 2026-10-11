@@ -1,12 +1,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import { useRouteHardware, useRouteTab } from './adminNavigation'
+import { useT } from './uiPreferences'
 import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel from './ModelCapabilityPanel'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void }) {
+  const t = useT()
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
   const [agentOpen, setAgentOpen] = useState(false)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
@@ -270,12 +272,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }
 
   return <div className="stack compactPage modelHardware">
-    <section className="panel pageToolbar"><div><h2>{defaultTab === 'deploy' ? 'Discover, install & manage models' : embedded ? 'Hardware inventory & runtimes' : 'Model & hardware control plane'}</h2><p className="muted">{defaultTab === 'deploy' ? 'Choose a physical server, compare fit and model capabilities, install an OpenAI-compatible inference runtime, then start and enable its deployment. System One classifiers use a different connection workflow.' : 'Select a physical server to inspect its agent, accelerators, RAM, disk and installed inference runtimes.'}</p>{defaultTab === 'deploy' && <p><a href="/admin/system-one">Looking for System One / Laya? Connect a classifier service →</a></p>}</div><div className="actions"><select aria-label="Managed hardware node" value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">Select hardware</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? 'Reading…' : 'Refresh'}</button><span className="muted">Agent installer: Infrastructure → Fleet & access → Pair Linux agent</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>Configure agent</button></div></section>
-    {!nodeId && nodes.length > 0 && <div className="notice" role="alert">The hardware selected in this link no longer exists in the current fleet. Choose a server from the hardware dropdown to continue.</div>}
+    <section className="panel pageToolbar"><div><h2>{defaultTab === 'deploy' ? t('model.header') : embedded ? t('model.inventoryHeader') : t('model.managementHeader')}</h2><p className="muted">{defaultTab === 'deploy' ? t('model.deployGuide') : t('model.inventoryGuide')}</p>{defaultTab === 'deploy' && <p><a href="/admin/system-one">{t('model.systemOneLink')} →</a></p>}</div><div className="actions"><select aria-label={t('model.hardwareSelect')} value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">{t('model.selectHardware')}</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? t('model.reading') : t('model.refresh')}</button><span className="muted">{t('model.pairingHint')}</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>{t('model.configureAgent')}</button></div></section>
+    {!nodeId && nodes.length > 0 && <div className="notice" role="alert">{t('model.invalidNode')}</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
-    <Tabs value={tab} onChange={setTab} items={[{ value: 'inventory', label: 'Hardware inventory', count: gpus.length }, { value: 'deploy', label: 'Deploy models', count: overview?.installations.length ?? 0 }]} />
+    <Tabs value={tab} onChange={setTab} items={[{ value: 'inventory', label: t('model.inventoryTab'), count: gpus.length }, { value: 'deploy', label: t('model.deployTab'), count: overview?.installations.length ?? 0 }]} />
 
-    {tab === 'inventory' && <section className="panel"><div className="panelTitle"><h2>Hardware inventory</h2><span>{overview?.agentAvailable ? 'Live from management agent' : overview?.inventoryStale ? 'Last reported inventory (offline)' : 'Agent unavailable'}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads' + (hardware.cpuUtilizationPercent == null ? '' : ' · ' + hardware.cpuUtilizationPercent.toFixed(0) + '% busy')} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label={unifiedMemory ? "Shared CPU/GPU RAM" : "GPU memory"} value={unifiedMemory ? formatGiB(hardware.systemMemoryAvailableGiB) + " available total" : formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div>{unifiedMemory && <p className="notice">NVIDIA unified memory: CPU and GPU share the same system RAM. Available RAM is not additional dedicated GPU VRAM; model fit reserves host memory and combines CPU/GPU estimates.</p>}<div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''} · {gpus.length} GPU(s) detected</span></div>
+    {tab === 'inventory' && <section className="panel"><div className="panelTitle"><h2>{t('model.inventoryTab')}</h2><span>{overview?.agentAvailable ? t('model.agentLive') : overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads' + (hardware.cpuUtilizationPercent == null ? '' : ' · ' + hardware.cpuUtilizationPercent.toFixed(0) + '% busy')} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label={unifiedMemory ? "Shared CPU/GPU RAM" : "GPU memory"} value={unifiedMemory ? formatGiB(hardware.systemMemoryAvailableGiB) + " available total" : formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div>{unifiedMemory && <p className="notice">NVIDIA unified memory: CPU and GPU share the same system RAM. Available RAM is not additional dedicated GPU VRAM; model fit reserves host memory and combines CPU/GPU estimates.</p>}<div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''} · {gpus.length} GPU(s) detected</span></div>
       {hardware.readiness && <section className="stack">
         <div className="actions"><strong>Host prerequisites</strong><button className="secondary"
           disabled={!canWrite || !overview?.agentAvailable || busy !== null}
@@ -288,15 +290,15 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
 
     {tab === 'deploy' && <>
       {overview && !overview.agentAvailable && <section className="notice" role="alert">
-        <strong>Installations unavailable: Node Agent is not connected</strong>
-        <p>The compatibility labels below are planning estimates based on the last reported hardware inventory, not proof that this machine is reachable. Downloads and installation jobs require a live Agent connection and an available management tunnel.</p>
+        <strong>{t('catalog.offlineTitle')}</strong>
+        <p>{t('catalog.offlineHelp')}</p>
         {overview.agentError && <p className="muted">Connection detail: {overview.agentError}</p>}
-        {onRecoverAgent && canWrite && <button className="secondary" onClick={onRecoverAgent}>Open Fleet & access · Agent setup / recovery</button>}
-        <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? 'Checking…' : 'Retry connection'}</button>
+        {onRecoverAgent && canWrite && <button className="secondary" onClick={onRecoverAgent}>{t('catalog.recover')}</button>}
+        <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? t('catalog.checking') : t('catalog.retry')}</button>
       </section>}
       <section className="panel">
-        <div className="panelTitle"><h2>Downloads & installations</h2><span>Persistent Linux Agent jobs</span></div>
-        {downloadJobs.length === 0 ? <p className="muted">No recent downloads on this node.</p> :
+        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2><span>{t('catalog.jobs')}</span></div>
+        {downloadJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
           <div className="stack">{downloadJobs.slice(0, 20).map(job => <div className="notice" key={job.id}>
             <div className="actions"><strong>{job.request.catalogModelId} · {job.request.runtime}</strong><Status value={job.status}/>
               {(job.status === 'queued' || job.status === 'running') &&
@@ -313,43 +315,43 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
       </section>
-      <section className="panel"><div className="panelTitle"><div><h2>Deployable model catalog</h2><span>Curated runtimes with conservative serving estimates.</span></div>
-          <div className="actions"><span>Fit estimates use last reported RAM / VRAM / disk; live Agent required to install</span>
+      <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
+          <div className="actions"><span>{t('catalog.fitDescription')}</span>
             <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? 'Connect or recover the Node Agent in Fleet & access first.' : undefined}
-              onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>Install custom Hugging Face model</button>
-          </div></div><div className="tableScroll"><table><thead><tr><th>Model</th><th>License</th><th>Size</th><th>Context</th><th>GPU plan</th><th>RAM / disk</th><th>Fit</th><th>Action</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">Runtime: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">Model card</a>{item.capabilities && <>
-              {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>Capabilities</button>
-            </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">Inventory cached · Agent connection needed</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
-              title={!canWrite ? 'Administrator write access required.' : !overview?.agentAvailable ? 'Node Agent offline: open Fleet & access and restore the existing node connection.' : hardware?.readiness?.dockerDaemonReady === false ? 'Docker daemon is not ready on this node.' : item.compatibility.status === 'insufficient' ? 'Model minimum hardware requirements not met.' : 'Install this model on the selected node'}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section>
+              onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>{t('catalog.custom')}</button>
+          </div></div><div className="tableScroll"><table><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
+              {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>{t('catalog.capabilities')}</button>
+            </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
+              title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ? t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ? t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ? t('catalog.insufficient') : t('catalog.installHere')}
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>
       <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />
-      <section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2>
-        <div className="actions"><span>Stop before editing runtime settings; model cache is preserved.</span>
+      <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
+        <div className="actions"><span>{t('catalog.editTip')}</span>
           <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
-            onClick={() => void checkRevisions()}>{revisionBusy ? 'Checking…' : 'Check Hugging Face updates'}</button>
-        </div></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
-              <div className="muted">Context: {item.agentState?.maxModelLen ?? (item.runtime === 'airllm' ? 8192 : 'default')} tokens · Output cap: {item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : 'per request'}</div>
-              <div className="muted">Cached revision: {item.agentState?.sourceRevision?.slice(0,12) ?? 'untracked'}</div>
+            onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
+        </div></div><table><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+              <div className="muted">{t('catalog.tokenContext')}: {item.agentState?.maxModelLen ?? (item.runtime === 'airllm' ? 8192 : 'default')} tokens · {t('catalog.output')}: {item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : t('catalog.perRequest')}</div>
+              <div className="muted">{t('catalog.revision')}: {item.agentState?.sourceRevision?.slice(0,12) ?? t('catalog.unknownRevision')}</div>
               {upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId) &&
                 <div className="notice">{upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId)?.update.message}</div>}
             {item.capabilities && <button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model', profile: item.capabilities! })}>Capabilities & client setup</button>}</td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
-          : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' :
+          : <span className="muted">{item.runtimeMetrics?.error ?? t('catalog.emptyMetrics')}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? t('catalog.notRunning')}</td><td>{item.enabled ? t('catalog.enabled') :
           item.agentStatus.toLowerCase() === 'running'
-            ? <><strong>Disabled</strong><div className="muted">Container running, health and routing not yet verified.</div></>
-            : 'Disabled'}</td><td className="actions">
+            ? <><strong>{t('catalog.disabled')}</strong><div className="muted">{t('catalog.unrouted')}</div></>
+            : t('catalog.disabled')}</td><td className="actions">
           <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'}
-            onClick={() => void action('start', item.id)}>Start</button>
+            onClick={() => void action('start', item.id)}>{t('catalog.start')}</button>
           {item.agentStatus.toLowerCase() === 'running' && !item.enabled &&
             <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
-              title="Check the live model /health endpoint and enable routing only when ready. Does not restart the container."
-              onClick={() => void action('activate', item.id)}>Check health & activate</button>}
-          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button>
+              title={t('catalog.healthTip')}
+              onClick={() => void action('activate', item.id)}>{t('catalog.activate')}</button>}
+          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>{t('catalog.stop')}</button>
           <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || item.agentStatus.toLowerCase() === 'running'}
-            title={item.agentStatus.toLowerCase() === 'running' ? 'Stop the runtime first; changing limits requires a restart but not a weight download.' : 'Edit context and concurrency without deleting model files.'}
-            onClick={() => openProfileEdit(item)}>Edit limits</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Uninstall</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
+            title={item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
+            onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button></td></tr>)}</tbody></table></section></>}
 
     <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
       description="Automatically detected from known model declarations and the installed serving adapter."
@@ -357,41 +359,41 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       {capabilityDetails && <ModelCapabilityPanel profile={capabilityDetails.profile} />}
     </Modal>
 
-    <Modal open={Boolean(editingInstall)} title={`Edit runtime limits · ${editingInstall?.logicalModel ?? ''}`}
-      description="Stop the model before editing. The downloaded files and node identity are retained."
+    <Modal open={Boolean(editingInstall)} title={`${t('catalog.editTitle')} · ${editingInstall?.logicalModel ?? ''}`}
+      description={t('catalog.editDescription')}
       onClose={() => setEditingInstall(null)}>
       <form className="formPanel" onSubmit={event => void saveProfile(event)}>
         <p className="notice">Current: {editingInstall?.agentState?.maxModelLen ?? 8192} context tokens,
           {editingInstall?.runtime === 'airllm' ? ` ${editingInstall.agentState?.maxOutputTokens ?? 256} maximum output tokens` : ' output controlled by caller'}.
           Higher values may increase memory usage, latency and GPU pressure.</p>
         <label>Maximum context (prompt + completion) tokens
-          <input aria-label="Edit runtime context" type="number" min="256"
+          <input aria-label={t('model.editContext')} type="number" min="256"
             max={overview?.catalog.find(x => x.model.id === editingInstall?.catalogModelId)?.model.contextTokens ?? 262144}
             value={editContext} onChange={event => setEditContext(Number(event.target.value))} required />
         </label>
         {editingInstall?.runtime === 'airllm' && <label>Maximum output tokens per request
-          <input aria-label="Edit maximum output tokens" type="number" min="1" max={Math.min(4096, editContext)}
+          <input aria-label={t('model.editOutput')} type="number" min="1" max={Math.min(4096, editContext)}
             value={editOutput} onChange={event => setEditOutput(Number(event.target.value))} required />
         </label>}
         <label>Maximum concurrent sequences / queue
-          <input aria-label="Edit runtime sequences" type="number" min="1" max="128"
+          <input aria-label={t('model.editSequences')} type="number" min="1" max="128"
             value={editSequences} onChange={event => setEditSequences(Number(event.target.value))} required />
         </label>
-        <p className="muted">AirLLM serializes generation even with a larger queue. Reconfigure while stopped, then press Start; the downloaded checkpoint stays on disk.</p>
+        <p className="muted">{t('model.editNotice')}</p>
         <div className="modalActions"><button className="secondary" type="button" onClick={() => setEditingInstall(null)}>Cancel</button>
-          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext}>Save limits</button></div>
+          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext}>{t('catalog.saveLimits')}</button></div>
       </form>
     </Modal>
 
-    <Modal open={installCatalogId !== null} title="Install inference profile" description="An installation profile controls runtime behavior, not the gateway physical concurrency ceiling." onClose={() => setInstallCatalogId(null)}>
+    <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
           <ModelCapabilityPanel profile={installCapabilities} />
         </details>}
-        <label>Inference engine
-          <select aria-label="Install inference engine" value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
+        <label>{t('model.engine')}
+          <select aria-label={t('model.engine')} value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
             {installCatalogId === 'custom'
               ? <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option><option value="llama.cpp">llama.cpp (GGUF :quant)</option><option value="airllm">AirLLM layer streaming (experimental)</option></>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp'
@@ -402,48 +404,48 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           </select>
         </label>
         {installCatalogId === 'custom' && <>
-          <label>Hugging Face repository (org/model, or org/model:quant for GGUF)
-            <input aria-label="Custom Hugging Face repository" maxLength={220} value={customRepository}
+          <label>{t('model.repository')} (org/model, org/model:quant GGUF)
+            <input aria-label={t('model.repository')} maxLength={220} value={customRepository}
               onChange={event => setCustomRepository(event.target.value)}
               placeholder="Qwen/Qwen3-8B" required />
           </label>
           <label><input type="checkbox" checked={customConfirmed} onChange={event => setCustomConfirmed(event.target.checked)} />
-            I have reviewed the model license and accept that sizing, compatibility, and serving capabilities are unverified.</label>
-          <p className="notice">Custom models are opt-in test installations. Streaming and tool calling are not advertised without verification; AirLLM runs one experimental generator with a bounded queue. No direct arbitrary URLs or shell commands are accepted.</p>
+            {t('model.licenseConfirm')}</label>
+          <p className="notice">{t('model.licenseNotice')}</p>
         </>}
-        {runtimeChoice === 'airllm' && <p className="notice">Experimental AirLLM: the Agent builds the AirLLM serving image and downloads model weights. Only non-streaming Chat is supported. One generator processes a bounded request queue, so concurrent clients do not imply parallel generation. Benchmark against vLLM before using production traffic.</p>}
-        {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && <label>GPU tensor parallel size
+        {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
+        {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && <label>{t('model.tensorParallel')}
           <input aria-label="Tensor parallel size" type="number" min="1" max="64" value={tensorParallelSize}
             onChange={event => setTensorParallelSize(Number(event.target.value))} required />
         </label>}
-        {runtimeChoice !== 'airllm' && <label>Advanced runtime arguments (one argument per line)
-          <textarea aria-label="Additional runtime arguments" rows={3} value={extraArgumentsText}
+        {runtimeChoice !== 'airllm' && <label>{t('model.advancedArguments')} (one argument per line)
+          <textarea aria-label={t('model.advancedArguments')} rows={3} value={extraArgumentsText}
             onChange={event => setExtraArgumentsText(event.target.value)}
             placeholder={"--gpu-memory-utilization\\n0.85"} />
         </label>}
-        <label>Assigned NVIDIA GPU indices (optional; e.g. 0 or 0,1)
-          <input aria-label="Assigned GPU device indices" value={gpuDevices}
+        <label>{t('model.gpuDevices')} (0, 0,1)
+          <input aria-label={t('model.gpuDevices')} value={gpuDevices}
             onChange={event => setGpuDevices(event.target.value)}
             placeholder="All GPUs (existing default)" pattern="[0-9]{1,2}(,[0-9]{1,2})*" />
         </label>
-        <p className="muted">Leave blank for the existing all-GPU behavior. Explicit device IDs constrain the runtime container, and AirLLM accepts one device. Use the GPU inventory above to choose indices.</p>
-        <label>Logical model alias (optional, default is catalog ID)<input aria-label="Install logical model alias" maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
-        <p className="muted">Reuse an existing logical alias only for the same provider checkpoint ID. Multiple deployments under one alias share a routing pool; each retains its own capacity limit.</p>
-        <label>Dedicated host port (optional, auto-assigned otherwise)<input aria-label="Install runtime port" type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
-        <p className="notice"><strong>Selected defaults:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>
-        <label>Maximum concurrent sequences<input aria-label="Runtime maximum sequences" type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>
-        <label>{runtimeChoice === 'llama.cpp' ? 'Total context pool (tokens, shared among slots)' : 'Maximum context per request (tokens)'}<input aria-label="Runtime maximum context" type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>
-        {runtimeChoice === 'airllm' && <label>Maximum output tokens per request
-          <input aria-label="Install maximum output tokens" type="number" min="1" max={Math.min(4096, maxModelLen)}
+        <p className="muted">{t('model.gpuHelp')}</p>
+        <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
+        <p className="muted">{t('model.logicalHelp')}</p>
+        <label>{t('model.port')} (optional)<input aria-label={t('model.port')} type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
+        <p className="notice"><strong>{t('model.defaults')}:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>
+        <label>{t('model.sequences')}<input aria-label={t('model.sequences')} type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>
+        <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>
+        {runtimeChoice === 'airllm' && <label>{t('model.maxOutput')}
+          <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
             value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
         </label>}
-        {runtimeChoice !== 'airllm' && <p className="muted">For this runtime, output length is controlled by max_tokens in each inference request and must fit within the configured context. There is no installed global output cap.</p>}
+        {runtimeChoice !== 'airllm' && <p className="muted">{t('model.perRequestOutput')}</p>}
         {runtimeChoice === 'vllm' && <>
           <label>KV cache precision<select aria-label="Runtime KV cache precision" value={kvCacheDtype} onChange={event => setKvCacheDtype(event.target.value as 'auto' | 'fp8')}><option value="auto">Auto (baseline)</option><option value="fp8">FP8 (requires runtime/model support)</option></select></label>
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
-        <p className="muted">You can edit context, output (AirLLM) and concurrency later after stopping the runtime, without uninstalling or redownloading weights. The physical concurrency limit remains unchanged until separately updated with benchmark evidence.</p>
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? 'Scheduling…' : 'Download & install'}</button></div>
+        <p className="muted">{t('model.profileInfo')}</p>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>

@@ -1,3 +1,12 @@
+## Unreleased — Responsive Admin foundation, Light/Dark theme and EN/IT i18n (2026-10-11)
+
+- Replace hard-coded dark-only palette with semantic tokens and **System / Light / Dark** theme, persisted in local browser preferences and shared with the personal user portal.
+- Replace the fixed minimum 1100px desktop layout with a mobile navigation drawer, keyboard-close/backdrop behavior, flexible desktop/mobile grids, viewport-safe modals and contained table scrolling. Improve accessible modal focus/escape and tab keyboard controls.
+- Add typed internationalization with persistent **English / Italian** selector and `html lang` synchronization. Main Admin navigation, dashboard paths/KPIs and System One guided setup are translated; other legacy operational pages need remaining string migration (tracked openly in UX audit).
+- Remove obsolete **UI route aliases** for nodes/hardware/deployments/model-management. Keep canonical admin routes, selected hardware and tab deep links; preserve all existing API endpoints.
+- Second UX audit, scope/known gaps and acceptance matrix: `docs/admin-ux-ui-foundation.md`.
+- Playwright regression tests for mobile drawer/overflow, deep links/refresh and persisted language/theme preferences.
+
 ## Unreleased — Task-first Admin navigation and explicit System One setup (2026-10-11)
 
 - Reorganize Admin navigation by operator task: Models & inference, Infrastructure, Access & policy, Monitor & audit and Platform. Add task-driven Dashboard links with real fleet/model/deployment counts, page descriptions and breadcrumb navigation; keep previous admin URLs and deep-link history.

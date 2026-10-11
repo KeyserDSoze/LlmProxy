@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Second Admin UX audit and responsive light/dark + EN/IT foundation
+
+- User explicitly approved dropping obsolete UI aliases. Canonical task-first routes remain, with physical node and tab query selections.
+- Implemented responsive mobile drawer, semantic theme tokens across Admin/user portal, system-preference default, persisted EN/IT and system/light/dark controls. Main navigation, Dashboard and System One flow are translated; other operational pages remain an open i18n migration, not represented as fully localized.
+- Shared UI primitives now handle modal focus/escape/trap/restore and keyboard tab navigation. Viewport/table regression tests and a prioritized second UX audit recorded in `docs/admin-ux-ui-foundation.md`.
+- Runtimes, model install protocol and gateway API contracts are not changed; Node Agent Laya installer remains a separate functional issue (#19).
+
+# Development log
+
 ## 2026-10-11 — Admin experience audit and System One classifier workflow
 
 - User could not find where to install System One models. Source audit found the current implementation is a typed `POST /v1/systemone` forwarder with separate logical model publication and deployment root configuration; it is **not** a managed downloadable runtime. The previous model page buried `Surface = SystemOne` inside a modal and allowed unsafe blind deploy-to-all for a classifier.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
+import { useT, useUiPreferences } from './uiPreferences'
 import type { HuggingFaceModel } from './types'
 
 export default function HuggingFaceDiscoveryPanel({
@@ -8,6 +9,8 @@ export default function HuggingFaceDiscoveryPanel({
   canWrite: boolean
   onReview: (repoId: string) => void
 }) {
+  const t = useT()
+  const { locale } = useUiPreferences()
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'trending' | 'downloads' | 'recent'>('trending')
   const [models, setModels] = useState<HuggingFaceModel[]>([])
@@ -26,48 +29,48 @@ export default function HuggingFaceDiscoveryPanel({
   useEffect(() => { void fetchModels('', 'trending') }, [fetchModels])
   return <section className="panel">
     <div className="panelTitle"><div>
-      <h2>Hugging Face model discovery</h2>
-      <span>Live public Hub catalog (cached 10 minutes). Discovery is not a runtime compatibility or licensing guarantee.</span>
+      <h2>{t('hf.title')}</h2>
+      <span>{t('hf.subtitle')}</span>
     </div></div>
     <form className="formPanel" onSubmit={event => { event.preventDefault(); void fetchModels(query, sort) }}>
       <div className="actions">
-        <label>Search models
-          <input aria-label="Search Hugging Face models" value={query}
+        <label>{t('hf.search')}
+          <input aria-label={t('hf.search')} value={query}
             maxLength={100} onChange={event => setQuery(event.target.value)}
             placeholder="Qwen, Llama, Gemma, Mistral…" />
         </label>
-        <label>Sort by
-          <select aria-label="Hugging Face sort" value={sort}
+        <label>{t('hf.sort')}
+          <select aria-label={t('hf.sort')} value={sort}
             onChange={event => {
               const order = event.target.value as typeof sort
               setSort(order)
               void fetchModels(query, order)
             }}>
-            <option value="trending">Trending</option>
-            <option value="recent">Recently updated</option>
-            <option value="downloads">Downloads</option>
+            <option value="trending">{t('hf.trending')}</option>
+            <option value="recent">{t('hf.recent')}</option>
+            <option value="downloads">{t('hf.downloads')}</option>
           </select>
         </label>
-        <button type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search Hub'}</button>
+        <button type="submit" disabled={busy}>{busy ? t('hf.searching') : t('hf.searchHub')}</button>
       </div>
     </form>
-    <p className="muted">Curated models above have estimated hardware requirements and reviewed runtimes. Hub search results are candidates only: architecture, dependencies, licensing, hardware fit, context length and functionality must be verified before installing.</p>
+    <p className="muted">{t('hf.caution')}</p>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="tableScroll"><table><thead><tr>
-      <th>Hugging Face model</th><th>Popularity</th><th>Latest commit</th><th>Access</th><th>Action</th>
+      <th>{t('hf.model')}</th><th>{t('hf.popularity')}</th><th>{t('hf.latest')}</th><th>{t('hf.access')}</th><th>{t('hf.action')}</th>
     </tr></thead><tbody>
       {models.map(model => <tr key={model.id}>
-        <td><strong>{model.id}</strong><div className="muted">{model.pipelineTag ?? 'unknown task'} · {model.license ?? 'license unknown'}</div>
-          <a href={model.url} target="_blank" rel="noreferrer">Official model card</a>
+        <td><strong>{model.id}</strong><div className="muted">{model.pipelineTag ?? t('hf.taskUnknown')} · {model.license ?? t('hf.licenseUnknown')}</div>
+          <a href={model.url} target="_blank" rel="noreferrer">{t('hf.modelCard')}</a>
         </td>
-        <td>{model.downloads.toLocaleString()} downloads<div className="muted">{model.likes.toLocaleString()} likes</div></td>
-        <td className="mono">{model.revision?.slice(0,12) ?? 'unknown'}<div className="muted">{model.lastModified ? new Date(model.lastModified).toLocaleDateString() : 'unknown date'}</div></td>
-        <td>{model.gated ? 'Gated · approval required' : 'Public'}<div className="muted">Unverified deployment</div></td>
+        <td>{model.downloads.toLocaleString(locale)} {t('hf.downloads')}<div className="muted">{model.likes.toLocaleString(locale)} {t('hf.likes')}</div></td>
+        <td className="mono">{model.revision?.slice(0,12) ?? t('hf.unknown')}<div className="muted">{model.lastModified ? new Date(model.lastModified).toLocaleDateString(locale) : t('hf.dateUnknown')}</div></td>
+        <td>{model.gated ? t('hf.gated') : t('hf.public')}<div className="muted">{t('hf.unverified')}</div></td>
         <td><button disabled={!canWrite || model.gated}
-          title={model.gated ? 'This checkpoint requires Hub approval/access. Do not attempt unauthenticated Agent download.' : 'Review model license, hardware and runtime before installing'}
-          onClick={() => onReview(model.id)}>Review custom install</button></td>
+          title={model.gated ? t('hf.gatedHelp') : t('hf.reviewHelp')}
+          onClick={() => onReview(model.id)}>{t('hf.review')}</button></td>
       </tr>)}
-      {models.length === 0 && <tr><td colSpan={5} className="muted">{busy ? 'Loading Hub models…' : 'No matching public models returned.'}</td></tr>}
+      {models.length === 0 && <tr><td colSpan={5} className="muted">{busy ? t('hf.loading') : t('hf.noResults')}</td></tr>}
     </tbody></table></div>
   </section>
 }
