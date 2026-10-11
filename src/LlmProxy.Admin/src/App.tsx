@@ -223,10 +223,10 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
             {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
-            {(view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management') && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
+            {view === 'infrastructure' && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
             {view === 'catalog' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
-            {(view === 'models' || view === 'deployments') && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {view === 'models' && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'users' && canWrite && <UsersAccessExperience />}
@@ -583,6 +583,7 @@ function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCrede
 }
 
 function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: RequestMetric[]; summary: MetricsSummary; nodeNames: Map<string,string>; credentialNames: Map<string,string> }) {
+  const t = useT()
   return <div className="stack">
     <section className="cards cardsFive">
       <Metric label={`${summary.windowHours}h requests`} value={formatNumber(summary.requestCount)} />
