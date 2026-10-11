@@ -430,13 +430,19 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <label>Logical model alias (optional, default is catalog ID)<input aria-label="Install logical model alias" maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
         <p className="muted">Reuse an existing logical alias only for the same provider checkpoint ID. Multiple deployments under one alias share a routing pool; each retains its own capacity limit.</p>
         <label>Dedicated host port (optional, auto-assigned otherwise)<input aria-label="Install runtime port" type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
+        <p className="notice"><strong>Selected defaults:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>
         <label>Maximum concurrent sequences<input aria-label="Runtime maximum sequences" type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>
         <label>{runtimeChoice === 'llama.cpp' ? 'Total context pool (tokens, shared among slots)' : 'Maximum context per request (tokens)'}<input aria-label="Runtime maximum context" type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>
+        {runtimeChoice === 'airllm' && <label>Maximum output tokens per request
+          <input aria-label="Install maximum output tokens" type="number" min="1" max={Math.min(4096, maxModelLen)}
+            value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
+        </label>}
+        {runtimeChoice !== 'airllm' && <p className="muted">For this runtime, output length is controlled by max_tokens in each inference request and must fit within the configured context. There is no installed global output cap.</p>}
         {runtimeChoice === 'vllm' && <>
           <label>KV cache precision<select aria-label="Runtime KV cache precision" value={kvCacheDtype} onChange={event => setKvCacheDtype(event.target.value as 'auto' | 'fp8')}><option value="auto">Auto (baseline)</option><option value="fp8">FP8 (requires runtime/model support)</option></select></label>
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
-        <p className="muted">Changing a profile requires stopping/removing its current installation. The physical concurrency limit remains unchanged until separately updated with benchmark evidence.</p>
+        <p className="muted">You can edit context, output (AirLLM) and concurrency later after stopping the runtime, without uninstalling or redownloading weights. The physical concurrency limit remains unchanged until separately updated with benchmark evidence.</p>
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? 'Scheduling…' : 'Download & install'}</button></div>
       </form>
     </Modal>
