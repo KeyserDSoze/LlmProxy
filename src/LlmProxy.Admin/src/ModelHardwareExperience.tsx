@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import { useRouteTab } from './adminNavigation'
+import { useRouteHardware, useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, Node } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, onRecoverAgent }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; onRecoverAgent?: () => void }) {
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], 'inventory')
   const [agentOpen, setAgentOpen] = useState(false)
-  const [nodeId, setNodeId] = useState(nodes[0]?.id ?? '')
+  const [nodeId, setNodeId] = useRouteHardware(nodes)
+  const currentNodeId = useRef(nodeId)
+  currentNodeId.current = nodeId
   const [overview, setOverview] = useState<ModelManagementOverview | null>(null)
   const [managementBaseAddress, setManagementBaseAddress] = useState('')
   const [bearerToken, setBearerToken] = useState('')
@@ -36,14 +38,35 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { if (!nodeId && nodes[0]) setNodeId(nodes[0].id) }, [nodeId, nodes])
-  const load = useCallback(async () => { if (!nodeId) { setOverview(null); return } setLoading(true); setError(null); try { const next = await api.modelManagementOverview(nodeId); setOverview(next); setManagementBaseAddress(next.node.managementBaseAddress ?? '') } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setLoading(false) } }, [nodeId])
+  useEffect(() => {
+    // Hardware can change via dropdown or browser history; never show a stale
+    // inventory or let an old request re-enable installation on another node.
+    setOverview(null); setDownloadJobs([]); setInstallCatalogId(null)
+    setMessage(null); setError(null)
+  }, [nodeId])
+  const load = useCallback(async () => {
+    if (!nodeId) { setOverview(null); return }
+    setLoading(true); setError(null)
+    try {
+      const next = await api.modelManagementOverview(nodeId)
+      if (currentNodeId.current !== nodeId) return
+      setOverview(next)
+      setManagementBaseAddress(next.node.managementBaseAddress ?? '')
+    } catch (reason) {
+      if (currentNodeId.current === nodeId)
+        setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      if (currentNodeId.current === nodeId) setLoading(false)
+    }
+  }, [nodeId])
   useEffect(() => { void load() }, [load])
   // Fresh host telemetry without requiring the operator to repeatedly press Refresh.
   useEffect(() => {
     if (!nodeId || tab !== 'inventory') return
     const timer = window.setInterval(() => {
-      void api.modelManagementOverview(nodeId).then(setOverview).catch(() => {})
+      void api.modelManagementOverview(nodeId).then(next => {
+        if (currentNodeId.current === nodeId) setOverview(next)
+      }).catch(() => {})
     }, 15000)
     return () => window.clearInterval(timer)
   }, [nodeId, tab])
@@ -166,7 +189,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   async function action(kind: 'start' | 'stop' | 'remove', deploymentId: string) { setBusy(kind + ':' + deploymentId); setMessage(null); setError(null); try { if (kind === 'start') await api.startManagedDeployment(deploymentId); if (kind === 'stop') await api.stopManagedDeployment(deploymentId); if (kind === 'remove') await api.removeManagedDeployment(deploymentId); setMessage(kind === 'start' ? 'Model started and enabled for routing.' : kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed model removed from the hardware.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
 
   return <div className="stack compactPage modelHardware">
-    <section className="panel pageToolbar"><div><h2>{embedded ? 'Inventory & model lifecycle' : 'Model & hardware control plane'}</h2><p className="muted">Hardware inventory is live machine data from the management agent: CPU, RAM, disk, accelerators, drivers and runtime. It is used to evaluate model fit before installation.</p></div><div className="actions"><select aria-label="Managed hardware node" value={nodeId} onChange={event => { setNodeId(event.target.value); setOverview(null); setDownloadJobs([]); setMessage(null); setError(null) }}><option value="">Select hardware</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? 'Reading…' : 'Refresh'}</button><span className="muted">Agent installer: Infrastructure → Fleet & access → Pair Linux agent</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>Configure agent</button></div></section>
+    <section className="panel pageToolbar"><div><h2>{embedded ? 'Inventory & model lifecycle' : 'Model & hardware control plane'}</h2><p className="muted">Hardware inventory is live machine data from the management agent: CPU, RAM, disk, accelerators, drivers and runtime. It is used to evaluate model fit before installation.</p></div><div className="actions"><select aria-label="Managed hardware node" value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">Select hardware</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? 'Reading…' : 'Refresh'}</button><span className="muted">Agent installer: Infrastructure → Fleet & access → Pair Linux agent</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>Configure agent</button></div></section>
+    {!nodeId && nodes.length > 0 && <div className="notice" role="alert">The hardware selected in this link no longer exists in the current fleet. Choose a server from the hardware dropdown to continue.</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'inventory', label: 'Hardware inventory', count: gpus.length }, { value: 'deploy', label: 'Deploy models', count: overview?.installations.length ?? 0 }]} />
 

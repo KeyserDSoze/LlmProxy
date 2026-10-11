@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-11 — Preserve physical model host identity in Admin URL
+
+- Model lifecycle's selected `nodeId` previously lived only in local React state. The page/tab route was refresh-safe, but F5 could switch to the first discovered hardware node and show the wrong model installations.
+- Added persistent URL `node=<node-id>` selection and popstate restoration, canonicalized default node after fleet load and surfaced explicit unavailable-hardware state for invalid/deleted deep links.
+- Guarded async overview/polling results against old selected hosts; verified via two-node browser tests that F5 and history preserve hardware selection and Deploy models tab.
+
+# Development log
+
 ## 2026-10-11 — Diagnose grey Install with FITS, repair Admin URLs
 
 - Root cause: Catalog fit is based on cached last reported hardware, while installation requires live management Agent. Spark still reports Agent offline and tunnel unavailable.

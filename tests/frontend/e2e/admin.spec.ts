@@ -344,9 +344,9 @@ test('admin navigation preserves top-level pages and infrastructure tabs across 
   await page.getByRole('button', { name: 'Infrastructure' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
   await page.getByRole('tab', { name: /Inventory & model lifecycle/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
   await page.getByRole('tab', { name: /Deploy models/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
   await page.reload()
   await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Routing', exact: true }).click()
@@ -355,5 +355,57 @@ test('admin navigation preserves top-level pages and infrastructure tabs across 
   await expect(page.getByRole('heading', { name: 'Smart-routing tuning' })).toBeVisible()
   await page.goBack()
   await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
+})
+
+
+test('selected hardware is a stable deep link across F5 and browser back', async ({ page }) => {
+  await installAdminApi(page)
+  const otherNode = {
+    id: 'node-2', name: 'spark-02', baseAddress: 'http://127.0.0.1:1',
+    hardwareMetricsBaseAddress: null, weight: 1, maxConcurrency: 4, enabled: true,
+    status: 'Unhealthy', lastHealthCheckUtc: '2026-10-11T08:00:00Z',
+    lastHealthyAtUtc: null, lastHealthLatencyMilliseconds: null,
+    lastHealthError: 'No runtime', consecutiveHealthSuccesses: 0, consecutiveHealthFailures: 0
+  }
+  const originalNode = {
+    ...otherNode, id: 'node-1', name: 'spark-01'
+  }
+  await page.route('**/api/admin/nodes', route => json(route, [originalNode, otherNode]))
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => {
+    const nodeId = new URL(route.request().url()).pathname.split('/').at(-2)!
+    return json(route, {
+      node: { id: nodeId, managementBaseAddress: null },
+      agentAvailable: false, inventoryStale: true, agentError: 'Agent offline',
+      hardware: null, installations: [], catalog: []
+    })
+  })
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs',
+    route => json(route, []))
+
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy')
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
+  await expect(page).toHaveURL(/node=node-1/)
+  await page.getByLabel('Managed hardware node').selectOption('node-2')
+  await expect(page).toHaveURL(/section=inventory&tab=deploy&node=node-2$/)
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-2')
+  await page.reload()
+  await expect(page.getByRole('tab', { name: /Deploy models/ }))
+    .toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-2')
+
+  await page.getByRole('button', { name: 'Routing', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/routing$/)
+  await page.goBack()
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-2')
+  await page.goBack()
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
+})
+
+test('invalid hardware deep link does not silently install on another machine', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=deleted-node')
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('')
+  await expect(page.getByText(/hardware selected in this link no longer exists/)).toBeVisible()
+  await expect(page).toHaveURL(/node=deleted-node$/)
 })

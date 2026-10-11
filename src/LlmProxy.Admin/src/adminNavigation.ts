@@ -53,3 +53,47 @@ export function useRouteTab<T extends string>(key: string, permitted: readonly T
   }
   return [tab, navigate]
 }
+
+
+/**
+ * Preserve the physical hardware identity in the same URL as the current
+ * infrastructure section and tab. A missing or unknown node must never
+ * silently select a DIFFERENT machine when the user refreshes a deep link.
+ */
+export function useRouteHardware(nodes: readonly { id: string }[]): [string, (id: string) => void] {
+  const read = () => new URLSearchParams(window.location.search).get('node') ?? ''
+  const [requestedId, setRequestedId] = useState<string>(read)
+  const fallbackId = nodes[0]?.id ?? ''
+
+  useEffect(() => {
+    const restore = () => setRequestedId(read())
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+  }, [])
+
+  // Add the default selection to the address bar once the fleet has loaded.
+  // replaceState does not add a spurious browser-history entry.
+  useEffect(() => {
+    if (requestedId || !fallbackId) return
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('node')) return
+    url.searchParams.set('node', fallbackId)
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    setRequestedId(fallbackId)
+  }, [requestedId, fallbackId])
+
+  const selectedId = requestedId
+    ? (nodes.some(node => node.id === requestedId) ? requestedId : '')
+    : fallbackId
+
+  const selectHardware = (id: string) => {
+    if (id === selectedId) return
+    const url = new URL(window.location.href)
+    if (id) url.searchParams.set('node', id)
+    else url.searchParams.delete('node')
+    window.history.pushState(null, '', url.pathname + url.search + url.hash)
+    setRequestedId(id)
+  }
+
+  return [selectedId, selectHardware]
+}
