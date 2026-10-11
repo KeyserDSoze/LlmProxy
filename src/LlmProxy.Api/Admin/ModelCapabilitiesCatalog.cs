@@ -43,6 +43,17 @@ public static class ModelCapabilitiesCatalog
                 ? "https://huggingface.co/" + name
                 : null;
 
+        if (serving == "laya")
+        {
+            var unsupported = new Feature("unsupported", "unsupported",
+                "Laya implements typed System One classification, not OpenAI Chat, vision, audio or image generation.");
+            return new Profile(name, serving, "Laya typed classifier (CPU English experimental profile)",
+                modelCardUrl, unsupported, unsupported, unsupported, unsupported, unsupported,
+                null, null, null, null,
+                "POST /v1/systemone accepts state and typed questions, returning answers and probabilities. " +
+                "Managed checkpoint is pinned and startup requires an actual classifier response. " +
+                "No Chat token context or GPU acceleration is implied.");
+        }
         if (serving == "faster-whisper")
         {
             var unsupported = new Feature("unsupported", "unsupported",
