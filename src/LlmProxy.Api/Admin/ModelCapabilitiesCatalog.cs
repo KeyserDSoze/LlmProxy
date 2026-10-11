@@ -43,6 +43,15 @@ public static class ModelCapabilitiesCatalog
                 ? "https://huggingface.co/" + name
                 : null;
 
+        if (serving == "diffusers")
+        {
+            var unsupported = new Feature("unsupported", "unsupported",
+                "Diffusers SSD-1B generates images; it cannot serve Chat, speech, tools or embeddings.");
+            return new Profile(name, serving, "Diffusers CUDA text-to-image (experimental)",
+                modelCardUrl, unsupported, unsupported, unsupported, unsupported, unsupported,
+                null, null, null, null,
+                "OpenAI-compatible POST /v1/images/generations; only b64_json PNG, n=1 and square image sizes 512/768/1024. NVIDIA CUDA required. No generic Hugging Face model execution or editing.");
+        }
         if (serving == "faster-whisper")
         {
             var unsupported = new Feature("unsupported", "unsupported",
