@@ -68,7 +68,7 @@ public static class ManagedRuntimeProfiles
         {
             if (request.CatalogModelId is not ("whisper-tiny-cpu" or "whisper-base-cpu" or "whisper-small-cpu") ||
                 request.ProviderModelName is not ("Systran/faster-whisper-tiny" or "Systran/faster-whisper-base" or "Systran/faster-whisper-small") ||
-                request.CatalogModelId switch {
+                (request.CatalogModelId switch {
                     "whisper-tiny-cpu" => request.ProviderModelName != "Systran/faster-whisper-tiny",
                     "whisper-base-cpu" => request.ProviderModelName != "Systran/faster-whisper-base",
                     "whisper-small-cpu" => request.ProviderModelName != "Systran/faster-whisper-small",
