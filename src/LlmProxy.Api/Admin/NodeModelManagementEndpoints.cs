@@ -272,7 +272,7 @@ public static class NodeModelManagementEndpoints
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    runtime is "llama.cpp" or "airllm" or "faster-whisper" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
+                    runtime is "llama.cpp" or "airllm" or "faster-whisper" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [],
                     runtime,
                     request.MaxNumSeqs,
@@ -332,7 +332,7 @@ public static class NodeModelManagementEndpoints
                 if (!request.Force && compatibility.Status == "insufficient")
                     return Results.BadRequest(new { error = "hardware_insufficient", compatibility });
                 var payload = new AgentInstallRequest(descriptor.Id, descriptor.ProviderModelName,
-                    request.Port, runtime is "llama.cpp" or "airllm" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
+                    request.Port, runtime is "llama.cpp" or "airllm" or "faster-whisper" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens);
