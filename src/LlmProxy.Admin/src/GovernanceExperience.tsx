@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { CreatedApiCredential, GovernanceCredential, Model, PlatformUser, RateLimitPolicy, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
@@ -7,7 +8,7 @@ const emptyUsage: UsageReport = { windowDays: 30, sinceUtc: '', windowGranularit
 type ModalKind = 'group' | 'credential' | 'user' | 'usage-group' | null
 
 export default function GovernanceExperience() {
-  const [tab, setTab] = useState<'usage' | 'groups' | 'quotas'>('usage')
+  const [tab, setTab] = useRouteTab<'usage' | 'groups' | 'quotas'>('tab', ['usage', 'groups', 'quotas'], 'usage')
   const [modal, setModal] = useState<ModalKind>(null)
   const [days, setDays] = useState(30)
   const [groups, setGroups] = useState<UsageGroup[]>([])

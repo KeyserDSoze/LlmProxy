@@ -1,3 +1,8 @@
+## Unreleased — Explain offline model installs and restore Admin navigation (2026-10-11)
+
+- Deploy models explains why `FITS` from cached hardware does not permit installation when the management Agent and outbound tunnel are offline, with a Retry connection action and a direct switch to Fleet & access recovery.
+- Admin sidebar pages now have permanent `/admin/{page}` URLs; Infrastructure, model lifecycle, Models/Deployments, Governance and Users tab selections are encoded in URL search parameters and restored after F5, browser back and forward.
+
 ## Unreleased — Persistent per-server Agent identity and recovery (2026-10-11)
 
 - Infrastructure → Fleet & access now separates **new hardware pairing** (one-use 30-minute invitation) from **existing-node Agent recovery** (persistent, independent per-node recovery key). Administrators can reveal/audit/rotate their own server's encrypted recovery code and copy an HTTPS-based checksum-verified repair/reinstall command at any time.

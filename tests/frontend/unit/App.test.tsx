@@ -83,6 +83,8 @@ const tuning = {
 
 describe('admin application', () => {
   beforeEach(() => {
+    // Browser location persists across jsdom tests when navigation updates the URL.
+    window.history.replaceState(null, '', '/')
     vi.clearAllMocks()
     mockedApi.pairedAgentNodes.mockResolvedValue([])
     mockedApi.agentDownloads.mockResolvedValue({

@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { AgentDownloads, AgentPairingInvitation, AgentRecoverySecret, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
 
 export default function NodesPage({ nodes, canWrite, refresh, embedded = false }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
-  const [tab, setTab] = useState<'active' | 'disabled'>('active')
+  const [tab, setTab] = useRouteTab<'active' | 'disabled'>('tab', ['active', 'disabled'], 'active')
   const [invitation, setInvitation] = useState<AgentPairingInvitation | null>(null)
   const [agentDownloads, setAgentDownloads] = useState<AgentDownloads | null>(null)
   const [pairOpen, setPairOpen] = useState(false)

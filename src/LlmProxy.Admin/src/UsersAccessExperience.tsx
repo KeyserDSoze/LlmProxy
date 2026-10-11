@@ -1,10 +1,11 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { PlatformUser, PlatformUserAccessSettings, UsageGroup } from './types'
 
 export default function UsersAccessExperience() {
-  const [tab, setTab] = useState<'users' | 'provisioning'>('users')
+  const [tab, setTab] = useRouteTab<'users' | 'provisioning'>('tab', ['users', 'provisioning'], 'users')
   const [registerOpen, setRegisterOpen] = useState(false)
   const [settings, setSettings] = useState<PlatformUserAccessSettings | null>(null)
   const [users, setUsers] = useState<PlatformUser[]>([])

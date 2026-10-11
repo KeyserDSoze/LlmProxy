@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { urlForAdminView, viewFromAdminPath } from './adminNavigation'
+import type { AdminView } from './adminNavigation'
 import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
 import ModelsDeployments from './ModelsDeployments'
@@ -13,7 +15,7 @@ import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
 import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
 
-export type View = 'dashboard' | 'infrastructure' | 'nodes' | 'hardware' | 'model-management' | 'models' | 'deployments' | 'routing' | 'credentials' | 'users' | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
+export type View = AdminView
 
 const emptyOverview: Overview = {
   nodes: { total: 0, healthy: 0, degraded: 0, unhealthy: 0, draining: 0 },
@@ -64,7 +66,18 @@ const emptyMetricsSummary: MetricsSummary = {
 }
 
 export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
-  const [view, setView] = useState<View>(initialView)
+  const [view, setView] = useState<View>(() => viewFromAdminPath(window.location.pathname) || initialView)
+  useEffect(() => {
+    const onHistoryChange = () => setView(viewFromAdminPath(window.location.pathname))
+    window.addEventListener('popstate', onHistoryChange)
+    return () => window.removeEventListener('popstate', onHistoryChange)
+  }, [])
+  function navigate(view: View) {
+    const url = urlForAdminView(view)
+    if (window.location.pathname !== url || window.location.search)
+      window.history.pushState(null, '', url)
+    setView(view)
+  }
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
   const [routingTuning, setRoutingTuning] = useState<RoutingTuningSettings>(emptyRoutingTuning)
@@ -132,20 +145,20 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <div><strong>LlmProxy</strong><span>AI Gateway</span></div>
         </div>
         <nav>
-          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')}>Dashboard</NavItem>
-          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => setView('infrastructure')}>Infrastructure</NavItem>
-          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => setView('models')}>Models & Deployments</NavItem>
-          <NavItem icon="routing" active={view === 'routing'} onClick={() => setView('routing')}>Routing</NavItem>
-          <NavItem icon="key" active={view === 'credentials'} onClick={() => setView('credentials')}>API Credentials</NavItem>
-          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => setView('metrics')}>Request Metrics</NavItem>
-          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => setView('playground')}>Playground</NavItem>}
-          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => setView('logs')}>Request Audit</NavItem>}
-          <NavItem icon="audit" active={view === 'audit'} onClick={() => setView('audit')}>Administrative Audit</NavItem>
-          <NavItem icon="help" active={view === 'help'} onClick={() => setView('help')}>Help & Endpoints</NavItem>
+          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => navigate('dashboard')}>Dashboard</NavItem>
+          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>Infrastructure</NavItem>
+          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => navigate('models')}>Models & Deployments</NavItem>
+          <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>Routing</NavItem>
+          <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>API Credentials</NavItem>
+          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => navigate('metrics')}>Request Metrics</NavItem>
+          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>Playground</NavItem>}
+          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => navigate('logs')}>Request Audit</NavItem>}
+          <NavItem icon="audit" active={view === 'audit'} onClick={() => navigate('audit')}>Administrative Audit</NavItem>
+          <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>Help & Endpoints</NavItem>
           <div className="navSecondary">
-            <NavItem icon="governance" active={view === 'governance'} onClick={() => setView('governance')}>Usage & Governance</NavItem>
-            {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => setView('users')}>Users & Access</NavItem>}
-            <ProductNavItem active={view === 'releases'} onClick={() => setView('releases')} />
+            <NavItem icon="governance" active={view === 'governance'} onClick={() => navigate('governance')}>Usage & Governance</NavItem>
+            {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => navigate('users')}>Users & Access</NavItem>}
+            <ProductNavItem active={view === 'releases'} onClick={() => navigate('releases')} />
           </div>
         </nav>
         <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>

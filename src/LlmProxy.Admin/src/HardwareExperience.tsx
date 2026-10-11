@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { CapacitySnapshot, Model, Node, NodeHardwareMetricsSnapshot } from './types'
 
@@ -7,7 +8,7 @@ type Props = { nodes: Node[]; hardware: NodeHardwareMetricsSnapshot[]; canWrite?
 const emptyCapacity: CapacitySnapshot = { nodes: [], deployments: [] }
 
 export default function HardwareExperience({ nodes, hardware, canWrite = true, refresh, embedded = false }: Props) {
-  const [tab, setTab] = useState<'telemetry' | 'capacity' | 'benchmarks'>('telemetry')
+  const [tab, setTab] = useRouteTab<'telemetry' | 'capacity' | 'benchmarks'>('tab', ['telemetry', 'capacity', 'benchmarks'], 'telemetry')
   const [endpointOpen, setEndpointOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [nodeId, setNodeId] = useState(nodes[0]?.id ?? '')
