@@ -89,22 +89,7 @@ public sealed class DockerModelRuntimeManager(
             {
                 report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
                 if (record.Runtime == "airllm")
-                {
-                    var buildContext = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
-                    var dockerfile = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture
-                        == System.Runtime.InteropServices.Architecture.Arm64
-                        ? "Dockerfile.arm64" : "Dockerfile";
-                    var selectedDockerfile = Path.Combine(buildContext, dockerfile);
-                    if (!File.Exists(selectedDockerfile))
-                        throw new InvalidOperationException("AirLLM " + dockerfile +
-                            " is missing from the installed Node Agent release.");
-                    report?.Invoke(new TransferProgress("container-image", null,
-                        "Building AirLLM experimental image for " +
-                        System.Runtime.InteropServices.RuntimeInformation.OSArchitecture, null, null));
-                    await PullCommandAsync(["build", "--pull", "--file", selectedDockerfile, "-t",
-                        ManagedRuntimeProfiles.Image(record, options), buildContext], cancellationToken,
-                        line => ParseTransferLine(line, "container-image", report));
-                }
+                    await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
                 if (options.PrefetchModels && record.Runtime != "llama.cpp")
                 {
@@ -167,12 +152,34 @@ for index, entry in enumerate(files):
         }
     }
 
+    private async Task EnsureAirLlmImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        // A changed server.py must not use the previous AirLLM serving image.
+        // Image version is bumped for adapter API changes; local weights persist.
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "airllm-runtime");
+        var file = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+            System.Runtime.InteropServices.Architecture.Arm64 ? "Dockerfile.arm64" : "Dockerfile";
+        if (!File.Exists(Path.Combine(directory, file)))
+            throw new InvalidOperationException("AirLLM runtime adapter " + file + " is not installed.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building updated AirLLM serving image without deleting model weights", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", Path.Combine(directory, file),
+            "-t", image, directory], token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
         try
         {
             var record = await RequireRecordAsync(installationId, cancellationToken);
+            if (record.Runtime == "airllm")
+                await EnsureAirLlmImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
