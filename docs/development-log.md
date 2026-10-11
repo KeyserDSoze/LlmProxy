@@ -1,5 +1,15 @@
 # Development log
 
+## 2026-10-11 — Admin experience audit and System One classifier workflow
+
+- User could not find where to install System One models. Source audit found the current implementation is a typed `POST /v1/systemone` forwarder with separate logical model publication and deployment root configuration; it is **not** a managed downloadable runtime. The previous model page buried `Surface = SystemOne` inside a modal and allowed unsafe blind deploy-to-all for a classifier.
+- Reorganized Admin into task-first model installation, published model/routing, dedicated System One setup, physical infrastructure, governance, metrics and platform groups. Added Dashboard quick actions, breadcrumb + intent descriptions, preserved browser/deep links and hardware identity on refresh.
+- Implemented explicit System One connection workflow (new/existing alias, enabled physical node, required explicit runtime root, concurrent request limit) and registered classifier overview, with recovery messaging for partial creation and Playground guidance. Suppressed blind classifier deploy-to-all.
+- Documented full route/content inventory and further needed System One **managed installer** work separately. No unsupported promise that downloading a Hugging Face checkpoint automatically implements a typed System One API.
+- Added browser regression tests. Await CI before merge/release.
+
+# Development log
+
 ## 2026-10-11 — Configurable context/output caps, profile edits, Hub discovery and revision checks
 
 - Audit revealed AirLLM server.py max_tokens hardcoded at 256 and catalog AirLLM default context 8192; raised the curated native upper planning context to 32768 for text Qwen3. Added explicit per-install output cap 1–4096 (default remains 256) and shared prompt+completion context validation.
