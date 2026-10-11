@@ -6,6 +6,9 @@ import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
 import ModelHardwareExperience from './ModelHardwareExperience'
 import SystemOneExperience from './SystemOneExperience'
+import AppearanceControls from './AppearanceControls'
+import { useT } from './uiPreferences'
+import type { TranslationKey } from './uiPreferences'
 import ModelsDeployments from './ModelsDeployments'
 import CredentialsPage from './CredentialsPage'
 import MetricsPage from './MetricsPage'
@@ -68,9 +71,21 @@ const emptyMetricsSummary: MetricsSummary = {
 }
 
 export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
+  const t = useT()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNavOpen(false)
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [])
   const [view, setView] = useState<View>(() => viewFromAdminPath(window.location.pathname) || initialView)
   useEffect(() => {
-    const onHistoryChange = () => setView(viewFromAdminPath(window.location.pathname))
+    const onHistoryChange = () => {
+      setView(viewFromAdminPath(window.location.pathname))
+      setMobileNavOpen(false)
+    }
     window.addEventListener('popstate', onHistoryChange)
     return () => window.removeEventListener('popstate', onHistoryChange)
   }, [])
@@ -79,6 +94,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
     if (window.location.pathname !== url || window.location.search)
       window.history.pushState(null, '', url)
     setView(view)
+    setMobileNavOpen(false)
   }
   const [overview, setOverview] = useState<Overview>(emptyOverview)
   const [routing, setRouting] = useState<RoutingSettings>(emptyRouting)
@@ -141,52 +157,70 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
-          <div><strong>LlmProxy</strong><span>AI Gateway</span></div>
+      {mobileNavOpen && <button className="mobileNavScrim" type="button" aria-label={t('nav.close')}
+        onClick={() => setMobileNavOpen(false)} />}
+      <aside className={mobileNavOpen ? 'sidebar is-open' : 'sidebar'} id="admin-navigation">
+        <div className="sidebarTop">
+          <div className="brand">
+            <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
+            <div><strong>LlmProxy</strong><span>{t('nav.gateway')}</span></div>
+          </div>
+          <button type="button" className="sidebarClose" aria-label={t('nav.close')} onClick={() => setMobileNavOpen(false)}>×</button>
         </div>
         <nav aria-label="Admin navigation">
-          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => navigate('dashboard')}>Dashboard</NavItem>
+          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => navigate('dashboard')}>{t('nav.dashboard')}</NavItem>
 
-          <div className="navGroupLabel">Models & inference</div>
-          <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>Install & manage models</NavItem>
-          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => navigate('models')}>Models & Deployments</NavItem>
-          <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>System One classifiers</NavItem>
-          <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>Routing</NavItem>
-          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>Playground</NavItem>}
+          <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
+          <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>{t('nav.catalog')}</NavItem>
+          <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => navigate('models')}>{t('nav.models')}</NavItem>
+          <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOne')}</NavItem>
+          <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
+          {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
-          <div className="navGroupLabel">Infrastructure</div>
-          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>Infrastructure</NavItem>
+          <div className="navGroupLabel">{t('nav.infrastructure')}</div>
+          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>{t('nav.infrastructure')}</NavItem>
 
-          <div className="navGroupLabel">Access & policy</div>
-          <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>API Credentials</NavItem>
-          {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => navigate('users')}>Users & Access</NavItem>}
-          <NavItem icon="governance" active={view === 'governance'} onClick={() => navigate('governance')}>Usage & Governance</NavItem>
+          <div className="navGroupLabel">{t('nav.accessGroup')}</div>
+          <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>{t('nav.credentials')}</NavItem>
+          {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => navigate('users')}>{t('nav.users')}</NavItem>}
+          <NavItem icon="governance" active={view === 'governance'} onClick={() => navigate('governance')}>{t('nav.governance')}</NavItem>
 
-          <div className="navGroupLabel">Monitor & audit</div>
-          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => navigate('metrics')}>Request Metrics</NavItem>
-          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => navigate('logs')}>Request Audit</NavItem>}
-          <NavItem icon="audit" active={view === 'audit'} onClick={() => navigate('audit')}>Administrative Audit</NavItem>
+          <div className="navGroupLabel">{t('nav.monitorGroup')}</div>
+          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => navigate('metrics')}>{t('nav.metrics')}</NavItem>
+          {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => navigate('logs')}>{t('nav.logs')}</NavItem>}
+          <NavItem icon="audit" active={view === 'audit'} onClick={() => navigate('audit')}>{t('nav.audit')}</NavItem>
 
           <div className="navSecondary">
-            <div className="navGroupLabel">Platform</div>
-            <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>Help & Endpoints</NavItem>
+            <div className="navGroupLabel">{t('nav.platformGroup')}</div>
+            <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>{t('nav.help')}</NavItem>
             <ProductNavItem active={view === 'releases'} onClick={() => navigate('releases')} />
           </div>
         </nav>
-        <div className="sidebarFooter"><span className="dot" /> OpenAI-compatible gateway</div>
+        <div className="sidebarFooter">
+          <AppearanceControls compact />
+          <span><span className="dot" /> {t('nav.footer')}</span>
+        </div>
       </aside>
 
       <main>
         <header>
-          <div><div className="uxBreadcrumb"><button onClick={() => navigate('dashboard')}>Overview</button><span aria-hidden="true">/</span><span>{title(view)}</span></div><h1>{title(view)}</h1><p>{sectionDescription(view)}</p></div>
-          <button className="secondary" onClick={() => void refresh()}>Refresh</button>
+          <div className="headerTitleRow">
+            <button className="mobileMenuButton" type="button" aria-controls="admin-navigation"
+              aria-expanded={mobileNavOpen} aria-label={t('nav.open')}
+              onClick={() => setMobileNavOpen(true)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div>
+              <div className="uxBreadcrumb"><button onClick={() => navigate('dashboard')}>{t('nav.overview')}</button><span aria-hidden="true">/</span><span>{t(viewTitleKey(view))}</span></div>
+              <h1>{t(viewTitleKey(view))}</h1><p>{t(viewDescriptionKey(view))}</p>
+            </div>
+          </div>
+          <div className="shellHeaderControls"><AppearanceControls /><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button></div>
         </header>
 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
         {error && <div className="error">{error}</div>}
-        {loading ? <div className="loading">Loading gateway state…</div> : (
+        {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
             {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
             {(view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management') && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
@@ -215,20 +249,21 @@ function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
   nodes: Node[]; models: Model[]; deployments: Deployment[]; canWrite: boolean;
   onNavigate: (view: View) => void
 }) {
+  const t = useT()
   const systemOne = models.filter(model => model.surface === 'SystemOne')
   const readyRoutes = deployments.filter(item => item.enabled).length
   const healthyNodes = nodes.filter(node => node.status === 'Healthy').length
   const tasks: Array<{ title: string; summary: string; view: View; action: string }> = [
-    { title: 'Install an LLM', summary: 'Choose a server, discover a model, inspect requirements and install an inference runtime.', view: 'catalog', action: 'Browse models' },
-    { title: 'Connect a classifier', summary: 'Register an existing System One service, choose a node and publish its endpoint.', view: 'system-one', action: 'System One setup' },
-    { title: 'Add a server', summary: 'Pair a Linux Agent, inspect physical hardware and manage capacity.', view: 'infrastructure', action: 'Manage hardware' },
-    { title: 'Expose a model', summary: 'Review logical names, deployed runtimes and routing status.', view: 'models', action: 'Models & routes' },
-    { title: 'Verify a request', summary: 'Test deployed Chat or System One models using the production gateway path.', view: 'playground', action: 'Try model requests' }
+    { title: t('dashboard.tasks.install.title'), summary: t('dashboard.tasks.install.desc'), view: 'catalog', action: t('dashboard.tasks.install.action') },
+    { title: t('dashboard.tasks.classifier.title'), summary: t('dashboard.tasks.classifier.desc'), view: 'system-one', action: t('dashboard.tasks.classifier.action') },
+    { title: t('dashboard.tasks.server.title'), summary: t('dashboard.tasks.server.desc'), view: 'infrastructure', action: t('dashboard.tasks.server.action') },
+    { title: t('dashboard.tasks.publish.title'), summary: t('dashboard.tasks.publish.desc'), view: 'models', action: t('dashboard.tasks.publish.action') },
+    { title: t('dashboard.tasks.test.title'), summary: t('dashboard.tasks.test.desc'), view: 'playground', action: t('dashboard.tasks.test.action') }
   ]
   return <section className="panel uxStartPanel">
-    <div className="panelTitle"><div><h2>What do you want to do?</h2>
-      <span>Choose a task; the dashboard guides you to the right workspace.</span></div>
-      <div className="uxSummary">{healthyNodes}/{nodes.length} healthy nodes · {readyRoutes} enabled deployments · {systemOne.length} System One models</div>
+    <div className="panelTitle"><div><h2>{t('dashboard.tasks.title')}</h2>
+      <span>{t('dashboard.tasks.desc')}</span></div>
+      <div className="uxSummary">{healthyNodes}/{nodes.length} {t('dashboard.summary.nodes')} · {readyRoutes} {t('dashboard.summary.deployments')} · {systemOne.length} {t('dashboard.summary.classifiers')}</div>
     </div>
     <div className="uxPathGrid">
       {tasks.filter(task => canWrite || task.view !== 'playground').map(task => <div key={task.title} className="uxTask">
@@ -241,24 +276,25 @@ function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
 }
 
 function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Overview; nodes: Node[]; routing: RoutingSettings; metricsSummary: MetricsSummary }) {
+  const t = useT()
   return <>
     <section className="cards cardsFive">
-      <Metric label="Fleet health" value={`${overview.nodes.healthy} H / ${overview.nodes.degraded} D`} />
-      <Metric label="Logical models" value={overview.models} />
-      <Metric label="Deployments" value={overview.deployments} />
-      <Metric label="Active requests" value={overview.activeRequests} />
-      <Metric label="Requests today" value={overview.requestsToday} />
+      <Metric label={t('dashboard.kpi.fleet')} value={`${overview.nodes.healthy} H / ${overview.nodes.degraded} D`} />
+      <Metric label={t('dashboard.kpi.models')} value={overview.models} />
+      <Metric label={t('dashboard.kpi.deployments')} value={overview.deployments} />
+      <Metric label={t('dashboard.kpi.active')} value={overview.activeRequests} />
+      <Metric label={t('dashboard.kpi.today')} value={overview.requestsToday} />
     </section>
     <section className="cards cardsFive">
       <Metric label={`${metricsSummary.windowHours}h requests`} value={formatNumber(metricsSummary.requestCount)} />
-      <Metric label="Success rate" value={formatPercent(metricsSummary.successRatePercent)} />
+      <Metric label={t('dashboard.kpi.success')} value={formatPercent(metricsSummary.successRatePercent)} />
       <Metric label="P50 TTFT" value={formatMetricLatency(metricsSummary.p50TimeToFirstByteMilliseconds)} />
       <Metric label="P95 TTFT" value={formatMetricLatency(metricsSummary.p95TimeToFirstByteMilliseconds)} />
-      <Metric label="Output tokens" value={formatNumber(metricsSummary.outputTokens)} />
+      <Metric label={t('dashboard.kpi.output')} value={formatNumber(metricsSummary.outputTokens)} />
     </section>
     <section className="panel">
-      <div className="panelTitle"><h2>Inference fleet</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
-      <table><thead><tr><th>Node</th><th>Status</th><th>Service root</th><th>Latency</th><th>Health streak</th><th>Last check</th></tr></thead>
+      <div className="panelTitle"><h2>{t('dashboard.fleet.title')}</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
+      <table><thead><tr><th>{t('dashboard.fleet.node')}</th><th>{t('dashboard.fleet.status')}</th><th>{t('dashboard.fleet.root')}</th><th>{t('dashboard.fleet.latency')}</th><th>{t('dashboard.fleet.streak')}</th><th>{t('dashboard.fleet.last')}</th></tr></thead>
         <tbody>{nodes.map(node => <tr key={node.id}>
           <td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td>
           <td>{formatLatency(node.lastHealthLatencyMilliseconds)}</td><td>{healthStreak(node)}</td><td>{formatDate(node.lastHealthCheckUtc)}</td>
@@ -550,7 +586,7 @@ function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: Re
   return <div className="stack">
     <section className="cards cardsFive">
       <Metric label={`${summary.windowHours}h requests`} value={formatNumber(summary.requestCount)} />
-      <Metric label="Success rate" value={formatPercent(summary.successRatePercent)} />
+      <Metric label={t('dashboard.kpi.success')} value={formatPercent(summary.successRatePercent)} />
       <Metric label="P50 TTFT" value={formatMetricLatency(summary.p50TimeToFirstByteMilliseconds)} />
       <Metric label="P95 TTFT" value={formatMetricLatency(summary.p95TimeToFirstByteMilliseconds)} />
       <Metric label="Failover requests" value={formatNumber(summary.failoverRequests)} />
@@ -606,6 +642,7 @@ function NavItem({ active, onClick, icon, children }: { active: boolean; onClick
 }
 
 function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const t = useT()
   const [version, setVersion] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -615,7 +652,7 @@ function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => v
       .catch(() => undefined)
     return () => { cancelled = true }
   }, [])
-  return <NavItem icon="releases" active={active} onClick={onClick}>{version ? `v${version} · Release Notes` : 'Release Notes'}</NavItem>
+  return <NavItem icon="releases" active={active} onClick={onClick}>{version ? `v${version} · ${t('nav.releases')}` : t('nav.releases')}</NavItem>
 }
 
 function NavIcon({ name }: { name: NavIconName }) {
@@ -640,27 +677,50 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', catalog: 'Install & manage models', 'system-one': 'System One classifiers', infrastructure: 'Infrastructure', nodes: 'Infrastructure', hardware: 'Infrastructure', 'model-management': 'Infrastructure', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
-function sectionDescription(view: View): string {
-  const map: Partial<Record<View, string>> = {
-    dashboard: 'Health, usage and direct actions for operating your AI gateway.',
-    catalog: 'Discover models, choose a physical machine, install runtimes and manage their lifecycle.',
-    'system-one': 'Connect, route and validate typed classifier services on registered nodes.',
-    infrastructure: 'Manage physical servers, Linux Agents, pairing, capacity and hardware inventory.',
-    models: 'Manage client-facing names and where each inference workload is routed.',
-    routing: 'Control which eligible deployments receive traffic and how capacity is allocated.',
-    credentials: 'Issue, rotate and revoke API credentials.',
-    users: 'Manage users and platform access.',
-    governance: 'Configure quotas and usage policies.',
-    metrics: 'Observe requests, latency, usage and failures.',
-    playground: 'Test Chat and classifier requests via the real gateway.',
-    logs: 'Inspect retained request and response content.',
-    audit: 'Inspect administrative configuration actions.',
-    help: 'API documentation and integration examples.',
-    releases: 'Platform version, updates and release history.'
-  }
-  return map[view] ?? 'LLM gateway administration.'
+const titleKeys: Record<View, TranslationKey> = {
+  dashboard: 'page.dashboard.title',
+  catalog: 'page.catalog.title',
+  'system-one': 'page.systemOne.title',
+  infrastructure: 'page.infrastructure.title',
+  nodes: 'page.infrastructure.title',
+  hardware: 'page.infrastructure.title',
+  'model-management': 'page.infrastructure.title',
+  models: 'page.models.title',
+  deployments: 'page.models.title',
+  routing: 'page.routing.title',
+  credentials: 'page.credentials.title',
+  users: 'page.users.title',
+  governance: 'page.governance.title',
+  metrics: 'page.metrics.title',
+  playground: 'page.playground.title',
+  logs: 'page.logs.title',
+  audit: 'page.audit.title',
+  help: 'page.help.title',
+  releases: 'page.releases.title'
 }
+const descriptionKeys: Record<View, TranslationKey> = {
+  dashboard: 'page.dashboard.desc',
+  catalog: 'page.catalog.desc',
+  'system-one': 'page.systemOne.desc',
+  infrastructure: 'page.infrastructure.desc',
+  nodes: 'page.infrastructure.desc',
+  hardware: 'page.infrastructure.desc',
+  'model-management': 'page.infrastructure.desc',
+  models: 'page.models.desc',
+  deployments: 'page.models.desc',
+  routing: 'page.routing.desc',
+  credentials: 'page.credentials.desc',
+  users: 'page.users.desc',
+  governance: 'page.governance.desc',
+  metrics: 'page.metrics.desc',
+  playground: 'page.playground.desc',
+  logs: 'page.logs.desc',
+  audit: 'page.audit.desc',
+  help: 'page.help.desc',
+  releases: 'page.releases.desc'
+}
+function viewTitleKey(view: View): TranslationKey { return titleKeys[view] }
+function viewDescriptionKey(view: View): TranslationKey { return descriptionKeys[view] }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }
