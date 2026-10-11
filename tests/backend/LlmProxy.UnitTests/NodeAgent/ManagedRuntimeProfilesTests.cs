@@ -102,6 +102,39 @@ public sealed class ManagedRuntimeProfilesTests
         Assert.True(ManagedRuntimeProfiles.Matches(ToRecord(baseline), baseline));
     }
 
+    [Theory]
+    [InlineData(512, 8192, true)]
+    [InlineData(4096, 8192, true)]
+    [InlineData(4097, 8192, false)]
+    [InlineData(2048, 1024, false)]
+    [InlineData(0, 8192, false)]
+    public void Airllm_output_cap_respects_engine_and_context_budget(int output, int context, bool valid)
+    {
+        var request = new InstallRequest("qwen3-8b-airllm", "Qwen/Qwen3-8B",
+            null, 1, [], "airllm", 1, context, MaxOutputTokens: output);
+        if (valid) ManagedRuntimeProfiles.Validate(request);
+        else Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request));
+    }
+
+    [Fact]
+    public void NonAirllm_engines_must_not_claim_a_global_output_cap()
+    {
+        var request = new InstallRequest("qwen3-8b", "Qwen/Qwen3-8B",
+            null, 1, [], "vllm", 4, 8192, MaxOutputTokens: 512);
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request));
+    }
+
+    [Fact]
+    public void Output_cap_participates_in_installation_identity()
+    {
+        var request = new InstallRequest("qwen3-8b-airllm", "Qwen/Qwen3-8B",
+            null, 1, [], "airllm", 1, 8192, MaxOutputTokens: 512);
+        var record = ToRecord(request) with { MaxOutputTokens = 512 };
+        Assert.True(ManagedRuntimeProfiles.Matches(record, request));
+        Assert.False(ManagedRuntimeProfiles.Matches(record,
+            request with { MaxOutputTokens = 256 }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",
