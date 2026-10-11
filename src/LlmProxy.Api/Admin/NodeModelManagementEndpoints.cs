@@ -21,6 +21,63 @@ public static class NodeModelManagementEndpoints
         if (entraEnabled) group.RequireAuthorization("AdminRead");
 
         group.MapGet("/catalog", () => Results.Ok(DeployableModelCatalog.All));
+        group.MapGet("/hugging-face", async (
+            string? search, string? sort, int? limit,
+            HuggingFaceDiscoveryService hub, CancellationToken token) =>
+        {
+            try {
+                var models = await hub.DiscoverAsync(search ?? "", sort ?? "trending",
+                    limit ?? 20, token);
+                return Results.Ok(new {
+                    source = "Hugging Face Hub public models",
+                    discoveredAtUtc = DateTimeOffset.UtcNow,
+                    verifiedForLocalRuntime = false,
+                    models
+                });
+            }
+            catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+            { return Results.Problem("Hugging Face is unavailable; curated catalog remains accessible.",
+                statusCode: StatusCodes.Status503ServiceUnavailable); }
+        });
+
+        group.MapGet("/nodes/{id:guid}/upstream-updates", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HuggingFaceDiscoveryService hub,
+            CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var remote = await SendAgentAsync<ManagedModelsResponse>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Get, "/v1/models", null, token);
+                var entries = (remote.Models ?? []).Where(m =>
+                    m.ProviderModelName is not null &&
+                    HuggingFaceDiscoveryService.ValidRepository(m.ProviderModelName))
+                    .Take(20).ToArray();
+                var result = new List<object>();
+                foreach (var model in entries)
+                {
+                    var comparison = await hub.CompareAsync(model.ProviderModelName!,
+                        model.SourceRevision, token);
+                    result.Add(new {
+                        model.InstallationId,
+                        model.ProviderModelName,
+                        model.SourceRevision,
+                        update = comparison
+                    });
+                }
+                return Results.Ok(result);
+            }
+            catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+            { return Results.Problem("Upstream model revisions could not be checked. No changes were applied.",
+                statusCode: StatusCodes.Status503ServiceUnavailable); }
+        });
 
         // Model facts and runtime API support must be presented separately.
         // No network fetch or unverified capability inference for custom IDs.
