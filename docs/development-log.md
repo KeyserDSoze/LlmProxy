@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Diagnose grey Install with FITS, repair Admin URLs
+
+- Root cause: Catalog fit is based on cached last reported hardware, while installation requires live management Agent. Spark still reports Agent offline and tunnel unavailable.
+- Added explicit blocked-install notice with Retry connection and per-node recovery link, without bypassing the safety check.
+- Added native history routing for Admin sidebar, Infrastructure, Deploy models and other workspace tabs so F5 and back/forward preserve location, plus Playwright regression.
+- Physical Spark recovery through server-specific v0.2.31 code remains pending.
+
+
+
 ## 2026-10-11 — Admin-managed per-node recovery instead of repeated expiring invitations
 
 - Investigated real spark-1d52 failure: systemd Agent active, but repeated POST /api/agent-connection/enroll HTTP 401 means the Agent cannot find or use persisted pairing state and retries an expired/consumed invitation.
