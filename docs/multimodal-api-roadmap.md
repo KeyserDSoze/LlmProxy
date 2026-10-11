@@ -61,4 +61,4 @@ New logical model Admin UI surfaces: ImageGeneration, SpeechSynthesis, AudioTran
 - Image editing/variations, realtime/audio streaming sessions, fine-grained speech alignment and image upload are not yet exposed; only the paths in the table.
 - The gateway does not transcode formats or make an arbitrary model OpenAI-compatible; the upstream server must already implement the endpoint and selected options. Response is forwarded unmodified.
 - Only request-count and generic latency metrics are available initially; audio duration, image count and GPU output-specific metrics require schema updates.
-- Raw binary content must **not** be stored as request/response text in the content-audit pipeline. The first gateway-only phase leaves multimodal paths out of existing text-content audit, pending a metadata-safe design.
+- Multimodal request/response content is **redacted** in the existing content-audit pipeline. A metadata record with surface, request ID, credential, timestamps, media types and content lengths is persisted; neither image prompts nor raw audio/image data are retained. A structured, consent/configurable binary-safe detail view remains future work.
