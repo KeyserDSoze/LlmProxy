@@ -93,8 +93,14 @@ public static class MultimodalEndpoints
                 var bytes = await ReadBoundedAsync(context.Request.Body, MaxAudioUploadBytes, context.RequestAborted);
                 context.Request.Body = new MemoryStream(bytes, writable: false);
                 context.Request.ContentLength = bytes.Length;
-                form = await context.Request.ReadFormAsync(context.RequestAborted);
-                if (form.Count > MaxFormFields || form.Files.Count != 1 || form.Files[0].Length == 0)
+                try { form = await context.Request.ReadFormAsync(context.RequestAborted); }
+                catch (InvalidDataException)
+                {
+                    status = 400; error = "invalid_multipart";
+                    await FailAsync(context, status, error, "The multipart form could not be parsed.");
+                    return;
+                }
+                if (form.Count > MaxFormFields || form.Files.Count != 1 || form.Files[0].Length == 0 || form.Files[0].Name != "file")
                 {
                     status = 400; error = "invalid_audio_upload";
                     await FailAsync(context, status, error, "Exactly one non-empty audio file and no more than 24 form fields are required.");
@@ -104,7 +110,8 @@ public static class MultimodalEndpoints
             }
             else
             {
-                if (!context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
+                if (context.Request.ContentType is null ||
+                    !context.Request.ContentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
                 {
                     status = 415; error = "unsupported_media_type";
                     await FailAsync(context, status, error, "This endpoint requires application/json.");
@@ -253,8 +260,8 @@ public static class MultimodalEndpoints
         }
         catch (OperationCanceledException)
         {
-            status = leaseFailure(context) ? 503 : 504;
-            error = status == 503 ? "capacity_coordination_unavailable" : "upstream_timeout";
+            status = 504;
+            error = "upstream_timeout";
             if (!context.Response.HasStarted)
                 await FailAsync(context, status, error, "The multimodal inference request did not complete.");
             else context.Abort();
@@ -274,11 +281,6 @@ public static class MultimodalEndpoints
                 null, null, null, null, error));
         }
     }
-
-    // The coordination lease is linked into the outbound timeout token. Either
-    // cause becomes a 503/504, never a silent partial retry.
-    private static bool leaseFailure(HttpContext context) =>
-        context.RequestAborted.IsCancellationRequested;
 
     public static async Task<byte[]> ReadBoundedAsync(Stream body, int maxBytes, CancellationToken token)
     {
