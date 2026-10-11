@@ -18,14 +18,13 @@ from diffusers import DiffusionPipeline
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import JSONResponse
+from contract import MODEL_ID, validate_parameters, png_matches_request
 
-MODEL_ID = "segmind/SSD-1B"
+
 MODEL_SHA = os.environ.get("DIFFUSERS_MODEL_REVISION", "")
 if not re.fullmatch(r"[a-f0-9]{40}", MODEL_SHA):
     raise RuntimeError("Diffusers requires an Agent-pinned 40-character revision SHA")
 MODEL_ROOT = Path("/root/.cache/huggingface/hub/models--segmind--SSD-1B/snapshots") / MODEL_SHA
-_ALLOWED_SIZES = {"512x512", "768x768", "1024x1024"}
-_MAX_PNG_BYTES = 8 * 1024 * 1024
 _engine = None
 _gate = asyncio.Semaphore(1)
 
@@ -44,12 +43,15 @@ class ImageRequest(BaseModel):
 
 
 def validate_request(req: ImageRequest) -> None:
-    if req.model != MODEL_ID:
-        raise HTTPException(status_code=404, detail="Unknown image model")
-    if req.size not in _ALLOWED_SIZES:
-        raise HTTPException(status_code=422, detail="Supported sizes: 512x512, 768x768, 1024x1024")
-    if req.quality != "standard" or req.response_format != "b64_json":
-        raise HTTPException(status_code=422, detail="Only standard quality and b64_json are supported")
+    try:
+        validate_parameters(model=req.model, prompt=req.prompt, size=req.size,
+                            n=req.n, quality=req.quality,
+                            response_format=req.response_format, steps=req.steps,
+                            negative_prompt=req.negative_prompt, seed=req.seed)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _create_image(req: ImageRequest) -> bytes:
@@ -71,7 +73,7 @@ def _create_image(req: ImageRequest) -> bytes:
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     payload = buffer.getvalue()
-    if len(payload) > _MAX_PNG_BYTES or not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+    if not png_matches_request(payload, width, height):
         raise RuntimeError("Invalid or oversized generated PNG")
     return payload
 
