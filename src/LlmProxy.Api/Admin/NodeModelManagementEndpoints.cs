@@ -708,9 +708,24 @@ public static class NodeModelManagementEndpoints
                 var client = clients.CreateClient("node-management");
                 var jobs = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(
                     client, node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, nodeToken);
-                var pending = jobs.Where(job => job.Status == "completed" &&
-                    job.Result is not null && job.Request.CatalogModelId != "custom")
-                    .OrderByDescending(job => job.CreatedAtUtc).Take(100).ToArray();
+                var candidates = jobs.Where(job => job.Status == "completed" &&
+                    job.Result is not null && job.Request.CatalogModelId != "custom").ToArray();
+                if (candidates.Length == 0) continue;
+
+                // Page only *unregistered* jobs. A permanent backlog of old
+                // completed jobs must never starve newly completed installs.
+                HashSet<string?> registered;
+                await using (var registryScope = scopes.CreateAsyncScope())
+                {
+                    var registryDb = registryScope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                    registered = await registryDb.Deployments.AsNoTracking()
+                        .Where(row => row.NodeId == node.Id && row.ManagedInstallationId != null)
+                        .Select(row => row.ManagedInstallationId)
+                        .ToHashSetAsync(nodeToken);
+                }
+                var pending = candidates
+                    .Where(job => !registered.Contains(job.Result!.InstallationId))
+                    .OrderBy(job => job.CreatedAtUtc).Take(100).ToArray();
                 if (pending.Length == 0) continue;
 
                 var inventory = await SendAgentAsync<ManagedModelsResponse>(
