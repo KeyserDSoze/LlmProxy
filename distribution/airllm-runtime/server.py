@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 MODEL_ID = os.environ["AIRLLM_MODEL_ID"]
 MAX_CONTEXT = max(256, min(262144, int(os.getenv("AIRLLM_MAX_CONTEXT", "8192"))))
 QUEUE_LIMIT = max(1, min(128, int(os.getenv("AIRLLM_MAX_QUEUED", "1"))))
+MAX_OUTPUT_TOKENS = max(1, min(MAX_CONTEXT, 4096, int(os.getenv("AIRLLM_MAX_OUTPUT_TOKENS", "256"))))
 engine = None
 load_error = None
 ready = False
@@ -35,7 +36,7 @@ class Chat(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
-    max_tokens: int = Field(default=64, ge=1, le=256)
+    max_tokens: int = Field(default=64, ge=1, le=MAX_OUTPUT_TOKENS)
     temperature: float = Field(default=0, ge=0, le=2)
 
 
@@ -62,6 +63,8 @@ def _infer(messages, length, temperature):
         prompt = "\n".join(f"{m.role}: {m.content}" for m in messages) + "\nassistant:"
     ids = tok(prompt, return_tensors="pt", truncation=True, max_length=MAX_CONTEXT)["input_ids"]
     prompt_length = int(ids.shape[-1])
+    if prompt_length + length > MAX_CONTEXT:
+        raise ValueError("Requested prompt + output exceeds configured context budget")
     if torch.cuda.is_available():
         ids = ids.cuda()
     args = {"max_new_tokens": length, "use_cache": True,
@@ -141,8 +144,11 @@ async def chat(body: Chat, request: Request):
             raise HTTPException(503, "AirLLM inference queue timed out")
         if await request.is_disconnected():
             raise HTTPException(499, "Client disconnected")
-        answer, prompt_tokens, output_tokens = await asyncio.to_thread(
-            _infer, body.messages, body.max_tokens, body.temperature)
+        try:
+            answer, prompt_tokens, output_tokens = await asyncio.to_thread(
+                _infer, body.messages, body.max_tokens, body.temperature)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)[:200]) from exc
         completed += 1
         output_tokens_total += output_tokens
         return {
