@@ -1,3 +1,5 @@
+using LlmProxy.Domain.Models;
+
 namespace LlmProxy.Api.Admin;
 
 public sealed record DeployableModelDescriptor(
@@ -21,7 +23,8 @@ public sealed record DeployableModelDescriptor(
     bool SupportsTools,
     IReadOnlyList<string> Tags,
     string Notes,
-    string Runtime = "vllm");
+    string Runtime = "vllm",
+    ModelSurface Surface = ModelSurface.OpenAi);
 
 public static class DeployableModelCatalog
 {
@@ -258,7 +261,46 @@ public static class DeployableModelCatalog
             true,
             ["gguf", "quantized", "cpu-offload", "experimental"],
             "Experimental llama.cpp profile; context is shared across parallel slots and capacity requires benchmarking.",
-            "llama.cpp")
+            "llama.cpp"),
+        new(
+            "whisper-tiny-cpu",
+            "Whisper Tiny — Speech-to-text (CPU)",
+            "Systran/faster-whisper-tiny",
+            "Whisper (CTranslate2)",
+            "MIT",
+            "https://huggingface.co/Systran/faster-whisper-tiny",
+            0.039, 448, "int8 CPU",
+            0, 0, 2, 4, 1, 0, 0,
+            false, false,
+            ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
+            "CPU-only transcription and translation-to-English via OpenAI /v1/audio endpoints. Up to 25 MiB audio per upload; no Chat token context. Model and target host require real end-to-end acceptance.",
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "whisper-base-cpu",
+            "Whisper Base — Speech-to-text (CPU)",
+            "Systran/faster-whisper-base",
+            "Whisper (CTranslate2)",
+            "MIT",
+            "https://huggingface.co/Systran/faster-whisper-base",
+            0.074, 448, "int8 CPU",
+            0, 0, 3, 6, 2, 0, 0,
+            false, false,
+            ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
+            "CPU-only transcription and translation-to-English. Does not accelerate on GB10 GPU; benchmark real audio before relying on latency.",
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "whisper-small-cpu",
+            "Whisper Small — Speech-to-text (CPU)",
+            "Systran/faster-whisper-small",
+            "Whisper (CTranslate2)",
+            "MIT",
+            "https://huggingface.co/Systran/faster-whisper-small",
+            0.244, 448, "int8 CPU",
+            0, 0, 4, 8, 3, 0, 0,
+            false, false,
+            ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
+            "CPU-only speech transcription/translation-to-English. Real audio correctness and runtime performance are not certified yet.",
+            "faster-whisper", ModelSurface.AudioTranscription)
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>
