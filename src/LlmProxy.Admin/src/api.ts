@@ -216,6 +216,8 @@ export const api = {
   cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
+  activateManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/activate`, { method: 'POST' }),
   stopManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/stop`, { method: 'POST' }),
   removeManagedDeployment: (deploymentId: string) =>
