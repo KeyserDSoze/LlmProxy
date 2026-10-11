@@ -45,7 +45,8 @@ public sealed record InstallRequest(
     string? KvCacheDtype = null,
     double? CpuOffloadGiB = null,
     string? PublicName = null,
-    string? GpuDevices = null);
+    string? GpuDevices = null,
+    int? MaxOutputTokens = null);
 
 public sealed record ManagedModelRecord
 {
@@ -55,6 +56,7 @@ public sealed record ManagedModelRecord
     public string Runtime { get; init; } = "vllm";
     public int? MaxNumSeqs { get; init; }
     public int? MaxModelLen { get; init; }
+    public int? MaxOutputTokens { get; init; }
     public string? KvCacheDtype { get; init; }
     public double? CpuOffloadGiB { get; init; }
     public string? GpuDevices { get; init; }
@@ -80,6 +82,9 @@ public sealed record ManagedModelState(
     int? MaxModelLen = null,
     string? KvCacheDtype = null,
     double? CpuOffloadGiB = null,
-    string? GpuDevices = null);
+    string? GpuDevices = null,
+    int? MaxOutputTokens = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);
+
+public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens);
