@@ -580,6 +580,28 @@ export type UserUsageSummary = {
 }
 
 
+export type ModelCapabilityFeature = {
+  model: 'supported' | 'unsupported' | 'unknown' | 'not-applicable'
+  serving: 'supported' | 'unsupported' | 'partial' | 'unverified' | 'unknown'
+  explanation: string
+}
+export type ModelCapabilityProfile = {
+  providerModelName: string
+  runtime: string
+  source: string
+  modelCardUrl?: string | null
+  chat: ModelCapabilityFeature
+  toolCalling: ModelCapabilityFeature
+  streaming: ModelCapabilityFeature
+  vision: ModelCapabilityFeature
+  thinking: ModelCapabilityFeature
+  nativeContextTokens?: number | null
+  extendedContextTokens?: number | null
+  servingContextTokens?: number | null
+  maximumOutputTokens?: number | null
+  notes: string
+}
+
 export type DeployableModel = {
   runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm'
   id: string
@@ -689,6 +711,7 @@ export type ManagedInstallation = {
   agentStatus: string
   runtimeMetrics?: DeploymentRuntimeMetricsSnapshot | null
   agentState?: ManagedModelState | null
+  capabilities?: ModelCapabilityProfile | null
 }
 
 export type ModelInstallJob = {
@@ -716,7 +739,7 @@ export type ModelManagementOverview = {
   inventoryStale?: boolean
   agentError?: string | null
   hardware?: HardwareInventory | null
-  catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility }>
+  catalog: Array<{ model: DeployableModel; compatibility: ModelCompatibility; capabilities?: ModelCapabilityProfile }>
   installations: ManagedInstallation[]
 }
 
