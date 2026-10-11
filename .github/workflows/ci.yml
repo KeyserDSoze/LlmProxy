@@ -29,6 +29,7 @@ jobs:
           bash -n distribution/connect-node.sh
           bash -n distribution/install-node-agent.sh
           bash tests/node-agent-recovery-env.sh
+          bash tests/node-agent-connect-status.sh
           bash -n distribution/update-node-agent.sh
           python3 -m py_compile distribution/airllm-runtime/server.py
           python3 -m py_compile distribution/faster-whisper-runtime/server.py
