@@ -20,19 +20,20 @@ export default function InfrastructureExperience({ nodes, models, deployments, h
   return <div className="stack compactPage">
     <section className="panel pageToolbar">
       <div>
-        <h2>Physical infrastructure</h2>
-        <p className="muted">One hardware node represents one physical machine. Model runtimes may use different ports while sharing that machine's physical concurrency ceiling.</p>
+        <h2>Servers, agents & hardware</h2>
+        <p className="muted">Pair or recover a server, inspect its live capacity, and maintain installed runtimes. To discover and install models, go to the dedicated model catalog.</p>
       </div>
       <div className="capacityLegend">
         <strong>{nodes.length} hardware node{nodes.length === 1 ? '' : 's'}</strong>
         <span>{deployments.filter(item => item.enabled).length} routing-enabled deployments</span>
+        <a href="/admin/catalog?tab=deploy">Browse & install models →</a>
       </div>
     </section>
 
     <Tabs value={section} onChange={setSection} items={[
       { value: 'fleet', label: 'Fleet & access', count: nodes.length },
       { value: 'capacity', label: 'Capacity & telemetry', count: nodes.length },
-      { value: 'inventory', label: 'Inventory & model lifecycle', count: deployments.length }
+      { value: 'inventory', label: 'Hardware inventory & runtimes', count: deployments.length }
     ]} />
 
     {section === 'fleet' && <NodesPage nodes={nodes} canWrite={canWrite} refresh={refresh} embedded />}

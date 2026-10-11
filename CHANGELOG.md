@@ -1,3 +1,12 @@
+## Unreleased — Task-first Admin navigation and explicit System One setup (2026-10-11)
+
+- Reorganize Admin navigation by operator task: Models & inference, Infrastructure, Access & policy, Monitor & audit and Platform. Add task-driven Dashboard links with real fleet/model/deployment counts, page descriptions and breadcrumb navigation; keep previous admin URLs and deep-link history.
+- Expose **Install & manage models** directly at `/admin/catalog` with hardware selection and Deploy models opened by default. Existing Infrastructure → Inventory links still work; separate model discovery/installation from physical Agent and server management.
+- Add first-class **System One classifiers** at `/admin/system-one`: transparent guided setup for an **existing running classifier service**, creating/reusing a typed System One logical model and mapping it to a concrete enabled physical node with an explicit HTTP(S) runtime root. Show registered classifier deployments and direct links to real classifier diagnostics; clarify that the Agent does **not** yet install System One inference engines.
+- Disable unsafe System One "Deploy to all active" and require a classifier-specific runtime root for any manually created classifier deployment.
+- Move long contextual help to the bottom of the actual workspace, replacing buried controls with immediately actionable information. Add detailed operator journey and IA design audit in `docs/admin-ux-navigation.md`.
+- Playwright regression coverage for Dashboard direct paths, F5/deep links, guided classifier publish/connect and safe routing placement.
+
 ## Unreleased — Editable runtime limits and public Hugging Face model discovery (2026-10-11)
 
 - AirLLM allows explicitly configured `maxOutputTokens` (1–4096; default 256) and `maxModelLen` up to the documented Qwen3 native context of 32,768, subject to hardware and performance acceptance. Generation now rejects prompt + output requests that exceed its configured context instead of silently truncating the prompt. Larger limits increase latency and memory demand.

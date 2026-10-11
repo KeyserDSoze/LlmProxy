@@ -4,6 +4,8 @@ import { urlForAdminView, viewFromAdminPath } from './adminNavigation'
 import type { AdminView } from './adminNavigation'
 import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
+import ModelHardwareExperience from './ModelHardwareExperience'
+import SystemOneExperience from './SystemOneExperience'
 import ModelsDeployments from './ModelsDeployments'
 import CredentialsPage from './CredentialsPage'
 import MetricsPage from './MetricsPage'
@@ -144,20 +146,32 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
           <div><strong>LlmProxy</strong><span>AI Gateway</span></div>
         </div>
-        <nav>
+        <nav aria-label="Admin navigation">
           <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => navigate('dashboard')}>Dashboard</NavItem>
-          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>Infrastructure</NavItem>
+
+          <div className="navGroupLabel">Models & inference</div>
+          <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>Install & manage models</NavItem>
           <NavItem icon="models" active={view === 'models' || view === 'deployments'} onClick={() => navigate('models')}>Models & Deployments</NavItem>
+          <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>System One classifiers</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>Routing</NavItem>
-          <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>API Credentials</NavItem>
-          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => navigate('metrics')}>Request Metrics</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>Playground</NavItem>}
+
+          <div className="navGroupLabel">Infrastructure</div>
+          <NavItem icon="nodes" active={view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management'} onClick={() => navigate('infrastructure')}>Infrastructure</NavItem>
+
+          <div className="navGroupLabel">Access & policy</div>
+          <NavItem icon="key" active={view === 'credentials'} onClick={() => navigate('credentials')}>API Credentials</NavItem>
+          {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => navigate('users')}>Users & Access</NavItem>}
+          <NavItem icon="governance" active={view === 'governance'} onClick={() => navigate('governance')}>Usage & Governance</NavItem>
+
+          <div className="navGroupLabel">Monitor & audit</div>
+          <NavItem icon="metrics" active={view === 'metrics'} onClick={() => navigate('metrics')}>Request Metrics</NavItem>
           {canWrite && <NavItem icon="logs" active={view === 'logs'} onClick={() => navigate('logs')}>Request Audit</NavItem>}
           <NavItem icon="audit" active={view === 'audit'} onClick={() => navigate('audit')}>Administrative Audit</NavItem>
-          <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>Help & Endpoints</NavItem>
+
           <div className="navSecondary">
-            <NavItem icon="governance" active={view === 'governance'} onClick={() => navigate('governance')}>Usage & Governance</NavItem>
-            {canWrite && <NavItem icon="users" active={view === 'users'} onClick={() => navigate('users')}>Users & Access</NavItem>}
+            <div className="navGroupLabel">Platform</div>
+            <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>Help & Endpoints</NavItem>
             <ProductNavItem active={view === 'releases'} onClick={() => navigate('releases')} />
           </div>
         </nav>
@@ -166,18 +180,18 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
       <main>
         <header>
-          <div><h1>{title(view)}</h1><p>On-premises LLM control plane</p></div>
+          <div><div className="uxBreadcrumb"><button onClick={() => navigate('dashboard')}>Overview</button><span aria-hidden="true">/</span><span>{title(view)}</span></div><h1>{title(view)}</h1><p>{sectionDescription(view)}</p></div>
           <button className="secondary" onClick={() => void refresh()}>Refresh</button>
         </header>
-
-        <PageDocumentation page={view} />
 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
-            {view === 'dashboard' && <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />}
+            {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
             {(view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management') && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
+            {view === 'catalog' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
+            {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {(view === 'models' || view === 'deployments') && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
@@ -189,11 +203,41 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'help' && <HelpPage models={models} />}
             {view === 'governance' && <GovernanceExperience />}
             {view === 'releases' && <ReleaseNotesPage embedded canWrite={canWrite} />}
+            <PageDocumentation page={view} />
           </>
         )}
       </main>
     </div>
   )
+}
+
+function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
+  nodes: Node[]; models: Model[]; deployments: Deployment[]; canWrite: boolean;
+  onNavigate: (view: View) => void
+}) {
+  const systemOne = models.filter(model => model.surface === 'SystemOne')
+  const readyRoutes = deployments.filter(item => item.enabled).length
+  const healthyNodes = nodes.filter(node => node.status === 'Healthy').length
+  const tasks: Array<{ title: string; summary: string; view: View; action: string }> = [
+    { title: 'Install an LLM', summary: 'Choose a server, discover a model, inspect requirements and install an inference runtime.', view: 'catalog', action: 'Browse models' },
+    { title: 'Connect a classifier', summary: 'Register an existing System One service, choose a node and publish its endpoint.', view: 'system-one', action: 'System One setup' },
+    { title: 'Add a server', summary: 'Pair a Linux Agent, inspect physical hardware and manage capacity.', view: 'infrastructure', action: 'Manage hardware' },
+    { title: 'Expose a model', summary: 'Review logical names, deployed runtimes and routing status.', view: 'models', action: 'Models & routes' },
+    { title: 'Verify a request', summary: 'Test deployed Chat or System One models using the production gateway path.', view: 'playground', action: 'Try model requests' }
+  ]
+  return <section className="panel uxStartPanel">
+    <div className="panelTitle"><div><h2>What do you want to do?</h2>
+      <span>Choose a task; the dashboard guides you to the right workspace.</span></div>
+      <div className="uxSummary">{healthyNodes}/{nodes.length} healthy nodes · {readyRoutes} enabled deployments · {systemOne.length} System One models</div>
+    </div>
+    <div className="uxPathGrid">
+      {tasks.filter(task => canWrite || task.view !== 'playground').map(task => <div key={task.title} className="uxTask">
+        <strong>{task.title}</strong>
+        <p>{task.summary}</p>
+        <button className="secondary" onClick={() => onNavigate(task.view)}>{task.action} →</button>
+      </div>)}
+    </div>
+  </section>
 }
 
 function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Overview; nodes: Node[]; routing: RoutingSettings; metricsSummary: MetricsSummary }) {
@@ -596,7 +640,27 @@ function NavIcon({ name }: { name: NavIconName }) {
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
 
-function title(view: View) { return ({ dashboard: 'Gateway dashboard', infrastructure: 'Infrastructure', nodes: 'Infrastructure', hardware: 'Infrastructure', 'model-management': 'Infrastructure', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function title(view: View) { return ({ dashboard: 'Gateway dashboard', catalog: 'Install & manage models', 'system-one': 'System One classifiers', infrastructure: 'Infrastructure', nodes: 'Infrastructure', hardware: 'Infrastructure', 'model-management': 'Infrastructure', models: 'Models & deployments', deployments: 'Models & deployments', routing: 'Routing policy', credentials: 'API credentials', users: 'Users & access', metrics: 'Inference observability', playground: 'Model & classifier playground', logs: 'Request & response audit', audit: 'Administrative audit trail', help: 'Endpoint & platform guide', governance: 'Usage & governance', releases: 'Version & release notes' } as const)[view] }
+function sectionDescription(view: View): string {
+  const map: Partial<Record<View, string>> = {
+    dashboard: 'Health, usage and direct actions for operating your AI gateway.',
+    catalog: 'Discover models, choose a physical machine, install runtimes and manage their lifecycle.',
+    'system-one': 'Connect, route and validate typed classifier services on registered nodes.',
+    infrastructure: 'Manage physical servers, Linux Agents, pairing, capacity and hardware inventory.',
+    models: 'Manage client-facing names and where each inference workload is routed.',
+    routing: 'Control which eligible deployments receive traffic and how capacity is allocated.',
+    credentials: 'Issue, rotate and revoke API credentials.',
+    users: 'Manage users and platform access.',
+    governance: 'Configure quotas and usage policies.',
+    metrics: 'Observe requests, latency, usage and failures.',
+    playground: 'Test Chat and classifier requests via the real gateway.',
+    logs: 'Inspect retained request and response content.',
+    audit: 'Inspect administrative configuration actions.',
+    help: 'API documentation and integration examples.',
+    releases: 'Platform version, updates and release history.'
+  }
+  return map[view] ?? 'LLM gateway administration.'
+}
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleString() : '—' }
 function formatLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${value} ms` }
 function formatMetricLatency(value?: number | null) { return value === null || value === undefined ? '—' : `${Math.round(value)} ms` }

@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 
 export type AdminView =
   | 'dashboard' | 'infrastructure' | 'nodes' | 'hardware' | 'model-management'
-  | 'models' | 'deployments' | 'routing' | 'credentials' | 'users'
+  | 'models' | 'deployments' | 'catalog' | 'system-one' | 'routing' | 'credentials' | 'users'
   | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
 
 const knownViews: readonly AdminView[] = [
   'dashboard', 'infrastructure', 'nodes', 'hardware', 'model-management',
-  'models', 'deployments', 'routing', 'credentials', 'users',
+  'models', 'deployments', 'catalog', 'system-one', 'routing', 'credentials', 'users',
   'metrics', 'playground', 'logs', 'audit', 'help', 'governance', 'releases'
 ]
 
