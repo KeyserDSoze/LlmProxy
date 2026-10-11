@@ -113,16 +113,20 @@ public sealed class DockerModelRuntimeManager(
 import json
 from huggingface_hub import HfApi, hf_hub_download
 repo = MODEL_ID
-siblings = HfApi().model_info(repo, files_metadata=True).siblings
+info = HfApi().model_info(repo, files_metadata=True)
+revision = info.sha
+print('LLMPROXY_SOURCE_SHA:' + revision, flush=True)
+siblings = info.siblings
 files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
 total = sum(s.size or 0 for s in files)
 known = bool(files) and all(s.size is not None for s in files)
 done = 0
 for index, entry in enumerate(files):
-    hf_hub_download(repo_id=repo, filename=entry.rfilename, cache_dir='/root/.cache/huggingface/hub')
+    hf_hub_download(repo_id=repo, filename=entry.rfilename, revision=revision, cache_dir='/root/.cache/huggingface/hub')
     done += entry.size or 0
     print('LLMPROXY_PROGRESS:' + json.dumps({'percent': round(100*done/total, 2) if known and total else round(100*(index+1)/len(files), 2), 'completedBytes': done if known else None, 'totalBytes': total if known else None, 'label': (entry.rfilename[:100] + (' (files)' if not known else ''))}), flush=True)
 """.Replace("MODEL_ID", JsonSerializer.Serialize(record.ProviderModelName));
+                    string? cachedSourceRevision = null;
                     await PullCommandAsync(
                     [
                         "run", "--rm",
@@ -130,7 +134,17 @@ for index, entry in enumerate(files):
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         record.Runtime == "airllm" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
-                    ], cancellationToken, line => ParseTransferLine(line, "model-weights", report));
+                    ], cancellationToken, line =>
+                    {
+                        if (line.StartsWith("LLMPROXY_SOURCE_SHA:", StringComparison.Ordinal))
+                        {
+                            var revision = line["LLMPROXY_SOURCE_SHA:".Length..].Trim();
+                            if (Regex.IsMatch(revision, "^[a-fA-F0-9]{40}$")) cachedSourceRevision = revision.ToLowerInvariant();
+                        }
+                        ParseTransferLine(line, "model-weights", report);
+                    });
+                    if (cachedSourceRevision is not null)
+                        record = record with { SourceRevision = cachedSourceRevision };
                 }
 
                 report?.Invoke(new TransferProgress("ready", 100, "Runtime and model files prepared", null, null));
@@ -423,7 +437,7 @@ for index, entry in enumerate(files):
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
-            record.GpuDevices, record.MaxOutputTokens);
+            record.GpuDevices, record.MaxOutputTokens, record.SourceRevision);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 
