@@ -941,6 +941,7 @@ public static class NodeModelManagementEndpoints
         int? MaxModelLen = null,
         string? KvCacheDtype = null,
         double? CpuOffloadGiB = null,
-        string? GpuDevices = null, int? MaxOutputTokens = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null,
+        string? SourceRevision = null);
     private sealed class AgentException(string message) : Exception(message);
 }
