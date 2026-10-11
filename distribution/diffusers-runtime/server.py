@@ -7,6 +7,7 @@ import asyncio
 import base64
 import os
 import re
+import secrets
 import time
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -53,9 +54,9 @@ def validate_request(req: ImageRequest) -> None:
 
 def _create_image(req: ImageRequest) -> bytes:
     width, height = map(int, req.size.split("x"))
-    generator = torch.Generator(device="cuda")
-    if req.seed is not None:
-        generator.manual_seed(req.seed)
+    # Unseeded requests must not repeat the same default torch generator seed.
+    generator = torch.Generator(device="cuda").manual_seed(
+        req.seed if req.seed is not None else secrets.randbelow(2**31))
     with torch.inference_mode():
         output = _engine(
             prompt=req.prompt, negative_prompt=req.negative_prompt,
