@@ -41,4 +41,33 @@ sha256sum -c "dist/$archive.sha256"
 tar -xzf "dist/$archive" -C unpacked
 cd unpacked
 bash install-node-agent.sh
-echo "Node Agent installed and paired with LlmProxy if its registration request succeeds."
+
+# A running systemd unit is not proof of enrollment: the Agent only persists
+# its gateway identity after /enroll or /recover succeeds.
+node_connection_complete() {
+  local env_file="$1" state_file="$2" kind="$3"
+  [[ -s "$state_file" && -f "$env_file" ]] || return 1
+  if [[ "$kind" == recovery ]]; then
+    grep -Fxq 'NodeAgent__ForceRecovery=false' "$env_file" &&
+      grep -Fxq 'NodeAgent__RecoveryToken=' "$env_file" &&
+      grep -Fxq 'NodeAgent__RecoveryNodeId=' "$env_file"
+  else
+    grep -Fxq 'NodeAgent__EnrollmentToken=' "$env_file"
+  fi
+}
+
+kind=enrollment
+[[ -n "${LLMPROXY_RECOVERY_TOKEN:-}" ]] && kind=recovery
+for attempt in {1..30}; do
+  if node_connection_complete /etc/llmproxy/node-agent.env \
+      /var/lib/llmproxy-node-agent/gateway-connection.json "$kind" &&
+      systemctl is-active --quiet llmproxy-node-agent; then
+    echo "Node Agent installed, running and successfully registered with LlmProxy ($kind)."
+    exit 0
+  fi
+  sleep 4
+done
+echo "Node Agent installed but registration was NOT confirmed by the Gateway." >&2
+echo "Inspect: journalctl -u llmproxy-node-agent -n 60 --no-pager" >&2
+echo "If using recovery, rotate the per-node recovery token in Admin and check the original connection mode." >&2
+exit 5
