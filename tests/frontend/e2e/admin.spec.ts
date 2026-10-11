@@ -247,7 +247,7 @@ test('admin can inspect health, observability, add a path-prefixed node and test
 
 test('infrastructure exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
   await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Infrastructure' }).click()
-  await expect(page.getByRole('heading', { name: 'Physical infrastructure', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Servers, agents & hardware', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /Capacity & telemetry/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
@@ -343,7 +343,7 @@ test('admin navigation preserves top-level pages and infrastructure tabs across 
   await page.goto('/')
   await page.getByRole('button', { name: 'Infrastructure' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
-  await page.getByRole('tab', { name: /Inventory & model lifecycle/ }).click()
+  await page.getByRole('tab', { name: /Hardware inventory & runtimes/ }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
   await page.getByRole('tab', { name: /Deploy models/ }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
@@ -587,4 +587,79 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await expect(install.getByText(/Selected defaults:/)).toBeVisible()
   await expect(install.getByLabel('Runtime maximum context')).toHaveValue('8192')
   await expect(install.getByLabel('Install maximum output tokens')).toHaveValue('256')
+})
+
+
+test('task-based navigation exposes direct model installation and System One deep links', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible()
+  await expect(page.getByText('Models & inference', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Browse models' }).click()
+  await expect(page).toHaveURL(/\/admin\/catalog/)
+  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Install & manage models', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
+
+  await page.getByRole('button', { name: 'System One classifiers' }).click()
+  await expect(page).toHaveURL(/\/admin\/system-one$/)
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await expect(page.getByText(/current Node Agent does not install or start a System One runtime/)).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/admin\/catalog/)
+  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('guided System One connection creates only a classifier alias and a specified runtime route', async ({ page }) => {
+  await installAdminApi(page)
+  const modelsCreated: unknown[] = []
+  const routesCreated: unknown[] = []
+  await page.route('**/api/admin/models', route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const body = route.request().postDataJSON()
+    modelsCreated.push(body)
+    return json(route, { ...body, id: 'new-systemone-model', enabled: true }, 201)
+  })
+  await page.route('**/api/admin/deployments', route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const body = route.request().postDataJSON()
+    routesCreated.push(body)
+    return json(route, { ...body, id: 'new-classifier-deployment', enabled: true }, 201)
+  })
+  await page.goto('/admin/system-one')
+  await page.getByLabel('System One logical name').fill('laya-on-spark')
+  await page.getByLabel('System One provider name').fill('convaiinnovations/laya')
+  await page.getByLabel('System One target node').selectOption('node-1')
+  await page.getByLabel('System One service root').fill('http://10.0.0.21:8500')
+  await page.getByLabel('System One concurrency').fill('2')
+  await page.getByRole('button', { name: 'Connect and publish classifier' }).click()
+  await expect(page.getByRole('status')).toContainText('route for "laya-on-spark" created')
+  expect(modelsCreated).toEqual([{
+    publicName: 'laya-on-spark', providerModelName: 'convaiinnovations/laya',
+    surface: 'SystemOne', supportsStreaming: false, supportsTools: false
+  }])
+  expect(routesCreated).toEqual([{
+    modelId: 'new-systemone-model', nodeId: 'node-1',
+    runtimeBaseAddress: 'http://10.0.0.21:8500', weight: 1, maxConcurrency: 2
+  }])
+})
+
+test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/models')
+  const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
+  await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
+  await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
+  await classifier.getByRole('button', { name: 'Deploy…' }).click()
+  const form = page.getByRole('dialog', { name: /Deploy · systemone-laya/ })
+  await form.getByRole('combobox').selectOption('node-1')
+  await expect(form.getByRole('button', { name: 'Create deployment' })).toBeDisabled()
+  await form.getByLabel('Runtime service root').fill('http://10.0.0.21:8500')
+  await expect(form.getByRole('button', { name: 'Create deployment' })).toBeEnabled()
 })
