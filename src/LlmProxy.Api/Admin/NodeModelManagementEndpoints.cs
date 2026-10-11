@@ -670,7 +670,8 @@ public static class NodeModelManagementEndpoints
     public static bool CanReconcileJob(ModelInstallJob job, IReadOnlyList<ManagedModelState> currentModels)
     {
         if (!string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase) ||
-            job.Result is null || job.Request.CatalogModelId == "custom")
+            job.Result is null || job.Request.CatalogModelId == "custom" ||
+            job.Result.Status is not ("stopped" or "running"))
             return false;
         return currentModels.Any(item =>
             item.InstallationId == job.Result.InstallationId &&
@@ -756,7 +757,8 @@ public static class NodeModelManagementEndpoints
                     try
                     {
                         var result = await RegisterManagedInstallationAsync(
-                            job.Result, request, descriptor,
+                            job.Result with { Status = "stopped", RuntimeBaseAddress = null },
+                            request, descriptor,
                             new ModelCompatibility("unknown",
                                 "Registered from completed persistent Node Agent job", [],
                                 job.Request.TensorParallelSize),
