@@ -226,7 +226,7 @@ public static class NodeModelManagementEndpoints
                  request.MaxNumSeqs is not null and not 1 ||
                  request.TensorParallelSize is not null and not 1))
                 return Results.BadRequest(new { error = "invalid_audio_runtime_settings",
-                    message = "Whisper CPU accepts one worker and no Chat token/GPU/runtime flags." });
+                    message = "Managed CPU audio runtimes accept one worker and no Chat token/GPU/runtime flags." });
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
 
             var node = await dbContext.Nodes.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
