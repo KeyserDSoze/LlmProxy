@@ -808,8 +808,8 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
       }],
       installations: []
     }))
-  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => {
-    if (route.request().method() !== 'POST') return json(route, [])
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
+  await page.route('**/api/admin/model-management/nodes/*/models/*/install-jobs', route => {
     queued = route.request().postDataJSON() as Record<string, unknown>
     return json(route, { id: 'job-whisper', status: 'queued', stage: 'queued', percent: null,
       detail: 'Queued', request: { catalogModelId: 'whisper-tiny-cpu', runtime: 'faster-whisper' } })
