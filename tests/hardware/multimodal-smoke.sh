@@ -30,14 +30,30 @@ PY
       -H @"$tmp/auth" -H 'Content-Type: application/json' \
       --data-binary @"$tmp/request.json" > "$tmp/response.json"
     python3 - "$tmp/response.json" <<'PY'
-import base64, json, struct, sys
+import base64, json, struct, sys, zlib
 with open(sys.argv[1], encoding="utf-8") as f: obj = json.load(f)
 assert len(obj["data"]) == 1
 png = base64.b64decode(obj["data"][0]["b64_json"], validate=True)
 assert png[:8] == b"\x89PNG\r\n\x1a\n", "Invalid PNG signature"
 w, h = struct.unpack(">II", png[16:24])
 assert (w, h) == (512, 512), f"Wrong image dimensions: {(w,h)}"
-print(f"Image API acceptance OK: PNG {w}x{h}, {len(png)} bytes")
+# Check every PNG chunk CRC and decompress the complete IDAT pixel stream.
+pos, idat, ended = 8, bytearray(), False
+while pos + 12 <= len(png):
+    size = int.from_bytes(png[pos:pos + 4], "big")
+    assert size <= 8 * 1024 * 1024 and pos + 12 + size <= len(png)
+    kind = png[pos + 4:pos + 8]
+    data = png[pos + 8:pos + 8 + size]
+    crc = int.from_bytes(png[pos + 8 + size:pos + 12 + size], "big")
+    assert zlib.crc32(kind + data) & 0xffffffff == crc, "PNG CRC mismatch"
+    if kind == b"IDAT": idat.extend(data)
+    pos += 12 + size
+    if kind == b"IEND":
+        ended = True
+        break
+assert ended and pos == len(png) and idat, "PNG is truncated"
+assert len(zlib.decompress(idat)) > w * h, "Invalid PNG pixel payload"
+print(f"Image API acceptance OK: decoded PNG {w}x{h}, {len(png)} bytes")
 PY
     ;;
   tts)
