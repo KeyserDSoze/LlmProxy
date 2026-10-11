@@ -74,6 +74,7 @@ public sealed class DockerModelRuntimeManager(
                 Runtime = request.Runtime,
                 MaxNumSeqs = request.MaxNumSeqs,
                 MaxModelLen = request.MaxModelLen,
+                MaxOutputTokens = request.MaxOutputTokens,
                 KvCacheDtype = request.KvCacheDtype,
                 CpuOffloadGiB = request.CpuOffloadGiB,
                 GpuDevices = request.GpuDevices,
@@ -177,7 +178,8 @@ for index, entry in enumerate(files):
             {
                 args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
                     "-e", "AIRLLM_MAX_QUEUED=" + (record.MaxNumSeqs ?? 1),
-                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192)]);
+                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192),
+                    "-e", "AIRLLM_MAX_OUTPUT_TOKENS=" + (record.MaxOutputTokens ?? 256)]);
             }
             args.Add("-p");
             var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
@@ -229,6 +231,36 @@ for index, entry in enumerate(files):
         {
             _operations.Release();
         }
+    }
+
+    public async Task<ManagedModelState> ConfigureAsync(string installationId,
+        ManagedProfileUpdate update, CancellationToken cancellationToken)
+    {
+        await _operations.WaitAsync(cancellationToken);
+        try
+        {
+            var record = await RequireRecordAsync(installationId, cancellationToken);
+            if (await IsRunningAsync(record, cancellationToken))
+                throw new InvalidOperationException(
+                    "Stop this installation from LLMProxy before editing runtime limits. Model files are kept.");
+            var request = new InstallRequest(record.CatalogModelId, record.ProviderModelName,
+                record.Port, record.TensorParallelSize, record.ExtraArguments,
+                record.Runtime, update.MaxNumSeqs, update.MaxModelLen,
+                record.KvCacheDtype, record.CpuOffloadGiB, null, record.GpuDevices,
+                update.MaxOutputTokens);
+            ManagedRuntimeProfiles.Validate(request);
+            var changed = record with {
+                MaxModelLen = update.MaxModelLen,
+                MaxNumSeqs = update.MaxNumSeqs,
+                MaxOutputTokens = update.MaxOutputTokens,
+                Status = "stopped",
+                RuntimeBaseAddress = null,
+                Error = null
+            };
+            await registry.UpsertAsync(changed, cancellationToken);
+            return ToState(changed, "stopped", null);
+        }
+        finally { _operations.Release(); }
     }
 
     public async Task RemoveAsync(string installationId, CancellationToken cancellationToken)
@@ -391,7 +423,7 @@ for index, entry in enumerate(files):
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
-            record.GpuDevices);
+            record.GpuDevices, record.MaxOutputTokens);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 
