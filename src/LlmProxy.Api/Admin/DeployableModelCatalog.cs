@@ -300,7 +300,20 @@ public static class DeployableModelCatalog
             false, false,
             ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
             "CPU-only speech transcription/translation-to-English. Real audio correctness and runtime performance are not certified yet.",
-            "faster-whisper", ModelSurface.AudioTranscription)
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "laya-english-cpu",
+            "Laya System One — English (CPU, experimental)",
+            "convaiinnovations/laya",
+            "Laya typed classifier",
+            "Apache-2.0",
+            "https://huggingface.co/convaiinnovations/laya",
+            0.421, 512, "FP32 CPU",
+            0, 0, 8, 16, 6, 0, 0,
+            false, false,
+            ["system-one", "typed-classification", "english", "cpu", "experimental", "arm64"],
+            "Official typed System One /v1/systemone protocol. CPU-only experimental profile; checks actual inference before routing. Not a Chat or generative model.",
+            "laya", ModelSurface.SystemOne)
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>
