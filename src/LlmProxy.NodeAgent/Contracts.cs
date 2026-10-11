@@ -57,6 +57,7 @@ public sealed record ManagedModelRecord
     public int? MaxNumSeqs { get; init; }
     public int? MaxModelLen { get; init; }
     public int? MaxOutputTokens { get; init; }
+    public string? SourceRevision { get; init; }
     public string? KvCacheDtype { get; init; }
     public double? CpuOffloadGiB { get; init; }
     public string? GpuDevices { get; init; }
@@ -83,7 +84,8 @@ public sealed record ManagedModelState(
     string? KvCacheDtype = null,
     double? CpuOffloadGiB = null,
     string? GpuDevices = null,
-    int? MaxOutputTokens = null);
+    int? MaxOutputTokens = null,
+    string? SourceRevision = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);
 
