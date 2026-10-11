@@ -21,7 +21,8 @@ public static class OpenAiEndpoints
     {
         endpoints.MapGet("/v1/models", async (IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
         {
-            var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.OpenAi);
+            var models = (await catalog.GetPublicModelsAsync(cancellationToken))
+                .Where(model => model.Surface != ModelSurface.SystemOne);
             return Results.Ok(new
             {
                 @object = "list",
@@ -30,7 +31,8 @@ public static class OpenAiEndpoints
                     id = model.PublicName,
                     @object = "model",
                     created = 0,
-                    owned_by = "llmproxy"
+                    owned_by = "llmproxy",
+                    llmproxy_surface = model.Surface.ToString()
                 })
             });
         });

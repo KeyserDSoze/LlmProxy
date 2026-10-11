@@ -3,7 +3,10 @@ namespace LlmProxy.Domain.Models;
 public enum ModelSurface
 {
     OpenAi = 0,
-    SystemOne = 1
+    SystemOne = 1,
+    ImageGeneration = 2,
+    SpeechSynthesis = 3,
+    AudioTranscription = 4
 }
 
 public sealed class ModelDefinition
@@ -40,6 +43,11 @@ public sealed class ModelDefinition
         if (string.IsNullOrWhiteSpace(providerModelName))
         {
             throw new ArgumentException("Provider model name is required.", nameof(providerModelName));
+        }
+
+        if (!Enum.IsDefined(surface))
+        {
+            throw new ArgumentOutOfRangeException(nameof(surface), "Unknown inference API surface.");
         }
 
         PublicName = publicName.Trim();

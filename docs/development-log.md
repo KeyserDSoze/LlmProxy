@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Isolated OpenAI image/audio gateway surfaces
+
+- Clarified Hugging Face stores some model weights; the serving runtime and System One transport are independent of where checkpoints originate.
+- Implemented image generation, TTS and STT/translation OpenAI endpoint forwarding with separate modality model surfaces, safe per-node routing, rate and capacity governance, preserved binary audio streams and redacted metadata-only auditing.
+- Published multi-modal API contract and realistic hardware-specific installation roadmap. The existing Laya, Chat, rate policy and Linux Agent installers were not altered; new image/audio engines must be served separately until their Agent runtimes are implemented.
+- Added unit tests for validated model surfaces and bounded upload handling; CI and real Spark binary/model integration to be checked before release.
+
+# Development log
+
 ## 2026-10-11 — Second Admin UX audit and responsive light/dark + EN/IT foundation
 
 - User explicitly approved dropping obsolete UI aliases. Canonical task-first routes remain, with physical node and tab query selections.

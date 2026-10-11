@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using LlmProxy.Api.Security;
+using LlmProxy.Api.Multimodal;
 using LlmProxy.Api.SystemOne;
 using LlmProxy.Application.Abstractions;
 
@@ -13,7 +14,11 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
     {
         "/v1/chat/completions",
         "/v1/responses",
-        "/v1/systemone"
+        "/v1/systemone",
+        "/v1/images/generations",
+        "/v1/audio/speech",
+        "/v1/audio/transcriptions",
+        "/v1/audio/translations"
     };
 
     public async Task InvokeAsync(HttpContext context, IInferenceContentLogSink sink)
@@ -25,6 +30,40 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
         }
 
         var startedAtUtc = DateTimeOffset.UtcNow;
+        // Image and audio outputs can be binary or contain megabytes of base64.
+        // Never interpret audio uploads or generated binary as UTF-8 or retain
+        // their content in text audit. Preserve a bounded metadata trail instead.
+        if (IsMultimodal(context.Request.Path))
+        {
+            try { await next(context); }
+            finally
+            {
+                var credentialId = context.Items.TryGetValue(InferenceApiKeyMiddleware.ApiCredentialIdItem, out var credential) &&
+                    credential is Guid id ? id : (Guid?)null;
+                sink.Write(new InferenceContentLog(
+                    TryGetRequestId(context.Response.Headers["X-LlmProxy-Request-Id"].ToString()) ?? Guid.NewGuid(),
+                    startedAtUtc, DateTimeOffset.UtcNow,
+                    SurfaceFor(context.Request.Path), context.Request.Method,
+                    context.Request.Path.Value ?? "",
+                    context.Items.TryGetValue(MultimodalEndpoints.LogicalModelItem, out var model)
+                        ? model as string : null,
+                    credentialId, context.Response.StatusCode,
+                    context.Request.ContentType, context.Response.ContentType,
+                    JsonSerializer.Serialize(new {
+                        format = "llmproxy.multimodal.audit.metadata.v1",
+                        contentRedacted = true,
+                        context.Request.ContentLength,
+                        context.Request.ContentType
+                    }),
+                    JsonSerializer.Serialize(new {
+                        format = "llmproxy.multimodal.audit.metadata.v1",
+                        contentRedacted = true,
+                        context.Response.ContentLength,
+                        context.Response.ContentType
+                    })));
+            }
+            return;
+        }
         context.Request.EnableBuffering();
 
         string requestBody;
@@ -87,6 +126,10 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
         }
     }
 
+    private static bool IsMultimodal(PathString path) =>
+        path.Value?.ToLowerInvariant() is "/v1/images/generations" or "/v1/audio/speech"
+            or "/v1/audio/transcriptions" or "/v1/audio/translations";
+
     private static Guid? TryGetRequestId(string value)
         => Guid.TryParse(value, out var parsed) ? parsed : null;
 
@@ -96,6 +139,10 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
             "/v1/chat/completions" => "chat_completions",
             "/v1/responses" => "responses",
             "/v1/systemone" => "systemone",
+            "/v1/images/generations" => "image_generation",
+            "/v1/audio/speech" => "audio_speech",
+            "/v1/audio/transcriptions" => "audio_transcription",
+            "/v1/audio/translations" => "audio_translation",
             _ => "unknown"
         };
 

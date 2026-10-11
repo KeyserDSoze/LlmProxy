@@ -745,3 +745,37 @@ test('Italian model discovery, deployment lifecycle and fleet pages use one pers
   await expect(page.getByText('Concorrenza fisica')).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
 })
+
+
+test('image and audio models are published as isolated API surfaces, never as Chat installations', async ({ page }) => {
+  await installAdminApi(page)
+  const created: Record<string, unknown>[] = []
+  await page.route('**/api/admin/models', async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    created.push(body)
+    return json(route, { id: 'multimodal-created-' + created.length, ...body, enabled: true }, 201)
+  })
+  await page.goto('/admin/models')
+  for (const [surface, model] of [
+    ['ImageGeneration', 'image-demo'],
+    ['SpeechSynthesis', 'voice-demo'],
+    ['AudioTranscription', 'whisper-demo']
+  ]) {
+    await page.getByRole('button', { name: 'Publish logical model' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Publish logical model' })
+    await dialog.getByLabel('Model surface').selectOption(surface)
+    await expect(dialog.getByText(/does not download or launch an image\/audio runtime/)).toBeVisible()
+    await dialog.getByPlaceholder('agic-code-fast').fill(model)
+    await dialog.getByPlaceholder('Qwen/...').fill('org/' + model)
+    await dialog.getByRole('button', { name: 'Publish model' }).click()
+  }
+  expect(created).toEqual([
+    { publicName: 'image-demo', providerModelName: 'org/image-demo', surface: 'ImageGeneration',
+      supportsStreaming: false, supportsTools: false },
+    { publicName: 'voice-demo', providerModelName: 'org/voice-demo', surface: 'SpeechSynthesis',
+      supportsStreaming: false, supportsTools: false },
+    { publicName: 'whisper-demo', providerModelName: 'org/whisper-demo', surface: 'AudioTranscription',
+      supportsStreaming: false, supportsTools: false }
+  ])
+})

@@ -3,6 +3,7 @@ using LlmProxy.Api.Admin;
 using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Api.Identity;
 using LlmProxy.Api.Observability;
+using LlmProxy.Api.Multimodal;
 using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Product;
 using LlmProxy.Api.Security;
@@ -157,6 +158,7 @@ builder.Services.AddHttpClient("github-releases", client =>
 });
 builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds)).AddHttpMessageHandler<AgentRelayHttpHandler>();
+builder.Services.AddHttpClient("multimodal", client => client.Timeout = Timeout.InfiniteTimeSpan).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHostedService<NodeHealthMonitor>();
 builder.Services.AddHostedService<VllmRuntimeMetricsCollector>();
 builder.Services.AddHostedService<DeploymentRuntimeMetricsCollector>();
@@ -254,6 +256,7 @@ app.UseWebSockets(new WebSocketOptions
 });
 app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
+app.MapMultimodalEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);
 app.MapPlatformUserAdminEndpoints(entraEnabled);

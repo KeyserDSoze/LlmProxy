@@ -1,3 +1,12 @@
+## Unreleased — OpenAI-compatible multimodal gateway surfaces (2026-10-11)
+
+- Add strictly isolated logical model surfaces for image generation, text-to-speech and speech-to-text. No audio or image traffic is routed to Chat-only or System One deployments.
+- Forward `POST /v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions` and `/v1/audio/translations` to an **already running** explicitly connected compatible runtime, preserving JSON, audio/binary content types and multipart upload bytes while rewriting public model names to provider model identities.
+- Reuse existing API-key authentication, request rate limiting, physical/deployment capacity admission, outbound Agent relay and request metrics. Explicit JSON/audio input size caps and no automatic retries for non-idempotent generation.
+- Admin can publish separate image, speech and transcription aliases and configure deployment-specific runtime roots; prohibit blind deploy-to-all for non-Chat workloads.
+- Record redacted metadata-only audit for multimodal operations, avoiding accidental logging of uploaded microphone audio or large generated images as UTF-8 text.
+- **This is a gateway connector**: installation of Image Diffusers, Whisper, Kokoro, Laya or other local engines is not yet included. See `docs/multimodal-api-roadmap.md` for architecture, SDK examples, limitations and the next Node Agent installer phase.
+
 ## Unreleased — Responsive Admin foundation, Light/Dark theme and EN/IT i18n (2026-10-11)
 
 - Replace hard-coded dark-only palette with semantic tokens and **System / Light / Dark** theme, persisted in local browser preferences and shared with the personal user portal.
