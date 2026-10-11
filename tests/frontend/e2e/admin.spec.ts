@@ -828,7 +828,7 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
     }))
   await page.goto('/admin/catalog?tab=deploy&node=node-1')
   const whisper = page.getByRole('row').filter({ hasText: 'Whisper Tiny — Speech-to-text (CPU)' })
-  await expect(whisper.getByText('CPU-only', { exact: true })).toBeVisible()
+  await expect(whisper.locator('td').nth(4)).toContainText('CPU-only')
   await expect(whisper.getByText('Audio ≤25 MiB')).toBeVisible()
   await whisper.getByRole('button', { name: 'Install' }).click()
   const modal = page.getByRole('dialog', { name: 'Install inference profile' })
