@@ -92,8 +92,10 @@ public sealed class DockerModelRuntimeManager(
                     await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else if (record.Runtime == "faster-whisper")
                     await EnsureWhisperImageAsync(record, cancellationToken, report);
+                else if (record.Runtime == "kokoro")
+                    await EnsureKokoroImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
-                if ((options.PrefetchModels || record.Runtime == "faster-whisper") && record.Runtime != "llama.cpp")
+                if ((options.PrefetchModels || record.Runtime is "faster-whisper" or "kokoro") && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
                     var script = """
@@ -119,7 +121,7 @@ for index, entry in enumerate(files):
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        record.Runtime is "airllm" or "faster-whisper" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
+                        record.Runtime is "airllm" or "faster-whisper" or "kokoro" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line =>
                     {
@@ -191,6 +193,23 @@ for index, entry in enumerate(files):
             token, line => ParseTransferLine(line, "container-image", report));
     }
 
+    private async Task EnsureKokoroImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "kokoro-runtime");
+        var dockerfile = Path.Combine(directory, "Dockerfile");
+        if (!File.Exists(dockerfile))
+            throw new InvalidOperationException("Kokoro runtime adapter is missing from the Agent release.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building experimental CPU English Kokoro TTS image", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
+            token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
@@ -201,6 +220,8 @@ for index, entry in enumerate(files):
                 await EnsureAirLlmImageAsync(record, cancellationToken);
             else if (record.Runtime == "faster-whisper")
                 await EnsureWhisperImageAsync(record, cancellationToken);
+            else if (record.Runtime == "kokoro")
+                await EnsureKokoroImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
@@ -209,7 +230,7 @@ for index, entry in enumerate(files):
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
-            if (gpuReady && record.Runtime != "faster-whisper")
+            if (gpuReady && record.Runtime is not ("faster-whisper" or "kokoro"))
             {
                 args.Add("--gpus");
                 args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
@@ -222,6 +243,15 @@ for index, entry in enumerate(files):
                     "-e", "WHISPER_CPU_THREADS=4"]);
                 if (record.SourceRevision is { Length: 40 } sha)
                     args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+            }
+            if (record.Runtime == "kokoro")
+            {
+                if (record.ProviderModelName != "hexgrad/Kokoro-82M" ||
+                    record.SourceRevision is not { Length: 40 } sha ||
+                    !Regex.IsMatch(sha, "^[a-f0-9]{40}$"))
+                    throw new InvalidOperationException("Kokoro requires a pinned downloaded HF checkpoint.");
+                args.AddRange(["-e", "KOKORO_MODEL_REVISION=" + sha,
+                    "-e", "HF_HUB_OFFLINE=1"]);
             }
             if (record.Runtime == "airllm")
             {
