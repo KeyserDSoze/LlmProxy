@@ -322,7 +322,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>Capabilities</button>
             </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{formatTokens(item.model.contextTokens)}</td><td>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec<div className="muted">{item.model.minimumGpuCount} GPU min · TP {item.compatibility.suggestedTensorParallelSize}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">Inventory cached · Agent connection needed</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
               title={!canWrite ? 'Administrator write access required.' : !overview?.agentAvailable ? 'Node Agent offline: open Fleet & access and restore the existing node connection.' : hardware?.readiness?.dockerDaemonReady === false ? 'Docker daemon is not ready on this node.' : item.compatibility.status === 'insufficient' ? 'Model minimum hardware requirements not met.' : 'Install this model on the selected node'}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section>
+      <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />
+      <section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2>
+        <div className="actions"><span>Stop before editing runtime settings; model cache is preserved.</span>
+          <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
+            onClick={() => void checkRevisions()}>{revisionBusy ? 'Checking…' : 'Check Hugging Face updates'}</button>
+        </div></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+              <div className="muted">Context: {item.agentState?.maxModelLen ?? (item.runtime === 'airllm' ? 8192 : 'default')} tokens · Output cap: {item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : 'per request'}</div>
+              <div className="muted">Cached revision: {item.agentState?.sourceRevision?.slice(0,12) ?? 'untracked'}</div>
+              {upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId) &&
+                <div className="notice">{upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId)?.update.message}</div>
             {item.capabilities && <button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model', profile: item.capabilities! })}>Capabilities & client setup</button>}</td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' :
@@ -335,12 +345,42 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
               title="Check the live model /health endpoint and enable routing only when ready. Does not restart the container."
               onClick={() => void action('activate', item.id)}>Check health & activate</button>}
-          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button><button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Remove</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
+          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button>
+          <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || item.agentStatus.toLowerCase() === 'running'}
+            title={item.agentStatus.toLowerCase() === 'running' ? 'Stop the runtime first; changing limits requires a restart but not a weight download.' : 'Edit context and concurrency without deleting model files.'}
+            onClick={() => openProfileEdit(item)}>Edit limits</button>
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Uninstall</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
 
     <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
       description="Automatically detected from known model declarations and the installed serving adapter."
       onClose={() => setCapabilityDetails(null)}>
       {capabilityDetails && <ModelCapabilityPanel profile={capabilityDetails.profile} />}
+    </Modal>
+
+    <Modal open={Boolean(editingInstall)} title={`Edit runtime limits · ${editingInstall?.logicalModel ?? ''}`}
+      description="Stop the model before editing. The downloaded files and node identity are retained."
+      onClose={() => setEditingInstall(null)}>
+      <form className="formPanel" onSubmit={event => void saveProfile(event)}>
+        <p className="notice">Current: {editingInstall?.agentState?.maxModelLen ?? 8192} context tokens,
+          {editingInstall?.runtime === 'airllm' ? ` ${editingInstall.agentState?.maxOutputTokens ?? 256} maximum output tokens` : ' output controlled by caller'}.
+          Higher values may increase memory usage, latency and GPU pressure.</p>
+        <label>Maximum context (prompt + completion) tokens
+          <input aria-label="Edit runtime context" type="number" min="256"
+            max={overview?.catalog.find(x => x.model.id === editingInstall?.catalogModelId)?.model.contextTokens ?? 262144}
+            value={editContext} onChange={event => setEditContext(Number(event.target.value))} required />
+        </label>
+        {editingInstall?.runtime === 'airllm' && <label>Maximum output tokens per request
+          <input aria-label="Edit maximum output tokens" type="number" min="1" max={Math.min(4096, editContext)}
+            value={editOutput} onChange={event => setEditOutput(Number(event.target.value))} required />
+        </label>}
+        <label>Maximum concurrent sequences / queue
+          <input aria-label="Edit runtime sequences" type="number" min="1" max="128"
+            value={editSequences} onChange={event => setEditSequences(Number(event.target.value))} required />
+        </label>
+        <p className="muted">AirLLM serializes generation even with a larger queue. Reconfigure while stopped, then press Start; the downloaded checkpoint stays on disk.</p>
+        <div className="modalActions"><button className="secondary" type="button" onClick={() => setEditingInstall(null)}>Cancel</button>
+          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext}>Save limits</button></div>
+      </form>
     </Modal>
 
     <Modal open={installCatalogId !== null} title="Install inference profile" description="An installation profile controls runtime behavior, not the gateway physical concurrency ceiling." onClose={() => setInstallCatalogId(null)}>
