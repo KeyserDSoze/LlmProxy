@@ -409,3 +409,45 @@ test('invalid hardware deep link does not silently install on another machine', 
   await expect(page.getByText(/hardware selected in this link no longer exists/)).toBeVisible()
   await expect(page).toHaveURL(/node=deleted-node$/)
 })
+
+
+test('running AirLLM with disabled routing exposes health-gated recovery without restart', async ({ page }) => {
+  await installAdminApi(page)
+  let activated = false
+  let activationCalls = 0
+  let restartCalls = 0
+  await page.route('**/api/admin/model-management/deployments/*/activate', route => {
+    activationCalls++
+    activated = true
+    return json(route, { deployment: { id: 'deployment-airllm', enabled: true } })
+  })
+  await page.route('**/api/admin/model-management/deployments/*/start', route => {
+    restartCalls++
+    return json(route, {})
+  })
+  await page.route('**/api/admin/model-management/nodes/*/overview', route =>
+    json(route, {
+      node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent', hasManagementCredential: false },
+      agentAvailable: true,
+      hardware: { hostname: 'spark-test', cpuLogicalCores: 20, systemMemoryTotalGiB: 120,
+        systemMemoryAvailableGiB: 45, diskTotalGiB: 1600, diskAvailableGiB: 1200,
+        gpus: [], readiness: { dockerDaemonReady: true } },
+      catalog: [],
+      installations: [{
+        id: 'deployment-airllm', modelId: 'model-airllm', logicalModel: 'qwen3-8b-airllm',
+        providerModelName: 'Qwen/Qwen3-8B', catalogModelId: 'qwen3-8b-airllm',
+        managedInstallationId: 'qwen3-8b-airllm-abc123', enabled: activated,
+        agentStatus: 'running', runtimeBaseAddress: 'http://agent-xxx.llmproxy.invalid/runtime/18000',
+        agentState: { status: 'running', runtime: 'airllm', maxNumSeqs: 4 }
+      }]
+    }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await expect(page.getByText('Container running, health and routing not yet verified.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Check health & activate' }).click()
+  await expect(page.getByText('Runtime /health verified; existing model enabled for routing.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Check health & activate' })).toHaveCount(0)
+  expect(activationCalls).toBe(1)
+  expect(restartCalls).toBe(0)
+})

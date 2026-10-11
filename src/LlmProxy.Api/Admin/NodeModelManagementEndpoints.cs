@@ -357,6 +357,87 @@ public static class NodeModelManagementEndpoints
             }
         });
 
+        // A container may be running without an enabled deployment after a long
+        // AirLLM layer warm-up, an interrupted Start request, or Docker restart.
+        // Never enable routing based on Docker status alone: probe /health first.
+        var activate = group.MapPost("/deployments/{id:guid}/activate", async (
+            Guid id,
+            GatewayDbContext db,
+            IHttpClientFactory factory,
+            UpstreamCredentialProtector protector,
+            HttpContext context,
+            CancellationToken token) =>
+        {
+            var deployment = await db.Deployments.FindAsync([id], token);
+            if (deployment is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
+                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
+            var node = await db.Nodes.FindAsync([deployment.NodeId], token);
+            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "management_agent_not_configured" });
+            try
+            {
+                var agent = factory.CreateClient("node-management");
+                var inventory = await SendAgentAsync<ManagedModelsResponse>(agent, node, protector,
+                    HttpMethod.Get, "/v1/models", null, token);
+                var state = inventory.Models?.SingleOrDefault(row =>
+                    string.Equals(row.InstallationId, deployment.ManagedInstallationId, StringComparison.Ordinal));
+                if (state is null)
+                    return Results.Conflict(new { error = "installation_missing",
+                        message = "The Agent no longer has this installation; reinstall on the selected hardware." });
+                if (!IsAgentRuntimeRunnable(state))
+                    return Results.Conflict(new { error = "runtime_not_running",
+                        message = "The Agent reports that this runtime is not running. Start it before activating routing.",
+                        agentStatus = state.Status, agentError = state.Error });
+
+                var runtimeAddress = OutboundRuntimeAddress(node, state);
+                if (string.IsNullOrWhiteSpace(runtimeAddress))
+                    return Results.Conflict(new { error = "runtime_address_missing" });
+
+                // AirLLM's /health returns 503 during layer preparation or on
+                // initialization failure. Only a 2xx result is permission to route.
+                using var probe = new HttpRequestMessage(HttpMethod.Get,
+                    InferenceEndpoint.Combine(runtimeAddress, "/health"));
+                protector.ApplyBearer(probe, deployment.UpstreamBearerTokenCiphertext ??
+                    node.UpstreamBearerTokenCiphertext);
+                using var response = await factory.CreateClient("probe")
+                    .SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, token);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = await response.Content.ReadAsStringAsync(token);
+                    if (detail.Length > 500) detail = detail[..500];
+                    return Results.Conflict(new { error = "runtime_not_ready",
+                        message = $"Runtime /health returned HTTP {(int)response.StatusCode}; routing remains disabled.",
+                        healthDetail = detail });
+                }
+
+                deployment.ConfigureRuntime(runtimeAddress, deployment.CatalogModelId,
+                    deployment.ManagedInstallationId);
+                if (IsOutboundNode(node))
+                    node.Update(node.Name, runtimeAddress, node.Weight, node.MaxConcurrency);
+                deployment.Enable();
+                AddAudit(db, context, "model.activate", "deployment", deployment.Id.ToString(),
+                    new { node.Id, deployment.ManagedInstallationId, state.RuntimeBaseAddress });
+                await db.SaveChangesAsync(token);
+                return Results.Ok(new { deployment, state });
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (HttpRequestException error)
+            {
+                return Results.Conflict(new { error = "runtime_health_unreachable",
+                    message = "The container is running but its HTTP health endpoint is unreachable. " +
+                        error.Message });
+            }
+            catch (TaskCanceledException) when (!token.IsCancellationRequested)
+            {
+                return Results.Conflict(new { error = "runtime_health_timeout",
+                    message = "Runtime health did not respond in time. AirLLM may still be warming up; retry later." });
+            }
+        });
+
         var stop = group.MapPost("/deployments/{id:guid}/stop", async (
             Guid id,
             GatewayDbContext dbContext,
@@ -439,6 +520,7 @@ public static class NodeModelManagementEndpoints
             finalizeJob.RequireAuthorization("AdminWrite");
             cancelJob.RequireAuthorization("AdminWrite");
             start.RequireAuthorization("AdminWrite");
+            activate.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");
             remove.RequireAuthorization("AdminWrite");
         }
@@ -559,6 +641,11 @@ public static class NodeModelManagementEndpoints
     private static bool IsOutboundNode(InferenceNode node) =>
         Uri.TryCreate(node.ManagementBaseAddress, UriKind.Absolute, out var uri) &&
         AgentRelayHub.TryParseNode(uri, out var nodeId) && nodeId == node.Id;
+
+    public static bool IsAgentRuntimeRunnable(ManagedModelState state) =>
+        string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(state.RuntimeBaseAddress) &&
+        state.Port is >= 1024 and <= 65535;
 
     private static string? OutboundRuntimeAddress(InferenceNode node, ManagedModelState state) =>
         IsOutboundNode(node)

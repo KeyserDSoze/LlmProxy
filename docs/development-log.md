@@ -1,5 +1,13 @@
 # Development log
 
+## 2026-10-11 — AirLLM Docker running but gateway model routing disabled
+
+- Real Spark screenshot showed `qwen3-8b-airllm` Agent status `Running`, deployment routing `Disabled`, hardware Fleet `No Runtime`. The Agent reports Running based on `docker inspect` container state, not actual model `/health` readiness; AirLLM may still be converting layers, have failed warmup or outlive a timed-out Start API request.
+- Added admin `Check health & activate` for this specific mismatch; the gateway verifies the managed Agent installation ID and live `/health` response before enabling the corresponding deployment and updating the physical-node root. No container restart or model re-download.
+- This does not imply GB10/Qwen3-8B AirLLM functional inference until runtime `/health` and Chat pass on the real Spark.
+
+# Development log
+
 ## 2026-10-11 — Preserve physical model host identity in Admin URL
 
 - Model lifecycle's selected `nodeId` previously lived only in local React state. The page/tab route was refresh-safe, but F5 could switch to the first discovered hardware node and show the wrong model installations.
