@@ -239,14 +239,14 @@ test('admin can inspect health, observability, add a path-prefixed node and test
   await installAdminApi(page); await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
   await expect(page.getByText('inference-01')).toBeVisible(); await expect(page.getByText('9 ms')).toBeVisible(); await expect(page.getByText('99.2%')).toBeVisible()
-  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await page.getByRole('button', { name: 'Add hardware node' }).click()
   await page.getByLabel('Name').fill('inference-02'); await page.getByLabel('Base address / service root').fill('http://localhost:3451/altropath'); await page.getByLabel('Weight').fill('3'); await page.getByLabel('Max concurrency').fill('8'); await page.getByRole('button', { name: 'Add node' }).click()
   const row = page.getByRole('row').filter({ hasText: 'inference-02' }); await expect(row).toBeVisible(); await row.getByRole('button', { name: 'Test' }).click(); await expect(page.getByText('✓ Connection test: inference-02')).toBeVisible()
 })
 
 test('infrastructure exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await expect(page.getByRole('heading', { name: 'Servers, agents & hardware', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /Capacity & telemetry/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
@@ -278,7 +278,7 @@ test('infrastructure exposes telemetry, physical capacity and explicit capacity 
 })
 
 test('inference observability exposes latency, token and failover telemetry', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Request Metrics' }).click()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Request metrics' }).click()
   await expect(page.getByRole('heading', { name: 'Inference observability', exact: true })).toBeVisible(); await expect(page.getByText('Chat Completions · SSE')).toBeVisible(); await expect(page.getByText('2 · failover')).toBeVisible()
 })
 
@@ -302,7 +302,7 @@ test('admin playground tests models and System One and full-body logs are inspec
   await page.getByRole('button', { name: 'Run classifier test' }).click()
   await expect(page.getByRole('strong').filter({ hasText: /^systemone-laya$/ })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Request Audit' }).click()
+  await page.getByRole('button', { name: 'Request audit' }).click()
   await expect(page.getByRole('heading', { name: 'Request / response audit' })).toBeVisible()
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
@@ -313,7 +313,7 @@ test('admin playground tests models and System One and full-body logs are inspec
 
 test('admin controls automatic versus manual end-user provisioning and can disable users', async ({ page }) => {
   await installAdminApi(page); await page.goto('/')
-  await page.getByRole('button', { name: 'Users & Access' }).click()
+  await page.getByRole('button', { name: 'Users & access' }).click()
   await expect(page.getByText('Example User')).toBeVisible()
   await page.getByRole('tab', { name: 'Provisioning & identity' }).click()
   await expect(page.getByRole('heading', { name: 'User provisioning policy' })).toBeVisible()
@@ -327,7 +327,7 @@ test('admin controls automatic versus manual end-user provisioning and can disab
 })
 
 test('audit trail is visible to administrators', async ({ page }) => {
-  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative Audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true, level: 1 })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
+  await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Administrative audit' }).click(); await expect(page.getByRole('heading', { name: 'Administrative audit trail', exact: true, level: 1 })).toBeVisible(); await expect(page.getByText('admin@agic.it')).toBeVisible()
 })
 
 test('authentication failures surface the Entra ID sign-in action', async ({ page }) => {
@@ -341,7 +341,7 @@ test('authorization failures do not invite an authentication loop', async ({ pag
 test('admin navigation preserves top-level pages and infrastructure tabs across refresh and history', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Infrastructure' }).click()
+  await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
   await page.getByRole('tab', { name: /Hardware inventory & runtimes/ }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
