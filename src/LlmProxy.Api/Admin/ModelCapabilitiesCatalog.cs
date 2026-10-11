@@ -43,6 +43,16 @@ public static class ModelCapabilitiesCatalog
                 ? "https://huggingface.co/" + name
                 : null;
 
+        if (serving == "kokoro")
+        {
+            var unsupported = new Feature("unsupported", "unsupported",
+                "Kokoro synthesizes audio but cannot accept Chat messages or transcribe speech.");
+            return new Profile(name, serving, "Kokoro-82M English CPU with af_heart voice",
+                modelCardUrl, unsupported, unsupported, unsupported, unsupported, unsupported,
+                null, null, null, null,
+                "OpenAI-compatible POST /v1/audio/speech (model, input, voice, response_format, speed). " +
+                "Experimental WAV/af_heart only; no streaming or GPU acceleration.");
+        }
         if (serving == "faster-whisper")
         {
             var unsupported = new Feature("unsupported", "unsupported",
