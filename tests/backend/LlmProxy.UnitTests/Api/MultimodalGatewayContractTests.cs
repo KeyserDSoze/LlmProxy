@@ -42,10 +42,10 @@ public sealed class MultimodalGatewayContractTests
     }
 
     [Fact]
-    public void Audio_file_binary_bytes_are_not_utf8_decoded_or_modified()
+    public async Task Audio_file_binary_bytes_are_not_utf8_decoded_or_modified()
     {
         var bytes = new byte[] { 0, 255, 254, 13, 10, 5, 128, 0 };
         using var source = new MemoryStream(bytes);
-        Assert.Equal(bytes, MultimodalEndpoints.ReadBoundedAsync(source, 512, CancellationToken.None).GetAwaiter().GetResult());
+        Assert.Equal(bytes, await MultimodalEndpoints.ReadBoundedAsync(source, 512, CancellationToken.None));
     }
 }
