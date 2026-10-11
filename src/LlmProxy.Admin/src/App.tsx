@@ -188,7 +188,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">Loading gateway state…</div> : (
           <>
-            {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
+            {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
             {(view === 'infrastructure' || view === 'nodes' || view === 'hardware' || view === 'model-management') && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
             {view === 'catalog' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
@@ -211,8 +211,9 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
   )
 }
 
-function OperatorStart({ nodes, models, deployments, onNavigate }: {
-  nodes: Node[]; models: Model[]; deployments: Deployment[]; onNavigate: (view: View) => void
+function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
+  nodes: Node[]; models: Model[]; deployments: Deployment[]; canWrite: boolean;
+  onNavigate: (view: View) => void
 }) {
   const systemOne = models.filter(model => model.surface === 'SystemOne')
   const readyRoutes = deployments.filter(item => item.enabled).length
@@ -230,7 +231,7 @@ function OperatorStart({ nodes, models, deployments, onNavigate }: {
       <div className="uxSummary">{healthyNodes}/{nodes.length} healthy nodes · {readyRoutes} enabled deployments · {systemOne.length} System One models</div>
     </div>
     <div className="uxPathGrid">
-      {tasks.map(task => <div key={task.title} className="uxTask">
+      {tasks.filter(task => canWrite || task.view !== 'playground').map(task => <div key={task.title} className="uxTask">
         <strong>{task.title}</strong>
         <p>{task.summary}</p>
         <button className="secondary" onClick={() => onNavigate(task.view)}>{task.action} →</button>
