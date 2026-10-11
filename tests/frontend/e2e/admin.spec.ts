@@ -593,7 +593,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
 test('task-based navigation exposes direct model installation and System One deep links', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/admin/dashboard')
-  await expect(page.getByRole('heading', { name: 'What do you want to do?' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What would you like to do?' })).toBeVisible()
   await expect(page.getByText('Models & inference', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Browse models' }).click()
@@ -639,7 +639,7 @@ test('guided System One connection creates only a classifier alias and a specifi
   await page.getByLabel('System One service root').fill('http://10.0.0.21:8500')
   await page.getByLabel('System One concurrency').fill('2')
   await page.getByRole('button', { name: 'Connect and publish classifier' }).click()
-  await expect(page.getByRole('status')).toContainText('route for "laya-on-spark" created')
+  await expect(page.getByRole('status')).toContainText('route registered: "laya-on-spark"')
   expect(modelsCreated).toEqual([{
     publicName: 'laya-on-spark', providerModelName: 'convaiinnovations/laya',
     surface: 'SystemOne', supportsStreaming: false, supportsTools: false
