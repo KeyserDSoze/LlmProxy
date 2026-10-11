@@ -121,6 +121,7 @@ for index, entry in enumerate(files):
                     [
                         "run", "--rm",
                         "--entrypoint", "python",
+                        ...(record.Runtime == "laya" ? new[] { "-e", "HF_HUB_OFFLINE=0" } : Array.Empty<string>()),
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         record.Runtime is "airllm" or "faster-whisper" or "laya" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
