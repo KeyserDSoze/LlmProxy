@@ -604,7 +604,7 @@ export type ModelCapabilityProfile = {
 }
 
 export type DeployableModel = {
-  runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm' | 'faster-whisper'
+  runtime?: 'vllm' | 'llama.cpp' | 'sglang' | 'airllm' | 'faster-whisper' | 'kokoro'
   id: string
   displayName: string
   providerModelName: string
