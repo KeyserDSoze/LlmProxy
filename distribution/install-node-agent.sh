@@ -48,6 +48,17 @@ else
   echo "Preserved existing /etc/llmproxy/node-agent.env."
 fi
 
+# Ensure settings exist independently in older environments.
+set_node_env() {
+  local key="$1" value="$2" env_file=/etc/llmproxy/node-agent.env
+  if grep -q "^${key}=" "$env_file"; then
+    local escaped
+    escaped="$(printf "%s" "$value" | sed "s/[\\&|]/\\\\&/g")"
+    sed -i "s|^${key}=.*|${key}=${escaped}|" "$env_file"
+  else
+    printf "%s=%s\n" "$key" "$value" >> "$env_file"
+  fi
+}
 # Per-node recovery never deletes gateway-connection.json before the gateway
 # accepts the recovery key. The Agent switches secrets only after success.
 if [[ -n "${LLMPROXY_RECOVERY_TOKEN:-}" || -n "${LLMPROXY_RECOVERY_NODE_ID:-}" ]]; then
@@ -59,16 +70,14 @@ if [[ -n "${LLMPROXY_RECOVERY_TOKEN:-}" || -n "${LLMPROXY_RECOVERY_NODE_ID:-}" ]
     echo "Use either recovery or a new pairing invitation, not both." >&2; exit 3;
   }
   [[ -n "${LLMPROXY_GATEWAY_URL:-}" ]] || { echo "LLMPROXY_GATEWAY_URL is required." >&2; exit 3; }
-  if ! grep -q '^NodeAgent__RecoveryToken=' /etc/llmproxy/node-agent.env; then
-    printf 'NodeAgent__RecoveryToken=\\nNodeAgent__RecoveryNodeId=\\nNodeAgent__ForceRecovery=false\\n' >> /etc/llmproxy/node-agent.env
-  fi
-  sed -i "s|^NodeAgent__GatewayBaseAddress=.*|NodeAgent__GatewayBaseAddress=${LLMPROXY_GATEWAY_URL}|" /etc/llmproxy/node-agent.env
-  sed -i "s|^NodeAgent__RecoveryNodeId=.*|NodeAgent__RecoveryNodeId=${LLMPROXY_RECOVERY_NODE_ID}|" /etc/llmproxy/node-agent.env
-  sed -i "s|^NodeAgent__RecoveryToken=.*|NodeAgent__RecoveryToken=${LLMPROXY_RECOVERY_TOKEN}|" /etc/llmproxy/node-agent.env
-  sed -i 's|^NodeAgent__ForceRecovery=.*|NodeAgent__ForceRecovery=true|' /etc/llmproxy/node-agent.env
-  sed -i "s|^NodeAgent__ConnectionMode=.*|NodeAgent__ConnectionMode=${LLMPROXY_CONNECTION_MODE:-outbound}|" /etc/llmproxy/node-agent.env
+  set_node_env NodeAgent__GatewayBaseAddress "$LLMPROXY_GATEWAY_URL"
+  set_node_env NodeAgent__EnrollmentToken ""
+  set_node_env NodeAgent__RecoveryNodeId "$LLMPROXY_RECOVERY_NODE_ID"
+  set_node_env NodeAgent__RecoveryToken "$LLMPROXY_RECOVERY_TOKEN"
+  set_node_env NodeAgent__ForceRecovery true
+  set_node_env NodeAgent__ConnectionMode "${LLMPROXY_CONNECTION_MODE:-outbound}"
   if [[ "${LLMPROXY_CONNECTION_MODE:-outbound}" == "outbound" ]]; then
-    sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://127.0.0.1:9900|' /etc/llmproxy/node-agent.env
+    set_node_env ASPNETCORE_URLS "http://127.0.0.1:9900"
   fi
   if grep -q 'CHANGE_ME_LONG_RANDOM_SECRET' /etc/llmproxy/node-agent.env; then
     generated_bearer="$(openssl rand -hex 32)"
@@ -79,9 +88,13 @@ fi
 
 # A single installer invocation can carry the invitation without a subsequent manual edit.
 if [[ -n "${LLMPROXY_GATEWAY_URL:-}" && -n "${LLMPROXY_ENROLLMENT_TOKEN:-}" ]]; then
-  sed -i "s|^NodeAgent__GatewayBaseAddress=.*|NodeAgent__GatewayBaseAddress=${LLMPROXY_GATEWAY_URL}|" /etc/llmproxy/node-agent.env
-  sed -i "s|^NodeAgent__EnrollmentToken=.*|NodeAgent__EnrollmentToken=${LLMPROXY_ENROLLMENT_TOKEN}|" /etc/llmproxy/node-agent.env
-  sed -i "s|^NodeAgent__ConnectionMode=.*|NodeAgent__ConnectionMode=${LLMPROXY_CONNECTION_MODE:-outbound}|" /etc/llmproxy/node-agent.env
+  set_node_env NodeAgent__GatewayBaseAddress "$LLMPROXY_GATEWAY_URL"
+  set_node_env NodeAgent__EnrollmentToken "$LLMPROXY_ENROLLMENT_TOKEN"
+  set_node_env NodeAgent__RecoveryNodeId ""
+  set_node_env NodeAgent__RecoveryToken ""
+  set_node_env NodeAgent__ForceRecovery false
+  set_node_env NodeAgent__ConnectionMode "${LLMPROXY_CONNECTION_MODE:-outbound}"
+
   if [[ "${LLMPROXY_CONNECTION_MODE:-outbound}" == "outbound" ]]; then
     # The reverse channel needs loopback Agent HTTP only. Never expose management on the WAN.
     sed -i 's|^ASPNETCORE_URLS=.*|ASPNETCORE_URLS=http://127.0.0.1:9900|' /etc/llmproxy/node-agent.env
