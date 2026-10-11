@@ -32,12 +32,12 @@ _gate = asyncio.Semaphore(1)
 
 class ImageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: str
+    model: str = Field(min_length=1, max_length=160)
     prompt: str = Field(min_length=1, max_length=2000)
-    size: str = "512x512"
+    size: str = Field(default="512x512", max_length=16)
     n: int = Field(default=1, ge=1, le=1)
-    quality: str = "standard"
-    response_format: str = "b64_json"
+    quality: str = Field(default="standard", max_length=32)
+    response_format: str = Field(default="b64_json", max_length=32)
     negative_prompt: str | None = Field(default=None, max_length=1000)
     steps: int = Field(default=20, ge=1, le=30)
     seed: int | None = Field(default=None, ge=0, le=2147483647)
@@ -119,7 +119,13 @@ async def generate(req: ImageRequest):
     validate_request(req)
     if _engine is None:
         raise HTTPException(503, "Model not yet ready")
-    async with _gate:
+    # Reject excess work promptly rather than queueing unbounded GPU requests.
+    try:
+        await asyncio.wait_for(_gate.acquire(), timeout=0.05)
+    except TimeoutError as exc:
+        raise HTTPException(503, "Image runtime is busy",
+                            headers={"Retry-After": "1"}) from exc
+    try:
         try:
             png = await asyncio.to_thread(_create_image, req)
         except torch.cuda.OutOfMemoryError as exc:
@@ -127,5 +133,7 @@ async def generate(req: ImageRequest):
             raise HTTPException(503, "Insufficient GPU memory for image generation") from exc
         except Exception as exc:
             raise HTTPException(500, "Image generation failed") from exc
+    finally:
+        _gate.release()
     return JSONResponse({"created": int(time.time()),
                          "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]})
