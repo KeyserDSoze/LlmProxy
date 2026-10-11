@@ -344,9 +344,9 @@ test('admin navigation preserves top-level pages and infrastructure tabs across 
   await page.getByRole('button', { name: 'Infrastructure' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
   await page.getByRole('tab', { name: /Inventory & model lifecycle/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
   await page.getByRole('tab', { name: /Deploy models/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
   await page.reload()
   await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Routing', exact: true }).click()
@@ -355,7 +355,7 @@ test('admin navigation preserves top-level pages and infrastructure tabs across 
   await expect(page.getByRole('heading', { name: 'Smart-routing tuning' })).toBeVisible()
   await page.goBack()
   await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&tab=deploy$/)
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
 })
 
 
