@@ -92,19 +92,35 @@ public sealed class DockerModelRuntimeManager(
                     await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else if (record.Runtime == "faster-whisper")
                     await EnsureWhisperImageAsync(record, cancellationToken, report);
+                else if (record.Runtime == "diffusers")
+                    await EnsureDiffusersImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
-                if ((options.PrefetchModels || record.Runtime == "faster-whisper") && record.Runtime != "llama.cpp")
+                if ((options.PrefetchModels || record.Runtime is "faster-whisper" or "diffusers") && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
                     var script = """
 import json
 from huggingface_hub import HfApi, hf_hub_download
+from fnmatch import fnmatch
 repo = MODEL_ID
 info = HfApi().model_info(repo, files_metadata=True)
 revision = info.sha
 print('LLMPROXY_SOURCE_SHA:' + revision, flush=True)
 siblings = info.siblings
-files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
+# Diffusers checkpoints often include several redundant formats and pickle
+# weights. Only fetch allowlisted inference components from a pinned revision.
+allow = ('model_index.json', 'scheduler/*.json', 'tokenizer/*',
+         'tokenizer_2/*', 'text_encoder/*.json', 'text_encoder/*.safetensors',
+         'text_encoder_2/*.json', 'text_encoder_2/*.safetensors',
+         'unet/*.json', 'unet/*.safetensors',
+         'vae/*.json', 'vae/*.safetensors', 'feature_extractor/*.json')
+if repo == 'segmind/SSD-1B':
+    files = [s for s in siblings if s.rfilename and
+             any(fnmatch(s.rfilename, pattern) for pattern in allow)]
+    if not files or not any(s.rfilename == 'model_index.json' for s in files) or not any(s.rfilename.startswith('unet/') and s.rfilename.endswith('.safetensors') for s in files):
+        raise RuntimeError('Pinned Diffusers snapshot is missing essential safe weights')
+else:
+    files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
 total = sum(s.size or 0 for s in files)
 known = bool(files) and all(s.size is not None for s in files)
 done = 0
@@ -119,7 +135,7 @@ for index, entry in enumerate(files):
                         "run", "--rm",
                         "--entrypoint", "python",
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        record.Runtime is "airllm" or "faster-whisper" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
+                        record.Runtime is "airllm" or "faster-whisper" or "diffusers" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line =>
                     {
@@ -191,6 +207,25 @@ for index, entry in enumerate(files):
             token, line => ParseTransferLine(line, "container-image", report));
     }
 
+    private async Task EnsureDiffusersImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var directory = Path.Combine(AppContext.BaseDirectory, "diffusers-runtime");
+        var file = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+            System.Runtime.InteropServices.Architecture.Arm64 ? "Dockerfile.arm64" : "Dockerfile";
+        var dockerfile = Path.Combine(directory, file);
+        if (!File.Exists(dockerfile))
+            throw new InvalidOperationException("Managed Diffusers GPU image adapter is not installed for this architecture.");
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building experimental NVIDIA Diffusers image (may download large CUDA layers)", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
+            token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
@@ -201,11 +236,15 @@ for index, entry in enumerate(files):
                 await EnsureAirLlmImageAsync(record, cancellationToken);
             else if (record.Runtime == "faster-whisper")
                 await EnsureWhisperImageAsync(record, cancellationToken);
+            else if (record.Runtime == "diffusers")
+                await EnsureDiffusersImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
             var args = new List<string> { "run", "-d", "--name", name, "--restart", "unless-stopped", "--ipc=host" };
             var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
+            if (record.Runtime == "diffusers" && !gpuReady)
+                throw new InvalidOperationException("Managed Diffusers requires a working NVIDIA driver and Docker GPU runtime.");
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
@@ -222,6 +261,14 @@ for index, entry in enumerate(files):
                     "-e", "WHISPER_CPU_THREADS=4"]);
                 if (record.SourceRevision is { Length: 40 } sha)
                     args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+            }
+            if (record.Runtime == "diffusers")
+            {
+                if (record.SourceRevision is not { Length: 40 } sha ||
+                    !Regex.IsMatch(sha, "^[a-f0-9]{40}$") ||
+                    record.ProviderModelName != "segmind/SSD-1B")
+                    throw new InvalidOperationException("Diffusers GPU requires a downloaded pinned SSD-1B checkpoint.");
+                args.AddRange(["-e", "DIFFUSERS_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
             }
             if (record.Runtime == "airllm")
             {
