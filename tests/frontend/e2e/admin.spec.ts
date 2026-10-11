@@ -663,3 +663,61 @@ test('System One does not offer unverified deploy-to-all routing or missing serv
   await form.getByLabel('Runtime service root').fill('http://10.0.0.21:8500')
   await expect(form.getByRole('button', { name: 'Create deployment' })).toBeEnabled()
 })
+
+
+test('responsive Admin navigation fits a phone, remains keyboard accessible and preserves the route', async ({ page }) => {
+  await installAdminApi(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('heading', { name: 'Gateway dashboard' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'true')
+  const navigation = page.getByRole('navigation', { name: 'Admin navigation' })
+  await navigation.getByRole('button', { name: 'System One classifiers' }).click()
+  await expect(page).toHaveURL(/\/admin\/system-one$/)
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'false')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test('Italian and light appearance survive reload and update browser language, with dark/theme switching', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/dashboard')
+  await page.getByRole('combobox', { name: 'Theme' }).last().selectOption('light')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+  await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
+  await expect(page.getByRole('heading', { name: 'Panoramica gateway' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Cosa vuoi fare?' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
+  await page.getByRole('button', { name: 'Classificatori System One' }).click()
+  await expect(page.getByRole('heading', { name: 'Collega un runtime System One' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Collega un runtime System One' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+  await page.getByRole('combobox', { name: 'Tema' }).last().selectOption('dark')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+  await page.getByRole('combobox', { name: 'Lingua' }).last().selectOption('en')
+  await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
+})
+
+test('compact model-management and Admin tables do not force whole-page horizontal scrolling', async ({ page }) => {
+  await installAdminApi(page)
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/admin/models')
+  await expect(page.getByRole('heading', { name: 'Models & deployments', exact: true, level: 1 })).toBeVisible()
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.goto('/admin/infrastructure?section=capacity')
+  await expect(page.getByRole('tab', { name: /Capacity & telemetry/ })).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
