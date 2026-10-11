@@ -402,6 +402,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               ? <option value="llama.cpp">llama.cpp (GGUF)</option>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'airllm'
               ? <option value="airllm">AirLLM (experimental layer streaming)</option>
+              : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'faster-whisper'
+              ? <option value="faster-whisper">Whisper (CPU speech-to-text / translation)</option>
               : <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option></>}
           </select>
         </label>
