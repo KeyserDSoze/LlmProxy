@@ -85,7 +85,7 @@ async def lifespan(_app: FastAPI):
     _engine = await asyncio.to_thread(
         DiffusionPipeline.from_pretrained, str(MODEL_ROOT),
         torch_dtype=torch.float16, use_safetensors=True,
-        local_files_only=True, trust_remote_code=False,
+        local_files_only=True,
     )
     _engine.to("cuda")
     # Readiness must prove inference, rather than a container listening on a port.
