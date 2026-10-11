@@ -219,14 +219,14 @@ public static class NodeModelManagementEndpoints
             var descriptor = ResolveDescriptor(catalogId, request);
             // Whisper is a dedicated audio server: never pass Chat context,
             // quantization, GPU or arbitrary launch flags to its Agent profile.
-            if (descriptor?.Runtime == "faster-whisper" &&
+            if (descriptor?.Runtime is ("faster-whisper" or "laya") &&
                 (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
                  request.GpuDevices is not null || request.KvCacheDtype is not null ||
                  request.CpuOffloadGiB is not null || request.ExtraArguments is { Count: > 0 } ||
                  request.MaxNumSeqs is not null and not 1 ||
                  request.TensorParallelSize is not null and not 1))
-                return Results.BadRequest(new { error = "invalid_audio_runtime_settings",
-                    message = "Whisper CPU accepts one worker and no Chat token/GPU/runtime flags." });
+                return Results.BadRequest(new { error = descriptor.Runtime == "laya" ? "invalid_systemone_runtime_settings" : "invalid_audio_runtime_settings",
+                    message = "CPU Whisper/Laya accepts one worker and no Chat token/GPU/runtime flags." });
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
 
             var node = await dbContext.Nodes.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -752,9 +752,9 @@ public static class NodeModelManagementEndpoints
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
-        if (descriptor.Runtime == "faster-whisper")
-            return runtime == "faster-whisper" ? runtime : null;
-        if (runtime == "faster-whisper") return null;
+        if (descriptor.Runtime is "faster-whisper" or "laya")
+            return runtime == descriptor.Runtime ? runtime : null;
+        if (runtime is "faster-whisper" or "laya") return null;
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")
