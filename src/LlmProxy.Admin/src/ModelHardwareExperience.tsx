@@ -186,7 +186,20 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
-  async function action(kind: 'start' | 'stop' | 'remove', deploymentId: string) { setBusy(kind + ':' + deploymentId); setMessage(null); setError(null); try { if (kind === 'start') await api.startManagedDeployment(deploymentId); if (kind === 'stop') await api.stopManagedDeployment(deploymentId); if (kind === 'remove') await api.removeManagedDeployment(deploymentId); setMessage(kind === 'start' ? 'Model started and enabled for routing.' : kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed model removed from the hardware.'); await Promise.all([load(), refresh()]) } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) } }
+  async function action(kind: 'start' | 'activate' | 'stop' | 'remove', deploymentId: string) {
+    setBusy(kind + ':' + deploymentId); setMessage(null); setError(null)
+    try {
+      if (kind === 'start') await api.startManagedDeployment(deploymentId)
+      if (kind === 'activate') await api.activateManagedDeployment(deploymentId)
+      if (kind === 'stop') await api.stopManagedDeployment(deploymentId)
+      if (kind === 'remove') await api.removeManagedDeployment(deploymentId)
+      setMessage(kind === 'start' ? 'Model started and enabled for routing.' :
+        kind === 'activate' ? 'Runtime /health verified; existing model enabled for routing.' :
+        kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed model removed from the hardware.')
+      await Promise.all([load(), refresh()])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
 
   return <div className="stack compactPage modelHardware">
     <section className="panel pageToolbar"><div><h2>{embedded ? 'Inventory & model lifecycle' : 'Model & hardware control plane'}</h2><p className="muted">Hardware inventory is live machine data from the management agent: CPU, RAM, disk, accelerators, drivers and runtime. It is used to evaluate model fit before installation.</p></div><div className="actions"><select aria-label="Managed hardware node" value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">Select hardware</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? 'Reading…' : 'Refresh'}</button><span className="muted">Agent installer: Infrastructure → Fleet & access → Pair Linux agent</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>Configure agent</button></div></section>
@@ -241,7 +254,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               title={!canWrite ? 'Administrator write access required.' : !overview?.agentAvailable ? 'Node Agent offline: open Fleet & access and restore the existing node connection.' : hardware?.readiness?.dockerDaemonReady === false ? 'Docker daemon is not ready on this node.' : item.compatibility.status === 'insufficient' ? 'Model minimum hardware requirements not met.' : 'Install this model on the selected node'}
               onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxNumSeqs(4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? 'Installing…' : 'Install'}</button></td></tr>)}</tbody></table></div><p className="muted">Compatibility is a planning heuristic, not a performance guarantee. Benchmark before production traffic.</p></section><section className="panel"><div className="panelTitle"><h2>Installed models on this hardware</h2><span>Lifecycle state is synchronized with routing safety.</span></div><table><thead><tr><th>Logical model</th><th>Provider</th><th>Agent state</th><th>Live runtime load</th><th>Runtime endpoint</th><th>Routing</th><th>Actions</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div></td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
-          : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' : 'Disabled'}</td><td className="actions"><button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'} onClick={() => void action('start', item.id)}>Start</button><button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button><button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Remove</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
+          : <span className="muted">{item.runtimeMetrics?.error ?? 'No runtime metrics yet'}</span>}</td><td className="mono">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? 'not running'}</td><td>{item.enabled ? 'Enabled' :
+          item.agentStatus.toLowerCase() === 'running'
+            ? <><strong>Disabled</strong><div className="muted">Container running, health and routing not yet verified.</div></>
+            : 'Disabled'}</td><td className="actions">
+          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'}
+            onClick={() => void action('start', item.id)}>Start</button>
+          {item.agentStatus.toLowerCase() === 'running' && !item.enabled &&
+            <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
+              title="Check the live model /health endpoint and enable routing only when ready. Does not restart the container."
+              onClick={() => void action('activate', item.id)}>Check health & activate</button>}
+          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>Stop</button><button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>Remove</button><button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>Benchmark</button></td></tr>)}</tbody></table></section></>}
 
     <Modal open={installCatalogId !== null} title="Install inference profile" description="An installation profile controls runtime behavior, not the gateway physical concurrency ceiling." onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
