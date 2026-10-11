@@ -12,8 +12,8 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
         if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)
             throw new ArgumentException("providerModelName is required and must be at most 300 characters.");
-        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang" or "airllm" or "faster-whisper"))
-            throw new ArgumentException("Unsupported runtime. Only vllm, llama.cpp, sglang and experimental airllm are managed.");
+        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang" or "airllm" or "faster-whisper" or "laya"))
+            throw new ArgumentException("Unsupported runtime; only vllm, llama.cpp, sglang, airllm, faster-whisper and experimental laya are managed.");
         if (request.TensorParallelSize < 1 || request.TensorParallelSize > 64)
             throw new ArgumentOutOfRangeException(nameof(request.TensorParallelSize));
         if (request.Port is < 1024 or > 65535)
@@ -63,6 +63,18 @@ public static class ManagedRuntimeProfiles
                 throw new ArgumentException("Arbitrary AirLLM startup arguments are not permitted.");
             if (!Regex.IsMatch(request.ProviderModelName, @"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
                 throw new ArgumentException("AirLLM requires a valid Hugging Face repository ID.");
+        }
+        if (request.Runtime == "laya")
+        {
+            if (request.CatalogModelId != "laya-english-cpu" ||
+                request.ProviderModelName != "convaiinnovations/laya")
+                throw new ArgumentException("Managed Laya only accepts the curated English System One checkpoint.");
+            if (request.TensorParallelSize != 1 || request.GpuDevices is not null ||
+                request.MaxNumSeqs is not null and not 1 ||
+                request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                request.CpuOffloadGiB is not null || request.KvCacheDtype is not null ||
+                request.ExtraArguments is { Count: > 0 })
+                throw new ArgumentException("CPU Laya accepts no Chat/GPU/token settings; concurrency is one.");
         }
         if (request.Runtime == "faster-whisper")
         {
@@ -118,13 +130,14 @@ public static class ManagedRuntimeProfiles
             "sglang" => options.SglangDockerImage,
             "airllm" => "llmproxy-airllm:0.2",
             "faster-whisper" => "llmproxy-faster-whisper:0.1",
+            "laya" => "llmproxy-laya:0.1",
             _ => options.DockerImage
         };
 
     public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options)
     {
         var args = new List<string>();
-        if (record.Runtime is "airllm" or "faster-whisper")
+        if (record.Runtime is "airllm" or "faster-whisper" or "laya")
         {
             // Entrypoint in the locally-built, allowlisted serving image.
             // Queued requests must never be mistaken for GPU-parallel inference.
