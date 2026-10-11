@@ -24,7 +24,7 @@ public static class ModelCapabilitiesCatalog
         int? MaximumOutputTokens,
         string Notes);
 
-    public static Profile Resolve(string providerModelName, string runtime, int? maxModelLen = null)
+    public static Profile Resolve(string providerModelName, string runtime, int? maxModelLen = null, int? maxOutputTokens = null)
     {
         var name = providerModelName?.Trim() ?? "";
         var serving = runtime?.Trim().ToLowerInvariant() ?? "";
@@ -80,9 +80,9 @@ public static class ModelCapabilitiesCatalog
         int? nativeContext = qwen3 ? 32768 : mistralText ? 32768 : null;
         int? extendedContext = standardQwen ? 131072 : null;
         // The embedded AirLLM adapter enforces MAX_CONTEXT at tokenization and
-        // caps max_tokens to 256, irrespective of the base model's larger context.
+        // caps max_tokens to the configured per-installation limit (default 256).
         int? activeContext = serving == "airllm" ? maxModelLen ?? 8192 : maxModelLen;
-        int? maxOutput = serving == "airllm" ? 256 : null;
+        int? maxOutput = serving == "airllm" ? maxOutputTokens ?? 256 : null;
         var notes = serving == "airllm"
             ? "Experimental single-generator AirLLM. Max input context includes prompt/template tokens. Health 200 is not a verified tools/SSE/multimodal response."
             : "Capabilities are catalog/documentation declarations, not a successful feature probe. Unverified entries require a real serving test.";
