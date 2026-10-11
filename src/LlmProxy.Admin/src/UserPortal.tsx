@@ -1,5 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import PageDocumentation from './PageDocumentation'
+import AppearanceControls from './AppearanceControls'
+import { useT } from './uiPreferences'
 import RequestAuditDetailModal from './RequestAuditDetail'
 import './requestAudit.css'
 
@@ -137,6 +139,7 @@ function formatNumber(value: number) {
 }
 
 export default function UserPortal() {
+  const t = useT()
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [credentials, setCredentials] = useState<PersonalCredential[]>([])
   const [usage, setUsage] = useState<PersonalUsage | null>(null)
@@ -253,15 +256,15 @@ export default function UserPortal() {
     : undefined
 
   return <div className="shell">
-    <aside className="sidebar">
+    <aside className="sidebar userPortalSidebar">
       <div className="brand"><div className="brandMark">LP</div><div><strong>LlmProxy</strong><span>User portal</span></div></div>
       <nav><button className="active">My dashboard</button></nav>
-      <div className="sidebarFooter"><span className="dot" /> Entra identity</div>
+      <div className="sidebarFooter"><AppearanceControls compact /><span><span className="dot" /> Entra identity</span></div>
     </aside>
     <main>
       <header>
         <div><h1>My dashboard</h1><p>Your API keys, usage, limits and recent LlmProxy calls.</p></div>
-        <div className="actions"><button className="secondary" onClick={() => void refresh()}>Refresh</button><a href="/auth/logout">Sign out</a></div>
+        <div className="shellHeaderControls"><AppearanceControls /><div className="actions"><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button><a href="/auth/logout">Sign out</a></div></div>
       </header>
 
       <PageDocumentation page="me" />
