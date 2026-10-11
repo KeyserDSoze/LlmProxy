@@ -1,3 +1,4 @@
+import type { ModelCapabilityProfile } from './types'
 import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
@@ -205,6 +206,8 @@ export const api = {
     request<{ success: boolean; code: string }>(`/api/admin/model-management/nodes/${nodeId}/prepare`, { method: 'POST' }),
   modelManagementOverview: (nodeId: string) =>
     request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
+  inspectModelCapabilities: (providerModelName: string, runtime: string, maxModelLen?: number | null) =>
+    request<ModelCapabilityProfile>(`/api/admin/model-management/capabilities?providerModelName=${encodeURIComponent(providerModelName)}&runtime=${encodeURIComponent(runtime)}${maxModelLen ? '&maxModelLen=' + maxModelLen : ''}`),
   configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
     request<{ id: string; managementBaseAddress?: string | null; hasManagementCredential: boolean }>(`/api/admin/model-management/nodes/${nodeId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
   installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null }) =>

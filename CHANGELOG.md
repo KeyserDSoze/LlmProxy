@@ -1,3 +1,9 @@
+## Unreleased — Model capability discovery based on model and runtime (2026-10-11)
+
+- New automatically populated **Capabilities** views in Deploy models: open the catalog, inspect an already installed model or expand the install dialog to compare checkpoint declarations against actual serving adapter support (Chat, structured tool calling, SSE, vision, thinking).
+- AirLLM/Qwen3-8B reports base-model tools and thinking **separately** from the intentionally restricted AirLLM API (non-streaming Chat only, no structured tools/vision, partial unstructured `<think>` text). Copies safe checkbox suggestions and real AirLLM limits of 8,192 serving-context tokens by default and 256 maximum output tokens; never advertises the model's optional 131K YaRN context as an enabled runtime setting.
+- New `GET /api/admin/model-management/capabilities` resolution for manual/custom model IDs with allowlisted supported runtimes. Known Qwen3 checkpoints have curated documentation metadata; unknown models remain **unknown/unverified**, not guessed from the runtime alone. Playwright and backend tests protect client checkbox safety.
+
 ## Unreleased — Recover a running AirLLM runtime whose routing never activated (2026-10-11)
 
 - Managed runtime dashboard distinguishes **Docker container Running** from **healthy + routable**. A long AirLLM layer warmup or interrupted Start request can leave its container running while LLMProxy deployment stays Disabled and the hardware node still reads No Runtime.

@@ -22,6 +22,17 @@ public static class NodeModelManagementEndpoints
 
         group.MapGet("/catalog", () => Results.Ok(DeployableModelCatalog.All));
 
+        // Model facts and runtime API support must be presented separately.
+        // No network fetch or unverified capability inference for custom IDs.
+        group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen) =>
+        {
+            if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
+                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
+                maxModelLen is < 256 or > 262144)
+                return Results.BadRequest(new { error = "invalid_capability_lookup" });
+            return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen));
+        });
+
         group.MapGet("/nodes/{id:guid}/overview", async (
             Guid id,
             GatewayDbContext dbContext,
@@ -677,13 +688,21 @@ public static class NodeModelManagementEndpoints
             catalog = DeployableModelCatalog.All.Select(item => new
             {
                 model = item,
-                compatibility = EvaluateCompatibility(item, hardware)
+                compatibility = EvaluateCompatibility(item, hardware),
+                capabilities = ModelCapabilitiesCatalog.Resolve(item.ProviderModelName, item.Runtime,
+                    item.Runtime == "airllm" ? item.ContextTokens : null)
             }),
             installations = deployments.Select(deployment =>
             {
                 models.TryGetValue(deployment.ModelId, out var logicalModel);
                 var agentState = agentModels.FirstOrDefault(item =>
                     string.Equals(item.InstallationId, deployment.ManagedInstallationId, StringComparison.Ordinal));
+                var installedRuntime = agentState?.Runtime ??
+                    (deployment.CatalogModelId?.StartsWith("custom:", StringComparison.Ordinal) == true
+                        ? deployment.CatalogModelId["custom:".Length..]
+                        : DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm");
+                var providerName = logicalModel?.ProviderModelName ??
+                    agentState?.ProviderModelName ?? "";
                 return new
                 {
                     deployment.Id,
@@ -697,9 +716,9 @@ public static class NodeModelManagementEndpoints
                     agentStatus = agentState?.Status ?? (deployment.Enabled ? "unknown" : "stopped"),
                     agentState,
                     runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
-                    runtime = agentState?.Runtime ?? (deployment.CatalogModelId?.StartsWith("custom:", StringComparison.Ordinal) == true
-                        ? deployment.CatalogModelId["custom:".Length..]
-                        : DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")?.Runtime ?? "vllm")
+                    runtime = installedRuntime,
+                    capabilities = ModelCapabilitiesCatalog.Resolve(providerName, installedRuntime,
+                        agentState?.MaxModelLen)
                 };
             })
         };

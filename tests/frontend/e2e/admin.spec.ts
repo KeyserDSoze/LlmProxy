@@ -451,3 +451,64 @@ test('running AirLLM with disabled routing exposes health-gated recovery without
   expect(activationCalls).toBe(1)
   expect(restartCalls).toBe(0)
 })
+
+
+test('AirLLM installation advertises real runtime capabilities and client limits', async ({ page }) => {
+  await installAdminApi(page)
+  const feature = (model: string, serving: string, explanation: string) =>
+    ({ model, serving, explanation })
+  const capabilities = {
+    providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm',
+    source: 'Qwen3 published model card + local adapter contract',
+    modelCardUrl: 'https://huggingface.co/Qwen/Qwen3-8B',
+    chat: feature('supported', 'supported', 'Text Chat API'),
+    toolCalling: feature('supported', 'unsupported', 'AirLLM does not parse tools'),
+    streaming: feature('not-applicable', 'unsupported', 'No SSE'),
+    vision: feature('unsupported', 'unsupported', 'Text only'),
+    thinking: feature('supported', 'partial', 'Raw think text; no structured reasoning'),
+    nativeContextTokens: 32768, extendedContextTokens: 131072,
+    servingContextTokens: 8192, maximumOutputTokens: 256,
+    notes: 'Experimental one-worker AirLLM'
+  }
+  await page.route('**/api/admin/model-management/capabilities?*', route => json(route, capabilities))
+  await page.route('**/api/admin/model-management/nodes/*/overview', route =>
+    json(route, {
+      node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent', hasManagementCredential: false },
+      agentAvailable: true, agentError: null,
+      hardware: { hostname: 'spark-test', cpuLogicalCores: 20, systemMemoryTotalGiB: 120,
+        systemMemoryAvailableGiB: 45, diskTotalGiB: 1600, diskAvailableGiB: 1200,
+        gpus: [], readiness: { dockerDaemonReady: true } },
+      catalog: [{
+        model: { id: 'qwen3-8b-airllm', displayName: 'Qwen3 8B — AirLLM',
+          providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm',
+          license: 'Apache-2.0', parameterBillions: 8, precision: 'BF16',
+          contextTokens: 8192, minimumGpuMemoryGiB: 4, recommendedGpuMemoryGiB: 8,
+          minimumGpuCount: 1, minimumSystemMemoryGiB: 24, diskGiB: 54,
+          sourceUrl: 'https://huggingface.co/Qwen/Qwen3-8B', notes: 'Experimental' },
+        compatibility: { status: 'fits', summary: 'Fits', suggestedTensorParallelSize: 1, reasons: [] },
+        capabilities
+      }],
+      installations: [{
+        id: 'deployment-airllm', modelId: 'model-airllm',
+        logicalModel: 'qwen3-8b-airllm', providerModelName: 'Qwen/Qwen3-8B',
+        catalogModelId: 'qwen3-8b-airllm', managedInstallationId: 'qwen3-airllm-test',
+        agentStatus: 'running', runtime: 'airllm', enabled: true,
+        agentState: { status: 'running', maxNumSeqs: 4, maxModelLen: 8192 },
+        capabilities
+      }]
+    }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+
+  await page.getByRole('button', { name: 'Capabilities & client setup' }).click()
+  const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
+  await expect(dialog.getByText('Tool calling')).toBeVisible()
+  await expect(dialog.getByText('AirLLM does not parse tools')).toBeVisible()
+  await expect(dialog.locator('pre')).toContainText('"streaming": false')
+  await expect(dialog.locator('pre')).toContainText('"maximumInputTokens": 8192')
+  await expect(dialog.locator('pre')).toContainText('"maximumOutputTokens": 256')
+  await dialog.getByRole('button', { name: /Close Capabilities/ }).click()
+
+  await page.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(page.getByText('Automatically detected capabilities & client token limits')).toBeVisible()
+})
