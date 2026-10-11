@@ -698,22 +698,27 @@ public static class NodeModelManagementEndpoints
         {
             token.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress)) continue;
+            // A disconnected outbound Agent must not stall reconciliation of
+            // every other node for the management HTTP client's long timeout.
+            using var nodeTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            nodeTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var nodeToken = nodeTimeout.Token;
             try
             {
                 var client = clients.CreateClient("node-management");
                 var jobs = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(
-                    client, node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, token);
+                    client, node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, nodeToken);
                 var pending = jobs.Where(job => job.Status == "completed" &&
                     job.Result is not null && job.Request.CatalogModelId != "custom")
                     .OrderByDescending(job => job.CreatedAtUtc).Take(100).ToArray();
                 if (pending.Length == 0) continue;
 
                 var inventory = await SendAgentAsync<ManagedModelsResponse>(
-                    client, node, protector, HttpMethod.Get, "/v1/models", null, token);
+                    client, node, protector, HttpMethod.Get, "/v1/models", null, nodeToken);
                 var current = inventory.Models ?? Array.Empty<ManagedModelState>();
                 foreach (var job in pending)
                 {
-                    token.ThrowIfCancellationRequested();
+                    nodeToken.ThrowIfCancellationRequested();
                     if (!CanReconcileJob(job, current)) continue;
 
                     // An independent DB context avoids poisoning the rest of the
@@ -722,7 +727,7 @@ public static class NodeModelManagementEndpoints
                     var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
                     if (await db.Deployments.AnyAsync(item =>
                         item.NodeId == node.Id &&
-                        item.ManagedInstallationId == job.Result!.InstallationId, token))
+                        item.ManagedInstallationId == job.Result!.InstallationId, nodeToken))
                         continue;
 
                     var descriptor = DeployableModelCatalog.Find(job.Request.CatalogModelId);
@@ -762,7 +767,7 @@ public static class NodeModelManagementEndpoints
                             new ModelCompatibility("unknown",
                                 "Registered from completed persistent Node Agent job", [],
                                 job.Request.TensorParallelSize),
-                            node, db, systemContext, token);
+                            node, db, systemContext, nodeToken);
                         if (result is IStatusCodeHttpResult { StatusCode: 200 })
                         {
                             logger.LogInformation(
@@ -785,6 +790,10 @@ public static class NodeModelManagementEndpoints
                             job.Result.InstallationId, node.Id);
                     }
                 }
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                logger.LogDebug("Timed out reconciling installation jobs on node {NodeId}", node.Id);
             }
             catch (AgentException error)
             {
