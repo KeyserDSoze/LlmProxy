@@ -434,7 +434,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {runtimeChoice !== 'faster-whisper' && <label>{t('model.gpuDevices')} (0, 0,1)
           <input aria-label={t('model.gpuDevices')} value={gpuDevices}
             onChange={event => setGpuDevices(event.target.value)}
-            placeholder="All GPUs (existing default)" pattern="[0-9]{1,2}(,[0-9]{1,2})*" />
+            placeholder={runtimeChoice === 'diffusers' ? '0 (single CUDA GPU)' : 'All GPUs (existing default)'} pattern={runtimeChoice === 'diffusers' ? '[0-9]{1,2}' : '[0-9]{1,2}(,[0-9]{1,2})*'} />
         </label>}
         {runtimeChoice !== 'faster-whisper' && <p className="muted">{runtimeChoice === 'diffusers' ? 'SSD-1B runs on one NVIDIA GPU. Enter a single index (defaults to GPU 0).' : t('model.gpuHelp')}</p>}
         <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
