@@ -504,9 +504,9 @@ test('AirLLM installation advertises real runtime capabilities and client limits
   const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
   await expect(dialog.getByText('Tool calling')).toBeVisible()
   await expect(dialog.getByText('AirLLM does not parse tools')).toBeVisible()
-  await expect(dialog.getByText('"streaming": false')).toBeVisible()
-  await expect(dialog.getByText('"maximumInputTokens": 8192')).toBeVisible()
-  await expect(dialog.getByText('"maximumOutputTokens": 256')).toBeVisible()
+  await expect(dialog.locator('pre')).toContainText('"streaming": false')
+  await expect(dialog.locator('pre')).toContainText('"maximumInputTokens": 8192')
+  await expect(dialog.locator('pre')).toContainText('"maximumOutputTokens": 256')
   await dialog.getByRole('button', { name: /Close Capabilities/ }).click()
 
   await page.getByRole('button', { name: 'Install', exact: true }).click()
