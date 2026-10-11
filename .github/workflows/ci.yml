@@ -33,6 +33,7 @@ jobs:
           bash -n distribution/update-node-agent.sh
           python3 -m py_compile distribution/airllm-runtime/server.py
           python3 -m py_compile distribution/diffusers-runtime/server.py
+          bash -n tests/hardware/multimodal-smoke.sh
           test -s distribution/diffusers-runtime/Dockerfile
           test -s distribution/diffusers-runtime/Dockerfile.arm64
           grep -F 'distribution/diffusers-runtime' .github/workflows/container.yml >/dev/null
