@@ -12,7 +12,7 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
         if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)
             throw new ArgumentException("providerModelName is required and must be at most 300 characters.");
-        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang" or "airllm"))
+        if (request.Runtime is not ("vllm" or "llama.cpp" or "sglang" or "airllm" or "faster-whisper"))
             throw new ArgumentException("Unsupported runtime. Only vllm, llama.cpp, sglang and experimental airllm are managed.");
         if (request.TensorParallelSize < 1 || request.TensorParallelSize > 64)
             throw new ArgumentOutOfRangeException(nameof(request.TensorParallelSize));
@@ -64,6 +64,24 @@ public static class ManagedRuntimeProfiles
             if (!Regex.IsMatch(request.ProviderModelName, @"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
                 throw new ArgumentException("AirLLM requires a valid Hugging Face repository ID.");
         }
+        if (request.Runtime == "faster-whisper")
+        {
+            if (request.CatalogModelId is not ("whisper-tiny-cpu" or "whisper-base-cpu" or "whisper-small-cpu") ||
+                request.ProviderModelName is not ("Systran/faster-whisper-tiny" or "Systran/faster-whisper-base" or "Systran/faster-whisper-small") ||
+                request.CatalogModelId switch {
+                    "whisper-tiny-cpu" => request.ProviderModelName != "Systran/faster-whisper-tiny",
+                    "whisper-base-cpu" => request.ProviderModelName != "Systran/faster-whisper-base",
+                    "whisper-small-cpu" => request.ProviderModelName != "Systran/faster-whisper-small",
+                    _ => true
+                })
+                throw new ArgumentException("Whisper runtime only allows matching curated CTranslate2 checkpoints.");
+            if (request.TensorParallelSize != 1 || request.GpuDevices is not null ||
+                request.MaxNumSeqs is not null and not 1 ||
+                request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                request.CpuOffloadGiB is not null || request.KvCacheDtype is not null ||
+                request.ExtraArguments is { Count: > 0 })
+                throw new ArgumentException("CPU Whisper runtime accepts no Chat/GPU/token settings; concurrency is one.");
+        }
         if (request.Runtime == "llama.cpp")
         {
             if (request.TensorParallelSize != 1)
@@ -99,13 +117,14 @@ public static class ManagedRuntimeProfiles
             "llama.cpp" => options.LlamaCppDockerImage,
             "sglang" => options.SglangDockerImage,
             "airllm" => "llmproxy-airllm:0.2",
+            "faster-whisper" => "llmproxy-faster-whisper:0.1",
             _ => options.DockerImage
         };
 
     public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options)
     {
         var args = new List<string>();
-        if (record.Runtime == "airllm")
+        if (record.Runtime is "airllm" or "faster-whisper")
         {
             // Entrypoint in the locally-built, allowlisted serving image.
             // Queued requests must never be mistaken for GPU-parallel inference.
