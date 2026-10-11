@@ -269,7 +269,7 @@ public static class MultimodalEndpoints
                 await FailAsync(context, status, error, "The multimodal inference request did not complete.");
             else context.Abort();
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
             status = 502; error = "upstream_unreachable";
             if (!context.Response.HasStarted)
