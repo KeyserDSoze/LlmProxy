@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-11 — Capability guidance for Qwen3-8B on AirLLM and other managed runtimes
+
+- User showed a third-party model configuration asking for Tool calling, Streaming, Vision, Thinking and max input/output limits. Qwen3-8B supports tool use and thinking as checkpoint characteristics, but AirLLM's LLMProxy adapter has neither SSE nor structured tool calling nor validated structured thinking control.
+- Added a conservative, runtime-aware capability resolver used in managed model catalog, running installations and installation dialog; report lists checkpoint-declared vs serving adapter-usable features, source and configured context/output limits.
+- AirLLM explicit limits are context 8192 by default or configured MaxModelLen and max generated tokens 256. Qwen3 native context 32768 and optional 131072 with YaRN must not be confused with actual running AirLLM settings.
+- Added copyable suggested client settings without enabling unverified toggles; unknown custom HF models are shown unknown pending validation. Test coverage included.
+
+# Development log
+
 ## 2026-10-11 — AirLLM Docker running but gateway model routing disabled
 
 - Real Spark screenshot showed `qwen3-8b-airllm` Agent status `Running`, deployment routing `Disabled`, hardware Fleet `No Runtime`. The Agent reports Running based on `docker inspect` container state, not actual model `/health` readiness; AirLLM may still be converting layers, have failed warmup or outlive a timed-out Start API request.
