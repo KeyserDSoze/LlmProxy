@@ -159,6 +159,26 @@ public sealed class ManagedRuntimeProfilesTests
             request with { MaxNumSeqs = 2 }));
     }
 
+    [Fact]
+    public void Diffusers_requires_curated_checkpoint_and_disallows_chat_flags_and_multiple_gpus()
+    {
+        var request = new InstallRequest("ssd-1b-image", "segmind/SSD-1B",
+            null, 1, [], "diffusers", 1, GpuDevices: "0");
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Equal("llmproxy-diffusers-ssd1b:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ProviderModelName = "random/UnsafeDiffusersRepo" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 8192 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0,1" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--trust-remote-code"] }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { TensorParallelSize = 2 }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",
