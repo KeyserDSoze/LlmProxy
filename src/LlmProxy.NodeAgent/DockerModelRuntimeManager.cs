@@ -116,6 +116,7 @@ allow = ('model_index.json', 'scheduler/*.json', 'tokenizer/*',
          'vae/*.json', 'vae/*.safetensors', 'feature_extractor/*.json')
 if repo == 'segmind/SSD-1B':
     files = [s for s in siblings if s.rfilename and
+             s.rfilename.lower().endswith(('.json', '.safetensors', '.txt', '.model', '.vocab', '.merges')) and
              any(fnmatch(s.rfilename, pattern) for pattern in allow)]
     if not files or not any(s.rfilename == 'model_index.json' for s in files) or not any(s.rfilename.startswith('unet/') and s.rfilename.endswith('.safetensors') for s in files):
         raise RuntimeError('Pinned Diffusers snapshot is missing essential safe weights')
