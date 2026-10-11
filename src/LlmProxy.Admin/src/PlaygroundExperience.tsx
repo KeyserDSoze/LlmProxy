@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { useRouteTab } from './adminNavigation'
 import { Tabs } from './UiPrimitives'
 import type { AdminTestResult, Model, SystemOneStatus } from './types'
 
 const defaultClassifierBody = JSON.stringify({ state: { document: 'The customer reports a duplicate card charge' }, questions: { billing: { type: 'noul', instructions: 'Is this request about billing?' } } }, null, 2)
 
 export default function PlaygroundExperience({ models }: { models: Model[] }) {
-  const [tab, setTab] = useState<'chat' | 'classifier'>('chat')
+  const [tab, setTab] = useRouteTab<'chat' | 'classifier'>('tab', ['chat', 'classifier'], 'chat')
   const openAiModels = useMemo(() => models.filter(model => model.enabled && (model.surface ?? 'OpenAi') === 'OpenAi'), [models])
   const systemOneModels = useMemo(() => models.filter(model => model.enabled && model.surface === 'SystemOne'), [models])
   const [model, setModel] = useState('')
