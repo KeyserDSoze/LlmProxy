@@ -300,7 +300,20 @@ public static class DeployableModelCatalog
             false, false,
             ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
             "CPU-only speech transcription/translation-to-English. Real audio correctness and runtime performance are not certified yet.",
-            "faster-whisper", ModelSurface.AudioTranscription)
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "ssd-1b-image",
+            "SSD-1B — Image generation (GPU, experimental)",
+            "segmind/SSD-1B",
+            "Stable Diffusion XL distilled / Diffusers",
+            "Apache-2.0 (model card)",
+            "https://huggingface.co/segmind/SSD-1B",
+            1.3, 1024, "FP16 CUDA",
+            12, 16, 16, 24, 12, 1, 1,
+            false, false,
+            ["image", "text-to-image", "diffusers", "cuda", "sdxl", "arm64", "experimental"],
+            "Single-image, base64 PNG; supported sizes 512/768/1024 square, 1-30 steps. Requires NVIDIA CUDA, pinned safe checkpoint, and real hardware/image safety acceptance.",
+            "diffusers", ModelSurface.ImageGeneration)
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>
