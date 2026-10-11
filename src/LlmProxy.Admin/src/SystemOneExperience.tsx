@@ -55,8 +55,8 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
     event.preventDefault()
     if (!canSubmit) return
     setBusy(true); setError(null); setSuccess(null)
+    let model = target
     try {
-      let model = target
       if (!model) {
         model = await api.createModel({
           publicName: logicalName.trim(),
@@ -77,8 +77,8 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
       await refresh()
     } catch (reason) {
       setError((reason instanceof Error ? reason.message : String(reason)) +
-        (pendingModel ? ' The logical model was already published. Retry connecting without recreating it.' :
-          ' If the logical model was created but deployment failed, refresh and select that model under "Existing classifier" to finish the connection.'))
+        (model ? ' The logical model exists, but the deployment is not confirmed. Retry the connection, or select this existing classifier after refreshing.' :
+          ' No deployment was created. Please correct the model or server configuration.'))
     } finally { setBusy(false) }
   }
 
