@@ -723,14 +723,14 @@ public static class NodeModelManagementEndpoints
                         .Select(row => row.ManagedInstallationId)
                         .ToHashSetAsync(nodeToken);
                 }
-                var pending = candidates
-                    .Where(job => !registered.Contains(job.Result!.InstallationId))
-                    .OrderBy(job => job.CreatedAtUtc).Take(100).ToArray();
-                if (pending.Length == 0) continue;
-
                 var inventory = await SendAgentAsync<ManagedModelsResponse>(
                     client, node, protector, HttpMethod.Get, "/v1/models", null, nodeToken);
                 var current = inventory.Models ?? Array.Empty<ManagedModelState>();
+                var pending = candidates
+                    .Where(job => !registered.Contains(job.Result!.InstallationId))
+                    .Where(job => CanReconcileJob(job, current))
+                    .OrderBy(job => job.CreatedAtUtc).Take(100).ToArray();
+                if (pending.Length == 0) continue;
                 foreach (var job in pending)
                 {
                     nodeToken.ThrowIfCancellationRequested();
