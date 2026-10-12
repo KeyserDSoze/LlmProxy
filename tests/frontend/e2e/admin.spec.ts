@@ -443,6 +443,7 @@ test('running AirLLM with disabled routing exposes health-gated recovery without
     }))
   await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Installed/ }).click()
   await expect(page.getByText('Container running, health and routing not yet verified.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Check health & activate' }).click()
@@ -499,6 +500,7 @@ test('AirLLM installation advertises real runtime capabilities and client limits
     }))
   await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Installed/ }).click()
 
   await page.getByRole('button', { name: 'Capabilities & client setup' }).click()
   const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
@@ -508,6 +510,7 @@ test('AirLLM installation advertises real runtime capabilities and client limits
   await expect(dialog.locator('pre')).toContainText('"maximumInputTokens": 8192')
   await expect(dialog.locator('pre')).toContainText('"maximumOutputTokens": 256')
   await dialog.getByRole('button', { name: /Close Capabilities/ }).click()
+  await page.getByRole('tab', { name: /Discover/ }).click()
 
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   await expect(page.getByText('Automatically detected capabilities & client token limits')).toBeVisible()
@@ -572,6 +575,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
   await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
   await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
+  await page.getByRole('tab', { name: /Installed/ }).click()
   await page.getByRole('button', { name: 'Check Hugging Face updates' }).click()
   await expect(page.getByText('A changed repository commit exists.')).toBeVisible()
   await page.getByRole('button', { name: 'Edit limits' }).click()
@@ -582,6 +586,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await edit.getByRole('button', { name: 'Save limits' }).click()
   await expect(page.getByText(/Runtime limits updated without deleting model weights/)).toBeVisible()
   expect(savedLimits).toEqual({ maxModelLen: 16384, maxNumSeqs: 2, maxOutputTokens: 1024 })
+  await page.getByRole('tab', { name: /Discover/ }).click()
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   const install = page.getByRole('dialog', { name: 'Install inference profile' })
   await expect(install.getByText(/Selected defaults:/)).toBeVisible()
@@ -732,9 +737,13 @@ test('Italian model discovery, deployment lifecycle and fleet pages use one pers
   await page.goto('/admin/catalog?tab=deploy&node=node-1')
   await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
   await expect(page.getByRole('heading', { name: 'Catalogo modelli installabili' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toHaveCount(0)
+  await page.getByRole('tab', { name: /Operazioni/ }).click()
   await expect(page.getByRole('heading', { name: 'Download e installazioni' })).toBeVisible()
+  await page.getByRole('tab', { name: /Installati/ }).click()
   await expect(page.getByRole('heading', { name: 'Modelli installati su questo hardware' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toBeVisible()
+  await page.getByRole('tab', { name: /Scopri/ }).click()
+  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
   await page.goto('/admin/infrastructure?section=fleet')
   await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
@@ -839,7 +848,7 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
   await expect(modal.getByLabel('Tensor parallel size')).toHaveCount(0)
   await expect(modal.getByLabel('Install maximum output tokens')).toHaveCount(0)
   await modal.getByRole('button', { name: 'Download & install' }).click()
-  await expect(page.getByText(/Background download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled/)).toBeVisible()
   expect(queued).toMatchObject({
     runtime: 'faster-whisper',
     maxNumSeqs: 1,
