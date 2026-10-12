@@ -48,7 +48,7 @@ class AgentUpdateTests(unittest.TestCase):
         source = source.replace('/var/lib/llmproxy-node-agent', str(self.state))
         source = source.replace('/opt/llmproxy-node-agent', str(self.opt))
         source = source.replace('/etc/llmproxy/node-agent.env', str(self.env_file))
-        source = source.replace('seq 1 60', 'seq 1 2').replace('sleep 2', 'sleep 0.01')
+        source = source.replace('seq 1 60', 'seq 1 4').replace('sleep 2', 'sleep 0.01')
         self.test_script = self.root / "update.sh"
         self.test_script.write_text(source)
 
