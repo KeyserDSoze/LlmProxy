@@ -6,8 +6,11 @@ describe('Chat diagnostic stream', () => {
   it('handles events and final JSON split across arbitrary network chunks', async () => {
     const encoding = new TextEncoder()
     const payload = [
-      'event: progress\ndata: {"phase":"waiting_for_model","secondsElapsed":100}\n\n',
-      'event: result\ndata: {"requestId":"test-1","success":true,"statusCode":200,"latencyMilliseconds":120000,"responseBody":"{\"ok\":true}"}\n\n'
+      'event: progress\n' + 'data: ' +
+        JSON.stringify({ phase: 'waiting_for_model', secondsElapsed: 100 }) + '\n\n',
+      'event: result\n' + 'data: ' +
+        JSON.stringify({ requestId: 'test-1', success: true, statusCode: 200,
+          latencyMilliseconds: 120000, responseBody: JSON.stringify({ ok: true }) }) + '\n\n'
     ].join('')
     const bytes = encoding.encode(payload)
     let index = 0
