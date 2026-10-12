@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from chat_policy import build_prompt, finish_reason
 
 MODEL_ID = os.environ["AIRLLM_MODEL_ID"]
 MAX_CONTEXT = max(256, min(262144, int(os.getenv("AIRLLM_MAX_CONTEXT", "8192"))))
@@ -32,12 +33,18 @@ class Message(BaseModel):
     content: str
 
 
+class ChatTemplateKwargs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enable_thinking: bool | None = None
+
+
 class Chat(BaseModel):
     model: str
     messages: list[Message]
     stream: bool = False
     max_tokens: int = Field(default=64, ge=1, le=MAX_OUTPUT_TOKENS)
     temperature: float = Field(default=0, ge=0, le=2)
+    chat_template_kwargs: ChatTemplateKwargs | None = None
 
 
 def _load():
@@ -53,14 +60,11 @@ def _load():
         engine.generate(ids, max_new_tokens=1, use_cache=True, return_dict_in_generate=True)
 
 
-def _infer(messages, length, temperature):
+def _infer(messages, length, temperature, thinking):
     import torch
     tok = engine.tokenizer
     turns = [{"role": item.role, "content": item.content} for item in messages]
-    if getattr(tok, "chat_template", None):
-        prompt = tok.apply_chat_template(turns, tokenize=False, add_generation_prompt=True)
-    else:
-        prompt = "\n".join(f"{m.role}: {m.content}" for m in messages) + "\nassistant:"
+    prompt = build_prompt(tok, turns, MODEL_ID, thinking)
     ids = tok(prompt, return_tensors="pt", truncation=False)["input_ids"]
     prompt_length = int(ids.shape[-1])
     if prompt_length + length > MAX_CONTEXT:
@@ -75,7 +79,9 @@ def _infer(messages, length, temperature):
         result = engine.generate(ids, **args)
     result = result.sequences if hasattr(result, "sequences") else result
     out = result[0][prompt_length:]
-    return tok.decode(out, skip_special_tokens=True), prompt_length, int(out.shape[-1])
+    generated_ids = out.tolist()
+    return (tok.decode(out, skip_special_tokens=True), prompt_length,
+            len(generated_ids), finish_reason(generated_ids, length, tok))
 
 
 @asynccontextmanager
@@ -131,6 +137,9 @@ async def chat(body: Chat, request: Request):
         raise HTTPException(422, "Invalid prompt")
     if not ready or load_error:
         raise HTTPException(503, "AirLLM not ready")
+    thinking = body.chat_template_kwargs.enable_thinking if body.chat_template_kwargs else None
+    if thinking is not None and not MODEL_ID.rsplit("/", 1)[-1].lower().startswith("qwen3-"):
+        raise HTTPException(422, "enable_thinking is only supported for Qwen3 models")
     async with guard:
         if queued >= QUEUE_LIMIT:
             raise HTTPException(429, "AirLLM bounded queue is full")
@@ -145,8 +154,8 @@ async def chat(body: Chat, request: Request):
         if await request.is_disconnected():
             raise HTTPException(499, "Client disconnected")
         try:
-            answer, prompt_tokens, output_tokens = await asyncio.to_thread(
-                _infer, body.messages, body.max_tokens, body.temperature)
+            answer, prompt_tokens, output_tokens, reason = await asyncio.to_thread(
+                _infer, body.messages, body.max_tokens, body.temperature, thinking)
         except ValueError as exc:
             raise HTTPException(422, str(exc)[:200]) from exc
         completed += 1
@@ -155,7 +164,7 @@ async def chat(body: Chat, request: Request):
             "id": "chatcmpl-" + uuid.uuid4().hex, "object": "chat.completion",
             "created": int(time.time()), "model": MODEL_ID,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer},
-                         "finish_reason": "stop"}],
+                         "finish_reason": reason}],
             "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": output_tokens,
                       "total_tokens": prompt_tokens + output_tokens},
         }
