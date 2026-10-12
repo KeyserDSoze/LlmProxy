@@ -735,6 +735,7 @@ export type ModelRouteDiagnosis = {
     code: string
     message: string
     nextAction: string
+    lastHealthError?: string | null
   }>
 }
 
