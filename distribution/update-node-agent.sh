@@ -128,29 +128,75 @@ advance healthcheck service_start_failed
 systemctl start "$service"
 failure_code=healthcheck_failed
 
-# Health 401 is NOT readiness: authenticate with the Agent's local secret.
-# Keep the credential in a 0600 curl config file, never in process argv/logs.
-health_config="$tmp/health.curl"
+# A successful outbound heartbeat or 200 from an old runtime is NOT
+# proof that the new local Agent binary has started successfully.
+health_header="$tmp/agent-health.header"
 agent_bearer="$(sed -n 's/^NodeAgent__BearerToken=//p' /etc/llmproxy/node-agent.env | tail -n 1)"
 if [[ -n "$agent_bearer" ]]; then
-  [[ "$agent_bearer" =~ ^[A-Za-z0-9_-]{16,256}$ ]] || {
+  # BearerTokenMiddleware accepts non-empty credentials including punctuation;
+  # do not reject valid passwords using an unrelated restricted alphabet.
+  # Control characters are forbidden in HTTP headers.
+  if [[ "$agent_bearer" == *$'\r'* || "$agent_bearer" == *$'\n'* ||
+        "$agent_bearer" =~ [[:cntrl:]] ]]; then
     failure_code=invalid_health_bearer
     exit 1
-  }
-  printf 'header = "Authorization: Bearer %s"\n' "$agent_bearer" > "$health_config"
-  chmod 0600 "$health_config"
+  fi
+  printf 'Authorization: Bearer %s\n' "$agent_bearer" > "$health_header"
+  chmod 0600 "$health_header"
+  health_auth=(--header "@$health_header")
 else
-  : > "$health_config"
+  health_auth=()
 fi
 unset agent_bearer
 
-# GPU driver probing and ASP.NET startup can exceed the former 40s deadline.
+# Respect the configured listener instead of assuming that every Agent binds
+# :9900. All checks target loopback; never probe arbitrary remote addresses.
+listen_url="$(sed -n 's/^ASPNETCORE_URLS=//p' /etc/llmproxy/node-agent.env | tail -n 1)"
+health_port=9900
+if [[ -n "$listen_url" ]]; then
+  case "$listen_url" in
+    http://127.0.0.1:*|http://localhost:*|http://0.0.0.0:*|http://+:*|http://\*:*)
+      health_port="$(echo "$listen_url" | sed -n 's/.*://p')"
+      ;;
+    *)
+      failure_code=health_listen_address_invalid
+      echo "[llmproxy-agent-update] unsupported listen URL: expected a single HTTP listener" >&2
+      exit 1
+      ;;
+  esac
+fi
+if ! [[ "$health_port" =~ ^[0-9]{1,5}$ ]] || (( 10#$health_port < 1 || 10#$health_port > 65535 )); then
+  failure_code=health_listen_address_invalid
+  exit 1
+fi
+
 healthy=0
 for attempt in $(seq 1 60); do
-  status="$(curl --config "$health_config" --silent --output "$tmp/health.json" \
-    --max-time 3 --write-out '%{http_code}' http://127.0.0.1:9900/health || true)"
-  if systemctl is-active --quiet "$service" && [[ "$status" == "200" ]] &&
-     grep -Fq "\"version\":\"$version\"" "$tmp/health.json"; then
+  status="$(curl --silent --show-error "${health_auth[@]}" --output "$tmp/health.json" \
+    --max-time 3 --write-out '%{http_code}' "http://127.0.0.1:$health_port/health" || true)"
+  if ! systemctl is-active --quiet "$service"; then
+    failure_code=health_service_inactive
+    healthy=0
+  elif [[ "$status" == "000" || -z "$status" ]]; then
+    failure_code=health_unreachable
+    healthy=0
+  elif [[ "$status" == "401" || "$status" == "403" ]]; then
+    failure_code=health_unauthorized
+    healthy=0
+  elif [[ "$status" != "200" ]]; then
+    failure_code=health_http_error
+    healthy=0
+  elif ! grep -Eq '"service"[[:space:]]*:[[:space:]]*"llmproxy-node-agent"' "$tmp/health.json"; then
+    failure_code=health_wrong_service
+    healthy=0
+  elif ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$tmp/health.json"; then
+    failure_code=health_not_ready
+    healthy=0
+  elif ! grep -Fq "\"version\":\"$version\"" "$tmp/health.json" &&
+       ! grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"${version//./\\.}"'"[[:space:]]*[,}]' "$tmp/health.json"; then
+    failure_code=health_version_mismatch
+    healthy=0
+  else
     healthy=$((healthy + 1))
     if (( healthy >= 3 )); then
       backup_taken=false
@@ -158,10 +204,11 @@ for attempt in $(seq 1 60); do
       echo "Node Agent upgraded and verified to $version"
       exit 0
     fi
-  else
-    healthy=0
+  fi
+  if (( attempt == 1 || attempt % 10 == 0 )); then
+    echo "[llmproxy-agent-update] health attempt $attempt/60, http=$status, cause=$failure_code" >&2
   fi
   sleep 2
 done
-echo "New Node Agent did not pass authenticated versioned /health; restoring the previous installation." >&2
+echo "New Node Agent did not pass local authenticated /health (last cause=$failure_code); restoring previous installation." >&2
 exit 1
