@@ -116,7 +116,7 @@ public static class ManagedRuntimeProfiles
         {
             "llama.cpp" => options.LlamaCppDockerImage,
             "sglang" => options.SglangDockerImage,
-            "airllm" => "llmproxy-airllm:0.2",
+            "airllm" => "llmproxy-airllm:0.3",
             "faster-whisper" => "llmproxy-faster-whisper:0.1",
             _ => options.DockerImage
         };

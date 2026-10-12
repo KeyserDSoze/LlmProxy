@@ -33,6 +33,8 @@ jobs:
           bash -n distribution/update-node-agent.sh
           python3 tests/node-agent-self-update.py -v
           python3 -m py_compile distribution/airllm-runtime/server.py
+          python3 -m py_compile distribution/airllm-runtime/chat_policy.py
+          python3 tests/airllm-chat-policy.py -v
           python3 -m py_compile distribution/faster-whisper-runtime/server.py
           test -s distribution/faster-whisper-runtime/Dockerfile
           grep -F 'distribution/faster-whisper-runtime' .github/workflows/container.yml >/dev/null

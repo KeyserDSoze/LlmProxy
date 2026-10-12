@@ -2,6 +2,45 @@
 
 **Decision: 2026-10-10.** AirLLM is a top-priority experimental inference runtime for LLMProxy, not an optional future investigation. Its key hypothesis is whether streaming a checkpoint **one layer (or required MoE expert) at a time** can make larger models usable and/or improve sustainable concurrent users on the **same physical Linux server**. These are two **different** hypotheses; both must be measured. Status: **LAB ADAPTER IMPLEMENTED IN SOURCE / CI & GPU ACCEPTANCE PENDING.** A version-pinned Python HTTP shim and Docker build assets are bundled with Node Agent releases, with Admin selection of one AirLLM/Qwen3-4B checkpoint and background transfers. Streaming, Responses, tools, true layer batching, and GPU acceptance are not yet validated.
 
+## Spark hardware finding — 2026-10-12
+
+The local Spark runtime **did complete inference** at `http://127.0.0.1:18000/v1/chat/completions`:
+`Qwen/Qwen3-8B`, `max_tokens: 1`, non-streaming, HTTP 200, 4.45323s total.
+The generated text was `<think>`, and the old adapter incorrectly set
+`finish_reason: stop` despite hitting the one-token limit. This proves basic
+local generation, **not** the complete Gateway → outbound relay → Cloudflare
+path, throughput for longer requests, or production readiness. Do not infer a
+stable token/s from a one-token measurement.
+
+The updated AirLLM adapter supports Qwen3's explicit OpenAI-compatible
+`chat_template_kwargs: {"enable_thinking": false}`. Only the **Admin
+Playground diagnostic** adds that option automatically for Qwen3; normal
+`/v1/chat/completions` requests preserve the model's default thinking mode
+unless the client explicitly opts out. New completions report
+`finish_reason: "length"` for token-limited output and `"stop"` for EOS.
+The local runtime image is versioned as `llmproxy-airllm:0.3`; updating the
+Gateway alone will not replace a running `0.2` container. Update the paired
+Agent to the release carrying the adapter, then **Stop / Start** the managed
+AirLLM installation and check readiness. The Agent builds the new image
+without intentionally deleting the shared Hugging Face model cache.
+
+Quick local acceptance (after the runtime update):
+```bash
+MODEL="$(curl -fsS http://127.0.0.1:18000/v1/models | jq -r '.data[0].id')"
+curl -sS --max-time 240 \
+  -w '\\nHTTP: %{http_code} | Total: %{time_total}s\\n' \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -nc --arg model "$MODEL" '{
+    model: $model,
+    messages: [{role: "user", content: "Reply with exactly OK"}],
+    stream: false,
+    max_tokens: 8,
+    temperature: 0,
+    chat_template_kwargs: {enable_thinking: false}
+  }')" \
+  http://127.0.0.1:18000/v1/chat/completions
+```
+
 ## Upstream and scope
 
 - Primary upstream is [lyogavin/airllm](https://github.com/lyogavin/airllm), which exposes Python `airllm.AutoModel.from_pretrained` and `generate`. **Do not assume** that installing the package installs an OpenAI-compatible HTTP serving daemon, or that a third-party fork implements the same API, security, batching, streaming or throughput.

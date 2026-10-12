@@ -21,6 +21,27 @@ public sealed class PlaygroundChatSseTests
     }
 
     [Fact]
+    public void Short_Qwen3_diagnostic_requests_explicit_non_thinking_mode()
+    {
+        var payload = PlaygroundChatStreamEndpoints.BuildChatPayload("Qwen/Qwen3-8B",
+            [new { role = "user", content = "Reply with OK" }], 8, 0);
+        using var doc = JsonDocument.Parse(payload);
+        Assert.False(doc.RootElement.GetProperty("chat_template_kwargs")
+            .GetProperty("enable_thinking").GetBoolean());
+        Assert.Equal(8, doc.RootElement.GetProperty("max_tokens").GetInt32());
+        Assert.False(doc.RootElement.GetProperty("stream").GetBoolean());
+    }
+
+    [Fact]
+    public void Other_models_keep_native_template_semantics()
+    {
+        var payload = PlaygroundChatStreamEndpoints.BuildChatPayload("meta-llama/Llama-3-8B",
+            [new { role = "user", content = "Reply with OK" }], 8, 0);
+        using var doc = JsonDocument.Parse(payload);
+        Assert.False(doc.RootElement.TryGetProperty("chat_template_kwargs", out _));
+    }
+
+    [Fact]
     public void Result_preserves_status_and_escapes_content_to_a_single_sse_event()
     {
         var raw = PlaygroundChatStreamEndpoints.FormatEvent("result",

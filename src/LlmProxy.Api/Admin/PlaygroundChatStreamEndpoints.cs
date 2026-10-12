@@ -84,10 +84,8 @@ public static class PlaygroundChatStreamEndpoints
                 messages.Add(new { role = "system", content = request.SystemPrompt });
             messages.Add(new { role = "user", content = request.UserPrompt });
 
-            var payload = JsonSerializer.Serialize(new {
-                model = route.ProviderModelName, messages,
-                stream = false, max_tokens = maxTokens, temperature
-            });
+            var payload = BuildChatPayload(route.ProviderModelName, messages,
+                maxTokens, temperature);
 
             var statusCode = 502;
             var responseBody = string.Empty;
@@ -183,6 +181,25 @@ public static class PlaygroundChatStreamEndpoints
         });
 
         return endpoints;
+    }
+
+    internal static string BuildChatPayload(string providerModel,
+        List<object> messages, int maxTokens, double temperature)
+    {
+        var body = new Dictionary<string, object> {
+            ["model"] = providerModel,
+            ["messages"] = messages,
+            ["stream"] = false,
+            ["max_tokens"] = maxTokens,
+            ["temperature"] = temperature
+        };
+        // Qwen3's default chat template spends the first tokens in <think>.
+        // Diagnostic probes explicitly choose non-thinking mode, preserving
+        // the default semantics of normal public API requests.
+        if (providerModel.Split('/').Last().StartsWith("Qwen3-",
+                StringComparison.OrdinalIgnoreCase))
+            body["chat_template_kwargs"] = new { enable_thinking = false };
+        return JsonSerializer.Serialize(body);
     }
 
     internal static string FormatEvent(string eventName, object payload) =>
