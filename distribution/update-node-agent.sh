@@ -109,7 +109,10 @@ old=/opt/llmproxy-node-agent
 backup="/opt/llmproxy-node-agent.previous"
 staging="/opt/llmproxy-node-agent.upgrade"
 test -d "$old"
-test ! -e "$staging"
+# An aborted prior update can leave staging behind; the update unit is
+# serialized, so clear only this dedicated transient staging directory.
+if [[ -e "$staging" ]]; then rm -rf "$staging"; fi
+failure_code=staging_failed
 cp -a "$tmp/new" "$staging"
 advance switching agent_stop_failed
 systemctl stop "$service"
