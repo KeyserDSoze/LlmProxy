@@ -351,6 +351,52 @@ public static class NodeModelManagementEndpoints
             catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
         });
 
+        // Repeat an interrupted/failed installation with its exact immutable
+        // original profile. The Node Agent reuses cached Docker/HF layers.
+        var retryJob = group.MapPost("/nodes/{id:guid}/install-jobs/{jobId:guid}/retry", async (
+            Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var client = factory.CreateClient("node-management");
+                var oldJob = await SendAgentAsync<ModelInstallJob>(client, node, protector,
+                    HttpMethod.Get, "/v1/models/install-jobs/" + jobId, null, token);
+                if (oldJob.Status is not ("failed" or "interrupted" or "cancelled"))
+                    return Results.Conflict(new { error = "job_not_retryable",
+                        message = "Only failed, cancelled or interrupted installations can be retried." });
+                var known = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(client, node, protector,
+                    HttpMethod.Get, "/v1/models/install-jobs", null, token);
+                if (known.Any(row => row.Id != jobId && row.Status is ("queued" or "running") &&
+                    row.Request.CatalogModelId == oldJob.Request.CatalogModelId &&
+                    row.Request.ProviderModelName == oldJob.Request.ProviderModelName))
+                    return Results.Conflict(new { error = "matching_job_active" });
+                // Never allow a stale Agent job to bypass current curated catalog
+                // policy or retroactively opt into unknown model installation.
+                var descriptor = ResolveDescriptor(oldJob.Request.CatalogModelId,
+                    new InstallManagedModelRequest(oldJob.Request.PublicName, oldJob.Request.Port,
+                        oldJob.Request.CatalogModelId == "custom", oldJob.Request.ExtraArguments,
+                        oldJob.Request.MaxNumSeqs, oldJob.Request.MaxModelLen,
+                        oldJob.Request.KvCacheDtype, oldJob.Request.CpuOffloadGiB,
+                        oldJob.Request.Runtime, oldJob.Request.TensorParallelSize,
+                        oldJob.Request.ProviderModelName, oldJob.Request.GpuDevices,
+                        oldJob.Request.MaxOutputTokens));
+                if (descriptor is null || descriptor.ProviderModelName != oldJob.Request.ProviderModelName ||
+                    ResolveRuntime(descriptor, oldJob.Request.Runtime) is null)
+                    return Results.Conflict(new { error = "profile_no_longer_supported" });
+
+                var next = await SendAgentAsync<ModelInstallJob>(
+                    client, node, protector, HttpMethod.Post, "/v1/models/install-jobs",
+                    oldJob.Request, token);
+                return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{next.Id}", next);
+            }
+            catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
+        });
+
         var finalizeJob = group.MapPost("/nodes/{id:guid}/install-jobs/{jobId:guid}/finalize", async (
             Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
@@ -651,6 +697,7 @@ public static class NodeModelManagementEndpoints
             install.RequireAuthorization("AdminWrite");
             startJob.RequireAuthorization("AdminWrite");
             finalizeJob.RequireAuthorization("AdminWrite");
+            retryJob.RequireAuthorization("AdminWrite");
             cancelJob.RequireAuthorization("AdminWrite");
             start.RequireAuthorization("AdminWrite");
             activate.RequireAuthorization("AdminWrite");
