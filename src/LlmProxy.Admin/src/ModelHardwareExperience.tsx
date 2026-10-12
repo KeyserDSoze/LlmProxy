@@ -25,6 +25,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
+  const [forceHardwareAcknowledged, setForceHardwareAcknowledged] = useState(false)
   const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
   const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp' | 'airllm' | 'faster-whisper'>('vllm')
@@ -56,7 +57,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const installDescriptor = overview?.catalog.find(item => item.model.id === installCatalogId)?.model
+  const installCatalogEntry = overview?.catalog.find(item => item.model.id === installCatalogId)
+  const installDescriptor = installCatalogEntry?.model
+  const requiresHardwareOverride = installCatalogEntry?.compatibility.status === 'insufficient'
+  useEffect(() => { setForceHardwareAcknowledged(false) }, [installCatalogId, nodeId])
   const installProviderName = installCatalogId === 'custom' ? customRepository.trim() : installDescriptor?.providerModelName ?? ''
   useEffect(() => {
     if (!installCatalogId || !installProviderName || !installProviderName.includes('/')) {
@@ -206,7 +210,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       const job = await api.queueModelInstall(nodeId, catalogId, {
         publicName: logicalAlias.trim() || (catalogId === 'custom' ? customRepository.replace(/[^a-zA-Z0-9_-]/g, '-') : null),
         providerModelName: catalogId === 'custom' ? customRepository.trim() : null,
-        force: catalogId === 'custom' ? customConfirmed : false,
+        force: catalogId === 'custom' ? customConfirmed : (requiresHardwareOverride && forceHardwareAcknowledged),
         port: installPort ? Number(installPort) : null,
         runtime: runtimeChoice,
         tensorParallelSize: runtimeChoice === 'llama.cpp' || runtimeChoice === 'airllm' || runtimeChoice === 'faster-whisper' ? 1 : tensorParallelSize,
@@ -480,6 +484,18 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        {requiresHardwareOverride && <section className="hardwareOverride" role="group"
+          aria-label={t('catalog.forceTitle')}>
+          <strong>{t('catalog.forceTitle')}</strong>
+          <p>{t('catalog.forceIntro')}</p>
+          <p>{t('catalog.forceRisk')}</p>
+          {installCatalogEntry?.compatibility.reasons.map(reason =>
+            <p key={reason} className="muted">{reason}</p>)}
+          <label className="hardwareOverrideConsent"><input type="checkbox"
+            checked={forceHardwareAcknowledged} onChange={event => setForceHardwareAcknowledged(event.target.checked)} />
+            {t('catalog.forceConsent')}
+          </label>
+        </section>}
         {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
@@ -540,7 +556,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
         {runtimeChoice !== 'faster-whisper' && <p className="muted">{t('model.profileInfo')}</p>}
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : t('model.downloadInstall')}</button></div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>
