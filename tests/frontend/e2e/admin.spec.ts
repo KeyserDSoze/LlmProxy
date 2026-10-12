@@ -573,6 +573,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
     providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm', maximumOutputTokens: 1024
   }))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
   await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
   await page.getByRole('tab', { name: /Installed/ }).click()
@@ -658,6 +659,7 @@ test('guided System One connection creates only a classifier alias and a specifi
 test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/admin/models')
+  await page.getByRole('tab', { name: /Advanced routing/ }).click()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
   await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
@@ -766,6 +768,7 @@ test('image and audio models are published as isolated API surfaces, never as Ch
     return json(route, { id: 'multimodal-created-' + created.length, ...body, enabled: true }, 201)
   })
   await page.goto('/admin/models')
+  await page.getByRole('tab', { name: /Advanced routing/ }).click()
   for (const [surface, model] of [
     ['ImageGeneration', 'image-demo'],
     ['SpeechSynthesis', 'voice-demo'],
