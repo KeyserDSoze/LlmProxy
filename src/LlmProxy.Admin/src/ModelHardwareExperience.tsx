@@ -311,7 +311,26 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }
 
   return <div className="stack compactPage modelHardware">
-    <section className="panel pageToolbar"><div><h2>{defaultTab === 'deploy' ? t('model.header') : embedded ? t('model.inventoryHeader') : t('model.managementHeader')}</h2><p className="muted">{defaultTab === 'deploy' ? t('model.deployGuide') : t('model.inventoryGuide')}</p>{defaultTab === 'deploy' && <p><a href="/admin/system-one">{t('model.systemOneLink')} →</a></p>}</div><div className="actions"><select aria-label={t('model.hardwareSelect')} value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">{t('model.selectHardware')}</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? t('model.reading') : t('model.refresh')}</button><span className="muted">{t('model.pairingHint')}</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>{t('model.configureAgent')}</button></div></section>
+    <section className="modelWorkspaceToolbar" aria-label={t('model.hardwareSelect')}>
+      <div className="modelWorkspaceNode">
+        <label htmlFor="model-workspace-node">{t('model.hardwareSelect')}</label>
+        <select id="model-workspace-node" aria-label={t('model.hardwareSelect')}
+          value={nodeId} onChange={event => setNodeId(event.target.value)}>
+          <option value="">{t('model.selectHardware')}</option>
+          {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
+        </select>
+        <span className={overview?.agentAvailable ? 'modelAgentConnected' : 'muted'}>
+          {overview?.agentAvailable ? t('model.agentLive') :
+            overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}
+        </span>
+      </div>
+      <div className="modelWorkspaceToolbarActions">
+        <button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>
+          {loading ? t('model.reading') : t('model.refresh')}</button>
+        <button className="secondary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>
+          {t('model.configureAgent')}</button>
+      </div>
+    </section>
     {!nodeId && nodes.length > 0 && <div className="notice" role="alert">{t('model.invalidNode')}</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
     {embedded && <Tabs value={tab} onChange={setTab} items={[
