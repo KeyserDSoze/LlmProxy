@@ -26,6 +26,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
+  const [startAfterInstall, setStartAfterInstall] = useState(true)
   const [forceHardwareAcknowledged, setForceHardwareAcknowledged] = useState(false)
   const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
@@ -214,6 +215,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       const job = await api.queueModelInstall(nodeId, catalogId, {
         publicName: logicalAlias.trim() || (catalogId === 'custom' ? customRepository.replace(/[^a-zA-Z0-9_-]/g, '-') : null),
         providerModelName: catalogId === 'custom' ? customRepository.trim() : null,
+        startAfterInstall: catalogId !== 'custom' && startAfterInstall,
         force: catalogId === 'custom' ? customConfirmed : (requiresHardwareOverride && forceHardwareAcknowledged),
         port: installPort ? Number(installPort) : null,
         runtime: runtimeChoice,
@@ -229,7 +231,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
       setPanel('activity')
-      setMessage(t('catalog.jobQueued'))
+      setMessage(catalogId !== 'custom' && startAfterInstall ?
+        t('catalog.autoStartQueued') : t('catalog.jobQueued'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -307,7 +310,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     finally { setRevisionBusy(false) }
   }
   function reviewHubModel(repoId: string) {
-    setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+    setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
     setCustomRepository(repoId); setCustomConfirmed(false)
     setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
     setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
@@ -404,7 +407,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
             {job.completedBytes != null && job.totalBytes != null &&
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
-            {job.status === 'completed' && <p className="muted">{t('catalog.completeNext')}</p>}
+            {job.status === 'completed' && <p className="muted">
+              {job.request.startAfterInstall && job.result?.status === 'running'
+                ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
+            </p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
       </section>}
@@ -417,7 +423,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {(modelKind === 'all' || modelKind === 'OpenAi') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? t('catalog.requiresAgent') : undefined}
               onClick={() => {
-                setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+                setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
                 setCustomRepository(''); setCustomConfirmed(false)
                 setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
                 setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
@@ -490,6 +496,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                     t('catalog.forceMismatch') : t('catalog.installHere')}
                   onClick={() => {
                     setInstallCatalogId(item.model.id)
+                    setStartAfterInstall(true)
                     setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' :
                       item.model.runtime === 'laya' ? 'laya' :
                       item.model.runtime === 'kokoro' ? 'kokoro' :
@@ -627,6 +634,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        {installCatalogId !== 'custom' && <label className="hardwareOverrideConsent">
+          <input type="checkbox" aria-label={t('catalog.startAfterInstall')}
+            checked={startAfterInstall} onChange={event => setStartAfterInstall(event.target.checked)} />
+          {t('catalog.startAfterInstall')}
+        </label>}
+        {installCatalogId !== 'custom' && <p className="muted">{t('catalog.startAfterInstallHelp')}</p>}
         {requiresHardwareOverride && <section className="hardwareOverride" role="group"
           aria-label={t('catalog.forceTitle')}>
           <strong>{t('catalog.forceTitle')}</strong>

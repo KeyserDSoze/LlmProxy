@@ -773,8 +773,10 @@ public static class NodeModelManagementEndpoints
     public static ManagedModelState ResolveVerifiedCompletedState(
         ModelInstallJob job, IReadOnlyList<ManagedModelState> currentModels)
     {
-        var stopped = job.Result! with { Status = "stopped", RuntimeBaseAddress = null };
-        if (!job.Request.StartAfterInstall || job.Result is null) return stopped;
+        if (job.Result is null)
+            throw new ArgumentException("A completed Agent installation result is required.", nameof(job));
+        var stopped = job.Result with { Status = "stopped", RuntimeBaseAddress = null };
+        if (!job.Request.StartAfterInstall) return stopped;
         var state = currentModels.FirstOrDefault(x =>
             x.InstallationId == job.Result.InstallationId &&
             x.CatalogModelId == job.Request.CatalogModelId &&
