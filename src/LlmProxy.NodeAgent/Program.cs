@@ -28,7 +28,7 @@ builder.Services.AddHttpClient("runtime-health", client => client.Timeout = Time
 var app = builder.Build();
 app.UseMiddleware<BearerTokenMiddleware>();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "llmproxy-node-agent" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "llmproxy-node-agent", version = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3) }));
 app.MapGet("/v1/system", async (HardwareInventoryReader inventory, CancellationToken cancellationToken) =>
     Results.Ok(await inventory.ReadAsync(cancellationToken)));
 app.MapPost("/v1/system/prepare", async (NodeHostPreparer preparer, CancellationToken token) =>
