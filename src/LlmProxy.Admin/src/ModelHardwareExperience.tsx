@@ -330,11 +330,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? t('catalog.checking') : t('catalog.retry')}</button>
       </section>}
       <Tabs value={panel} onChange={setPanel} items={[
-        { value: 'catalog', label: t('model.workspaceCatalog'), count: overview?.catalog.length ?? 0 },
-        { value: 'installed', label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
-        { value: 'activity', label: t('model.workspaceActivity'),
+        { value: 'catalog' as const, label: t('model.workspaceCatalog'), count: overview?.catalog.length ?? 0 },
+        { value: 'installed' as const, label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
+        { value: 'activity' as const, label: t('model.workspaceActivity'),
           count: downloadJobs.filter(job => job.status === 'queued' || job.status === 'running' || job.status === 'interrupted' || job.status === 'failed').length },
-        ...(!embedded ? [{ value: 'advanced', label: t('model.workspaceAdvanced') }] : [])
+        ...(!embedded ? [{ value: 'advanced' as const, label: t('model.workspaceAdvanced') }] : [])
       ]} />
       <p className="muted">{t('model.lifecycleHint')}</p>
       {panel === 'activity' && <section className="panel">
