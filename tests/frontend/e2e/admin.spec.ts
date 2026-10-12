@@ -626,7 +626,7 @@ test('task-based navigation exposes direct model installation and System One dee
   await page.getByRole('link', { name: /Connect an existing external System One service/ }).click()
   await expect(page).toHaveURL(/\/admin\/system-one$/)
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
-  await expect(page.getByText(/Node Agent does not yet install Laya automatically/)).toBeVisible()
+  await expect(page.getByText(/advanced connection wizard, NOT an installer/)).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await page.goBack()
