@@ -233,8 +233,32 @@ for index, entry in enumerate(files):
             throw new InvalidOperationException("Managed runtime adapter missing: " + folder + "/" + file);
         report?.Invoke(new TransferProgress("container-image", null,
             "Building experimental " + record.Runtime + " image for this host", null, null));
-        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
-            token, line => ParseTransferLine(line, "container-image", report));
+        await BuildCuratedImageWithRetryAsync(image, dockerfile, directory, token, report);
+    }
+
+    // Retry only network failures; a missing wheel, disk exhaustion or invalid
+    // Dockerfile should fail immediately with the useful ending of the logs.
+    // BuildKit retains the pip wheel cache between attempts and across jobs.
+    private async Task BuildCuratedImageWithRetryAsync(string image, string dockerfile,
+        string directory, CancellationToken token, Action<TransferProgress>? report)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            report?.Invoke(new TransferProgress("container-image", null,
+                $"Building runtime dependencies (attempt {attempt}/{maxAttempts}); cached downloads are reused", null, null));
+            var result = await runner.RunStreamingAsync(options.DockerExecutable,
+                ["build", "--progress=plain", "--file", dockerfile, "-t", image, directory],
+                TimeSpan.FromMinutes(options.CommandTimeoutMinutes), token,
+                line => ParseTransferLine(line, "container-image", report));
+            if (result.Success) return;
+            var diagnosis = DockerBuildDiagnostics.Analyze(result);
+            if (!diagnosis.TransientNetworkFailure || attempt == maxAttempts)
+                throw new InvalidOperationException(diagnosis.Message);
+            report?.Invoke(new TransferProgress("container-image", null,
+                $"Connection interrupted; retrying cached runtime build in {attempt * 5} seconds", null, null));
+            await Task.Delay(TimeSpan.FromSeconds(attempt * 5), token);
+        }
     }
 
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
@@ -418,7 +442,7 @@ for index, entry in enumerate(files):
         var result = await runner.RunStreamingAsync(options.DockerExecutable, args,
             TimeSpan.FromMinutes(options.CommandTimeoutMinutes), token, progress);
         if (!result.Success)
-            throw new InvalidOperationException($"Docker download failed ({result.ExitCode}): {Trim(result.StandardError)}");
+            throw new InvalidOperationException(DockerBuildDiagnostics.Analyze(result).Message);
     }
 
     // Percentages describe the current Docker layer or the measured Hugging Face file set.

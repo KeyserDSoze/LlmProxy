@@ -49,6 +49,14 @@ public sealed class ModelInstallJobManager
         ManagedRuntimeProfiles.Validate(request);
         lock (_sync)
         {
+            // Double-clicks and repeated retries must not create multiple builds
+            // of the same large checkpoint while the first one is still active.
+            var inProgress = _jobs.Values.FirstOrDefault(x =>
+                x.Status is "queued" or "running" &&
+                x.Request.CatalogModelId == request.CatalogModelId &&
+                x.Request.Runtime == request.Runtime &&
+                x.Request.ProviderModelName == request.ProviderModelName);
+            if (inProgress is not null) return inProgress;
             if (_jobs.Values.Count(x => x.Status is "queued" or "running") >= 4)
                 throw new InvalidOperationException("Four pending/running installation jobs are already queued.");
             if (_jobs.Count > 100)
@@ -104,12 +112,14 @@ public sealed class ModelInstallJobManager
         catch (OperationCanceledException)
         {
             Update(id, j => j with { Status = "cancelled", Stage = "cancelled", Detail = "Download cancelled",
+                Percent = null, CompletedBytes = null, TotalBytes = null,
                 CompletedAtUtc = DateTimeOffset.UtcNow });
         }
         catch (Exception ex)
         {
             Update(id, j => j with { Status = "failed", Stage = "failed",
-                Error = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message,
+                Percent = null, CompletedBytes = null, TotalBytes = null,
+                Error = ex.Message.Length > 1400 ? ex.Message[^1400..] : ex.Message,
                 Detail = "Installation failed", CompletedAtUtc = DateTimeOffset.UtcNow });
         }
         finally
@@ -130,7 +140,13 @@ public sealed class ModelInstallJobManager
             var stageChanged = original.Stage != next.Stage || original.Status != next.Status;
             var meaningfulPercent = original.Percent is double previous && next.Percent is double current
                 ? Math.Abs(current - previous) >= 1 : original.Percent != next.Percent;
-            if (!stageChanged && DateTimeOffset.UtcNow - _lastProgressPersistedUtc < TimeSpan.FromSeconds(1))
+            // A real description change with unknown percentage (e.g. switching
+            // from image fetch to Python dependency build) must not be lost to
+            // the rate limiter; otherwise the UI appears stuck at "Fetching".
+            var changedUnmeasuredDetail = original.Detail != next.Detail &&
+                original.Percent is null && next.Percent is null;
+            if (!stageChanged && !changedUnmeasuredDetail &&
+                DateTimeOffset.UtcNow - _lastProgressPersistedUtc < TimeSpan.FromSeconds(1))
                 return;
             if (!stageChanged && !meaningfulPercent && original.Detail == next.Detail) return;
             _jobs[id] = next;

@@ -139,7 +139,7 @@ public static class ManagedRuntimeProfiles
             "sglang" => options.SglangDockerImage,
             "airllm" => "llmproxy-airllm:0.3",
             "faster-whisper" => "llmproxy-faster-whisper:0.1",
-            "laya" => "llmproxy-laya:0.1",
+            "laya" => "llmproxy-laya:0.2",
             "kokoro" => "llmproxy-kokoro:0.1",
             "diffusers" => "llmproxy-diffusers-ssd1b:0.1",
             _ => options.DockerImage
