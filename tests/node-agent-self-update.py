@@ -44,7 +44,7 @@ class AgentUpdateTests(unittest.TestCase):
         digest = hashlib.sha256(self.mock_archive.read_bytes()).hexdigest()
         (self.root / f"{ARCHIVE}.sha256").write_text(f"{digest}  dist/{ARCHIVE}\n")
         source = SOURCE.replace('$(id -u)', '0')
-        source = source.replace('$(uname -m)', 'printf aarch64')
+        source = source.replace('$(uname -m)', '$(printf aarch64)')
         source = source.replace('/var/lib/llmproxy-node-agent', str(self.state))
         source = source.replace('/opt/llmproxy-node-agent', str(self.opt))
         source = source.replace('/etc/llmproxy/node-agent.env', str(self.env_file))
