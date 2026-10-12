@@ -163,6 +163,15 @@ async function installAdminApi(page: Page) {
       return route.fulfill({ status: 204, body: '' })
     }
     if (request.method() === 'GET' && path === '/api/admin/testing/systemone') return json(route, { enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null, models: ['systemone-laya'], defaultModel: 'systemone-laya' })
+    if (request.method() === 'POST' && path === '/api/admin/testing/chat/stream') {
+      const result = { requestId: 'test-chat', success: true, statusCode: 200,
+        latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model',
+        nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}',
+        responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' }
+      return route.fulfill({ status: 200, contentType: 'text/event-stream',
+        body: 'event: progress\\ndata: {"phase":"waiting_for_model","secondsElapsed":10}\\n\\n' +
+          'event: result\\ndata: ' + JSON.stringify(result) + '\\n\\n' })
+    }
     if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
     if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, logicalModel: 'systemone-laya', providerModel: 'convaiinnovations/laya', deploymentId: 'deployment-systemone', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
     if (request.method() === 'GET' && path === '/api/admin/content-logs/settings') return json(route, { retentionDays: 30, updatedAtUtc: '2026-09-09T10:00:00Z', minimumRetentionDays: 10, maximumRetentionDays: 4015, cleanupIntervalHours: 4 })
@@ -950,4 +959,40 @@ test('a completed installation offers Start directly from Jobs', async ({ page }
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.getByText('Model started and enabled for routing.')).toBeVisible()
   expect(startCount).toBe(1)
+})
+
+test('Playground shows a short Cloudflare 524 error instead of dumping full HTML', async ({ page }) => {
+  await installAdminApi(page)
+  await page.route('**/api/admin/testing/chat/stream', async route => {
+    await route.fulfill({
+      status: 524, contentType: 'text/html',
+      body: '<!DOCTYPE html><html><title>524: A timeout occurred</title>' +
+        '<body>Cloudflare returned an upstream timeout. <div class="huge-html-debug">' +
+        'INTERNAL_HTML_SHOULD_NOT_RENDER</div></body></html>'
+    })
+  })
+  await page.goto('/admin/playground')
+  await page.getByRole('button', { name: 'Run chat test' }).click()
+  await expect(page.getByText(/Cloudflare 524: the Gateway did not respond/)).toBeVisible()
+  await expect(page.getByText('INTERNAL_HTML_SHOULD_NOT_RENDER')).toHaveCount(0)
+  await expect(page.getByText(/<!DOCTYPE html>/)).toHaveCount(0)
+})
+
+test('Playground requests a short non-streaming model completion via Gateway SSE', async ({ page }) => {
+  await installAdminApi(page)
+  let posted: { stream?: boolean; maxTokens?: number; userPrompt?: string } | null = null
+  await page.route('**/api/admin/testing/chat/stream', async route => {
+    posted = route.request().postDataJSON()
+    await route.fulfill({
+      status: 200, contentType: 'text/event-stream',
+      body: 'event: progress\\ndata: {"phase":"waiting_for_model","secondsElapsed":110}\\n\\n' +
+        'event: result\\ndata: {"requestId":"sse-1","success":true,' +
+        '"statusCode":200,"latencyMilliseconds":110000,"responseBody":"{\"choices\":[]}"}\\n\\n'
+    })
+  })
+  await page.goto('/admin/playground')
+  await expect(page.getByLabel('Maximum output tokens (start small)')).toHaveValue('8')
+  await page.getByRole('button', { name: 'Run chat test' }).click()
+  await expect(page.getByText('HTTP 200')).toBeVisible()
+  expect(posted).toMatchObject({ maxTokens: 8 })
 })
