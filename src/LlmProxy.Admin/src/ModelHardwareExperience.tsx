@@ -510,7 +510,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             { surface: 'SpeechSynthesis', title: t('catalog.typeTts'),
               model: 'Kokoro-82M / af_heart', runtime: 'kokoro (CPU)',
               pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/30' }
-          ] as const).filter(item => modelKind === 'all' || modelKind === item.surface).map(item =>
+          ] as const).filter(item =>
+            (modelKind === 'all' || modelKind === item.surface) &&
+            !(overview?.catalog ?? []).some(ready => ready.model.surface === item.surface)
+          ).map(item =>
             <article className="modelCatalogPreview" key={item.surface}>
               <div className="modelCatalogPreviewHeader">
                 <strong>{item.title}</strong>
