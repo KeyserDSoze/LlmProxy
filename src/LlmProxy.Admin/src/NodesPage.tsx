@@ -75,6 +75,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   }
 
   async function updateAgent(nodeId: string) {
+    // The Gateway retains the desired version until the Agent acknowledges it.
+    // Never queue a second identical update while one is pending.
+    if (pairedNodes.some(pair => pair.nodeId === nodeId && pair.desiredAgentVersion)) return
     setError(null); setBusy('agent-update:' + nodeId)
     try { await api.updatePairedAgent(nodeId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -224,10 +227,16 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <td className="actions">
             <button disabled={node.baseAddress === 'http://127.0.0.1:1'} title={node.baseAddress === 'http://127.0.0.1:1' ? 'Start a model before testing inference endpoints.' : undefined}
               onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
-            {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
-              <button disabled={busy === 'agent-update:' + node.id} onClick={() => void updateAgent(node.id)}>
-                {pairedNodes.some(pair => pair.nodeId === node.id && pair.desiredAgentVersion) ? 'Update queued' : 'Update agent'}
-              </button>}
+            {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) && (() => {
+              const state = pairedNodes.find(pair => pair.nodeId === node.id)!
+              const queued = !!state.desiredAgentVersion
+              const running = state.agentUpdateStatus?.startsWith('running:')
+              return <button disabled={busy === 'agent-update:' + node.id || queued}
+                title={queued ? 'The update has been accepted. The Agent downloads, installs, verifies and reports the new version asynchronously; status refreshes every 10 seconds.' : undefined}
+                onClick={() => void updateAgent(node.id)}>
+                {running ? 'Updating Agent…' : queued ? 'Queued · waiting for Agent' : 'Update agent'}
+              </button>
+            })()}
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
               <button onClick={() => { setRecoveryNode(node); setRecoverySecret(null); setRecoveryVisible(false); setError(null) }}>Agent setup / recovery</button>}
             {canWrite && <button onClick={() => openEdit(node)}>Edit</button>}
