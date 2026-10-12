@@ -62,8 +62,23 @@ if any(arg.endswith("I") and arg.startswith("-") for arg in args) or "-fsSIL" in
 elif "--write-out" in args:
     target = pathlib.Path(args[args.index("--output") + 1])
     value = "0.0.0" if os.environ.get("MOCK_WRONG_VERSION") else os.environ["MOCK_VERSION"]
-    target.write_text('{"status":"ok","service":"llmproxy-node-agent","version":"' + value + '"}')
-    print("200", end="")
+    service = "other-service" if os.environ.get("MOCK_WRONG_SERVICE") else "llmproxy-node-agent"
+    target.write_text('{"status": "ok", "service": "' + service + '", "version": "' + value + '"}')
+    if os.environ.get("MOCK_CAPTURE_PORT"):
+        (root / "probed-url").write_text(args[-1])
+    if os.environ.get("MOCK_REQUIRE_AUTH"):
+        if "--header" not in args:
+            print("401", end="")
+        else:
+            header_path = pathlib.Path(args[args.index("--header") + 1].removeprefix("@"))
+            if header_path.read_text() != "Authorization: Bearer " + os.environ["MOCK_REQUIRE_AUTH"] + "\n":
+                print("401", end="")
+            else:
+                print("200", end="")
+    elif os.environ.get("MOCK_UNAUTHORIZED"):
+        print("401", end="")
+    else:
+        print("200", end="")
 else:
     output = pathlib.Path(args[args.index("-o") + 1])
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +137,43 @@ sys.exit(0)
         result = self.run_update(MOCK_WRONG_VERSION="true")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.opt / "marker").read_text(), "original binary\n")
-        self.assertEqual(self.state_json()["errorCode"], "healthcheck_failed")
+        self.assertEqual(self.state_json()["errorCode"], "health_version_mismatch")
+
+    def test_unauthorized_local_health_reports_a_specific_cause_and_rolls_back(self):
+        result = self.run_update(MOCK_UNAUTHORIZED="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state_json()["errorCode"], "health_unauthorized")
+        self.assertEqual((self.opt / "marker").read_text(), "original binary\n")
+
+    def test_wrong_http_service_is_not_accepted_just_because_status_is_200(self):
+        result = self.run_update(MOCK_WRONG_SERVICE="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state_json()["errorCode"], "health_wrong_service")
+        self.assertEqual((self.opt / "marker").read_text(), "original binary\n")
+
+    def test_valid_punctuation_bearer_is_sent_from_a_private_header_file(self):
+        bearer = 'short.secret+with-punctuation! and spaces'
+        self.env_file.write_text("NodeAgent__BearerToken=" + bearer + "\n")
+        result = self.run_update(MOCK_REQUIRE_AUTH=bearer)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(bearer, result.stdout + result.stderr)
+        self.assertEqual(self.state_json()["status"], "succeeded")
+
+    def test_healthcheck_uses_configured_local_listener_port(self):
+        self.env_file.write_text("NodeAgent__BearerToken=" + "a" * 48 +
+                                 "\nASPNETCORE_URLS=http://127.0.0.1:9988\n")
+        result = self.run_update(MOCK_CAPTURE_PORT="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "probed-url").read_text(),
+                         "http://127.0.0.1:9988/health")
+
+    def test_invalid_listen_address_fails_safely_and_rolls_back(self):
+        self.env_file.write_text("NodeAgent__BearerToken=" + "a" * 48 +
+                                 "\nASPNETCORE_URLS=http://remote.example:9988\n")
+        result = self.run_update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state_json()["errorCode"], "health_listen_address_invalid")
+        self.assertEqual((self.opt / "marker").read_text(), "original binary\n")
 
     def test_bad_checksum_fails_before_stopping_working_agent(self):
         result = self.run_update(MOCK_CORRUPT_ARCHIVE="true")
