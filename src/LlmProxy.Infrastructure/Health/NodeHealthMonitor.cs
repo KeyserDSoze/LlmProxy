@@ -50,6 +50,15 @@ public sealed class NodeHealthMonitor(
                 .ToListAsync(cancellationToken);
             var serviceRoots = activeManagedRuntimes.GroupBy(x => x.NodeId)
                 .ToDictionary(g => g.Key, g => g.ToList());
+            // A paired server can be up even when no inference model is installed.
+            // In that case do not probe the historic node.BaseAddress (often a
+            // stopped /runtime/18000 virtual host) as if it were Agent health.
+            // Running deployments still use their real inference runtime /health.
+            var nodesWithDeployments = await dbContext.Deployments.AsNoTracking()
+                .Where(deployment => deployment.Enabled)
+                .Select(deployment => deployment.NodeId)
+                .Distinct().ToListAsync(cancellationToken);
+            var hasActiveInference = nodesWithDeployments.ToHashSet();
             var client = httpClientFactory.CreateClient("health");
 
             foreach (var node in nodes.Where(node => node.Status != NodeStatus.Draining))
@@ -68,6 +77,14 @@ public sealed class NodeHealthMonitor(
                         if (check.Success) { result = check; break; }
                         result = check;
                     }
+                }
+                else if (!hasActiveInference.Contains(node.Id) &&
+                    !string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                {
+                    // Outbound relays authenticate /management/health internally;
+                    // direct installations use the protected Agent management token.
+                    result = await CheckNodeAsync(client, node, node.ManagementBaseAddress,
+                        node.ManagementBearerTokenCiphertext, cancellationToken);
                 }
                 else result = await CheckNodeAsync(client, node, node.BaseAddress,
                     node.UpstreamBearerTokenCiphertext, cancellationToken);
