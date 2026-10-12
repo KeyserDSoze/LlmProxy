@@ -109,6 +109,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
   const filteredCatalog = (overview?.catalog ?? []).filter(item => modelKind === 'all' ||
     (item.model.surface ?? 'OpenAi') === modelKind)
+  const installedForJob = (job: ModelInstallJob) => overview?.installations.find(item =>
+    !!job.result?.installationId && item.managedInstallationId === job.result.installationId)
   const visibleJobs = showJobHistory ? downloadJobs : downloadJobs.filter(job =>
     job.status !== 'completed' || !overview?.installations.some(item =>
       item.managedInstallationId === job.result?.installationId && item.enabled))
@@ -356,8 +358,14 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               {job.status === 'completed' && !overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
                 <button className="primary" disabled={!canWrite || busy !== null}
                   onClick={() => void finishInstallation(job)}>{t('catalog.finishJob')}</button>}
-              {job.status === 'completed' && overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
-                <button className="primary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
+              {job.status === 'completed' && installedForJob(job) && installedForJob(job)!.agentStatus.toLowerCase() !== 'running' &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void action('start', installedForJob(job)!.id)}>{t('catalog.start')}</button>}
+              {job.status === 'completed' && installedForJob(job)?.agentStatus.toLowerCase() === 'running' && !installedForJob(job)?.enabled &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void action('activate', installedForJob(job)!.id)}>{t('catalog.activate')}</button>}
+              {job.status === 'completed' && installedForJob(job) &&
+                <button className="secondary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
             </div>
             <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
             {job.percent != null ? <div className="stack">
