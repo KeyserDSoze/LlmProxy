@@ -572,7 +572,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <div><button className="secondary" type="button"
             onClick={() => void navigator.clipboard.writeText(window.location.origin +
               managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? ''))}>
-            {t('catalog.copyEndpoint')}</button></div>
+            {t('catalog.copyEndpoint')}</button>
+            <button className="secondary" type="button"
+              title={t('catalog.copyCurlHelp')}
+              onClick={() => void navigator.clipboard.writeText(
+                managedCurlExample(item.runtime, item.logicalModel ?? item.catalogModelId ?? '', window.location.origin))}>
+              {t('catalog.copyCurl')}</button>
+            </div>
           <div className="muted">{t('catalog.enabled')}: {item.enabled ? 'yes' : 'no'}</div>
           <div className="muted">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? t('catalog.notRunning')}</div>
         </td><td>{item.enabled ? t('catalog.enabled') :
@@ -772,5 +778,31 @@ function managedPublicEndpoint(runtime: string | undefined, model: string): stri
     case 'diffusers': return '/v1/images/generations'
     case 'faster-whisper': return '/v1/audio/transcriptions'
     default: return '/v1/chat/completions'
+  }
+}
+
+/** Ready-to-copy public API examples. Use the logical alias, never upstream HF name. */
+function managedCurlExample(runtime: string | undefined, model: string, origin: string): string {
+  const endpoint = managedPublicEndpoint(runtime, model)
+  const base = `curl --fail-with-body -sS -X POST ${shellQuote(origin + endpoint)} -H "Authorization: Bearer $LLMPROXY_API_KEY"`
+  const json = (body: object) =>
+    `${base} -H 'Content-Type: application/json' -d ${shellQuote(JSON.stringify(body))}`
+  switch (runtime) {
+    case 'laya':
+      return json({
+        state: 'The customer was charged twice.',
+        questions: { team: { type: 'choice', instructions: 'Which team should help?',
+          criteria: { billing: 'payments and refunds', general: 'general assistance' } } }
+      })
+    case 'kokoro':
+      return json({ model, input: 'Hello from LLMProxy.', voice: 'af_heart',
+        response_format: 'wav' }) + ' --output speech.wav'
+    case 'diffusers':
+      return json({ model, prompt: 'A lighthouse on a hill at sunset',
+        size: '512x512', n: 1, response_format: 'b64_json' })
+    case 'faster-whisper':
+      return `${base} -F ${shellQuote('model=' + model)} -F 'file=@./audio.wav'`
+    default:
+      return json({ model, messages: [{ role: 'user', content: 'Hello!' }], max_tokens: 64 })
   }
 }
