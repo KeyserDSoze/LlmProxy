@@ -48,6 +48,7 @@ builder.Services.AddTransient<AgentRelayHttpHandler>();
 builder.Services.AddSingleton<UpdateAgentClient>();
 builder.Services.AddHostedService<ProductAutoUpdateWorker>();
 builder.Services.AddHostedService<InferenceBenchmarkWorker>();
+builder.Services.AddHostedService<ManagedInstallFinalizationWorker>();
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();

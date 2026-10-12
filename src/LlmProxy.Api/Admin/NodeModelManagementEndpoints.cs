@@ -663,6 +663,169 @@ public static class NodeModelManagementEndpoints
     }
 
 
+    // Agent jobs are durable across Gateway/browser restarts. The Gateway may
+    // only register a completed job while the installation still exists on its
+    // originating Agent; this prevents a removed model from reappearing after
+    // an old completed job is scanned.
+    public static bool CanReconcileJob(ModelInstallJob job, IReadOnlyList<ManagedModelState> currentModels)
+    {
+        if (!string.Equals(job.Status, "completed", StringComparison.OrdinalIgnoreCase) ||
+            job.Result is null || job.Request.CatalogModelId == "custom" ||
+            job.Result.Status is not ("stopped" or "running"))
+            return false;
+        return currentModels.Any(item =>
+            item.InstallationId == job.Result.InstallationId &&
+            item.CatalogModelId == job.Request.CatalogModelId &&
+            item.ProviderModelName == job.Request.ProviderModelName &&
+            item.Runtime == job.Request.Runtime &&
+            item.Status is "stopped" or "running");
+    }
+
+    internal static async Task ReconcileCompletedJobsAsync(
+        IServiceScopeFactory scopes, IHttpClientFactory clients,
+        UpstreamCredentialProtector protector, ILogger logger, CancellationToken token)
+    {
+        IReadOnlyList<InferenceNode> nodes;
+        await using (var scope = scopes.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            nodes = await db.Nodes.AsNoTracking()
+                .Where(node => node.ManagementBaseAddress != null)
+                .ToListAsync(token);
+        }
+
+        foreach (var node in nodes)
+        {
+            token.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress)) continue;
+            // A disconnected outbound Agent must not stall reconciliation of
+            // every other node for the management HTTP client's long timeout.
+            using var nodeTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            nodeTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var nodeToken = nodeTimeout.Token;
+            try
+            {
+                var client = clients.CreateClient("node-management");
+                var jobs = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(
+                    client, node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, nodeToken);
+                var candidates = jobs.Where(job => job.Status == "completed" &&
+                    job.Result is not null && job.Request.CatalogModelId != "custom").ToArray();
+                if (candidates.Length == 0) continue;
+
+                // Page only *unregistered* jobs. A permanent backlog of old
+                // completed jobs must never starve newly completed installs.
+                HashSet<string?> registered;
+                await using (var registryScope = scopes.CreateAsyncScope())
+                {
+                    var registryDb = registryScope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                    registered = await registryDb.Deployments.AsNoTracking()
+                        .Where(row => row.NodeId == node.Id && row.ManagedInstallationId != null)
+                        .Select(row => row.ManagedInstallationId)
+                        .ToHashSetAsync(nodeToken);
+                }
+                var inventory = await SendAgentAsync<ManagedModelsResponse>(
+                    client, node, protector, HttpMethod.Get, "/v1/models", null, nodeToken);
+                var current = inventory.Models ?? Array.Empty<ManagedModelState>();
+                var pending = candidates
+                    .Where(job => !registered.Contains(job.Result!.InstallationId))
+                    .Where(job => CanReconcileJob(job, current))
+                    .OrderBy(job => job.CreatedAtUtc).Take(100).ToArray();
+                if (pending.Length == 0) continue;
+                foreach (var job in pending)
+                {
+                    nodeToken.ThrowIfCancellationRequested();
+                    if (!CanReconcileJob(job, current)) continue;
+
+                    // An independent DB context avoids poisoning the rest of the
+                    // cycle after a database race or alias conflict.
+                    await using var scope = scopes.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+                    if (await db.Deployments.AnyAsync(item =>
+                        item.NodeId == node.Id &&
+                        item.ManagedInstallationId == job.Result!.InstallationId, nodeToken))
+                        continue;
+
+                    var descriptor = DeployableModelCatalog.Find(job.Request.CatalogModelId);
+                    if (descriptor is null || descriptor.Id != job.Result!.CatalogModelId ||
+                        descriptor.ProviderModelName != job.Result.ProviderModelName ||
+                        descriptor.Runtime != job.Result.Runtime)
+                    {
+                        logger.LogWarning("Refusing mismatched completed Agent job {JobId} on node {NodeId}",
+                            job.Id, node.Id);
+                        continue;
+                    }
+
+                    var request = new InstallManagedModelRequest(
+                        PublicName: job.Request.PublicName,
+                        Port: job.Request.Port,
+                        Force: false,
+                        ExtraArguments: job.Request.ExtraArguments,
+                        MaxNumSeqs: job.Request.MaxNumSeqs,
+                        MaxModelLen: job.Request.MaxModelLen,
+                        KvCacheDtype: job.Request.KvCacheDtype,
+                        CpuOffloadGiB: job.Request.CpuOffloadGiB,
+                        Runtime: job.Request.Runtime,
+                        TensorParallelSize: job.Request.TensorParallelSize,
+                        ProviderModelName: job.Request.ProviderModelName,
+                        GpuDevices: job.Request.GpuDevices,
+                        MaxOutputTokens: job.Request.MaxOutputTokens);
+                    var systemContext = new DefaultHttpContext
+                    {
+                        User = new ClaimsPrincipal(new ClaimsIdentity(
+                            [new Claim(ClaimTypes.Name, "node-agent-job-finalizer")], "system"))
+                    };
+                    try
+                    {
+                        var result = await RegisterManagedInstallationAsync(
+                            job.Result with { Status = "stopped", RuntimeBaseAddress = null },
+                            request, descriptor,
+                            new ModelCompatibility("unknown",
+                                "Registered from completed persistent Node Agent job", [],
+                                job.Request.TensorParallelSize),
+                            node, db, systemContext, nodeToken);
+                        if (result is IStatusCodeHttpResult { StatusCode: 200 })
+                        {
+                            logger.LogInformation(
+                                "Reconciled completed Agent installation {InstallationId} on node {NodeId}",
+                                job.Result.InstallationId, node.Id);
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Completed Agent installation {InstallationId} could not be registered; check conflicting model aliases",
+                                job.Result.InstallationId);
+                        }
+                    }
+                    catch (DbUpdateException error)
+                    {
+                        // Concurrent workers may race across Gateway replicas;
+                        // never crash or invent a healthy deployment on a conflict.
+                        logger.LogWarning(error,
+                            "Concurrent or conflicting install finalization {InstallationId} on node {NodeId}",
+                            job.Result.InstallationId, node.Id);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                logger.LogDebug("Timed out reconciling installation jobs on node {NodeId}", node.Id);
+            }
+            catch (AgentException error)
+            {
+                logger.LogDebug("Agent {NodeId} is not reachable for install reconciliation: {Error}",
+                    node.Id, error.Message);
+            }
+            catch (HttpRequestException error)
+            {
+                logger.LogDebug(error, "Agent {NodeId} install reconciliation transport failed", node.Id);
+            }
+            catch (JsonException error)
+            {
+                logger.LogWarning(error, "Agent {NodeId} returned invalid install job data", node.Id);
+            }
+        }
+    }
+
     // Shared by synchronous legacy installation and persistent-download finalization.
     private static async Task<IResult> RegisterManagedInstallationAsync(
         ManagedModelState state, InstallManagedModelRequest request, DeployableModelDescriptor descriptor,
