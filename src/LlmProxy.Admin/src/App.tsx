@@ -9,7 +9,6 @@ import SystemOneExperience from './SystemOneExperience'
 import AppearanceControls from './AppearanceControls'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
-import ModelsDeployments from './ModelsDeployments'
 import CredentialsPage from './CredentialsPage'
 import MetricsPage from './MetricsPage'
 import ReleaseNotesPage from './ReleaseNotesPage'
@@ -172,7 +171,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
           <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>{t('nav.catalog')}</NavItem>
-          <NavItem icon="models" active={view === 'models'} onClick={() => navigate('models')}>{t('nav.models')}</NavItem>
           <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOne')}</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
@@ -224,9 +222,11 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <>
             {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
             {view === 'infrastructure' && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
-            {view === 'catalog' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
+            {view === 'catalog' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
+              canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
-            {view === 'models' && <ModelsDeployments models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
+              canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'users' && canWrite && <UsersAccessExperience />}

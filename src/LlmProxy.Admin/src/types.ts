@@ -718,9 +718,30 @@ export type ManagedInstallation = {
   capabilities?: ModelCapabilityProfile | null
 }
 
+export type ModelRouteDiagnosis = {
+  model: string
+  code: string
+  message: string
+  nextAction: 'models' | 'installations' | 'servers' | 'routing' | string
+  logicalModelEnabled: boolean
+  deployments: Array<{
+    deploymentId: string
+    nodeId: string
+    nodeName: string
+    nodeStatus: string
+    nodeEnabled: boolean
+    routingEnabled: boolean
+    managed: boolean
+    code: string
+    message: string
+    nextAction: string
+    lastHealthError?: string | null
+  }>
+}
+
 export type ModelInstallJob = {
   id: string
-  request: { catalogModelId: string; providerModelName: string; runtime: string; publicName?: string | null }
+  request: { catalogModelId: string; providerModelName: string; runtime: string; publicName?: string | null; port?: number | null; extraArguments?: string[]; maxNumSeqs?: number | null; maxModelLen?: number | null; maxOutputTokens?: number | null; tensorParallelSize?: number; gpuDevices?: string | null }
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
   stage: string
   percent?: number | null

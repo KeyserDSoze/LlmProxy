@@ -2,11 +2,13 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
 import { Tabs } from './UiPrimitives'
-import type { AdminTestResult, Model, SystemOneStatus } from './types'
+import type { AdminTestResult, Model, ModelRouteDiagnosis, SystemOneStatus } from './types'
+import { useT } from './uiPreferences'
 
 const defaultClassifierBody = JSON.stringify({ state: { document: 'The customer reports a duplicate card charge' }, questions: { billing: { type: 'noul', instructions: 'Is this request about billing?' } } }, null, 2)
 
 export default function PlaygroundExperience({ models }: { models: Model[] }) {
+  const t = useT()
   const [tab, setTab] = useRouteTab<'chat' | 'classifier'>('tab', ['chat', 'classifier'], 'chat')
   const openAiModels = useMemo(() => models.filter(model => model.enabled && (model.surface ?? 'OpenAi') === 'OpenAi'), [models])
   const systemOneModels = useMemo(() => models.filter(model => model.enabled && model.surface === 'SystemOne'), [models])
@@ -15,6 +17,8 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   const [systemPrompt, setSystemPrompt] = useState('You are a concise assistant.')
   const [userPrompt, setUserPrompt] = useState('Reply with exactly: LlmProxy model test OK')
   const [chatResult, setChatResult] = useState<AdminTestResult | null>(null)
+  const [routeDiagnosis, setRouteDiagnosis] = useState<ModelRouteDiagnosis | null>(null)
+  const [repairing, setRepairing] = useState(false)
   const [classifierStatus, setClassifierStatus] = useState<SystemOneStatus | null>(null)
   const [classifierBody, setClassifierBody] = useState(defaultClassifierBody)
   const [classifierResult, setClassifierResult] = useState<AdminTestResult | null>(null)
@@ -29,11 +33,34 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
     }
   }, [systemOneModels, classifierStatus, classifierModel])
   useEffect(() => { void api.systemOneStatus().then(setClassifierStatus).catch(err => setError(err instanceof Error ? err.message : String(err))) }, [])
+  useEffect(() => {
+    setRouteDiagnosis(null)
+    if (!model || typeof api.chatRouteDiagnosis !== 'function') return
+    let active = true
+    void api.chatRouteDiagnosis(model).then(result => {
+      if (active) setRouteDiagnosis(result)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [model])
+
+  async function activate(deploymentId: string) {
+    setRepairing(true); setError(null)
+    try {
+      await api.activateManagedDeployment(deploymentId)
+      setRouteDiagnosis(await api.chatRouteDiagnosis(model))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setRepairing(false) }
+  }
 
   async function runChat(event: FormEvent) {
     event.preventDefault(); setError(null); setRunning('chat')
     try { setChatResult(await api.testChat({ model, systemPrompt, userPrompt, maxTokens: 256, temperature: 0.2 })) }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      if (typeof api.chatRouteDiagnosis === 'function')
+        void api.chatRouteDiagnosis(model).then(setRouteDiagnosis).catch(() => {})
+    }
     finally { setRunning(null) }
   }
 
@@ -49,6 +76,26 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   return <div className="stack compactPage">
     {error && <div className="error">{error}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'chat', label: 'Model chat' }, { value: 'classifier', label: 'System One classifier' }]} />
+
+    {tab === 'chat' && routeDiagnosis && routeDiagnosis.code !== 'candidate_configured' &&
+      <section className="notice" role="status">
+        <strong>{t('model.routeDiagnosisTitle')} · {routeDiagnosis.model}</strong>
+        <p>{routeDiagnosis.message}</p>
+        {routeDiagnosis.deployments.map(row => <div className="actions" key={row.deploymentId}>
+          <strong>{row.nodeName}</strong>
+          <span>{row.nodeStatus} · {row.routingEnabled ? t('model.routeOn') : t('model.routeOff')}</span>
+          <span>{row.message}</span>
+          {row.lastHealthError && <span className="muted">{t('model.lastHealthError')}: {row.lastHealthError}</span>}
+          {row.managed && row.code === 'deployment_disabled' &&
+            <button className="primary" disabled={repairing} onClick={() => void activate(row.deploymentId)}>
+              {repairing ? t('model.checkingHealth') : t('catalog.activate')}
+            </button>}
+        </div>)}
+        <p><a href={routeDiagnosis.nextAction === 'servers' ? '/admin/infrastructure?section=fleet' :
+          routeDiagnosis.nextAction === 'routing' ? '/admin/routing' :
+          routeDiagnosis.nextAction === 'models' ? '/admin/catalog?tab=deploy&panel=advanced' :
+          '/admin/catalog?tab=deploy&panel=installed' }>{t('model.fixInManager')} →</a></p>
+      </section>}
 
     {tab === 'chat' && <div className="gridTwo">
       <section className="panel formPanel">

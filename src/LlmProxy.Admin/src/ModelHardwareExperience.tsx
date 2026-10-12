@@ -4,12 +4,17 @@ import { useRouteHardware, useRouteTab } from './adminNavigation'
 import { useT } from './uiPreferences'
 import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel from './ModelCapabilityPanel'
+import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
-import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node } from './types'
+import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node, Model, Deployment } from './types'
 
-export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void }) {
+export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
   const t = useT()
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
+  const [panel, setPanel] = useRouteTab<'catalog' | 'installed' | 'activity' | 'advanced'>('panel',
+    ['catalog', 'installed', 'activity', 'advanced'], 'catalog')
+  const [modelKind, setModelKind] = useState<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>('all')
+  const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
   const currentNodeId = useRef(nodeId)
@@ -102,6 +107,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }, [nodeId, tab])
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
+  const filteredCatalog = (overview?.catalog ?? []).filter(item => modelKind === 'all' ||
+    (item.model.surface ?? 'OpenAi') === modelKind)
+  const installedForJob = (job: ModelInstallJob) => overview?.installations.find(item =>
+    !!job.result?.installationId && item.managedInstallationId === job.result.installationId)
+  const visibleJobs = showJobHistory ? downloadJobs : downloadJobs.filter(job =>
+    job.status !== 'completed' || !overview?.installations.some(item =>
+      item.managedInstallationId === job.result?.installationId && item.enabled))
   const benchmarkInstallation = overview?.installations.find(item => item.id === benchmarkDeploymentId) ?? null
   useEffect(() => {
     if (!benchmarkDeploymentId) return
@@ -208,10 +220,32 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       })
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
-      setMessage('Background download scheduled. Follow image and model progress below; you can leave the page.')
+      setPanel('activity')
+      setMessage(t('catalog.jobQueued'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
+  async function retryInstall(job: ModelInstallJob) {
+    setBusy('retry:' + job.id); setError(null); setMessage(null)
+    try {
+      const next = await api.retryModelInstall(nodeId, job.id)
+      setDownloadJobs(current => [next, ...current])
+      setPanel('activity')
+      setMessage(t('catalog.retryQueued'))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+  async function finishInstallation(job: ModelInstallJob) {
+    setBusy('finalize:' + job.id); setError(null)
+    try {
+      await api.finalizeModelInstall(nodeId, job.id)
+      await Promise.all([load(), refresh()])
+      setPanel('installed')
+      setMessage(t('catalog.readyToStart'))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+
   async function cancelInstall(jobId: string) {
     setBusy('cancel:' + jobId)
     try { await api.cancelModelInstall(nodeId, jobId); setDownloadJobs(await api.installJobs(nodeId)) }
@@ -276,7 +310,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <section className="panel pageToolbar"><div><h2>{defaultTab === 'deploy' ? t('model.header') : embedded ? t('model.inventoryHeader') : t('model.managementHeader')}</h2><p className="muted">{defaultTab === 'deploy' ? t('model.deployGuide') : t('model.inventoryGuide')}</p>{defaultTab === 'deploy' && <p><a href="/admin/system-one">{t('model.systemOneLink')} →</a></p>}</div><div className="actions"><select aria-label={t('model.hardwareSelect')} value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">{t('model.selectHardware')}</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? t('model.reading') : t('model.refresh')}</button><span className="muted">{t('model.pairingHint')}</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>{t('model.configureAgent')}</button></div></section>
     {!nodeId && nodes.length > 0 && <div className="notice" role="alert">{t('model.invalidNode')}</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
-    <Tabs value={tab} onChange={setTab} items={[{ value: 'inventory', label: t('model.inventoryTab'), count: gpus.length }, { value: 'deploy', label: t('model.deployTab'), count: overview?.installations.length ?? 0 }]} />
+    {embedded && <Tabs value={tab} onChange={setTab} items={[
+      { value: 'inventory', label: t('model.inventoryTab'), count: gpus.length },
+      { value: 'deploy', label: t('model.deployTab'), count: overview?.installations.length ?? 0 }
+    ]} />}
 
     {tab === 'inventory' && <section className="panel"><div className="panelTitle"><h2>{t('model.inventoryTab')}</h2><span>{overview?.agentAvailable ? t('model.agentLive') : overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads' + (hardware.cpuUtilizationPercent == null ? '' : ' · ' + hardware.cpuUtilizationPercent.toFixed(0) + '% busy')} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label={unifiedMemory ? "Shared CPU/GPU RAM" : "GPU memory"} value={unifiedMemory ? formatGiB(hardware.systemMemoryAvailableGiB) + " available total" : formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div>{unifiedMemory && <p className="notice">NVIDIA unified memory: CPU and GPU share the same system RAM. Available RAM is not additional dedicated GPU VRAM; model fit reserves host memory and combines CPU/GPU estimates.</p>}<div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''} · {gpus.length} GPU(s) detected</span></div>
       {hardware.readiness && <section className="stack">
@@ -297,13 +334,41 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {onRecoverAgent && canWrite && <button className="secondary" onClick={onRecoverAgent}>{t('catalog.recover')}</button>}
         <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? t('catalog.checking') : t('catalog.retry')}</button>
       </section>}
-      <section className="panel">
-        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2><span>{t('catalog.jobs')}</span></div>
-        {downloadJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
-          <div className="stack">{downloadJobs.slice(0, 20).map(job => <div className="notice" key={job.id}>
+      <Tabs value={panel} onChange={setPanel} items={[
+        { value: 'catalog' as const, label: t('model.workspaceCatalog'), count: overview?.catalog.length ?? 0 },
+        { value: 'installed' as const, label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
+        { value: 'activity' as const, label: t('model.workspaceActivity'),
+          count: downloadJobs.filter(job => job.status === 'queued' || job.status === 'running' || job.status === 'interrupted' || job.status === 'failed').length },
+        ...(!embedded ? [{ value: 'advanced' as const, label: t('model.workspaceAdvanced') }] : [])
+      ]} />
+      <p className="muted">{t('model.lifecycleHint')}</p>
+      {panel === 'activity' && <section className="panel">
+        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2>
+          <div className="actions"><span>{t('catalog.jobs')}</span>
+            <button className="secondary" onClick={() => setShowJobHistory(value => !value)}>
+              {showJobHistory ? t('catalog.hideHistory') : t('catalog.showHistory')}
+            </button>
+          </div>
+        </div>
+        {visibleJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
+          <div className="modelJobList">{visibleJobs.slice(0, 20).map(job => <div className="modelJobCard" key={job.id}>
             <div className="actions"><strong>{job.request.catalogModelId} · {job.request.runtime}</strong><Status value={job.status}/>
               {(job.status === 'queued' || job.status === 'running') &&
-                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>Cancel</button>}
+                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>{t('catalog.cancelJob')}</button>}
+              {(job.status === 'interrupted' || job.status === 'failed' || job.status === 'cancelled') &&
+                <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
+                  onClick={() => void retryInstall(job)}>{t('catalog.retryJob')}</button>}
+              {job.status === 'completed' && !overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void finishInstallation(job)}>{t('catalog.finishJob')}</button>}
+              {job.status === 'completed' && installedForJob(job) && installedForJob(job)!.agentStatus.toLowerCase() !== 'running' &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void action('start', installedForJob(job)!.id)}>{t('catalog.start')}</button>}
+              {job.status === 'completed' && installedForJob(job)?.agentStatus.toLowerCase() === 'running' && !installedForJob(job)?.enabled &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void action('activate', installedForJob(job)!.id)}>{t('catalog.activate')}</button>}
+              {job.status === 'completed' && installedForJob(job) &&
+                <button className="secondary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
             </div>
             <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
             {job.percent != null ? <div className="stack">
@@ -312,26 +377,43 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
             {job.completedBytes != null && job.totalBytes != null &&
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
-            {job.status === 'completed' && <p className="muted">Download complete; deployment registration is automatic while Admin is open.</p>}
+            {job.status === 'completed' && <p className="muted">{t('catalog.completeNext')}</p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
-      </section>
-      <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
+      </section>}
+      {panel === 'catalog' && <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
           <div className="actions"><span>{t('catalog.fitDescription')}</span>
             <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? 'Connect or recover the Node Agent in Fleet & access first.' : undefined}
               onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>{t('catalog.custom')}</button>
-          </div></div><div className="tableScroll"><table><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
+          </div></div>
+          <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
+            {([
+              ['all', t('model.kindAll')],
+              ['OpenAi', t('model.kindChat')],
+              ['SystemOne', t('model.kindSystemOne')],
+              ['ImageGeneration', t('model.kindImage')],
+              ['SpeechSynthesis', t('model.kindTts')],
+              ['AudioTranscription', t('model.kindStt')]
+            ] as const).map(([kind, label]) => <button key={kind} type="button"
+              className={modelKind === kind ? 'primary' : 'secondary'} aria-pressed={modelKind === kind}
+              onClick={() => setModelKind(kind)}>{label}</button>)}
+          </div>
+          {filteredCatalog.length === 0 && <div className="emptyState">
+            <strong>{t('model.noModelsForType')}</strong>
+            <p>{t('model.typeAvailability')}</p>
+          </div>}
+          <div className="tableScroll"><table className="modelCatalogTable"><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{filteredCatalog.map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
               {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>{t('catalog.capabilities')}</button>
             </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' : formatTokens(item.model.contextTokens)}</td><td>{item.model.runtime === 'faster-whisper' ? 'CPU-only' : <>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec</>}<div className="muted">{item.model.runtime === 'faster-whisper' ? 'x64 / ARM64 · int8 CPU' : `${item.model.minimumGpuCount} GPU min · TP ${item.compatibility.suggestedTensorParallelSize}`}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
               title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ? t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ? t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ? t('catalog.insufficient') : t('catalog.installHere')}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>
-      <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />
-      <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>}
+      {panel === 'catalog' && modelKind === 'OpenAi' && <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />}
+      {panel === 'installed' && <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
         <div className="actions"><span>{t('catalog.editTip')}</span>
           <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
             onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
-        </div></div><table><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+        </div></div><table className="managedInstalledTable"><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
               {item.runtime === 'faster-whisper' ? <div className="muted">Audio ≤25 MiB · Whisper CPU · /v1/audio/transcriptions and /translations</div> : <div className="muted">{t('catalog.tokenContext')}: {item.agentState?.maxModelLen ?? (item.runtime === 'airllm' ? 8192 : 'default')} tokens · {t('catalog.output')}: {item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : t('catalog.perRequest')}</div>}
               <div className="muted">{t('catalog.revision')}: {item.agentState?.sourceRevision?.slice(0,12) ?? t('catalog.unknownRevision')}</div>
               {upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId) &&
@@ -352,7 +434,16 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || item.runtime === 'faster-whisper' || item.agentStatus.toLowerCase() === 'running'}
             title={item.runtime === 'faster-whisper' ? 'Whisper CPU has a fixed one-worker profile with no Chat token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
             onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></section></>}
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table>
+        {(overview?.installations.length ?? 0) === 0 && <div className="emptyState">
+          <strong>{t('model.noInstalled')}</strong><p>{t('model.installFirst')}</p>
+          <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>
+        </div>}
+      </section>}
+      {panel === 'advanced' && !embedded &&
+        <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
+          canWrite={canWrite} refresh={refresh} embedded />}
+    </>}
 
     <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
       description="Automatically detected from known model declarations and the installed serving adapter."

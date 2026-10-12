@@ -443,6 +443,7 @@ test('running AirLLM with disabled routing exposes health-gated recovery without
     }))
   await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Installed/ }).click()
   await expect(page.getByText('Container running, health and routing not yet verified.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Check health & activate' }).click()
@@ -499,6 +500,7 @@ test('AirLLM installation advertises real runtime capabilities and client limits
     }))
   await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Installed/ }).click()
 
   await page.getByRole('button', { name: 'Capabilities & client setup' }).click()
   const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
@@ -508,6 +510,7 @@ test('AirLLM installation advertises real runtime capabilities and client limits
   await expect(dialog.locator('pre')).toContainText('"maximumInputTokens": 8192')
   await expect(dialog.locator('pre')).toContainText('"maximumOutputTokens": 256')
   await dialog.getByRole('button', { name: /Close Capabilities/ }).click()
+  await page.getByRole('tab', { name: /Discover/ }).click()
 
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   await expect(page.getByText('Automatically detected capabilities & client token limits')).toBeVisible()
@@ -570,8 +573,10 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
     providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm', maximumOutputTokens: 1024
   }))
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
   await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
+  await page.getByRole('tab', { name: /Installed/ }).click()
   await page.getByRole('button', { name: 'Check Hugging Face updates' }).click()
   await expect(page.getByText('A changed repository commit exists.')).toBeVisible()
   await page.getByRole('button', { name: 'Edit limits' }).click()
@@ -582,6 +587,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await edit.getByRole('button', { name: 'Save limits' }).click()
   await expect(page.getByText(/Runtime limits updated without deleting model weights/)).toBeVisible()
   expect(savedLimits).toEqual({ maxModelLen: 16384, maxNumSeqs: 2, maxOutputTokens: 1024 })
+  await page.getByRole('tab', { name: /Discover/ }).click()
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   const install = page.getByRole('dialog', { name: 'Install inference profile' })
   await expect(install.getByText(/Selected defaults:/)).toBeVisible()
@@ -598,11 +604,11 @@ test('task-based navigation exposes direct model installation and System One dee
 
   await page.getByRole('button', { name: 'Browse models' }).click()
   await expect(page).toHaveURL(/\/admin\/catalog/)
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Install & manage models', exact: true, level: 1 })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
   await page.getByRole('button', { name: 'System One classifiers' }).click()
@@ -613,7 +619,7 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/admin\/catalog/)
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('guided System One connection creates only a classifier alias and a specified runtime route', async ({ page }) => {
@@ -653,6 +659,7 @@ test('guided System One connection creates only a classifier alias and a specifi
 test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/admin/models')
+  await page.getByRole('tab', { name: /Advanced routing/ }).click()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
   await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
@@ -732,9 +739,13 @@ test('Italian model discovery, deployment lifecycle and fleet pages use one pers
   await page.goto('/admin/catalog?tab=deploy&node=node-1')
   await page.getByRole('combobox', { name: 'Language' }).last().selectOption('it')
   await expect(page.getByRole('heading', { name: 'Catalogo modelli installabili' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toHaveCount(0)
+  await page.getByRole('tab', { name: /Operazioni/ }).click()
   await expect(page.getByRole('heading', { name: 'Download e installazioni' })).toBeVisible()
+  await page.getByRole('tab', { name: /Installati/ }).click()
   await expect(page.getByRole('heading', { name: 'Modelli installati su questo hardware' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toBeVisible()
+  await page.getByRole('tab', { name: /Scopri/ }).click()
+  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
   await page.goto('/admin/infrastructure?section=fleet')
   await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
@@ -757,6 +768,7 @@ test('image and audio models are published as isolated API surfaces, never as Ch
     return json(route, { id: 'multimodal-created-' + created.length, ...body, enabled: true }, 201)
   })
   await page.goto('/admin/models')
+  await page.getByRole('tab', { name: /Advanced routing/ }).click()
   for (const [surface, model] of [
     ['ImageGeneration', 'image-demo'],
     ['SpeechSynthesis', 'voice-demo'],
@@ -839,7 +851,7 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
   await expect(modal.getByLabel('Tensor parallel size')).toHaveCount(0)
   await expect(modal.getByLabel('Install maximum output tokens')).toHaveCount(0)
   await modal.getByRole('button', { name: 'Download & install' }).click()
-  await expect(page.getByText(/Background download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled/)).toBeVisible()
   expect(queued).toMatchObject({
     runtime: 'faster-whisper',
     maxNumSeqs: 1,
@@ -849,4 +861,93 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
     extraArguments: [],
     tensorParallelSize: 1
   })
+})
+
+
+test('Chat Playground explains disabled AirLLM routing and offers guarded health activation', async ({ page }) => {
+  await installAdminApi(page)
+  let activated = false
+  let activationCalls = 0
+  await page.route('**/api/admin/testing/chat/diagnosis?*', route => json(route, {
+    model: 'agic-code-fast', logicalModelEnabled: true,
+    code: activated ? 'candidate_configured' : 'deployment_disabled',
+    message: activated ? 'Eligible route' : 'Runtime is running but routing is disabled.',
+    nextAction: 'installations', deployments: [{
+      deploymentId: 'deployment-1', nodeId: 'node-1', nodeName: 'inference-01',
+      nodeStatus: 'Unhealthy', nodeEnabled: true,
+      routingEnabled: activated, managed: true,
+      code: activated ? 'candidate_configured' : 'deployment_disabled',
+      message: activated ? 'Ready' : 'Use Check health & activate.',
+      nextAction: 'installations'
+    }]
+  }))
+  await page.route('**/api/admin/model-management/deployments/deployment-1/activate', route => {
+    activated = true
+    activationCalls++
+    return json(route, { deployment: { id: 'deployment-1', enabled: true } })
+  })
+  await page.goto('/admin/playground')
+  await expect(page.getByText('Runtime is running but routing is disabled.')).toBeVisible()
+  await page.getByRole('button', { name: 'Check health & activate' }).click()
+  await expect(page.getByText('Runtime is running but routing is disabled.')).toHaveCount(0)
+  expect(activationCalls).toBe(1)
+})
+
+test('failed and interrupted installs offer Retry without discarding Agent cache', async ({ page }) => {
+  await installAdminApi(page)
+  let retryCount = 0
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => json(route, {
+    node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+    agentAvailable: true, hardware: null, catalog: [], installations: []
+  }))
+  const interrupted = {
+    id: 'job-old', request: { catalogModelId: 'qwen3-4b-awq-vllm',
+      providerModelName: 'Qwen/Qwen3-4B-AWQ', runtime: 'vllm' },
+    status: 'interrupted', stage: 'container-image', detail: 'Fetching runtime image',
+    error: 'Agent restarted; cached downloads are preserved. Retry installation.',
+    createdAtUtc: '2026-10-12T08:00:00Z'
+  }
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, [interrupted]))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs/*/retry', route => {
+    retryCount++
+    return json(route, { ...interrupted, id: 'job-retry', status: 'queued',
+      stage: 'queued', error: null })
+  })
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Jobs/ }).click()
+  await expect(page.getByText(/Agent restarted; cached downloads are preserved/)).toBeVisible()
+  await page.getByRole('button', { name: 'Retry install' }).click()
+  await expect(page.getByText(/Retry queued/)).toBeVisible()
+  expect(retryCount).toBe(1)
+})
+
+test('a completed installation offers Start directly from Jobs', async ({ page }) => {
+  await installAdminApi(page)
+  let startCount = 0
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => json(route, {
+    node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+    agentAvailable: true, hardware: null, catalog: [],
+    installations: [{
+      id: 'deployment-airllm', modelId: 'model-airllm', catalogModelId: 'qwen3-8b-airllm',
+      managedInstallationId: 'install-airllm', logicalModel: 'qwen3-8b-airllm',
+      providerModelName: 'Qwen/Qwen3-8B', enabled: false,
+      agentStatus: 'stopped', agentState: { status: 'stopped', runtime: 'airllm' }
+    }]
+  }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, [{
+    id: 'job-completed', request: { catalogModelId: 'qwen3-8b-airllm',
+      providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm' },
+    status: 'completed', stage: 'complete', percent: 100, detail: 'Ready',
+    result: { installationId: 'install-airllm', runtime: 'airllm', status: 'stopped' },
+    createdAtUtc: '2026-10-12T08:00:00Z'
+  }]))
+  await page.route('**/api/admin/model-management/deployments/deployment-airllm/start', route => {
+    startCount++
+    return json(route, { deployment: { id: 'deployment-airllm', enabled: true } })
+  })
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Jobs/ }).click()
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+  await expect(page.getByText('Model started and enabled for routing.')).toBeVisible()
+  expect(startCount).toBe(1)
 })

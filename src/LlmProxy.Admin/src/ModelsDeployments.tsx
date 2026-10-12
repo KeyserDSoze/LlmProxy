@@ -6,8 +6,8 @@ import type { Deployment, Model, Node } from './types'
 
 type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
 
-export default function ModelsDeployments({ models, deployments, nodes, canWrite, refresh }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void> }) {
-  const [tab, setTab] = useRouteTab<'models' | 'nodes'>('tab', ['models', 'nodes'], 'models')
+export default function ModelsDeployments({ models, deployments, nodes, canWrite, refresh, embedded = false }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
+  const [tab, setTab] = useRouteTab<'models' | 'nodes'>(embedded ? 'advancedTab' : 'tab', ['models', 'nodes'], 'models')
   const [publishOpen, setPublishOpen] = useState(false)
   const [deployModel, setDeployModel] = useState<Model | null>(null)
   const [manageNode, setManageNode] = useState<Node | null>(null)

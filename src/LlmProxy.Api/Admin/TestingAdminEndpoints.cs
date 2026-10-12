@@ -25,6 +25,36 @@ public static class TestingAdminEndpoints
             group.RequireAuthorization("AdminWrite");
         }
 
+        group.MapGet("/chat/diagnosis", async (
+            string model, GatewayDbContext db, IDeploymentCatalog catalog, CancellationToken token) =>
+        {
+            if (string.IsNullOrWhiteSpace(model) || model.Length > 160)
+                return Results.BadRequest(new { error = "invalid_model" });
+            var name = model.Trim();
+            var logical = await db.Models.AsNoTracking()
+                .SingleOrDefaultAsync(item => item.PublicName == name, token);
+            if (logical is null)
+                return Results.Ok(ModelRouteReadiness.Inspect(name, null, [], []));
+            var deployments = await db.Deployments.AsNoTracking()
+                .Where(item => item.ModelId == logical.Id).ToListAsync(token);
+            var nodeIds = deployments.Select(item => item.NodeId).Distinct().ToArray();
+            var nodes = await db.Nodes.AsNoTracking()
+                .Where(item => nodeIds.Contains(item.Id)).ToListAsync(token);
+            var diagnosis = ModelRouteReadiness.Inspect(name, logical, deployments, nodes);
+            if (diagnosis.Code == "candidate_configured")
+            {
+                var candidates = await catalog.GetCandidatesAsync(name, token);
+                if (!candidates.Any(item => item.Surface == ModelSurface.OpenAi))
+                    diagnosis = diagnosis with
+                    {
+                        Code = "route_catalog_out_of_sync",
+                        Message = "The database has an enabled route, but the live routing catalog has no Chat candidate. Check route-state synchronization and Gateway health.",
+                        NextAction = "routing"
+                    };
+            }
+            return Results.Ok(diagnosis);
+        });
+
         group.MapGet("/systemone", async (
             IDeploymentCatalog catalog,
             GatewayDbContext dbContext,
