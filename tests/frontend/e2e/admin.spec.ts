@@ -604,11 +604,11 @@ test('task-based navigation exposes direct model installation and System One dee
 
   await page.getByRole('button', { name: 'Browse models' }).click()
   await expect(page).toHaveURL(/\/admin\/catalog/)
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Install & manage models', exact: true, level: 1 })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
   await page.getByRole('button', { name: 'System One classifiers' }).click()
@@ -619,7 +619,7 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/admin\/catalog/)
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('guided System One connection creates only a classifier alias and a specified runtime route', async ({ page }) => {
