@@ -61,7 +61,7 @@ public sealed class ManagedRuntimeProfilesTests
         var request = new InstallRequest("qwen3-4b-airllm", "Qwen/Qwen3-4B", null, 1, [], "airllm", 4, 8192);
         ManagedRuntimeProfiles.Validate(request);
         Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
-        Assert.Equal("llmproxy-airllm:0.2", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Equal("llmproxy-airllm:0.3", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
         Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request with { TensorParallelSize = 2 }));
         Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request with { KvCacheDtype = "fp8" }));
     }
