@@ -26,7 +26,7 @@ public static class TestingAdminEndpoints
         }
 
         group.MapGet("/chat/diagnosis", async (
-            string model, GatewayDbContext db, CancellationToken token) =>
+            string model, GatewayDbContext db, IDeploymentCatalog catalog, CancellationToken token) =>
         {
             if (string.IsNullOrWhiteSpace(model) || model.Length > 160)
                 return Results.BadRequest(new { error = "invalid_model" });
@@ -40,7 +40,19 @@ public static class TestingAdminEndpoints
             var nodeIds = deployments.Select(item => item.NodeId).Distinct().ToArray();
             var nodes = await db.Nodes.AsNoTracking()
                 .Where(item => nodeIds.Contains(item.Id)).ToListAsync(token);
-            return Results.Ok(ModelRouteReadiness.Inspect(name, logical, deployments, nodes));
+            var diagnosis = ModelRouteReadiness.Inspect(name, logical, deployments, nodes);
+            if (diagnosis.Code == "candidate_configured")
+            {
+                var candidates = await catalog.GetCandidatesAsync(name, token);
+                if (!candidates.Any(item => item.Surface == ModelSurface.OpenAi))
+                    diagnosis = diagnosis with
+                    {
+                        Code = "route_catalog_out_of_sync",
+                        Message = "The database has an enabled route, but the live routing catalog has no Chat candidate. Check route-state synchronization and Gateway health.",
+                        NextAction = "routing"
+                    };
+            }
+            return Results.Ok(diagnosis);
         });
 
         group.MapGet("/systemone", async (
