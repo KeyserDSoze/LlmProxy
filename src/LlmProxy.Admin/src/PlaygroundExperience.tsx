@@ -1,5 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { api } from './api'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { api, testChatStream } from './api'
+import type { ChatTestProgress } from './chatTestStream'
 import { useRouteTab } from './adminNavigation'
 import { Tabs } from './UiPrimitives'
 import type { AdminTestResult, Model, ModelRouteDiagnosis, SystemOneStatus } from './types'
@@ -17,6 +18,9 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   const [systemPrompt, setSystemPrompt] = useState('You are a concise assistant.')
   const [userPrompt, setUserPrompt] = useState('Reply with exactly: LlmProxy model test OK')
   const [chatResult, setChatResult] = useState<AdminTestResult | null>(null)
+  const [maxChatTokens, setMaxChatTokens] = useState(8)
+  const [chatProgress, setChatProgress] = useState<ChatTestProgress | null>(null)
+  const runningChatController = useRef<AbortController | null>(null)
   const [routeDiagnosis, setRouteDiagnosis] = useState<ModelRouteDiagnosis | null>(null)
   const [repairing, setRepairing] = useState(false)
   const [classifierStatus, setClassifierStatus] = useState<SystemOneStatus | null>(null)
@@ -32,6 +36,7 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
       setClassifierModel(systemOneModels.find(item => item.publicName === configured)?.publicName ?? systemOneModels[0]?.publicName ?? '')
     }
   }, [systemOneModels, classifierStatus, classifierModel])
+  useEffect(() => () => runningChatController.current?.abort(), [])
   useEffect(() => { void api.systemOneStatus().then(setClassifierStatus).catch(err => setError(err instanceof Error ? err.message : String(err))) }, [])
   useEffect(() => {
     setRouteDiagnosis(null)
@@ -54,14 +59,25 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   }
 
   async function runChat(event: FormEvent) {
-    event.preventDefault(); setError(null); setRunning('chat')
-    try { setChatResult(await api.testChat({ model, systemPrompt, userPrompt, maxTokens: 256, temperature: 0.2 })) }
-    catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      if (typeof api.chatRouteDiagnosis === 'function')
-        void api.chatRouteDiagnosis(model).then(setRouteDiagnosis).catch(() => {})
+    event.preventDefault()
+    if (runningChatController.current) return
+    const controller = new AbortController()
+    runningChatController.current = controller
+    setError(null); setChatResult(null); setChatProgress(null); setRunning('chat')
+    try {
+      const result = await testChatStream({
+        model, systemPrompt, userPrompt, maxTokens: maxChatTokens, temperature: 0
+      }, setChatProgress, controller.signal)
+      setChatResult(result)
+      if (!result.success && result.message) setError(result.message)
+    } catch (err) {
+      setError(controller.signal.aborted ? t('playground.cancelled') :
+        err instanceof Error ? err.message : String(err))
+      void api.chatRouteDiagnosis(model).then(setRouteDiagnosis).catch(() => {})
+    } finally {
+      runningChatController.current = null
+      setChatProgress(null); setRunning(null)
     }
-    finally { setRunning(null) }
   }
 
   async function runClassifier(event: FormEvent) {
@@ -104,7 +120,26 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
           <label>Active OpenAI logical model<select value={model} onChange={event => setModel(event.target.value)} required>{openAiModels.length === 0 && <option value="">No active OpenAI models</option>}{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
           <label>System prompt<textarea value={systemPrompt} onChange={event => setSystemPrompt(event.target.value)} rows={4} /></label>
           <label>User prompt<textarea value={userPrompt} onChange={event => setUserPrompt(event.target.value)} rows={7} required /></label>
-          <button className="primary" disabled={!model || running !== null}>{running === 'chat' ? 'Running…' : 'Run chat test'}</button>
+          <label>{t('playground.outputTokens')}
+            <select aria-label={t('playground.outputTokens')} value={maxChatTokens}
+              disabled={running !== null} onChange={event => setMaxChatTokens(Number(event.target.value))}>
+              {[1, 4, 8, 16, 32, 64, 128, 256].map(value =>
+                <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <p className="muted">{t('playground.slowModelHint')}</p>
+          {running === 'chat' && <div role="status" className="notice">
+            <strong>{t('playground.waitingForModel')}</strong>
+            <p>{chatProgress ? `${chatProgress.secondsElapsed} s · ${t('playground.waitingNote')}` :
+              t('playground.connecting')}</p>
+          </div>}
+          <div className="actions">
+            <button className="primary" disabled={!model || running !== null}>
+              {running === 'chat' ? t('playground.running') : 'Run chat test'}
+            </button>
+            {running === 'chat' && <button type="button" className="secondary"
+              onClick={() => runningChatController.current?.abort()}>{t('playground.cancel')}</button>}
+          </div>
         </form>
       </section>
       <ResultPanel title="Chat test result" result={chatResult} />
