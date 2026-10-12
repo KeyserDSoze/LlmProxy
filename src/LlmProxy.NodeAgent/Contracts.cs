@@ -46,7 +46,8 @@ public sealed record InstallRequest(
     double? CpuOffloadGiB = null,
     string? PublicName = null,
     string? GpuDevices = null,
-    int? MaxOutputTokens = null);
+    int? MaxOutputTokens = null,
+    bool StartAfterInstall = false);
 
 public sealed record ManagedModelRecord
 {

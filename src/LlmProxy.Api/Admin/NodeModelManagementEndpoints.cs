@@ -217,6 +217,8 @@ public static class NodeModelManagementEndpoints
             CancellationToken cancellationToken) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            if (request.StartAfterInstall && catalogId == "custom")
+                return Results.BadRequest(new { error = "custom_autostart_not_supported" });
             if (descriptor?.Runtime is "laya" or "kokoro" or "diffusers" &&
                 (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
                  request.KvCacheDtype is not null || request.CpuOffloadGiB is not null ||
@@ -301,6 +303,8 @@ public static class NodeModelManagementEndpoints
             IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            if (request.StartAfterInstall && catalogId == "custom")
+                return Results.BadRequest(new { error = "custom_autostart_not_supported" });
             if (descriptor?.Runtime is "laya" or "kokoro" or "diffusers" &&
                 (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
                  request.KvCacheDtype is not null || request.CpuOffloadGiB is not null ||
@@ -345,7 +349,8 @@ public static class NodeModelManagementEndpoints
                     request.Port, runtime is "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
-                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens);
+                    runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens,
+                    request.StartAfterInstall && descriptor.Id != "custom");
                 var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Post,
                     "/v1/models/install-jobs", payload, token);
                 return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{job.Id}", job);
@@ -444,7 +449,12 @@ public static class NodeModelManagementEndpoints
                     job.Request.Port, false, job.Request.ExtraArguments, job.Request.MaxNumSeqs,
                     job.Request.MaxModelLen, job.Request.KvCacheDtype, job.Request.CpuOffloadGiB,
                     job.Request.Runtime, MaxOutputTokens: job.Request.MaxOutputTokens);
-                return await RegisterManagedInstallationAsync(job.Result, request, descriptor,
+                // Trust a running job only when it is still listed as running
+                // by the Agent. Never republish a stale completed-job snapshot.
+                var current = await SendAgentAsync<ManagedModelsResponse>(client, node, protector,
+                    HttpMethod.Get, "/v1/models", null, token);
+                var live = ResolveVerifiedCompletedState(job, current.Models ?? []);
+                return await RegisterManagedInstallationAsync(live, request, descriptor,
                     new ModelCompatibility("unknown", "Installed by the remote Agent", [], job.Request.TensorParallelSize),
                     node, db, context, token);
             }
@@ -757,6 +767,23 @@ public static class NodeModelManagementEndpoints
             item.Status is "stopped" or "running");
     }
 
+    // An opt-in install may become routable without an Admin browser. Only
+    // trust current Agent inventory, a matching installation and a healthy
+    // runtime address; never revive removed, failed or manually stopped jobs.
+    public static ManagedModelState ResolveVerifiedCompletedState(
+        ModelInstallJob job, IReadOnlyList<ManagedModelState> currentModels)
+    {
+        var stopped = job.Result! with { Status = "stopped", RuntimeBaseAddress = null };
+        if (!job.Request.StartAfterInstall || job.Result is null) return stopped;
+        var state = currentModels.FirstOrDefault(x =>
+            x.InstallationId == job.Result.InstallationId &&
+            x.CatalogModelId == job.Request.CatalogModelId &&
+            x.ProviderModelName == job.Request.ProviderModelName &&
+            x.Runtime == job.Request.Runtime &&
+            IsAgentRuntimeRunnable(x));
+        return state ?? stopped;
+    }
+
     internal static async Task ReconcileCompletedJobsAsync(
         IServiceScopeFactory scopes, IHttpClientFactory clients,
         UpstreamCredentialProtector protector, ILogger logger, CancellationToken token)
@@ -852,9 +879,9 @@ public static class NodeModelManagementEndpoints
                     };
                     try
                     {
+                        var state = ResolveVerifiedCompletedState(job, current);
                         var result = await RegisterManagedInstallationAsync(
-                            job.Result with { Status = "stopped", RuntimeBaseAddress = null },
-                            request, descriptor,
+                            state, request, descriptor,
                             new ModelCompatibility("unknown",
                                 "Registered from completed persistent Node Agent job", [],
                                 job.Request.TensorParallelSize),
@@ -934,7 +961,21 @@ public static class NodeModelManagementEndpoints
          var runtimeAddress = OutboundRuntimeAddress(node, state);
         deployment.ConfigureRuntime(runtimeAddress,
             descriptor.Id == "custom" ? "custom:" + state.Runtime : descriptor.Id, state.InstallationId);
-        if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase)) deployment.Enable();
+        if (IsAgentRuntimeRunnable(state) && node.Enabled &&
+            node.Status != LlmProxy.Domain.Nodes.NodeStatus.Draining && runtimeAddress is not null)
+        {
+            // The Agent finished a real Start/health check. Reconcile routing
+            // atomically with deployment registration, just as an explicit Start.
+            var trackedNode = await dbContext.Nodes.FindAsync([node.Id], cancellationToken);
+            if (trackedNode is not null)
+            {
+                if (IsOutboundNode(trackedNode))
+                    trackedNode.Update(trackedNode.Name, runtimeAddress,
+                        trackedNode.Weight, trackedNode.MaxConcurrency);
+                trackedNode.RecordHealthSuccess(DateTimeOffset.UtcNow, 0, 1);
+            }
+            deployment.Enable();
+        }
         else deployment.Disable();
          AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
         {
@@ -1218,11 +1259,13 @@ public static class NodeModelManagementEndpoints
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
         int? TensorParallelSize = null, string? ProviderModelName = null,
-        string? GpuDevices = null, int? MaxOutputTokens = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null,
+        bool StartAfterInstall = false);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null,
-        string? GpuDevices = null, int? MaxOutputTokens = null);
+        string? GpuDevices = null, int? MaxOutputTokens = null,
+        bool StartAfterInstall = false);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
