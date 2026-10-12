@@ -132,6 +132,13 @@ public sealed class OutboundNodeConnectionWorker(
             using var data = JsonDocument.Parse(File.ReadAllText(path));
             var status = data.RootElement.GetProperty("status").GetString();
             var version = data.RootElement.GetProperty("version").GetString();
+            if (status == "failed" &&
+                version == typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3))
+            {
+                // A recovery/manual install can succeed after a failed self-update.
+                // Never keep reporting a stale failure for the current binary.
+                return "succeeded:" + version + ":recovered";
+            }
             if (status is not ("running" or "failed" or "succeeded") ||
                 version is null || !System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$"))
                 return null;
@@ -143,6 +150,11 @@ public sealed class OutboundNodeConnectionWorker(
                 ? p.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
             if (stage is null || !System.Text.RegularExpressions.Regex.IsMatch(stage, @"^[a-z]{3,24}$"))
                 return status + ":" + version;
+            var errorCode = data.RootElement.TryGetProperty("errorCode", out var codeJson) &&
+                codeJson.ValueKind == JsonValueKind.String ? codeJson.GetString() : null;
+            if (status == "failed" && errorCode is not null &&
+                System.Text.RegularExpressions.Regex.IsMatch(errorCode, @"^[a-z][a-z0-9_]{2,40}$"))
+                return status + ":" + version + ":" + stage + ":" + errorCode;
             return status + ":" + version + ":" + stage + (percent is null ? "" : ":" + percent);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException)

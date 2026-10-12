@@ -31,6 +31,7 @@ jobs:
           bash tests/node-agent-recovery-env.sh
           bash tests/node-agent-connect-status.sh
           bash -n distribution/update-node-agent.sh
+          python3 tests/node-agent-self-update.py -v
           python3 -m py_compile distribution/airllm-runtime/server.py
           python3 -m py_compile distribution/faster-whisper-runtime/server.py
           test -s distribution/faster-whisper-runtime/Dockerfile

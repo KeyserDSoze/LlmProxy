@@ -179,7 +179,37 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
           <td><Status value={pairedNodes.some(pair => pair.nodeId === node.id) && node.baseAddress === 'http://127.0.0.1:1' ? 'No runtime' : node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
             const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
-            return <div key={pair.nodeId} className="muted">Agent {fresh ? 'connected' : 'offline'} · {pair.mode}{pair.agentUpdateStatus ? ' · update ' + pair.agentUpdateStatus.split(':').slice(0, 3).join(' · ') : ''}{pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}
+            return <div key={pair.nodeId} className="muted">
+              Agent {fresh ? 'connected' : 'offline'} · {pair.mode}
+              {pair.agentVersion ? ' · installed v' + pair.agentVersion : ''}
+              {pair.agentUpdateStatus && (() => {
+                const [status, target, phase, detail] = pair.agentUpdateStatus.split(':')
+                const errorDescriptions: Record<string, string> = {
+                  archive_download_failed: 'Release archive could not be downloaded',
+                  checksum_download_failed: 'Checksum could not be downloaded',
+                  checksum_mismatch: 'Archive integrity check failed',
+                  archive_invalid: 'Archive layout or executable is invalid',
+                  staging_failed: 'Could not stage release files',
+                  agent_stop_failed: 'Cannot stop existing Agent service',
+                  backup_failed: 'Cannot preserve previous Agent binary',
+                  activate_binary_failed: 'Cannot activate downloaded binary',
+                  daemon_reload_failed: 'systemd daemon reload failed',
+                  service_start_failed: 'Updated Agent failed to start',
+                  healthcheck_failed: 'Updated Agent did not pass authenticated version check',
+                  invalid_health_bearer: 'Invalid local health credential',
+                  rollback_start_failed: 'Rollback restored files but service failed to start',
+                  rollback_restore_failed: 'Rollback could not restore previous files',
+                  rollback_missing: 'Previous binary backup is missing'
+                }
+                return <div role={status === 'failed' ? 'alert' : 'status'} className={status === 'failed' ? 'muted' : undefined}>
+                  {status === 'failed' ? 'Update failed' : status === 'succeeded' ? 'Update successful' : 'Updating'}
+                  {' · target v' + target}{phase ? ' · ' + phase : ''}
+                  {status === 'failed' && detail && <p>{errorDescriptions[detail] ?? detail.replaceAll('_', ' ')}</p>}
+                  {status === 'failed' && <p>Installed Agent remains separate from the failed target.
+                    For detailed logs: <code>sudo journalctl -u llmproxy-node-agent-update -n 100 --no-pager</code></p>}
+                </div>
+              })()}
+              {pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}
               {pair.agentUpdateStatus?.split(':')[0] === 'running' && pair.agentUpdateStatus?.split(':')[2] === 'downloading' &&
                 /^[0-9]{1,3}$/.test(pair.agentUpdateStatus?.split(':')[3] ?? '') && <div className="stack">
                   <progress aria-label="Node Agent update archive download progress"
