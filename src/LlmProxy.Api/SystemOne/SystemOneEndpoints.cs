@@ -109,14 +109,18 @@ public static class SystemOneEndpoints
                 }
                 else
                 {
-                    finalStatusCode = StatusCodes.Status400BadRequest;
-                    finalErrorCode = "systemone_model_required";
-                    await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode, "Multiple System One models are enabled. Send X-LlmProxy-Model with the logical model name.");
-                    return;
+                    // The default endpoint remains functional when several classifier
+                    // aliases are published. Operators can override with
+                    // SystemOne:DefaultModel; callers can always select by URL/header.
+                    // Prefer the curated Laya alias, otherwise choose stable lexical order.
+                    requested = models.FirstOrDefault(model =>
+                        string.Equals(model.PublicName, "laya-english-cpu", StringComparison.Ordinal))?.PublicName
+                        ?? models.OrderBy(model => model.PublicName, StringComparer.Ordinal).First().PublicName;
                 }
             }
 
             logicalModel = requested.Trim();
+            context.Response.Headers["X-LlmProxy-Model"] = logicalModel;
             if (!models.Any(model => string.Equals(model.PublicName, logicalModel, StringComparison.Ordinal)))
             {
                 finalStatusCode = StatusCodes.Status404NotFound;
