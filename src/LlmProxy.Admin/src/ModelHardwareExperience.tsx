@@ -639,9 +639,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {t('catalog.forceConsent')}
           </label>
         </section>}
-        {runtimeChoice === 'laya' && <div className="notice"><strong>System One / Laya · CPU (experimental)</strong><p>Install, start and route typed POST /v1/systemone. Use /v1/systemone/&lt;modelId&gt; to select a specific logical model. English only, no Chat token parameters.</p></div>}
-        {runtimeChoice === 'kokoro' && <div className="notice"><strong>Kokoro Text-to-speech · CPU (experimental)</strong><p>OpenAI-compatible POST /v1/audio/speech. English voice af_heart and WAV only; no MP3 or voice cloning.</p></div>}
-        {runtimeChoice === 'diffusers' && <div className="notice"><strong>SSD-1B Images · NVIDIA GPU (experimental)</strong><p>OpenAI-compatible POST /v1/images/generations; one PNG per call (base64), 512/768/1024. Actual GPU acceptance required.</p></div>}
+        {runtimeChoice === 'laya' && <div className="notice"><strong>System One / Laya · CPU (experimental)</strong><p>{t('catalog.layaInstallInfo')}</p></div>}
+        {runtimeChoice === 'kokoro' && <div className="notice"><strong>Kokoro Text-to-speech · CPU (experimental)</strong><p>{t('catalog.kokoroInstallInfo')}</p></div>}
+        {runtimeChoice === 'diffusers' && <div className="notice"><strong>SSD-1B Images · NVIDIA GPU (experimental)</strong><p>{t('catalog.diffusersInstallInfo')}</p></div>}
         {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
