@@ -501,7 +501,7 @@ const it: Record<keyof typeof en, string> = {
   'catalog.externalSystemOne': 'Collega un servizio System One esterno esistente',
   'catalog.externalSystemOneExplanation': 'Questa connessione avanzata registra un classificatore già avviato: non scarica, installa o avvia Laya.',
   'systemOne.externalOnly': 'Collega un classificatore già funzionante',
-  'systemOne.externalOnlyDesc': 'Installa Laya dal catalogo modelli gestiti. Usa questo collegamento avanzato solo per classificatori esterni già avviati.',' API.',
+  'systemOne.externalOnlyDesc': 'Installa Laya dal catalogo modelli gestiti. Usa questo collegamento avanzato solo per classificatori esterni già avviati.',
   'systemOne.backToCatalog': 'Torna al catalogo unificato',
   'catalog.forceMismatch': 'Hardware potenzialmente insufficiente',
   'catalog.inspectFit': 'Controlla requisiti',
