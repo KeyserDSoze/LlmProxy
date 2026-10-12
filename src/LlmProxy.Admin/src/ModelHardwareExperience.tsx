@@ -312,7 +312,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }
 
   return <div className="stack compactPage modelHardware">
-    <section className="modelWorkspaceToolbar" aria-label={t('model.hardwareSelect')}>
+    <section className="modelWorkspaceToolbar">
       <div className="modelWorkspaceNode">
         <label htmlFor="model-workspace-node">{t('model.hardwareSelect')}</label>
         <select id="model-workspace-node" aria-label={t('model.hardwareSelect')}
