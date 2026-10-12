@@ -1003,3 +1003,65 @@ test('Playground requests a short non-streaming model completion via Gateway SSE
   await expect(page.getByText('HTTP 200')).toBeVisible()
   expect(posted).toMatchObject({ maxTokens: 8 })
 })
+
+test('undersized curated model requires explicit admin consent and sends force only after acknowledgement', async ({ page }) => {
+  await installAdminApi(page)
+  let queued: Record<string, unknown> | null = null
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => json(route, {
+    node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+    agentAvailable: true,
+    hardware: { hostname: 'spark-test', cpuLogicalCores: 8,
+      systemMemoryAvailableGiB: 8, diskAvailableGiB: 100,
+      gpus: [{ memoryFreeGiB: 8, memoryTotalGiB: 8 }],
+      readiness: { dockerDaemonReady: true } },
+    catalog: [{ model: {
+      id: 'qwen3-8b', displayName: 'Qwen3 8B', providerModelName: 'Qwen/Qwen3-8B',
+      family: 'Qwen3', runtime: 'vllm', surface: 'OpenAi', license: 'Apache-2.0',
+      sourceUrl: 'https://huggingface.co/Qwen/Qwen3-8B', parameterBillions: 8,
+      contextTokens: 32768, precision: 'BF16', minimumGpuMemoryGiB: 20,
+      recommendedGpuMemoryGiB: 24, minimumGpuCount: 1,
+      minimumSystemMemoryGiB: 32, diskGiB: 22, notes: 'Large language model'
+    }, compatibility: {
+      status: 'insufficient', summary: 'Only 8 GiB GPU memory available',
+      reasons: ['GPU memory below minimum'], suggestedTensorParallelSize: 1
+    } }],
+    installations: []
+  }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
+  await page.route('**/api/admin/model-management/nodes/*/models/*/install-jobs', route => {
+    queued = route.request().postDataJSON() as Record<string, unknown>
+    return json(route, {
+      id: 'job-underfit', status: 'queued', stage: 'queued', percent: null,
+      request: { catalogModelId: 'qwen3-8b', runtime: 'vllm' }
+    })
+  })
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  const row = page.getByRole('row').filter({ hasText: 'Qwen3 8B' })
+  await expect(row.getByRole('button', { name: 'Review requirements' })).toBeEnabled()
+  await row.getByRole('button', { name: 'Review requirements' }).click()
+  const modal = page.getByRole('dialog', { name: 'Install inference profile' })
+  await expect(modal.getByText('Hardware sizing warning')).toBeVisible()
+  await expect(modal.getByText('GPU memory below minimum')).toBeVisible()
+  const submit = modal.getByRole('button', { name: 'Continue despite sizing' })
+  await expect(submit).toBeDisabled()
+  await modal.getByRole('checkbox', { name: /I understand the hardware risk/ }).check()
+  await expect(submit).toBeEnabled()
+  await submit.click()
+  await expect(page.getByText(/Download scheduled/)).toBeVisible()
+  expect(queued).toMatchObject({ force: true, runtime: 'vllm' })
+})
+
+test('system-one, images and text-to-speech show real release status instead of empty installer tables', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  for (const [kind, checkpoint] of [
+    ['System One', 'convaiinnovations/laya'],
+    ['Images', 'segmind/SSD-1B'],
+    ['Text to speech', 'Kokoro-82M / af_heart']
+  ]) {
+    await page.getByRole('button', { name: kind, exact: true }).click()
+    await expect(page.getByText(checkpoint)).toBeVisible()
+    await expect(page.getByText('Managed runtime in development')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Install', exact: true })).toHaveCount(0)
+  }
+})
