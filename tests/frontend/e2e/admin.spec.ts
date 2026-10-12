@@ -622,7 +622,7 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
   await page.getByRole('button', { name: 'System One', exact: true }).click()
-  await expect(page.getByRole('group', { name: 'Model type' }).getByRole('button', { name: 'System One' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'System One', exact: true })).toHaveAttribute('aria-pressed', 'true')
   // Managed classifiers are installed from this catalog, not through an external-runtime detour.
   await expect(page.getByRole('link', { name: /Connect an existing external System One service/ })).toHaveCount(0)
   await page.goto('/admin/system-one')
