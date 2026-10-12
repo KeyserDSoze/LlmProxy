@@ -300,7 +300,31 @@ public static class DeployableModelCatalog
             false, false,
             ["speech-to-text", "audio-translation", "cpu", "multilingual", "arm64", "experimental"],
             "CPU-only speech transcription/translation-to-English. Real audio correctness and runtime performance are not certified yet.",
-            "faster-whisper", ModelSurface.AudioTranscription)
+            "faster-whisper", ModelSurface.AudioTranscription),
+        new(
+            "laya-english-cpu", "Laya System One — English (CPU, experimental)",
+            "convaiinnovations/laya", "Laya typed classifier", "Apache-2.0",
+            "https://huggingface.co/convaiinnovations/laya",
+            0.421, 512, "FP32 CPU", 0, 0, 8, 16, 6, 0, 0,
+            false, false, ["system-one", "typed-classification", "english", "cpu", "experimental", "arm64"],
+            "Typed System One /v1/systemone classifier; CPU English profile with real inference startup probe.",
+            "laya", ModelSurface.SystemOne),
+        new(
+            "kokoro-english-cpu", "Kokoro — Text-to-speech (CPU, experimental)",
+            "hexgrad/Kokoro-82M", "Kokoro English TTS", "Apache-2.0",
+            "https://huggingface.co/hexgrad/Kokoro-82M",
+            0.082, 0, "FP32 CPU", 0, 0, 4, 8, 4, 0, 0,
+            false, false, ["text-to-speech", "english", "af_heart", "wav", "cpu", "arm64", "experimental"],
+            "OpenAI /v1/audio/speech; English af_heart voice, WAV only, one request at a time. Experimental.",
+            "kokoro", ModelSurface.SpeechSynthesis),
+        new(
+            "ssd-1b-image", "SSD-1B — Image generation (GPU, experimental)",
+            "segmind/SSD-1B", "Stable Diffusion XL distilled / Diffusers", "Apache-2.0 (model card)",
+            "https://huggingface.co/segmind/SSD-1B",
+            1.3, 1024, "FP16 CUDA", 12, 16, 16, 24, 12, 1, 1,
+            false, false, ["image", "text-to-image", "diffusers", "cuda", "sdxl", "arm64", "experimental"],
+            "Single base64 PNG output, square sizes 512/768/1024; requires NVIDIA CUDA and target validation.",
+            "diffusers", ModelSurface.ImageGeneration)
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>
