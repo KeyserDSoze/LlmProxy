@@ -1,4 +1,7 @@
-FROM public.ecr.aws/docker/library/node:22-alpine AS admin-build
+# CI prefetches node:22-alpine from Docker Hub. ECR's public data quota has
+# returned 429 before the build starts; allow an explicit mirror override.
+ARG ADMIN_NODE_IMAGE=node:22-alpine
+FROM ${ADMIN_NODE_IMAGE} AS admin-build
 WORKDIR /admin
 COPY src/LlmProxy.Admin/package.json ./
 RUN npm install --no-audit --no-fund
