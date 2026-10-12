@@ -9,7 +9,7 @@ public static class ModelRouteReadiness
 {
     public sealed record DeploymentReason(Guid DeploymentId, Guid NodeId, string NodeName,
         string NodeStatus, bool NodeEnabled, bool RoutingEnabled, bool Managed,
-        string Code, string Message, string NextAction);
+        string Code, string Message, string NextAction, string? LastHealthError);
     public sealed record Diagnosis(string Model, string Code, string Message,
         string NextAction, bool LogicalModelEnabled, IReadOnlyList<DeploymentReason> Deployments);
 
@@ -74,7 +74,8 @@ public static class ModelRouteReadiness
             }
             return new DeploymentReason(d.Id, d.NodeId, node?.Name ?? d.NodeId.ToString(),
                 node?.Status.ToString() ?? "Missing", node?.Enabled ?? false,
-                d.Enabled, d.ManagedInstallationId is not null, code, message, action);
+                d.Enabled, d.ManagedInstallationId is not null, code, message, action,
+                node?.LastHealthError);
         }).ToArray();
 
         var prioritized = reasons.FirstOrDefault(x => x.Code == "deployment_disabled")
