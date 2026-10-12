@@ -1,5 +1,5 @@
 import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus } from './types'
-import type { ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { ModelRouteDiagnosis, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -147,6 +147,7 @@ export const api = {
   testSystemOne: (payload: unknown, model?: string | null) => request<AdminTestResult>('/api/admin/testing/systemone', { method: 'POST', body: JSON.stringify({ payload, model }) }),
   testChat: (body: { model: string; userPrompt: string; systemPrompt?: string | null; maxTokens?: number; temperature?: number }) =>
     request<AdminTestResult>('/api/admin/testing/chat', { method: 'POST', body: JSON.stringify(body) }),
+  chatRouteDiagnosis: (model: string) => request<ModelRouteDiagnosis>(`/api/admin/testing/chat/diagnosis?model=${encodeURIComponent(model)}`),
   createNode: (body: { name: string; baseAddress: string; weight: number; maxConcurrency: number; upstreamBearerToken?: string | null }) =>
     request<Node>('/api/admin/nodes', { method: 'POST', body: JSON.stringify(body) }),
   setNodeUpstreamCredential: (id: string, bearerToken: string) =>
@@ -219,6 +220,8 @@ export const api = {
   installJobs: (nodeId: string) => request<ModelInstallJob[]>(`/api/admin/model-management/nodes/${nodeId}/install-jobs`),
   queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null }) =>
     request<ModelInstallJob>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install-jobs`, { method: 'POST', body: JSON.stringify(body) }),
+  retryModelInstall: (nodeId: string, jobId: string) => request<ModelInstallJob>(
+    `/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/retry`, { method: 'POST' }),
   finalizeModelInstall: (nodeId: string, jobId: string) => request<unknown>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/finalize`, { method: 'POST' }),
   cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
   startManagedDeployment: (deploymentId: string) =>
