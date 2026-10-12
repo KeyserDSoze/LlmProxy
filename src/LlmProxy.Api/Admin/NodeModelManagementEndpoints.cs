@@ -84,7 +84,7 @@ public static class NodeModelManagementEndpoints
         group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens) =>
         {
             if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
-                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
+                runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers") ||
                 maxModelLen is < 256 or > 262144 || maxOutputTokens is < 1 or > 4096)
                 return Results.BadRequest(new { error = "invalid_capability_lookup" });
             return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen, maxOutputTokens));
@@ -217,6 +217,15 @@ public static class NodeModelManagementEndpoints
             CancellationToken cancellationToken) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            if (descriptor?.Runtime is "laya" or "kokoro" or "diffusers" &&
+                (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                 request.KvCacheDtype is not null || request.CpuOffloadGiB is not null ||
+                 request.ExtraArguments is { Count: > 0 } ||
+                 request.MaxNumSeqs is not null and not 1 ||
+                 request.TensorParallelSize is not null and not 1 ||
+                 (descriptor.Runtime is "laya" or "kokoro" && request.GpuDevices is not null)))
+                return Results.BadRequest(new { error = "invalid_media_runtime_settings",
+                    message = "Curated media models use one worker and reject Chat, GPU-for-CPU, and arbitrary flags." });
             // Whisper is a dedicated audio server: never pass Chat context,
             // quantization, GPU or arbitrary launch flags to its Agent profile.
             if (descriptor?.Runtime == "faster-whisper" &&
@@ -264,7 +273,7 @@ public static class NodeModelManagementEndpoints
                     descriptor.Id,
                     descriptor.ProviderModelName,
                     request.Port,
-                    runtime is "llama.cpp" or "airllm" or "faster-whisper" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
+                    runtime is "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [],
                     runtime,
                     request.MaxNumSeqs,
@@ -292,6 +301,15 @@ public static class NodeModelManagementEndpoints
             IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
         {
             var descriptor = ResolveDescriptor(catalogId, request);
+            if (descriptor?.Runtime is "laya" or "kokoro" or "diffusers" &&
+                (request.MaxModelLen is not null || request.MaxOutputTokens is not null ||
+                 request.KvCacheDtype is not null || request.CpuOffloadGiB is not null ||
+                 request.ExtraArguments is { Count: > 0 } ||
+                 request.MaxNumSeqs is not null and not 1 ||
+                 request.TensorParallelSize is not null and not 1 ||
+                 (descriptor.Runtime is "laya" or "kokoro" && request.GpuDevices is not null)))
+                return Results.BadRequest(new { error = "invalid_media_runtime_settings",
+                    message = "Curated media models use one worker and reject Chat, GPU-for-CPU, and arbitrary flags." });
             // Whisper is a dedicated audio server: never pass Chat context,
             // quantization, GPU or arbitrary launch flags to its Agent profile.
             if (descriptor?.Runtime == "faster-whisper" &&
@@ -324,7 +342,7 @@ public static class NodeModelManagementEndpoints
                 if (!request.Force && compatibility.Status == "insufficient")
                     return Results.BadRequest(new { error = "hardware_insufficient", compatibility });
                 var payload = new AgentInstallRequest(descriptor.Id, descriptor.ProviderModelName,
-                    request.Port, runtime is "llama.cpp" or "airllm" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
+                    request.Port, runtime is "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
                     request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens);
@@ -973,9 +991,9 @@ public static class NodeModelManagementEndpoints
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
     {
         var runtime = string.IsNullOrWhiteSpace(requested) ? descriptor.Runtime : requested.Trim();
-        if (descriptor.Runtime == "faster-whisper")
-            return runtime == "faster-whisper" ? runtime : null;
-        if (runtime == "faster-whisper") return null;
+        if (descriptor.Runtime is "faster-whisper" or "laya" or "kokoro" or "diffusers")
+            return runtime == descriptor.Runtime ? runtime : null;
+        if (runtime is "faster-whisper" or "laya" or "kokoro" or "diffusers") return null;
         if (runtime == "llama.cpp")
             return descriptor.Runtime == "llama.cpp" ? runtime : null;
         if (runtime is "vllm" or "sglang" or "airllm")

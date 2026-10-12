@@ -159,6 +159,47 @@ public sealed class ManagedRuntimeProfilesTests
             request with { MaxNumSeqs = 2 }));
     }
 
+
+    [Theory]
+    [InlineData("laya", "laya-english-cpu", "convaiinnovations/laya", "llmproxy-laya:0.1")]
+    [InlineData("kokoro", "kokoro-english-cpu", "hexgrad/Kokoro-82M", "llmproxy-kokoro:0.1")]
+    public void Curated_cpu_media_profiles_reject_chat_and_gpu_options(
+        string runtime, string catalogId, string repo, string expectedImage)
+    {
+        var request = new InstallRequest(catalogId, repo, null, 1, [], runtime, 1);
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Equal(expectedImage, ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ProviderModelName = "untrusted/unsafe-model" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 8192 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--trust-remote-code"] }));
+    }
+
+    [Fact]
+    public void Diffusers_requires_curated_ssd1b_and_exactly_one_optional_gpu()
+    {
+        var request = new InstallRequest("ssd-1b-image", "segmind/SSD-1B",
+            null, 1, [], "diffusers", 1, GpuDevices: "0");
+        ManagedRuntimeProfiles.Validate(request);
+        Assert.Equal("llmproxy-diffusers-ssd1b:0.1", ManagedRuntimeProfiles.Image(ToRecord(request), Options()));
+        Assert.Empty(ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ProviderModelName = "untrusted/unsafe-model" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { GpuDevices = "0,1" }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { MaxModelLen = 8192 }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { ExtraArguments = ["--trust-remote-code"] }));
+        Assert.ThrowsAny<ArgumentException>(() => ManagedRuntimeProfiles.Validate(
+            request with { TensorParallelSize = 2 }));
+    }
+
     private static ManagedModelRecord ToRecord(InstallRequest r) => new()
     {
         InstallationId = "test",

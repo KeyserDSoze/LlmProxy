@@ -622,11 +622,13 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
   await page.getByRole('button', { name: 'System One', exact: true }).click()
-  await expect(page.getByText('Managed runtime in development')).toBeVisible()
-  await page.getByRole('link', { name: /Connect an existing external System One service/ }).click()
+  await expect(page.getByRole('button', { name: 'System One', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  // Managed classifiers are installed from this catalog, not through an external-runtime detour.
+  await expect(page.getByRole('link', { name: /Connect an existing external System One service/ })).toHaveCount(0)
+  await page.goto('/admin/system-one')
   await expect(page).toHaveURL(/\/admin\/system-one$/)
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
-  await expect(page.getByText(/advanced connection wizard, NOT an installer/)).toBeVisible()
+  await expect(page.getByText(/Install Laya from the managed model catalog/)).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await page.goBack()
@@ -788,7 +790,7 @@ test('image and audio models are published as isolated API surfaces, never as Ch
     ['SpeechSynthesis', 'voice-demo'],
     ['AudioTranscription', 'whisper-demo']
   ]) {
-    await page.getByRole('button', { name: 'Publish logical model' }).click()
+    await page.getByRole('button', { name: 'Publish logical model', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Publish logical model' })
     await dialog.getByLabel('Model surface').selectOption(surface)
     await expect(dialog.getByText(/does not download or launch an image\/audio runtime/)).toBeVisible()

@@ -43,6 +43,19 @@ public static class ModelCapabilitiesCatalog
                 ? "https://huggingface.co/" + name
                 : null;
 
+        if (serving is "laya" or "kokoro" or "diffusers")
+        {
+            var unsupported = new Feature("unsupported", "unsupported",
+                "This typed inference runtime does not serve OpenAI Chat, vision, tools or reasoning.");
+            var note = serving switch {
+                "laya" => "Typed POST /v1/systemone classifier; CPU English profile, with explicit logical model routing.",
+                "kokoro" => "OpenAI-compatible POST /v1/audio/speech; English af_heart voice and WAV output only.",
+                _ => "OpenAI-compatible POST /v1/images/generations; b64_json PNG only, n=1 and 512/768/1024 square sizes on NVIDIA CUDA."
+            };
+            return new Profile(name, serving, "Curated experimental " + serving + " adapter",
+                modelCardUrl, unsupported, unsupported, unsupported, unsupported, unsupported,
+                null, null, null, null, note);
+        }
         if (serving == "faster-whisper")
         {
             var unsupported = new Feature("unsupported", "unsupported",

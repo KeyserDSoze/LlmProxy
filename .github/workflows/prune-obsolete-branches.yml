@@ -1,0 +1,93 @@
+# One-time cleanup of verified historical heads when PR #38 lands on main.
+# This preserves the only unmerged independent draft branch (#1).
+name: Prune obsolete model-development branches
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prune-obsolete-branches.yml
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify integration and close superseded draft PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/38" --jq '.merged')" == "true" ]] || {
+            echo "PR #38 is not merged; refusing to prune branches" >&2
+            exit 1
+          }
+          for number in 28 30 31; do
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" --jq '.state')"
+            if [[ "$current" == open ]]; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/pulls/${number}" -f state=closed > /dev/null
+              echo "Closed superseded PR #${number}"
+            fi
+          done
+      - name: Remove only unchanged, verified obsolete branch heads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deleted=0
+          skipped=0
+          while IFS='|' read -r name expected; do
+            [[ -n "$name" ]] || continue
+            [[ "$name" != main && "$name" != feature/admin-observability-docs ]] || exit 2
+            found="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${name}" --jq '.object.sha' 2>/dev/null || true)"
+            if [[ "$found" != "$expected" ]]; then
+              echo "Skip changed or absent branch: $name" >&2
+              skipped=$((skipped + 1))
+              continue
+            fi
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${name}" >/dev/null
+            echo "Deleted obsolete branch: $name"
+            deleted=$((deleted + 1))
+          done <<'BRANCHES'
+          feat/admin-settings-catalog-workspace-20261012|33bff10b86812ddbbeee6f18f4ddd503c5111c58
+          feat/admin-task-navigation-systemone-guide|e7ca1d0ac0c6949cf2b21e3e65f1fcfc613041b7
+          feat/manage-runtime-context-output-and-hf-discovery|8619f7748d2a06962bcd6c29956fb6eaef146ee8
+          feat/managed-image-generation-diffusers-20261011|3e7abeeb752bda4a533339edccb272dd95507bc7
+          feat/managed-kokoro-tts-cpu-20261011|c8c53411e533f81a5541c394808d2502537d676a
+          feat/managed-laya-rebased-20261012|9c0825985ca1389e89b5f1a291469e10993d8d4d
+          feat/managed-laya-systemone-cpu-20261011|935b76f87d3209f7e98e056d989310d5129c5ac0
+          feat/managed-stt-faster-whisper|d45eb9772bcbda9b96b5c7010115b3f34e73f8bf
+          feat/multimodal-openai-compatible-gateway|1e609f82fd714557ab484a2d9cb816e4859e9fd9
+          feat/per-node-recovery-and-agent-repair|24a37db778e9584ac886266339afb28c8ef61fb4
+          feat/responsive-themes-i18n-admin-foundation|77bcc6636788391d99d0efe9e29238769f432933
+          feat/runtime-aware-model-capabilities|7f915590bef1084f8170b1603c65c60946385d10
+          feat/server-side-managed-install-finalization-20261011|98c9070ba69d3520ef083c9ba0c8ea030e48a508
+          feat/streaming-audit-assembly|0fc87ea9e9e0ad9430ba698c36cb0e2620d0ea7f
+          feature/admin-update-orchestration|88354ee9f96ef21c99af8447bea6e576eb08d5c9
+          fix/agent-connect-confirmation-rebased-20261011|5e6089d4c5b68b1e6021323ab5f4898efc05135d
+          fix/agent-connect-verify-pairing-20261011|8ef06599f1710907eda3c86ec48c9c1340e43228
+          fix/agent-offline-model-install-routing|e9c7dd663f3247227c2f7c82952d43a6c0a5a22e
+          fix/agent-transactional-self-update-20261012|84221026ae4ab219bc669c21f7b1d79c621abfe7
+          fix/airllm-qwen3-thinking-output-20261012|614238bc83a83279efe306564362d778df623ed2
+          fix/airllm-routing-diagnostics-unified-models-20261012|70420b020dafb2a187a97d76861c2fd1e2e35674
+          fix/gb10-unified-memory-detection|77164e116d332110094f4215795fd12b3cb59a4f
+          fix/managed-model-runtime-routing-recovery|b7c7930fdddb67fbe67eefa145710b60f36d652b
+          fix/node-agent-recovery-existing-env-20261011|867084429ea7e7a3bbdaf1fbb3976e9ec1dba3c9
+          fix/persist-hardware-selection-in-admin-url|a34a880b3c29cc2f96a2a562642e55ea8795fa57
+          fix/playground-airllm-cloudflare-timeout-sse-20261012|3d9d9edcf4877ecc16335d87571b4c036481131d
+          work/request-audit-modal-export-20261004|df6c7c114a386fd6aa056c304ece78f8827baf6b
+          work/request-audit-retention-20261004|638fb18933c2a651f5a8c2baf39343f612597006
+          BRANCHES
+          # The integrated PR branch is safe to remove only if it still points at
+          # the exact head of the already merged #38, not a later contribution.
+          integrated="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/38" --jq '.head.sha')"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/feat/unified-multimodal-catalog-install-20261012" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$current" && "$current" == "$integrated" ]]; then
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/feat/unified-multimodal-catalog-install-20261012" >/dev/null
+            echo "Deleted merged integration branch"
+            deleted=$((deleted + 1))
+          fi
+          echo "Obsolete branches deleted: $deleted, skipped: $skipped"

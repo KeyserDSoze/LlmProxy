@@ -33,11 +33,20 @@ jobs:
           bash -n distribution/update-node-agent.sh
           python3 tests/node-agent-self-update.py -v
           python3 -m py_compile distribution/airllm-runtime/server.py
+          python3 -m py_compile distribution/kokoro-runtime/server.py distribution/diffusers-runtime/server.py distribution/diffusers-runtime/contract.py
+          python3 -m unittest discover -s tests/runtime -p 'test_diffusers_contract.py' -v
+          test -s distribution/laya-runtime/Dockerfile
+          test -s distribution/kokoro-runtime/Dockerfile
+          test -s distribution/diffusers-runtime/Dockerfile
+          test -s distribution/diffusers-runtime/Dockerfile.arm64
           python3 -m py_compile distribution/airllm-runtime/chat_policy.py
           python3 tests/airllm-chat-policy.py -v
           python3 -m py_compile distribution/faster-whisper-runtime/server.py
           test -s distribution/faster-whisper-runtime/Dockerfile
           grep -F 'distribution/faster-whisper-runtime' .github/workflows/container.yml >/dev/null
+          grep -F 'distribution/laya-runtime' .github/workflows/container.yml >/dev/null
+          grep -F 'distribution/kokoro-runtime' .github/workflows/container.yml >/dev/null
+          grep -F 'distribution/diffusers-runtime' .github/workflows/container.yml >/dev/null
           test -s distribution/airllm-runtime/Dockerfile
           test -s distribution/airllm-runtime/Dockerfile.arm64
           grep -F 'nvcr.io/nvidia/pytorch:25.10-py3-igpu' distribution/airllm-runtime/Dockerfile.arm64

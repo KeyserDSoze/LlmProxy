@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -92,19 +93,35 @@ public sealed class DockerModelRuntimeManager(
                     await EnsureAirLlmImageAsync(record, cancellationToken, report);
                 else if (record.Runtime == "faster-whisper")
                     await EnsureWhisperImageAsync(record, cancellationToken, report);
+                else if (record.Runtime is "laya" or "kokoro" or "diffusers")
+                    await EnsureMediaImageAsync(record, cancellationToken, report);
                 else await PullWithProgressAsync(ManagedRuntimeProfiles.Image(record, options), cancellationToken, report);
-                if ((options.PrefetchModels || record.Runtime == "faster-whisper") && record.Runtime != "llama.cpp")
+                if ((options.PrefetchModels || record.Runtime is "faster-whisper" or "laya" or "kokoro" or "diffusers") && record.Runtime != "llama.cpp")
                 {
                     report?.Invoke(new TransferProgress("model-weights", null, "Reading model file metadata", null, null));
                     var script = """
 import json
 from huggingface_hub import HfApi, hf_hub_download
+from fnmatch import fnmatch
 repo = MODEL_ID
 info = HfApi().model_info(repo, files_metadata=True)
 revision = info.sha
 print('LLMPROXY_SOURCE_SHA:' + revision, flush=True)
 siblings = info.siblings
-files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
+if repo == 'segmind/SSD-1B':
+    # Never download pickle checkpoints; restrict to needed Diffusers components.
+    allow = ('model_index.json', 'scheduler/*.json', 'tokenizer/*',
+             'tokenizer_2/*', 'text_encoder/*.json', 'text_encoder/*.safetensors',
+             'text_encoder_2/*.json', 'text_encoder_2/*.safetensors',
+             'unet/*.json', 'unet/*.safetensors', 'vae/*.json', 'vae/*.safetensors',
+             'feature_extractor/*.json')
+    files = [s for s in siblings if s.rfilename and
+             s.rfilename.lower().endswith(('.json', '.safetensors', '.txt', '.model', '.vocab', '.merges')) and
+             any(fnmatch(s.rfilename, pattern) for pattern in allow)]
+    if not any(s.rfilename == 'model_index.json' for s in files) or not any(s.rfilename.startswith('unet/') and s.rfilename.endswith('.safetensors') for s in files):
+        raise RuntimeError('Pinned Diffusers model lacks required safe components')
+else:
+    files = [s for s in siblings if s.rfilename and not s.rfilename.lower().endswith(('.md', '.png', '.jpg', '.jpeg', '.gitattributes', '.onnx', '.h5', '.ot'))]
 total = sum(s.size or 0 for s in files)
 known = bool(files) and all(s.size is not None for s in files)
 done = 0
@@ -118,8 +135,10 @@ for index, entry in enumerate(files):
                     [
                         "run", "--rm",
                         "--entrypoint", "python",
+                        ..(record.Runtime is "laya" or "kokoro" or "diffusers" ? new[] { "-e", "HF_HUB_OFFLINE=0" } : Array.Empty<string>()),
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
-                        record.Runtime is "airllm" or "faster-whisper" ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
+                        record.Runtime is "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers"
+                            ? ManagedRuntimeProfiles.Image(record, options) : options.DockerImage,
                         "-c", script
                     ], cancellationToken, line =>
                     {
@@ -191,6 +210,33 @@ for index, entry in enumerate(files):
             token, line => ParseTransferLine(line, "container-image", report));
     }
 
+    // Locally build versioned, allowlisted serving adapters from the signed Agent bundle.
+    private async Task EnsureMediaImageAsync(ManagedModelRecord record,
+        CancellationToken token, Action<TransferProgress>? report = null)
+    {
+        var image = ManagedRuntimeProfiles.Image(record, options);
+        var present = await runner.RunAsync(options.DockerExecutable,
+            ["image", "inspect", image], TimeSpan.FromSeconds(10), token);
+        if (present.Success) return;
+        var folder = record.Runtime switch {
+            "laya" => "laya-runtime",
+            "kokoro" => "kokoro-runtime",
+            "diffusers" => "diffusers-runtime",
+            _ => throw new ArgumentException("Unsupported media runtime")
+        };
+        var directory = Path.Combine(AppContext.BaseDirectory, folder);
+        var file = record.Runtime == "diffusers" &&
+            System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+            System.Runtime.InteropServices.Architecture.Arm64 ? "Dockerfile.arm64" : "Dockerfile";
+        var dockerfile = Path.Combine(directory, file);
+        if (!File.Exists(dockerfile))
+            throw new InvalidOperationException("Managed runtime adapter missing: " + folder + "/" + file);
+        report?.Invoke(new TransferProgress("container-image", null,
+            "Building experimental " + record.Runtime + " image for this host", null, null));
+        await PullCommandAsync(["build", "--pull", "--file", dockerfile, "-t", image, directory],
+            token, line => ParseTransferLine(line, "container-image", report));
+    }
+
     public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
     {
         await _operations.WaitAsync(cancellationToken);
@@ -201,15 +247,19 @@ for index, entry in enumerate(files):
                 await EnsureAirLlmImageAsync(record, cancellationToken);
             else if (record.Runtime == "faster-whisper")
                 await EnsureWhisperImageAsync(record, cancellationToken);
+            else if (record.Runtime is "laya" or "kokoro" or "diffusers")
+                await EnsureMediaImageAsync(record, cancellationToken);
             var name = ContainerName(record);
             await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
 
             var args = new List<string> { "run", "-d", "--name", name, "--restart", "unless-stopped", "--ipc=host" };
             var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
+            if (record.Runtime == "diffusers" && !gpuReady)
+                throw new InvalidOperationException("Image generation requires a working NVIDIA driver and Docker GPU runtime.");
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
-            if (gpuReady && record.Runtime != "faster-whisper")
+            if (gpuReady && record.Runtime is not ("faster-whisper" or "laya" or "kokoro"))
             {
                 args.Add("--gpus");
                 args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
@@ -222,6 +272,24 @@ for index, entry in enumerate(files):
                     "-e", "WHISPER_CPU_THREADS=4"]);
                 if (record.SourceRevision is { Length: 40 } sha)
                     args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+            }
+            if (record.Runtime is "laya" or "kokoro" or "diffusers")
+            {
+                if (record.SourceRevision is not { Length: 40 } sha ||
+                    !Regex.IsMatch(sha, "^[a-f0-9]{40}$"))
+                    throw new InvalidOperationException("Managed media runtime requires a pinned downloaded checkpoint.");
+                if (record.Runtime == "laya")
+                {
+                    var snapshot = "/root/.cache/huggingface/hub/models--convaiinnovations--laya/snapshots/" + sha;
+                    args.AddRange(["-e", "LAYA_MODELS=english", "-e", "LAYA_DEFAULT_MODEL=english",
+                        "-e", "LAYA_EXTRA_MODELS=" + JsonSerializer.Serialize(
+                            new Dictionary<string, string> { ["english"] = snapshot }),
+                        "-e", "LAYA_MAX_CONCURRENT=1", "-e", "HF_HUB_OFFLINE=1"]);
+                }
+                if (record.Runtime == "kokoro")
+                    args.AddRange(["-e", "KOKORO_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
+                if (record.Runtime == "diffusers")
+                    args.AddRange(["-e", "DIFFUSERS_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
             }
             if (record.Runtime == "airllm")
             {
@@ -242,6 +310,7 @@ for index, entry in enumerate(files):
             {
                 await RequireDockerAsync(args, cancellationToken);
                 await WaitForHealthyAsync(record.Port, cancellationToken);
+                if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
                 record.Status = "running";
                 record.RuntimeBaseAddress = RuntimeAddress(record.Port);
                 record.Error = null;
@@ -424,6 +493,60 @@ for index, entry in enumerate(files):
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException)
         {
+        }
+    }
+
+    // /health may be 200 before English Laya weights load; check typed inference.
+    private async Task VerifyLayaInferenceAsync(int port, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(options.StartupTimeoutMinutes));
+        var client = httpClientFactory.CreateClient("runtime-health");
+        var address = $"http://127.0.0.1:{port}";
+        var probe = new {
+            state = "The client was charged twice for a purchase.",
+            questions = new Dictionary<string, object> {
+                ["team"] = new {
+                    type = "choice",
+                    instructions = "Which team should handle this?",
+                    criteria = new { billing = "billing and refunds", general = "general questions" }
+                }
+            }
+        };
+        while (true)
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            try
+            {
+                using var status = await client.GetAsync(address + "/health", timeout.Token);
+                if (status.IsSuccessStatusCode)
+                {
+                    using var health = await JsonDocument.ParseAsync(
+                        await status.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+                    if (health.RootElement.TryGetProperty("loaded", out var loaded) &&
+                        loaded.ValueKind == JsonValueKind.Array &&
+                        loaded.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String &&
+                            item.GetString() == "english"))
+                    {
+                        using var response = await client.PostAsJsonAsync(
+                            address + "/v1/systemone", probe, timeout.Token);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            using var result = await JsonDocument.ParseAsync(
+                                await response.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+                            if (result.RootElement.TryGetProperty("answers", out var answers) &&
+                                answers.ValueKind == JsonValueKind.Object &&
+                                answers.TryGetProperty("team", out var answer) &&
+                                answer.TryGetProperty("probabilities", out var probabilities) &&
+                                probabilities.ValueKind == JsonValueKind.Object)
+                                return;
+                        }
+                    }
+                }
+            }
+            catch (HttpRequestException) { }
+            catch (JsonException) { }
+            await Task.Delay(TimeSpan.FromSeconds(2), timeout.Token);
         }
     }
 

@@ -32,6 +32,12 @@ if [[ -f "$SCRIPT_DIR/airllm-runtime/Dockerfile" ]]; then
   install -d -m 0755 /opt/llmproxy-node-agent/airllm-runtime
   cp -a "$SCRIPT_DIR/airllm-runtime/." /opt/llmproxy-node-agent/airllm-runtime/
 fi
+for runtime in laya kokoro diffusers; do
+  if [[ -f "$SCRIPT_DIR/${runtime}-runtime/Dockerfile" ]]; then
+    install -d -m 0755 "/opt/llmproxy-node-agent/${runtime}-runtime"
+    cp -a "$SCRIPT_DIR/${runtime}-runtime/." "/opt/llmproxy-node-agent/${runtime}-runtime/"
+  fi
+done
 if [[ -f "$SCRIPT_DIR/faster-whisper-runtime/Dockerfile" ]]; then
   install -d -m 0755 /opt/llmproxy-node-agent/faster-whisper-runtime
   cp -a "$SCRIPT_DIR/faster-whisper-runtime/." /opt/llmproxy-node-agent/faster-whisper-runtime/

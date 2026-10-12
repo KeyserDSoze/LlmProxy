@@ -5,8 +5,8 @@ import type { Deployment, Model, Node } from './types'
 
 /**
  * System One is a typed classifier API surface, not a supported generic
- * Hugging Face model runtime. This is deliberately a CONNECTION workflow,
- * never a fake model download/install action.
+ * Hugging Face model runtime. This advanced page connects EXTERNAL
+ * services; managed Laya installation happens directly in the catalog.
  */
 export default function SystemOneExperience({ models, deployments, nodes, canWrite, refresh }: {
   models: Model[]
