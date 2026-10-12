@@ -1,6 +1,50 @@
 import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus } from './types'
+import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
+
+/** Never render an upstream HTML error page in an admin alert. */
+export function describeHttpError(status: number, contentType: string, rawBody: string): string {
+  const body = rawBody.trim()
+  if (status === 524 || (/cloudflare/i.test(body) && /524.*timeout|524: A timeout/i.test(body))) {
+    return 'Cloudflare 524: the Gateway did not respond before the proxy timeout. ' +
+      'For slow models use the streaming diagnostic (short output first) and check Agent/runtime latency.'
+  }
+  if (/text\/html/i.test(contentType) || /^\s*<(?:!doctype|html)/i.test(body)) {
+    return `HTTP ${status}: the server or reverse proxy returned an HTML error page. Check Gateway logs.`
+  }
+  try {
+    const json = JSON.parse(body) as { error?: string | { message?: string; code?: string }; message?: string; detail?: string }
+    const error = typeof json.error === 'string' ? json.error : json.error?.message ?? json.error?.code
+    const text = json.message || error || json.detail
+    if (typeof text === 'string' && text.trim()) return `HTTP ${status}: ${text.slice(0, 400)}`
+  } catch { /* plain text response */ }
+  return `HTTP ${status}: ${body.replace(/\s+/g, ' ').slice(0, 250) || 'Request failed'}`
+}
+
+export async function testChatStream(
+  body: { model: string; userPrompt: string; systemPrompt?: string | null; maxTokens?: number; temperature?: number },
+  onProgress: (value: ChatTestProgress) => void,
+  signal?: AbortSignal
+): Promise<AdminTestResult> {
+  const response = await fetch('/api/admin/testing/chat/stream', {
+    credentials: 'same-origin', method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+    body: JSON.stringify(body)
+  })
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('AUTH_REQUIRED')
+    if (response.status === 403) throw new Error('FORBIDDEN')
+    throw new Error(describeHttpError(response.status,
+      response.headers.get('content-type') ?? '', await response.text()))
+  }
+  if (!(response.headers.get('content-type') ?? '').includes('text/event-stream')) {
+    throw new Error(describeHttpError(response.status,
+      response.headers.get('content-type') ?? '',
+      (await response.text()).slice(0, 4096)))
+  }
+  return readChatTestStream(response, onProgress)
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -19,7 +63,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(body || `${response.status} ${response.statusText}`)
+    throw new Error(describeHttpError(response.status,
+      response.headers.get('content-type') ?? '', body))
   }
 
   if (response.status === 204) {
