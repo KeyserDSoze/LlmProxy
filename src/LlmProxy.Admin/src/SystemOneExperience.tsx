@@ -98,22 +98,12 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
       </div>
     </section>
 
-    <section className="panel">
-      <div className="panelTitle"><div><h2>{t('systemOne.what.title')}</h2><span>{t('systemOne.what.desc')}</span></div></div>
-      <div className="uxPathGrid">
-        <div className="uxTask"><strong>1 · {t('systemOne.step1.title')}</strong>
-          <p>{t('systemOne.step1.desc')}</p>
-          <span className="muted">POST /v1/systemone</span>
-        </div>
-        <div className="uxTask"><strong>2 · {t('systemOne.step2.title')}</strong>
-          <p>{t('systemOne.step2.desc')}</p>
-          <a href="/admin/infrastructure?section=fleet">{t('systemOne.serverLink')} →</a>
-        </div>
-        <div className="uxTask"><strong>3 · {t('systemOne.step3.title')}</strong>
-          <p>{t('systemOne.step3.desc')}</p>
-          <a href="/admin/playground?tab=classifier">{t('systemOne.test')} →</a>
-        </div>
-      </div>
+    <section className="panel modelExternalInfo">
+      <div className="panelTitle"><div>
+        <h2>{t('systemOne.externalOnly')}</h2>
+        <span>{t('systemOne.externalOnlyDesc')}</span>
+      </div></div>
+      <p><a href="/admin/catalog?tab=deploy&kind=SystemOne">{t('systemOne.backToCatalog')} →</a></p>
     </section>
 
     <section className="panel formPanel">

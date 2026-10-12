@@ -13,7 +13,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
   const [panel, setPanel] = useRouteTab<'catalog' | 'installed' | 'activity' | 'advanced'>('panel',
     ['catalog', 'installed', 'activity', 'advanced'], 'catalog')
-  const [modelKind, setModelKind] = useState<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>('all')
+  const [modelKind, setModelKind] = useRouteTab<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>(
+    'kind', ['all', 'OpenAi', 'SystemOne', 'ImageGeneration', 'SpeechSynthesis', 'AudioTranscription'], 'all')
   const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
@@ -25,6 +26,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
+  const [forceHardwareAcknowledged, setForceHardwareAcknowledged] = useState(false)
   const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
   const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp' | 'airllm' | 'faster-whisper'>('vllm')
@@ -56,7 +58,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const installDescriptor = overview?.catalog.find(item => item.model.id === installCatalogId)?.model
+  const installCatalogEntry = overview?.catalog.find(item => item.model.id === installCatalogId)
+  const installDescriptor = installCatalogEntry?.model
+  const requiresHardwareOverride = installCatalogEntry?.compatibility.status === 'insufficient'
+  useEffect(() => { setForceHardwareAcknowledged(false) }, [installCatalogId, nodeId])
   const installProviderName = installCatalogId === 'custom' ? customRepository.trim() : installDescriptor?.providerModelName ?? ''
   useEffect(() => {
     if (!installCatalogId || !installProviderName || !installProviderName.includes('/')) {
@@ -206,7 +211,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       const job = await api.queueModelInstall(nodeId, catalogId, {
         publicName: logicalAlias.trim() || (catalogId === 'custom' ? customRepository.replace(/[^a-zA-Z0-9_-]/g, '-') : null),
         providerModelName: catalogId === 'custom' ? customRepository.trim() : null,
-        force: catalogId === 'custom' ? customConfirmed : false,
+        force: catalogId === 'custom' ? customConfirmed : (requiresHardwareOverride && forceHardwareAcknowledged),
         port: installPort ? Number(installPort) : null,
         runtime: runtimeChoice,
         tensorParallelSize: runtimeChoice === 'llama.cpp' || runtimeChoice === 'airllm' || runtimeChoice === 'faster-whisper' ? 1 : tensorParallelSize,
@@ -307,7 +312,26 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }
 
   return <div className="stack compactPage modelHardware">
-    <section className="panel pageToolbar"><div><h2>{defaultTab === 'deploy' ? t('model.header') : embedded ? t('model.inventoryHeader') : t('model.managementHeader')}</h2><p className="muted">{defaultTab === 'deploy' ? t('model.deployGuide') : t('model.inventoryGuide')}</p>{defaultTab === 'deploy' && <p><a href="/admin/system-one">{t('model.systemOneLink')} →</a></p>}</div><div className="actions"><select aria-label={t('model.hardwareSelect')} value={nodeId} onChange={event => setNodeId(event.target.value)}><option value="">{t('model.selectHardware')}</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select><button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>{loading ? t('model.reading') : t('model.refresh')}</button><span className="muted">{t('model.pairingHint')}</span><button className="primary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>{t('model.configureAgent')}</button></div></section>
+    <section className="modelWorkspaceToolbar">
+      <div className="modelWorkspaceNode">
+        <label htmlFor="model-workspace-node">{t('model.hardwareSelect')}</label>
+        <select id="model-workspace-node" aria-label={t('model.hardwareSelect')}
+          value={nodeId} onChange={event => setNodeId(event.target.value)}>
+          <option value="">{t('model.selectHardware')}</option>
+          {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
+        </select>
+        <span className={overview?.agentAvailable ? 'modelAgentConnected' : 'muted'}>
+          {overview?.agentAvailable ? t('model.agentLive') :
+            overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}
+        </span>
+      </div>
+      <div className="modelWorkspaceToolbarActions">
+        <button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>
+          {loading ? t('model.reading') : t('model.refresh')}</button>
+        <button className="secondary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>
+          {t('model.configureAgent')}</button>
+      </div>
+    </section>
     {!nodeId && nodes.length > 0 && <div className="notice" role="alert">{t('model.invalidNode')}</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
     {embedded && <Tabs value={tab} onChange={setTab} items={[
@@ -381,33 +405,138 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
       </section>}
-      {panel === 'catalog' && <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
-          <div className="actions"><span>{t('catalog.fitDescription')}</span>
-            <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
-              title={!overview?.agentAvailable ? 'Connect or recover the Node Agent in Fleet & access first.' : undefined}
-              onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>{t('catalog.custom')}</button>
-          </div></div>
-          <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
-            {([
-              ['all', t('model.kindAll')],
-              ['OpenAi', t('model.kindChat')],
-              ['SystemOne', t('model.kindSystemOne')],
-              ['ImageGeneration', t('model.kindImage')],
-              ['SpeechSynthesis', t('model.kindTts')],
-              ['AudioTranscription', t('model.kindStt')]
-            ] as const).map(([kind, label]) => <button key={kind} type="button"
-              className={modelKind === kind ? 'primary' : 'secondary'} aria-pressed={modelKind === kind}
-              onClick={() => setModelKind(kind)}>{label}</button>)}
+
+      {panel === 'catalog' && <section className="panel modelCatalogPanel">
+        <div className="panelTitle">
+          <div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
+          <div className="actions">
+            <span>{t('catalog.fitDescription')}</span>
+            {(modelKind === 'all' || modelKind === 'OpenAi') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
+              title={!overview?.agentAvailable ? t('catalog.requiresAgent') : undefined}
+              onClick={() => {
+                setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+                setCustomRepository(''); setCustomConfirmed(false)
+                setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
+                setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
+                setTensorParallelSize(1); setGpuDevices('')
+              }}>{t('catalog.custom')}</button>}
           </div>
-          {filteredCatalog.length === 0 && <div className="emptyState">
-            <strong>{t('model.noModelsForType')}</strong>
-            <p>{t('model.typeAvailability')}</p>
+        </div>
+        <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
+          {([
+            ['all', t('model.kindAll')],
+            ['OpenAi', t('model.kindChat')],
+            ['SystemOne', t('model.kindSystemOne')],
+            ['ImageGeneration', t('model.kindImage')],
+            ['SpeechSynthesis', t('model.kindTts')],
+            ['AudioTranscription', t('model.kindStt')]
+          ] as const).map(([kind, label]) =>
+            <button key={kind} type="button" className={modelKind === kind ? 'primary' : 'secondary'}
+              aria-pressed={modelKind === kind} onClick={() => setModelKind(kind)}>{label}</button>)}
+        </div>
+        {filteredCatalog.length > 0 && <div className="tableScroll">
+          <table className="modelCatalogTable">
+            <thead><tr>
+              <th>{t('catalog.model')}</th><th>{t('catalog.modelFacts')}</th>
+              <th>{t('catalog.modelMemory')}</th><th>{t('catalog.fit')}</th>
+              <th>{t('catalog.action')}</th>
+            </tr></thead>
+            <tbody>{filteredCatalog.map(item => <tr key={item.model.id}>
+              <td className="modelCatalogIdentity">
+                <strong>{item.model.displayName}</strong>
+                <div className="muted mono">{item.model.providerModelName}</div>
+                <div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div>
+                <p className="muted modelCatalogNotes">{item.model.notes}</p>
+                <div className="modelCatalogLinks">
+                  <a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>
+                  {item.capabilities && <button type="button" className="secondary"
+                    onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>
+                    {t('catalog.capabilities')}</button>}
+                </div>
+              </td>
+              <td className="modelCatalogFacts">
+                <span>{item.model.license}</span>
+                <span>{item.model.parameterBillions}B · {item.model.precision}</span>
+                <span>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' :
+                  formatTokens(item.model.contextTokens) + ' context'}</span>
+              </td>
+              <td className="modelCatalogRequirements">
+                <strong>{item.model.runtime === 'faster-whisper' ? 'CPU · x64 / ARM64' :
+                  item.model.minimumGpuMemoryGiB + ' GiB GPU min'}</strong>
+                <span>{item.model.runtime === 'faster-whisper' ? 'int8 CPU' :
+                  item.model.recommendedGpuMemoryGiB + ' GiB GPU recommended'}</span>
+                <span>{item.model.minimumSystemMemoryGiB} GiB RAM · {item.model.diskGiB} GiB disk</span>
+                <span className="muted">{item.model.runtime === 'faster-whisper' ? 'No GPU required' :
+                  item.model.minimumGpuCount + ' GPU min · TP ' + item.compatibility.suggestedTensorParallelSize}</span>
+              </td>
+              <td className="modelCatalogFit">
+                <Fit status={item.compatibility.status} />
+                <p className="muted">{item.compatibility.summary}</p>
+                {!overview?.agentAvailable && <p className="muted">{t('catalog.cached')}</p>}
+              </td>
+              <td className="modelCatalogAction">
+                <button className="primary" type="button"
+                  disabled={!canWrite || !overview?.agentAvailable ||
+                    hardware?.readiness?.dockerDaemonReady === false || busy === 'install:' + item.model.id}
+                  title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ?
+                    t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ?
+                    t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ?
+                    t('catalog.forceMismatch') : t('catalog.installHere')}
+                  onClick={() => {
+                    setInstallCatalogId(item.model.id)
+                    setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' :
+                      item.model.runtime === 'llama.cpp' ? 'llama.cpp' :
+                      item.model.runtime === 'sglang' ? 'sglang' :
+                      item.model.runtime === 'airllm' ? 'airllm' : 'vllm')
+                    setTensorParallelSize(item.compatibility.suggestedTensorParallelSize)
+                    setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192)
+                    setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4)
+                    setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('')
+                  }}>{item.compatibility.status === 'insufficient' ?
+                    t('catalog.inspectFit') : t('catalog.install')}</button>
+              </td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+        {(modelKind === 'all' || modelKind === 'SystemOne' ||
+          modelKind === 'ImageGeneration' || modelKind === 'SpeechSynthesis') && <div className="modelCatalogPreviews">
+          {([
+            { surface: 'SystemOne', title: t('catalog.typeSystemOne'),
+              model: 'convaiinnovations/laya', runtime: 'laya (CPU)',
+              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/28' },
+            { surface: 'ImageGeneration', title: t('catalog.typeImage'),
+              model: 'segmind/SSD-1B', runtime: 'diffusers (NVIDIA GPU)',
+              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/31' },
+            { surface: 'SpeechSynthesis', title: t('catalog.typeTts'),
+              model: 'Kokoro-82M / af_heart', runtime: 'kokoro (CPU)',
+              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/30' }
+          ] as const).filter(item =>
+            (modelKind === 'all' || modelKind === item.surface) &&
+            !(overview?.catalog ?? []).some(ready => ready.model.surface === item.surface)
+          ).map(item =>
+            <article className="modelCatalogPreview" key={item.surface}>
+              <div className="modelCatalogPreviewHeader">
+                <strong>{item.title}</strong>
+                <span className="modelPreviewStatus">{t('catalog.availableSoon')}</span>
+              </div>
+              <div className="mono muted">{item.model}</div>
+              <div className="muted">{t('catalog.modelRuntime')}: {item.runtime}</div>
+              <p>{t('catalog.runtimePreview')}</p>
+              <p className="muted">{t('catalog.typeComing')}</p>
+              <a href={item.pr} target="_blank" rel="noreferrer">{t('catalog.moreInfo')} ↗</a>
+            </article>)}
+        </div>}
+        {modelKind === 'SystemOne' && <div className="modelCatalogExternal">
+          <strong>{t('catalog.externalSystemOne')}</strong>
+          <p>{t('catalog.externalSystemOneExplanation')}</p>
+          <a className="secondary" href="/admin/system-one">{t('catalog.externalSystemOne')} →</a>
+        </div>}
+        {filteredCatalog.length === 0 && modelKind === 'AudioTranscription' &&
+          <div className="emptyState">
+            <strong>{t('model.noModelsForType')}</strong><p>{t('model.typeAvailability')}</p>
           </div>}
-          <div className="tableScroll"><table className="modelCatalogTable"><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{filteredCatalog.map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
-              {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>{t('catalog.capabilities')}</button>
-            </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' : formatTokens(item.model.contextTokens)}</td><td>{item.model.runtime === 'faster-whisper' ? 'CPU-only' : <>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec</>}<div className="muted">{item.model.runtime === 'faster-whisper' ? 'x64 / ARM64 · int8 CPU' : `${item.model.minimumGpuCount} GPU min · TP ${item.compatibility.suggestedTensorParallelSize}`}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
-              title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ? t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ? t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ? t('catalog.insufficient') : t('catalog.installHere')}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>}
+        <p className="muted modelCatalogFootnote">{t('catalog.fitCaution')}</p>
+      </section>}
       {panel === 'catalog' && modelKind === 'OpenAi' && <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />}
       {panel === 'installed' && <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
         <div className="actions"><span>{t('catalog.editTip')}</span>
@@ -480,6 +609,18 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        {requiresHardwareOverride && <section className="hardwareOverride" role="group"
+          aria-label={t('catalog.forceTitle')}>
+          <strong>{t('catalog.forceTitle')}</strong>
+          <p>{t('catalog.forceIntro')}</p>
+          <p>{t('catalog.forceRisk')}</p>
+          {installCatalogEntry?.compatibility.reasons.map(reason =>
+            <p key={reason} className="muted">{reason}</p>)}
+          <label className="hardwareOverrideConsent"><input type="checkbox"
+            checked={forceHardwareAcknowledged} onChange={event => setForceHardwareAcknowledged(event.target.checked)} />
+            {t('catalog.forceConsent')}
+          </label>
+        </section>}
         {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
@@ -540,7 +681,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
         {runtimeChoice !== 'faster-whisper' && <p className="muted">{t('model.profileInfo')}</p>}
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : t('model.downloadInstall')}</button></div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>
