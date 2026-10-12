@@ -3,12 +3,12 @@ import { useEffect, useState } from 'react'
 export type AdminView =
   | 'dashboard' | 'infrastructure'
   | 'models' | 'catalog' | 'system-one' | 'routing' | 'credentials' | 'users'
-  | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases'
+  | 'metrics' | 'playground' | 'logs' | 'audit' | 'help' | 'governance' | 'releases' | 'settings'
 
 const knownViews: readonly AdminView[] = [
   'dashboard', 'infrastructure',
   'models', 'catalog', 'system-one', 'routing', 'credentials', 'users',
-  'metrics', 'playground', 'logs', 'audit', 'help', 'governance', 'releases'
+  'metrics', 'playground', 'logs', 'audit', 'help', 'governance', 'releases', 'settings'
 ]
 
 export function viewFromAdminPath(pathname: string): AdminView {
