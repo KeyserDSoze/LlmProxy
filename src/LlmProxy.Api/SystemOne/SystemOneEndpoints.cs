@@ -33,6 +33,7 @@ public static class SystemOneEndpoints
             });
         });
         endpoints.MapPost(SystemOnePath, ForwardAsync);
+        endpoints.MapPost(SystemOnePath + "/{modelId}", ForwardAsync);
         return endpoints;
     }
 
@@ -74,7 +75,20 @@ public static class SystemOneEndpoints
         try
         {
             var models = await catalog.GetPublicModelsAsync(context.RequestAborted, ModelSurface.SystemOne);
-            var requested = context.Request.Headers["X-LlmProxy-Model"].FirstOrDefault();
+            var pathModel = context.Request.RouteValues.TryGetValue("modelId", out var pathValue)
+                ? pathValue?.ToString() : null;
+            var headerModel = context.Request.Headers["X-LlmProxy-Model"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(pathModel) &&
+                !string.IsNullOrWhiteSpace(headerModel) &&
+                !string.Equals(pathModel, headerModel, StringComparison.Ordinal))
+            {
+                finalStatusCode = StatusCodes.Status400BadRequest;
+                finalErrorCode = "systemone_model_conflict";
+                await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode,
+                    "The System One URL model and X-LlmProxy-Model header disagree.");
+                return;
+            }
+            var requested = string.IsNullOrWhiteSpace(pathModel) ? headerModel : pathModel;
             if (string.IsNullOrWhiteSpace(requested))
             {
                 requested = configuration["SystemOne:DefaultModel"];
