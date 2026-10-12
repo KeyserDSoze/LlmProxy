@@ -312,6 +312,41 @@ jobs:
             cp -R distribution/kokoro-runtime "$STAGE/kokoro-runtime"
             cp -R distribution/diffusers-runtime "$STAGE/diffusers-runtime"
             chmod 0755 "$STAGE/LlmProxy.NodeAgent" "$STAGE/install-node-agent.sh" "$STAGE/update-node-agent.sh" "$STAGE/prepare-node-host.sh"
+            if [[ "$RID" == linux-x64 ]]; then
+              # A correctly tagged tarball is NOT sufficient: historically the
+              # Agent's /health reported the fixed ABI version (0.2.0) and
+              # every UI upgrade rolled back despite HTTP 200.
+              TEST_ROOT="$(mktemp -d)"
+              PORT=19983
+              ASPNETCORE_ENVIRONMENT=Production \
+                ASPNETCORE_URLS="http://127.0.0.1:$PORT" \
+                NodeAgent__GatewayBaseAddress="" \
+                NodeAgent__BearerToken="release-version-probe-123456" \
+                NodeAgent__DataDirectory="$TEST_ROOT/state" \
+                NodeAgent__ModelCacheDirectory="$TEST_ROOT/cache" \
+                "$STAGE/LlmProxy.NodeAgent" > "$TEST_ROOT/agent.log" 2>&1 &
+              AGENT_PID=$!
+              verified=false
+              for attempt in $(seq 1 30); do
+                RESULT="$(curl -sS --max-time 2 -H "Authorization: Bearer release-version-probe-123456" \
+                  "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
+                if printf '%s' "$RESULT" | jq -e --arg target "$VERSION" \
+                  '.service == "llmproxy-node-agent" and .status == "ok" and .version == $target' >/dev/null 2>&1; then
+                  verified=true
+                  break
+                fi
+                sleep 1
+              done
+              kill "$AGENT_PID" 2>/dev/null || true
+              wait "$AGENT_PID" 2>/dev/null || true
+              if [[ "$verified" != true ]]; then
+                echo "Release Agent /health must report the exact VERSION=$VERSION, not ABI AssemblyVersion" >&2
+                cat "$TEST_ROOT/agent.log" >&2
+                rm -rf "$TEST_ROOT"
+                exit 3
+              fi
+              rm -rf "$TEST_ROOT"
+            fi
             ARCHIVE="dist/llmproxy-node-agent-$VERSION-$RID.tar.gz"
             tar -C "$STAGE" -czf "$ARCHIVE" .
             sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
