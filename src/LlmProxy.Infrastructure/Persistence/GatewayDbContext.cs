@@ -30,6 +30,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
     public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
+    public DbSet<SystemOneDefaultRecord> SystemOneDefaults => Set<SystemOneDefaultRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<RuntimeStateOutboxRecord> RuntimeStateOutbox => Set<RuntimeStateOutboxRecord>();
@@ -256,6 +257,14 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.ProvisioningMode).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<SystemOneDefaultRecord>(entity =>
+        {
+            entity.ToTable("systemone_default", table =>
+                table.HasCheckConstraint("CK_systemone_default_singleton", "\"Id\" = 1"));
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.PublicModelName).HasMaxLength(160);
         });
 
         modelBuilder.Entity<ProductUpdatePolicyRecord>(entity =>
