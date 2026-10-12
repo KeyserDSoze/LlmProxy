@@ -98,9 +98,10 @@ public static class SystemOneEndpoints
                     .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
                     .Select(x => x.PublicModelName)
                     .FirstOrDefaultAsync(context.RequestAborted);
+                var published = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(
+                    catalog, context.RequestAborted);
                 requested = SystemOneDefaultResolver.Resolve(
-                    models.Select(model => model.PublicName),
-                    saved, configuration["SystemOne:DefaultModel"]);
+                    published, saved, configuration["SystemOne:DefaultModel"]);
                 if (requested is null)
                 {
                     finalStatusCode = StatusCodes.Status503ServiceUnavailable;

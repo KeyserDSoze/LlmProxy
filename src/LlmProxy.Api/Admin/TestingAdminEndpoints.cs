@@ -91,6 +91,8 @@ public static class TestingAdminEndpoints
                 upstreamEndpoint = InferenceEndpoint.Combine(baseAddress, SystemOnePath).ToString();
             }
 
+            var published = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(
+                catalog, cancellationToken);
             var storedDefault = await dbContext.SystemOneDefaults.AsNoTracking()
                 .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
                 .Select(x => x.PublicModelName).FirstOrDefaultAsync(cancellationToken);
@@ -106,7 +108,7 @@ public static class TestingAdminEndpoints
                 configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
                 models = models.Select(item => item.PublicName).ToArray(),
                 defaultModel = SystemOneDefaultResolver.Resolve(
-                    models.Select(model => model.PublicName), storedDefault,
+                    published, storedDefault,
                     configuration["SystemOne:DefaultModel"])
             });
         });
@@ -125,11 +127,13 @@ public static class TestingAdminEndpoints
             CancellationToken cancellationToken) =>
         {
             var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.SystemOne);
+            var published = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(
+                catalog, cancellationToken);
             var savedDefault = await dbContext.SystemOneDefaults.AsNoTracking()
                 .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
                 .Select(x => x.PublicModelName).FirstOrDefaultAsync(cancellationToken);
             var logicalModel = string.IsNullOrWhiteSpace(request.Model)
-                ? SystemOneDefaultResolver.Resolve(models.Select(x => x.PublicName),
+                ? SystemOneDefaultResolver.Resolve(published,
                     savedDefault, configuration["SystemOne:DefaultModel"])
                 : request.Model.Trim();
             if (string.IsNullOrWhiteSpace(logicalModel) || !models.Any(item => string.Equals(item.PublicName, logicalModel, StringComparison.Ordinal)))

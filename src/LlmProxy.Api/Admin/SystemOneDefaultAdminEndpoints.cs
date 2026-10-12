@@ -24,16 +24,16 @@ public static class SystemOneDefaultAdminEndpoints
             GatewayDbContext db, IDeploymentCatalog catalog,
             IConfiguration config, CancellationToken token) =>
         {
-            var available = await catalog.GetPublicModelsAsync(token, ModelSurface.SystemOne);
+            var available = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(catalog, token);
             var record = await db.SystemOneDefaults.AsNoTracking()
                 .FirstOrDefaultAsync(x => x.Id == SystemOneDefaultRecord.SingletonId, token);
             return Results.Ok(new
             {
                 configuredModel = record?.PublicModelName,
                 effectiveModel = SystemOneDefaultResolver.Resolve(
-                    available.Select(x => x.PublicName), record?.PublicModelName,
+                    available, record?.PublicModelName,
                     config["SystemOne:DefaultModel"]),
-                options = available.Select(x => x.PublicName).Order(StringComparer.Ordinal).ToArray(),
+                options = available,
                 record?.UpdatedAtUtc
             });
         });
@@ -45,9 +45,9 @@ public static class SystemOneDefaultAdminEndpoints
             var proposed = request.Model?.Trim();
             if (proposed is { Length: > 160 } || request.Model is not null && proposed?.Length == 0)
                 return Results.BadRequest(new { error = "invalid_systemone_default" });
-            var available = await catalog.GetPublicModelsAsync(token, ModelSurface.SystemOne);
+            var available = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(catalog, token);
             if (proposed is not null &&
-                !available.Any(x => string.Equals(x.PublicName, proposed, StringComparison.Ordinal)))
+                !available.Contains(proposed, StringComparer.Ordinal))
                 return Results.Conflict(new {
                     error = "systemone_default_not_available",
                     message = "The selected System One model must be enabled and published before it can become the default."
@@ -79,9 +79,9 @@ public static class SystemOneDefaultAdminEndpoints
             {
                 configuredModel = setting.PublicModelName,
                 effectiveModel = SystemOneDefaultResolver.Resolve(
-                    available.Select(x => x.PublicName), setting.PublicModelName,
+                    available, setting.PublicModelName,
                     config["SystemOne:DefaultModel"]),
-                options = available.Select(x => x.PublicName).Order(StringComparer.Ordinal).ToArray(),
+                options = available,
                 setting.UpdatedAtUtc
             });
         });
