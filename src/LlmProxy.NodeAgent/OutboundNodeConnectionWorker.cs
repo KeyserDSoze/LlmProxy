@@ -49,7 +49,7 @@ public sealed class OutboundNodeConnectionWorker(
                             managementBaseAddress = options.ConnectionMode == "direct" ?
                                 "http://" + options.AdvertiseHost + ":9900" : null,
                             agentBearer = options.ConnectionMode == "direct" ? options.BearerToken : null,
-                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3)
+                            agentVersion = NodeAgentVersion.Current
                         }, stoppingToken);
                     if (!response.IsSuccessStatusCode)
                         throw new HttpRequestException($"Node recovery rejected: HTTP {(int)response.StatusCode}. Open Fleet > Recover agent and verify the per-node recovery code.");
@@ -78,7 +78,7 @@ public sealed class OutboundNodeConnectionWorker(
                                 managementBaseAddress = options.ConnectionMode == "direct" ?
                                     "http://" + options.AdvertiseHost + ":9900" : null,
                                 agentBearer = options.ConnectionMode == "direct" ? options.BearerToken : null,
-                                agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3)
+                                agentVersion = NodeAgentVersion.Current
                             }, stoppingToken);
                         if (!response.IsSuccessStatusCode)
                             throw new HttpRequestException($"Node enrollment rejected: HTTP {(int)response.StatusCode}");
@@ -97,7 +97,7 @@ public sealed class OutboundNodeConnectionWorker(
                         Content = JsonContent.Create(new
                         {
                             inventory = currentInventory,
-                            agentVersion = typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3),
+                            agentVersion = NodeAgentVersion.Current,
                             agentUpdateStatus = ReadUpdateStatus()
                         })
                     };
@@ -133,7 +133,7 @@ public sealed class OutboundNodeConnectionWorker(
             var status = data.RootElement.GetProperty("status").GetString();
             var version = data.RootElement.GetProperty("version").GetString();
             if (status == "failed" &&
-                version == typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3))
+                version == NodeAgentVersion.Current)
             {
                 // A recovery/manual install can succeed after a failed self-update.
                 // Never keep reporting a stale failure for the current binary.
@@ -166,7 +166,7 @@ public sealed class OutboundNodeConnectionWorker(
     private async Task TryStartUpdateAsync(string version, CancellationToken cancellationToken)
     {
         if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$") ||
-            version == typeof(OutboundNodeConnectionWorker).Assembly.GetName().Version?.ToString(3))
+            version == NodeAgentVersion.Current)
             return;
         if (_lastUpdateAttempt == version && DateTimeOffset.UtcNow - _lastUpdateAt < TimeSpan.FromMinutes(10))
             return;
