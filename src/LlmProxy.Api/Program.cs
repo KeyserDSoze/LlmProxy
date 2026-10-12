@@ -269,6 +269,7 @@ app.MapCredentialGovernanceAdminEndpoints(entraEnabled);
 app.MapApiCredentialSecretAdminEndpoints(entraEnabled);
 app.MapContentLogsAdminEndpoints(entraEnabled);
 app.MapTestingAdminEndpoints(entraEnabled);
+app.MapPlaygroundChatStreamEndpoints(entraEnabled);
 app.MapMetricsAdminEndpoints(entraEnabled);
 app.MapRoutingTuningEndpoints(entraEnabled);
 app.MapRouteCatalogAdminEndpoints(entraEnabled);
