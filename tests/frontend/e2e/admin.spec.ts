@@ -985,9 +985,11 @@ test('Playground requests a short non-streaming model completion via Gateway SSE
     posted = route.request().postDataJSON()
     await route.fulfill({
       status: 200, contentType: 'text/event-stream',
-      body: 'event: progress\ndata: {"phase":"waiting_for_model","secondsElapsed":110}\n\n' +
-        'event: result\ndata: {"requestId":"sse-1","success":true,' +
-        '"statusCode":200,"latencyMilliseconds":110000,"responseBody":"{\"choices\":[]}"}\n\n'
+      body: 'event: progress\\ndata: ' +
+        JSON.stringify({ phase: 'waiting_for_model', secondsElapsed: 110 }) + '\\n\\n' +
+        'event: result\\ndata: ' +
+        JSON.stringify({ requestId: 'sse-1', success: true, statusCode: 200,
+          latencyMilliseconds: 110000, responseBody: JSON.stringify({ choices: [] }) }) + '\\n\\n'
     })
   })
   await page.goto('/admin/playground')
