@@ -4,12 +4,17 @@ import { useRouteHardware, useRouteTab } from './adminNavigation'
 import { useT } from './uiPreferences'
 import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel from './ModelCapabilityPanel'
+import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
-import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node } from './types'
+import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node, Model, Deployment } from './types'
 
-export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void }) {
+export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
   const t = useT()
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
+  const [panel, setPanel] = useRouteTab<'catalog' | 'installed' | 'activity' | 'advanced'>('panel',
+    ['catalog', 'installed', 'activity', 'advanced'], 'catalog')
+  const [modelKind, setModelKind] = useState<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>('all')
+  const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
   const currentNodeId = useRef(nodeId)
@@ -102,6 +107,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   }, [nodeId, tab])
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
+  const filteredCatalog = (overview?.catalog ?? []).filter(item => modelKind === 'all' ||
+    (item.model.surface ?? 'OpenAi') === modelKind)
+  const visibleJobs = showJobHistory ? downloadJobs : downloadJobs.filter(job =>
+    job.status !== 'completed' || !overview?.installations.some(item =>
+      item.managedInstallationId === job.result?.installationId && item.enabled))
   const benchmarkInstallation = overview?.installations.find(item => item.id === benchmarkDeploymentId) ?? null
   useEffect(() => {
     if (!benchmarkDeploymentId) return
@@ -208,10 +218,32 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       })
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
-      setMessage('Background download scheduled. Follow image and model progress below; you can leave the page.')
+      setPanel('activity')
+      setMessage(t('catalog.jobQueued'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
+  async function retryInstall(job: ModelInstallJob) {
+    setBusy('retry:' + job.id); setError(null); setMessage(null)
+    try {
+      const next = await api.retryModelInstall(nodeId, job.id)
+      setDownloadJobs(current => [next, ...current])
+      setPanel('activity')
+      setMessage(t('catalog.retryQueued'))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+  async function finishInstallation(job: ModelInstallJob) {
+    setBusy('finalize:' + job.id); setError(null)
+    try {
+      await api.finalizeModelInstall(nodeId, job.id)
+      await Promise.all([load(), refresh()])
+      setPanel('installed')
+      setMessage(t('catalog.readyToStart'))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+
   async function cancelInstall(jobId: string) {
     setBusy('cancel:' + jobId)
     try { await api.cancelModelInstall(nodeId, jobId); setDownloadJobs(await api.installJobs(nodeId)) }
