@@ -468,6 +468,9 @@ public static class NodeModelManagementEndpoints
             if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
                 return Results.BadRequest(new { error = "management_agent_not_configured" });
 
+            if (!node.Enabled || node.Status == LlmProxy.Domain.Nodes.NodeStatus.Draining)
+                return Results.Conflict(new { error = "node_not_routable",
+                    message = "Enable this server and leave maintenance/drain mode before starting routing." });
             try
             {
                 var client = httpClientFactory.CreateClient("node-management");
@@ -480,6 +483,10 @@ public static class NodeModelManagementEndpoints
                 deployment.ConfigureRuntime(runtimeAddress, deployment.CatalogModelId, deployment.ManagedInstallationId);
                 if (IsOutboundNode(node))
                     node.Update(node.Name, runtimeAddress!, node.Weight, node.MaxConcurrency);
+                // The Agent's Start only returns after runtime /health is ready.
+                // Clear stale node-unhealthy state immediately instead of waiting
+                // for several periodic health checks before Playground can route.
+                node.RecordHealthSuccess(DateTimeOffset.UtcNow, 0, 1);
                 deployment.Enable();
                 AddAudit(dbContext, httpContext, "model.start", "deployment", deployment.Id.ToString(), new { node.Name, deployment.ManagedInstallationId, state.RuntimeBaseAddress });
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -509,6 +516,9 @@ public static class NodeModelManagementEndpoints
             var node = await db.Nodes.FindAsync([deployment.NodeId], token);
             if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
                 return Results.Conflict(new { error = "management_agent_not_configured" });
+            if (!node.Enabled || node.Status == LlmProxy.Domain.Nodes.NodeStatus.Draining)
+                return Results.Conflict(new { error = "node_not_routable",
+                    message = "Enable the physical node and exit maintenance before activation." });
             try
             {
                 var agent = factory.CreateClient("node-management");
@@ -549,6 +559,7 @@ public static class NodeModelManagementEndpoints
                     deployment.ManagedInstallationId);
                 if (IsOutboundNode(node))
                     node.Update(node.Name, runtimeAddress, node.Weight, node.MaxConcurrency);
+                node.RecordHealthSuccess(DateTimeOffset.UtcNow, 0, 1);
                 deployment.Enable();
                 AddAudit(db, context, "model.activate", "deployment", deployment.Id.ToString(),
                     new { node.Id, deployment.ManagedInstallationId, state.RuntimeBaseAddress });
