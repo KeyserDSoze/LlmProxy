@@ -276,3 +276,21 @@ main{padding:12px 10px 44px}
   .modelCatalogPreviews{padding:12px;grid-template-columns:minmax(0,1fr)}
   .modelCatalogExternal{margin:10px 12px}
 }
+
+/* Compact machine picker: keep the selected physical server obvious without
+   spending a quarter of the viewport on a redundant introduction card. */
+.modelWorkspaceToolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;padding:14px 18px;border:1px solid var(--border);
+  border-radius:12px;background:var(--surface-secondary)}
+.modelWorkspaceNode{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.modelWorkspaceNode label{font-size:12px;font-weight:650;color:var(--text-muted)}
+.modelWorkspaceNode select{min-width:210px;max-width:100%;background:var(--field);
+  border:1px solid var(--border-strong);border-radius:9px;padding:10px 12px;color:var(--text)}
+.modelAgentConnected{font-size:12px;color:var(--success-text);font-weight:600}
+.modelWorkspaceToolbarActions{display:flex;gap:8px;flex-wrap:wrap}
+.modelWorkspaceToolbarActions button{min-height:38px}
+@media(max-width:820px){
+  .modelWorkspaceToolbar{padding:12px}
+  .modelWorkspaceNode{width:100%}
+  .modelWorkspaceNode select{width:100%;min-width:0}
+}
