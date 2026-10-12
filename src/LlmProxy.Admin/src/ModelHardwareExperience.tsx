@@ -329,13 +329,35 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {onRecoverAgent && canWrite && <button className="secondary" onClick={onRecoverAgent}>{t('catalog.recover')}</button>}
         <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? t('catalog.checking') : t('catalog.retry')}</button>
       </section>}
-      <section className="panel">
-        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2><span>{t('catalog.jobs')}</span></div>
-        {downloadJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
-          <div className="stack">{downloadJobs.slice(0, 20).map(job => <div className="notice" key={job.id}>
+      <Tabs value={panel} onChange={setPanel} items={[
+        { value: 'catalog', label: t('model.workspaceCatalog'), count: overview?.catalog.length ?? 0 },
+        { value: 'installed', label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
+        { value: 'activity', label: t('model.workspaceActivity'),
+          count: downloadJobs.filter(job => job.status === 'queued' || job.status === 'running' || job.status === 'interrupted' || job.status === 'failed').length },
+        ...(!embedded ? [{ value: 'advanced', label: t('model.workspaceAdvanced') }] : [])
+      ]} />
+      <p className="muted">{t('model.lifecycleHint')}</p>
+      {panel === 'activity' && <section className="panel">
+        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2>
+          <div className="actions"><span>{t('catalog.jobs')}</span>
+            <button className="secondary" onClick={() => setShowJobHistory(value => !value)}>
+              {showJobHistory ? t('catalog.hideHistory') : t('catalog.showHistory')}
+            </button>
+          </div>
+        </div>
+        {visibleJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
+          <div className="stack">{visibleJobs.slice(0, 20).map(job => <div className="notice" key={job.id}>
             <div className="actions"><strong>{job.request.catalogModelId} · {job.request.runtime}</strong><Status value={job.status}/>
               {(job.status === 'queued' || job.status === 'running') &&
-                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>Cancel</button>}
+                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>{t('catalog.cancelJob')}</button>}
+              {(job.status === 'interrupted' || job.status === 'failed' || job.status === 'cancelled') &&
+                <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
+                  onClick={() => void retryInstall(job)}>{t('catalog.retryJob')}</button>}
+              {job.status === 'completed' && !overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
+                <button className="primary" disabled={!canWrite || busy !== null}
+                  onClick={() => void finishInstallation(job)}>{t('catalog.finishJob')}</button>}
+              {job.status === 'completed' && overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
+                <button className="primary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
             </div>
             <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
             {job.percent != null ? <div className="stack">
@@ -344,22 +366,39 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
             {job.completedBytes != null && job.totalBytes != null &&
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
-            {job.status === 'completed' && <p className="muted">Download complete; deployment registration is automatic while Admin is open.</p>}
+            {job.status === 'completed' && <p className="muted">{t('catalog.completeNext')}</p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
-      </section>
-      <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
+      </section>}
+      {panel === 'catalog' && <section className="panel"><div className="panelTitle"><div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
           <div className="actions"><span>{t('catalog.fitDescription')}</span>
             <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? 'Connect or recover the Node Agent in Fleet & access first.' : undefined}
               onClick={() => { setInstallCatalogId('custom'); setRuntimeChoice('vllm'); setCustomRepository(''); setCustomConfirmed(false); setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1); setTensorParallelSize(1); setGpuDevices('') }}>{t('catalog.custom')}</button>
-          </div></div><div className="tableScroll"><table><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{(overview?.catalog ?? []).map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
+          </div></div>
+          <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
+            {([
+              ['all', t('model.kindAll')],
+              ['OpenAi', t('model.kindChat')],
+              ['SystemOne', t('model.kindSystemOne')],
+              ['ImageGeneration', t('model.kindImage')],
+              ['SpeechSynthesis', t('model.kindTts')],
+              ['AudioTranscription', t('model.kindStt')]
+            ] as const).map(([kind, label]) => <button key={kind} type="button"
+              className={modelKind === kind ? 'primary' : 'secondary'} aria-pressed={modelKind === kind}
+              onClick={() => setModelKind(kind)}>{label}</button>)}
+          </div>
+          {filteredCatalog.length === 0 && <div className="emptyState">
+            <strong>{t('model.noModelsForType')}</strong>
+            <p>{t('model.typeAvailability')}</p>
+          </div>}
+          <div className="tableScroll"><table><thead><tr><th>{t('catalog.model')}</th><th>{t('catalog.license')}</th><th>{t('catalog.size')}</th><th>{t('catalog.context')}</th><th>{t('catalog.gpu')}</th><th>{t('catalog.ram')}</th><th>{t('catalog.fit')}</th><th>{t('catalog.action')}</th></tr></thead><tbody>{filteredCatalog.map(item => <tr key={item.model.id}><td><strong>{item.model.displayName}</strong><div className="muted mono">{item.model.providerModelName}</div><div className="muted">{t('catalog.run')}: {item.model.runtime ?? 'vllm'}</div><div className="muted">{item.model.notes}</div><a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>{item.capabilities && <>
               {' · '}<button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>{t('catalog.capabilities')}</button>
             </>}</td><td>{item.model.license}</td><td>{item.model.parameterBillions}B · {item.model.precision}</td><td>{item.model.runtime === 'faster-whisper' ? 'Audio ≤25 MiB' : formatTokens(item.model.contextTokens)}</td><td>{item.model.runtime === 'faster-whisper' ? 'CPU-only' : <>{item.model.minimumGpuMemoryGiB} GiB min · {item.model.recommendedGpuMemoryGiB} GiB rec</>}<div className="muted">{item.model.runtime === 'faster-whisper' ? 'x64 / ARM64 · int8 CPU' : `${item.model.minimumGpuCount} GPU min · TP ${item.compatibility.suggestedTensorParallelSize}`}</div></td><td>{item.model.minimumSystemMemoryGiB} GiB RAM min<div className="muted">{item.model.diskGiB} GiB disk</div></td><td><Fit status={item.compatibility.status} /><div className="muted">{item.compatibility.summary}</div>{!overview?.agentAvailable && <div className="muted">{t('catalog.cached')}</div>}</td><td><button className="primary" disabled={!canWrite || !overview?.agentAvailable || hardware?.readiness?.dockerDaemonReady === false || item.compatibility.status === 'insufficient' || busy === 'install:' + item.model.id}
               title={!canWrite ? t('catalog.requiresAdmin') : !overview?.agentAvailable ? t('catalog.requiresAgent') : hardware?.readiness?.dockerDaemonReady === false ? t('catalog.requiresDocker') : item.compatibility.status === 'insufficient' ? t('catalog.insufficient') : t('catalog.installHere')}
-              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>
-      <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />
-      <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
+              onClick={() => { setInstallCatalogId(item.model.id); setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' : item.model.runtime === 'llama.cpp' ? 'llama.cpp' : item.model.runtime === 'sglang' ? 'sglang' : item.model.runtime === 'airllm' ? 'airllm' : 'vllm'); setTensorParallelSize(item.compatibility.suggestedTensorParallelSize); setGpuDevices(''); setExtraArgumentsText(''); setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(item.model.runtime === 'faster-whisper' ? 1 : 4); setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('') }}>{busy === 'install:' + item.model.id ? t('catalog.installing') : t('catalog.install')}</button></td></tr>)}</tbody></table></div><p className="muted">{t('catalog.fitCaution')}</p></section>}
+      {panel === 'catalog' && modelKind === 'OpenAi' && <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />}
+      {panel === 'installed' && <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
         <div className="actions"><span>{t('catalog.editTip')}</span>
           <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
             onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
@@ -384,7 +423,16 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || item.runtime === 'faster-whisper' || item.agentStatus.toLowerCase() === 'running'}
             title={item.runtime === 'faster-whisper' ? 'Whisper CPU has a fixed one-worker profile with no Chat token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
             onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></section></>}
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{item.runtime !== 'faster-whisper' && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table>
+        {(overview?.installations.length ?? 0) === 0 && <div className="emptyState">
+          <strong>{t('model.noInstalled')}</strong><p>{t('model.installFirst')}</p>
+          <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>
+        </div>}
+      </section>}
+      {panel === 'advanced' && !embedded &&
+        <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
+          canWrite={canWrite} refresh={refresh} embedded />}
+    </>}
 
     <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
       description="Automatically detected from known model declarations and the installed serving adapter."
