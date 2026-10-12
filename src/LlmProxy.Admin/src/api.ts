@@ -269,6 +269,10 @@ export const api = {
     `/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/retry`, { method: 'POST' }),
   finalizeModelInstall: (nodeId: string, jobId: string) => request<unknown>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/finalize`, { method: 'POST' }),
   cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
+  getSystemOneDefault: () => request<{ configuredModel: string | null; effectiveModel: string | null; options: string[] }>(
+    '/api/admin/systemone/default'),
+  setSystemOneDefault: (model: string | null) => request<{ configuredModel: string | null; effectiveModel: string | null; options: string[] }>(
+    '/api/admin/systemone/default', { method: 'PUT', body: JSON.stringify({ model }) }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
   configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null }) =>
