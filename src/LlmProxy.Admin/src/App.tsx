@@ -6,7 +6,7 @@ import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
 import ModelHardwareExperience from './ModelHardwareExperience'
 import SystemOneExperience from './SystemOneExperience'
-import AppearanceControls from './AppearanceControls'
+import SettingsPage from './SettingsPage'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
 import CredentialsPage from './CredentialsPage'
@@ -72,6 +72,15 @@ const emptyMetricsSummary: MetricsSummary = {
 export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
   const t = useT()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [productVersion, setProductVersion] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    void fetch('/api/admin/product', { credentials: 'same-origin' })
+      .then(res => res.ok ? res.json() as Promise<{ version: string }> : null)
+      .then(value => { if (active && value?.version) setProductVersion(value.version) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [])
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMobileNavOpen(false)
@@ -162,7 +171,9 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         <div className="sidebarTop">
           <div className="brand">
             <div className="brandMark"><img src="/admin/favicon.svg" alt="" /></div>
-            <div><strong>LlmProxy</strong><span>{t('nav.gateway')}</span></div>
+            <div className="brandText"><strong>LlmProxy</strong>
+              <span className="brandVersion" data-testid="gateway-version">{productVersion ? 'v' + productVersion.replace(/^v/, '') : '—'}</span>
+            </div>
           </div>
           <button type="button" className="sidebarClose" aria-label={t('nav.close')} onClick={() => setMobileNavOpen(false)}>×</button>
         </div>
@@ -171,7 +182,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
           <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>{t('nav.catalog')}</NavItem>
-          <NavItem icon="deployments" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOne')}</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
@@ -191,11 +201,11 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <div className="navSecondary">
             <div className="navGroupLabel">{t('nav.platformGroup')}</div>
             <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>{t('nav.help')}</NavItem>
-            <ProductNavItem active={view === 'releases'} onClick={() => navigate('releases')} />
+            <NavItem icon="settings" active={view === 'settings'} onClick={() => navigate('settings')}>{t('nav.settings')}</NavItem>
+            <NavItem icon="releases" active={view === 'releases'} onClick={() => navigate('releases')}>{t('nav.releases')}</NavItem>
           </div>
         </nav>
         <div className="sidebarFooter">
-          <AppearanceControls compact />
           <span><span className="dot" /> {t('nav.footer')}</span>
         </div>
       </aside>
@@ -213,7 +223,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
               <h1>{t(viewTitleKey(view))}</h1><p>{t(viewDescriptionKey(view))}</p>
             </div>
           </div>
-          <div className="shellHeaderControls"><AppearanceControls /><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button></div>
+          <div className="shellHeaderControls"><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button></div>
         </header>
 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
@@ -225,6 +235,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'catalog' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
               canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
+            {view === 'settings' && <SettingsPage productVersion={productVersion} onOpenReleases={() => navigate('releases')} />}
             {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
               canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
@@ -636,24 +647,10 @@ function Audit({ events }: { events: AuditEvent[] }) {
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
-type NavIconName = 'dashboard' | 'nodes' | 'hardware' | 'control' | 'models' | 'deployments' | 'routing' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases'
+type NavIconName = 'dashboard' | 'nodes' | 'hardware' | 'control' | 'models' | 'deployments' | 'routing' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
 
 function NavItem({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: NavIconName; children: React.ReactNode }) {
   return <button className={active ? 'active' : ''} onClick={onClick}><NavIcon name={icon} /><span>{children}</span></button>
-}
-
-function ProductNavItem({ active, onClick }: { active: boolean; onClick: () => void }) {
-  const t = useT()
-  const [version, setVersion] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/admin/product', { credentials: 'same-origin' })
-      .then(response => response.ok ? response.json() as Promise<{ version: string }> : null)
-      .then(product => { if (!cancelled && product) setVersion(product.version) })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [])
-  return <NavItem icon="releases" active={active} onClick={onClick}>{version ? `v${version} · ${t('nav.releases')}` : t('nav.releases')}</NavItem>
 }
 
 function NavIcon({ name }: { name: NavIconName }) {
@@ -673,7 +670,8 @@ function NavIcon({ name }: { name: NavIconName }) {
     help: <><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.3 1-1.3 1.7M12 17h.01" /></>,
     governance: <><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-5" /></>,
     users: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20a6 6 0 0 1 12 0M14 16a5 5 0 0 1 7 4" /></>,
-    releases: <><path d="M4 5h10l6 6-9 9-7-7V5Z" /><circle cx="9" cy="10" r="1.5" /></>
+    releases: <><path d="M4 5h10l6 6-9 9-7-7V5Z" /><circle cx="9" cy="10" r="1.5" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M10 2h4l.6 2.5a8 8 0 0 1 2 1.2L19 5l2 3-1.8 2a8 8 0 0 1 0 4l1.8 2-2 3-2.4-.7a8 8 0 0 1-2 1.2L14 22h-4l-.6-2.5a8 8 0 0 1-2-1.2L5 19l-2-3 1.8-2a8 8 0 0 1 0-4L3 8l2-3 2.4.7a8 8 0 0 1 2-1.2L10 2Z" /></>
   }
   return <span className="navIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg></span>
 }
@@ -693,7 +691,8 @@ const titleKeys: Record<View, TranslationKey> = {
   logs: 'page.logs.title',
   audit: 'page.audit.title',
   help: 'page.help.title',
-  releases: 'page.releases.title'
+  releases: 'page.releases.title',
+  settings: 'page.settings.title'
 }
 const descriptionKeys: Record<View, TranslationKey> = {
   dashboard: 'page.dashboard.desc',
@@ -710,7 +709,8 @@ const descriptionKeys: Record<View, TranslationKey> = {
   logs: 'page.logs.desc',
   audit: 'page.audit.desc',
   help: 'page.help.desc',
-  releases: 'page.releases.desc'
+  releases: 'page.releases.desc',
+  settings: 'page.settings.desc'
 }
 function viewTitleKey(view: View): TranslationKey { return titleKeys[view] }
 function viewDescriptionKey(view: View): TranslationKey { return descriptionKeys[view] }
