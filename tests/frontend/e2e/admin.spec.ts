@@ -862,3 +862,92 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
     tensorParallelSize: 1
   })
 })
+
+
+test('Chat Playground explains disabled AirLLM routing and offers guarded health activation', async ({ page }) => {
+  await installAdminApi(page)
+  let activated = false
+  let activationCalls = 0
+  await page.route('**/api/admin/testing/chat/diagnosis?*', route => json(route, {
+    model: 'agic-code-fast', logicalModelEnabled: true,
+    code: activated ? 'candidate_configured' : 'deployment_disabled',
+    message: activated ? 'Eligible route' : 'Runtime is running but routing is disabled.',
+    nextAction: 'installations', deployments: [{
+      deploymentId: 'deployment-1', nodeId: 'node-1', nodeName: 'inference-01',
+      nodeStatus: 'Unhealthy', nodeEnabled: true,
+      routingEnabled: activated, managed: true,
+      code: activated ? 'candidate_configured' : 'deployment_disabled',
+      message: activated ? 'Ready' : 'Use Check health & activate.',
+      nextAction: 'installations'
+    }]
+  }))
+  await page.route('**/api/admin/model-management/deployments/deployment-1/activate', route => {
+    activated = true
+    activationCalls++
+    return json(route, { deployment: { id: 'deployment-1', enabled: true } })
+  })
+  await page.goto('/admin/playground')
+  await expect(page.getByText('Runtime is running but routing is disabled.')).toBeVisible()
+  await page.getByRole('button', { name: 'Check health & activate' }).click()
+  await expect(page.getByText('Runtime is running but routing is disabled.')).toHaveCount(0)
+  expect(activationCalls).toBe(1)
+})
+
+test('failed and interrupted installs offer Retry without discarding Agent cache', async ({ page }) => {
+  await installAdminApi(page)
+  let retryCount = 0
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => json(route, {
+    node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+    agentAvailable: true, hardware: null, catalog: [], installations: []
+  }))
+  const interrupted = {
+    id: 'job-old', request: { catalogModelId: 'qwen3-4b-awq-vllm',
+      providerModelName: 'Qwen/Qwen3-4B-AWQ', runtime: 'vllm' },
+    status: 'interrupted', stage: 'container-image', detail: 'Fetching runtime image',
+    error: 'Agent restarted; cached downloads are preserved. Retry installation.',
+    createdAtUtc: '2026-10-12T08:00:00Z'
+  }
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, [interrupted]))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs/*/retry', route => {
+    retryCount++
+    return json(route, { ...interrupted, id: 'job-retry', status: 'queued',
+      stage: 'queued', error: null })
+  })
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Jobs/ }).click()
+  await expect(page.getByText(/Agent restarted; cached downloads are preserved/)).toBeVisible()
+  await page.getByRole('button', { name: 'Retry install' }).click()
+  await expect(page.getByText(/Retry queued/)).toBeVisible()
+  expect(retryCount).toBe(1)
+})
+
+test('a completed installation offers Start directly from Jobs', async ({ page }) => {
+  await installAdminApi(page)
+  let startCount = 0
+  await page.route('**/api/admin/model-management/nodes/*/overview', route => json(route, {
+    node: { id: 'node-1', name: 'spark-test', managementBaseAddress: 'http://agent' },
+    agentAvailable: true, hardware: null, catalog: [],
+    installations: [{
+      id: 'deployment-airllm', modelId: 'model-airllm', catalogModelId: 'qwen3-8b-airllm',
+      managedInstallationId: 'install-airllm', logicalModel: 'qwen3-8b-airllm',
+      providerModelName: 'Qwen/Qwen3-8B', enabled: false,
+      agentStatus: 'stopped', agentState: { status: 'stopped', runtime: 'airllm' }
+    }]
+  }))
+  await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, [{
+    id: 'job-completed', request: { catalogModelId: 'qwen3-8b-airllm',
+      providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm' },
+    status: 'completed', stage: 'complete', percent: 100, detail: 'Ready',
+    result: { installationId: 'install-airllm', runtime: 'airllm', status: 'stopped' },
+    createdAtUtc: '2026-10-12T08:00:00Z'
+  }]))
+  await page.route('**/api/admin/model-management/deployments/deployment-airllm/start', route => {
+    startCount++
+    return json(route, { deployment: { id: 'deployment-airllm', enabled: true } })
+  })
+  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.getByRole('tab', { name: /Jobs/ }).click()
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
+  await expect(page.getByText('Model started and enabled for routing.')).toBeVisible()
+  expect(startCount).toBe(1)
+})
