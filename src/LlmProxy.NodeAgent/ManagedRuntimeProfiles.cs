@@ -8,6 +8,8 @@ public static class ManagedRuntimeProfiles
 {
     public static void Validate(InstallRequest request)
     {
+        if (request.StartAfterInstall && request.CatalogModelId == "custom")
+            throw new ArgumentException("Custom checkpoints require explicit start after review.");
         if (string.IsNullOrWhiteSpace(request.CatalogModelId) || request.CatalogModelId.Length > 200)
             throw new ArgumentException("catalogModelId is required and must be at most 200 characters.");
         if (string.IsNullOrWhiteSpace(request.ProviderModelName) || request.ProviderModelName.Length > 300)

@@ -152,7 +152,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           try {
             await api.finalizeModelInstall(nodeId, job.id)
             if (!active) return
-            setMessage('Download completed; deployment registered. You can start the model.')
+            setMessage(job.request.startAfterInstall && job.result?.status === 'running'
+              ? t('catalog.autoStartCompleted') : t('catalog.readyToStart'))
             await Promise.all([load(), refresh()])
           } catch (reason) {
             finalizing.current.delete(key)
@@ -655,7 +656,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {runtimeChoice === 'laya' && <div className="notice"><strong>System One / Laya · CPU (experimental)</strong><p>{t('catalog.layaInstallInfo')}</p></div>}
         {runtimeChoice === 'kokoro' && <div className="notice"><strong>Kokoro Text-to-speech · CPU (experimental)</strong><p>{t('catalog.kokoroInstallInfo')}</p></div>}
         {runtimeChoice === 'diffusers' && <div className="notice"><strong>SSD-1B Images · NVIDIA GPU (experimental)</strong><p>{t('catalog.diffusersInstallInfo')}</p></div>}
-        {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
+        {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. Start and routing are automatic when the checkbox is selected.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
           <ModelCapabilityPanel profile={installCapabilities} />

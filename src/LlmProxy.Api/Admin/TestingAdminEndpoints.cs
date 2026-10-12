@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Api.SystemOne;
 using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
@@ -90,6 +91,9 @@ public static class TestingAdminEndpoints
                 upstreamEndpoint = InferenceEndpoint.Combine(baseAddress, SystemOnePath).ToString();
             }
 
+            var storedDefault = await dbContext.SystemOneDefaults.AsNoTracking()
+                .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
+                .Select(x => x.PublicModelName).FirstOrDefaultAsync(cancellationToken);
             return Results.Ok(new
             {
                 enabled = models.Count > 0,
@@ -101,15 +105,16 @@ public static class TestingAdminEndpoints
                 timeoutSeconds = Math.Clamp(configuration.GetValue<int?>("SystemOne:TimeoutSeconds") ?? 30, 1, 300),
                 configurationError = models.Count == 0 ? "No enabled System One logical model is deployed." : null,
                 models = models.Select(item => item.PublicName).ToArray(),
-                defaultModel = string.IsNullOrWhiteSpace(configuration["SystemOne:DefaultModel"])
-                    ? (models.Count == 1 ? models[0].PublicName : null)
-                    : configuration["SystemOne:DefaultModel"]!.Trim()
+                defaultModel = SystemOneDefaultResolver.Resolve(
+                    models.Select(model => model.PublicName), storedDefault,
+                    configuration["SystemOne:DefaultModel"])
             });
         });
 
         group.MapPost("/systemone", async (
             SystemOneTestRequest request,
             IDeploymentCatalog catalog,
+            GatewayDbContext dbContext,
             RoutingService routingService,
             IRequestCapacityGate capacityGate,
             IHttpClientFactory httpClientFactory,
@@ -120,8 +125,13 @@ public static class TestingAdminEndpoints
             CancellationToken cancellationToken) =>
         {
             var models = await catalog.GetPublicModelsAsync(cancellationToken, ModelSurface.SystemOne);
-            var logicalModel = string.IsNullOrWhiteSpace(request.Model) ? configuration["SystemOne:DefaultModel"] : request.Model.Trim();
-            if (string.IsNullOrWhiteSpace(logicalModel) && models.Count == 1) logicalModel = models[0].PublicName;
+            var savedDefault = await dbContext.SystemOneDefaults.AsNoTracking()
+                .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
+                .Select(x => x.PublicModelName).FirstOrDefaultAsync(cancellationToken);
+            var logicalModel = string.IsNullOrWhiteSpace(request.Model)
+                ? SystemOneDefaultResolver.Resolve(models.Select(x => x.PublicName),
+                    savedDefault, configuration["SystemOne:DefaultModel"])
+                : request.Model.Trim();
             if (string.IsNullOrWhiteSpace(logicalModel) || !models.Any(item => string.Equals(item.PublicName, logicalModel, StringComparison.Ordinal)))
             {
                 return Results.Json(new

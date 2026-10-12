@@ -264,6 +264,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.ToTable("systemone_default", table =>
                 table.HasCheckConstraint("CK_systemone_default_singleton", "\"Id\" = 1"));
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.PublicModelName).HasMaxLength(160);
         });
 
