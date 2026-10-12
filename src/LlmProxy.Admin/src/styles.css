@@ -294,3 +294,5 @@ main{padding:12px 10px 44px}
   .modelWorkspaceNode{width:100%}
   .modelWorkspaceNode select{width:100%;min-width:0}
 }
+
+.modelExternalInfo p{padding:0 20px 18px;margin:0;line-height:1.5}
