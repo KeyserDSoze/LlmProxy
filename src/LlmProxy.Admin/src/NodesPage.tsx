@@ -198,7 +198,15 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                   activate_binary_failed: 'Cannot activate downloaded binary',
                   daemon_reload_failed: 'systemd daemon reload failed',
                   service_start_failed: 'Updated Agent failed to start',
-                  healthcheck_failed: 'Updated Agent did not pass authenticated version check',
+                  healthcheck_failed: 'Legacy Agent update probe failed; see update and Agent logs',
+                  health_version_mismatch: 'The local Agent responded HTTP 200, but reported a different version',
+                  health_wrong_service: 'HTTP 200 came from a process other than LLMProxy Node Agent',
+                  health_not_ready: 'The local Agent returned HTTP 200 without a ready health payload',
+                  health_unauthorized: 'The new local Agent rejected the authenticated health request',
+                  health_unreachable: 'The new local Agent could not be reached on its configured loopback port',
+                  health_http_error: 'The local Agent health endpoint returned an unsuccessful HTTP status',
+                  health_service_inactive: 'systemd reports that the updated Agent is not running',
+                  health_listen_address_invalid: 'The configured Agent listener is not a supported local HTTP URL',
                   invalid_health_bearer: 'Invalid local health credential',
                   rollback_start_failed: 'Rollback restored files but service failed to start',
                   rollback_restore_failed: 'Rollback could not restore previous files',
@@ -208,8 +216,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                   {status === 'failed' ? 'Update failed' : status === 'succeeded' ? 'Update successful' : 'Updating'}
                   {' · target v' + target}{phase ? ' · ' + phase : ''}
                   {status === 'failed' && detail && <p>{errorDescriptions[detail] ?? detail.replaceAll('_', ' ')}</p>}
-                  {status === 'failed' && <p>Installed Agent remains separate from the failed target.
-                    For detailed logs: <code>sudo journalctl -u llmproxy-node-agent-update -n 100 --no-pager</code></p>}
+                  {status === 'failed' && <p>The old version is still reported by the Agent after rollback. A heartbeat or an HTTP 200 from a runtime is not a successful version check.
+                    Check update logs: <code>sudo journalctl -u llmproxy-node-agent-update -n 100 --no-pager</code>;
+                    startup logs: <code>sudo journalctl -u llmproxy-node-agent -n 100 --no-pager</code>.</p>}
                 </div>
               })()}
               {pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}
@@ -222,10 +231,16 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : node.baseAddress}</td>
           <td>{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
             ? <div className="muted">Install and start an inference model to enable health checks.</div>
-            : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></>}</td>
+            : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div>
+              <div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div>
+              {node.status === 'Degraded' && node.consecutiveHealthSuccesses > 0 && <div className="muted">
+                Successful health check; awaiting further consecutive checks to become Healthy.
+              </div>}
+              <div className="muted">Node health is independent of Agent heartbeat and update verification.</div>
+            </>}</td>
           <td>{node.maxConcurrency}</td>
           <td className="actions">
-            <button disabled={node.baseAddress === 'http://127.0.0.1:1'} title={node.baseAddress === 'http://127.0.0.1:1' ? 'Start a model before testing inference endpoints.' : undefined}
+            <button disabled={node.baseAddress === 'http://127.0.0.1:1'} title={node.baseAddress === 'http://127.0.0.1:1' ? 'Start a model before testing inference endpoints.' : 'Checks inference HTTP connectivity; not Agent version, authenticated update status, or actual model inference.'}
               onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) && (() => {
               const state = pairedNodes.find(pair => pair.nodeId === node.id)!
