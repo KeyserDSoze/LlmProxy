@@ -85,6 +85,7 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
           <strong>{row.nodeName}</strong>
           <span>{row.nodeStatus} · {row.routingEnabled ? t('model.routeOn') : t('model.routeOff')}</span>
           <span>{row.message}</span>
+          {row.lastHealthError && <span className="muted">{t('model.lastHealthError')}: {row.lastHealthError}</span>}
           {row.managed && row.code === 'deployment_disabled' &&
             <button className="primary" disabled={repairing} onClick={() => void activate(row.deploymentId)}>
               {repairing ? t('model.checkingHealth') : t('catalog.activate')}
