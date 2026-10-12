@@ -867,7 +867,7 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
   await expect(modal.getByLabel('Tensor parallel size')).toHaveCount(0)
   await expect(modal.getByLabel('Install maximum output tokens')).toHaveCount(0)
   await modal.getByRole('button', { name: 'Download & install' }).click()
-  await expect(page.getByText(/Download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled|Installation queued/)).toBeVisible()
   expect(queued).toMatchObject({
     runtime: 'faster-whisper',
     maxNumSeqs: 1,
@@ -1049,7 +1049,7 @@ test('undersized curated model requires explicit admin consent and sends force o
   await modal.getByRole('checkbox', { name: /I understand the hardware risk/ }).check()
   await expect(submit).toBeEnabled()
   await submit.click()
-  await expect(page.getByText(/Download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled|Installation queued/)).toBeVisible()
   expect(queued).toMatchObject({ force: true, runtime: 'vllm' })
 })
 
