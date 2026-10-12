@@ -169,8 +169,8 @@ async function installAdminApi(page: Page) {
         nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}',
         responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' }
       return route.fulfill({ status: 200, contentType: 'text/event-stream',
-        body: 'event: progress\\ndata: {"phase":"waiting_for_model","secondsElapsed":10}\\n\\n' +
-          'event: result\\ndata: ' + JSON.stringify(result) + '\\n\\n' })
+        body: 'event: progress\ndata: {"phase":"waiting_for_model","secondsElapsed":10}\n\n' +
+          'event: result\ndata: ' + JSON.stringify(result) + '\n\n' })
     }
     if (request.method() === 'POST' && path === '/api/admin/testing/chat') return json(route, { requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 25, logicalModel: 'agic-code-fast', providerModel: 'bootstrap-model', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"choices":[{"message":{"content":"LlmProxy model test OK"}}]}' })
     if (request.method() === 'POST' && path === '/api/admin/testing/systemone') return json(route, { requestId: 'test-classifier', success: true, statusCode: 200, latencyMilliseconds: 13, logicalModel: 'systemone-laya', providerModel: 'convaiinnovations/laya', deploymentId: 'deployment-systemone', nodeId: 'node-1', nodeName: 'inference-01', requestBody: request.postData() ?? '{}', responseBody: '{"billing":true}' })
@@ -985,9 +985,9 @@ test('Playground requests a short non-streaming model completion via Gateway SSE
     posted = route.request().postDataJSON()
     await route.fulfill({
       status: 200, contentType: 'text/event-stream',
-      body: 'event: progress\\ndata: {"phase":"waiting_for_model","secondsElapsed":110}\\n\\n' +
-        'event: result\\ndata: {"requestId":"sse-1","success":true,' +
-        '"statusCode":200,"latencyMilliseconds":110000,"responseBody":"{\"choices\":[]}"}\\n\\n'
+      body: 'event: progress\ndata: {"phase":"waiting_for_model","secondsElapsed":110}\n\n' +
+        'event: result\ndata: {"requestId":"sse-1","success":true,' +
+        '"statusCode":200,"latencyMilliseconds":110000,"responseBody":"{\"choices\":[]}"}\n\n'
     })
   })
   await page.goto('/admin/playground')
