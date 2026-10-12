@@ -13,7 +13,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
   const [panel, setPanel] = useRouteTab<'catalog' | 'installed' | 'activity' | 'advanced'>('panel',
     ['catalog', 'installed', 'activity', 'advanced'], 'catalog')
-  const [modelKind, setModelKind] = useState<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>('all')
+  const [modelKind, setModelKind] = useRouteTab<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>(
+    'kind', ['all', 'OpenAi', 'SystemOne', 'ImageGeneration', 'SpeechSynthesis', 'AudioTranscription'], 'all')
   const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
@@ -410,7 +411,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
           <div className="actions">
             <span>{t('catalog.fitDescription')}</span>
-            <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
+            {(modelKind === 'all' || modelKind === 'OpenAi') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? t('catalog.requiresAgent') : undefined}
               onClick={() => {
                 setInstallCatalogId('custom'); setRuntimeChoice('vllm')
@@ -418,7 +419,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                 setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
                 setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
                 setTensorParallelSize(1); setGpuDevices('')
-              }}>{t('catalog.custom')}</button>
+              }}>{t('catalog.custom')}</button>}
           </div>
         </div>
         <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
