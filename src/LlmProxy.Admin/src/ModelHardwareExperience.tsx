@@ -535,11 +535,6 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               <a href={item.pr} target="_blank" rel="noreferrer">{t('catalog.moreInfo')} ↗</a>
             </article>)}
         </div>}
-        {modelKind === 'SystemOne' && <div className="modelCatalogExternal">
-          <strong>{t('catalog.externalSystemOne')}</strong>
-          <p>{t('catalog.externalSystemOneExplanation')}</p>
-          <a className="secondary" href="/admin/system-one">{t('catalog.externalSystemOne')} →</a>
-        </div>}
         {filteredCatalog.length === 0 && modelKind === 'AudioTranscription' &&
           <div className="emptyState">
             <strong>{t('model.noModelsForType')}</strong><p>{t('model.typeAvailability')}</p>
@@ -564,7 +559,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {item.capabilities && <button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model', profile: item.capabilities! })}>Capabilities & client setup</button>}</td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? t('catalog.emptyMetrics')}</span>}</td><td className="mono">
-          <strong>{managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? '')}</strong>
+          <strong>POST {managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? '')}</strong>
+          {item.runtime !== 'laya' && <div className="muted">model: {item.logicalModel ?? item.catalogModelId ?? item.modelId}</div>}
+          <div><button className="secondary" type="button"
+            onClick={() => void navigator.clipboard.writeText(window.location.origin +
+              managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? ''))}>
+            {t('catalog.copyEndpoint')}</button></div>
           <div className="muted">{t('catalog.enabled')}: {item.enabled ? 'yes' : 'no'}</div>
           <div className="muted">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? t('catalog.notRunning')}</div>
         </td><td>{item.enabled ? t('catalog.enabled') :
@@ -754,9 +754,9 @@ function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") +
 function managedPublicEndpoint(runtime: string | undefined, model: string): string {
   switch (runtime) {
     case 'laya': return '/v1/systemone/' + encodeURIComponent(model)
-    case 'kokoro': return '/v1/audio/speech · model=' + model
-    case 'diffusers': return '/v1/images/generations · model=' + model
-    case 'faster-whisper': return '/v1/audio/transcriptions · model=' + model
-    default: return '/v1/chat/completions · model=' + model
+    case 'kokoro': return '/v1/audio/speech'
+    case 'diffusers': return '/v1/images/generations'
+    case 'faster-whisper': return '/v1/audio/transcriptions'
+    default: return '/v1/chat/completions'
   }
 }
