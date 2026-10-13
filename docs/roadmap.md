@@ -1,5 +1,12 @@
 # Roadmap
 
+## 2026-10-13 — Laya installer reliability
+
+- [x] Implement cached curated Laya image builds, transient retry, actionable failed-job diagnostics and EN/IT UI guidance (PR #42).
+- [ ] Verify combined PR #42 head in CI after integrating the new capability-column UI.
+- [ ] Validate interrupted native ARM64 Laya build, cached retry, reboot recovery and real `/v1/systemone` classifier inference on Spark (#40).
+
+
 Status legend: `DONE` implemented and validated; `PLANNED` not complete; `EXTERNAL` requires target infrastructure/tenant/hardware; `OWNER ACTION` requires an explicit product-owner decision.
 
 For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.

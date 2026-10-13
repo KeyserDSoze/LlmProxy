@@ -1,5 +1,12 @@
 # Project status / handover snapshot
 
+## Laya ARM64 Docker build recovery — combined PR #42 / CI pending (2026-10-13)
+
+- Agent uses cached pip dependencies for curated Laya images, retries transient network failures only, deduplicates active installs and preserves useful final error lines.
+- Admin progress does not show a completed layer percentage on failed jobs; EN/IT messages explain unmeasured builds and recovery. Changes integrate over the current capability-column UX (#44).
+- Original PR #42 CI was green; combined commit needs fresh CI. Interrupted PyPI downloads, native ARM64 build and typed classifier inference remain EXTERNAL Spark acceptance, not certified by software CI.
+
+
 ## Managed runtime limits + HF Hub discovery — SOURCE / CI PENDING (2026-10-11)
 
 - User requests larger context/output limits and ability to inspect defaults, adjust configuration at installation time or after stopping an installed runtime, and explicitly uninstall. AirLLM previous server maximum generated output was hardcoded 256; new `AIRLLM_MAX_OUTPUT_TOKENS` cap allows 1–4096 with shared prompt+completion context enforcement. Qwen3 native max 32,768 without unverified YaRN tuning. vLLM/SGLang/llama.cpp already receive per-request max_tokens; no supported global max output profile override.

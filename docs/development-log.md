@@ -1,5 +1,11 @@
 # Development log
 
+## 2026-10-13 — Integrate Laya cached-build recovery with latest Admin UI
+
+- Integrated the Laya Docker BuildKit pip cache, network-classified retries, deduplicated installs and useful tail diagnostics over the latest Admin capabilities layout.
+- Added bilingual download-stage/retry explanations; full CI for combined commit and native Spark interruption/inference tests remain outstanding.
+
+
 ## 2026-10-11 — Isolated OpenAI image/audio gateway surfaces
 
 - Clarified Hugging Face stores some model weights; the serving runtime and System One transport are independent of where checkpoints originate.

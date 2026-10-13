@@ -3,7 +3,7 @@ import { api } from './api'
 import { useRouteHardware, useRouteTab } from './adminNavigation'
 import { useT } from './uiPreferences'
 import { Modal, Tabs } from './UiPrimitives'
-import ModelCapabilityPanel from './ModelCapabilityPanel'
+import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node, Model, Deployment } from './types'
@@ -27,7 +27,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
   const [forceHardwareAcknowledged, setForceHardwareAcknowledged] = useState(false)
-  const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile } | null>(null)
+  const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile; logicalModel?: string } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
   const [runtimeChoice, setRuntimeChoice] = useState<'vllm' | 'sglang' | 'llama.cpp' | 'airllm' | 'faster-whisper' | 'laya' | 'kokoro' | 'diffusers'>('vllm')
   const [tensorParallelSize, setTensorParallelSize] = useState(1)
@@ -406,12 +406,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
             {job.status === 'completed' && <p className="muted">{t('catalog.completeNext')}</p>}
             {job.status === 'running' && job.stage === 'container-image' && <p className="muted">
-              ARM64 runtime dependency builds can take several minutes even with no measurable percentage.
-              Downloaded Docker layers and completed pip wheels are cached for retries.
+              {t('catalog.buildInfo')}
+              {t('catalog.buildCache')}
             </p>}
             {job.status === 'failed' && <p className="muted">
-              The previous percentage described one Docker layer or file, not overall installation completion.
-              Retry preserves cached downloads; check the Node Agent journal if the error persists.
+              {t('catalog.progressScope')}
+              {t('catalog.retryDiagnostics')}
             </p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
@@ -450,7 +450,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             <thead><tr>
               <th>{t('catalog.model')}</th><th>{t('catalog.modelFacts')}</th>
               <th>{t('catalog.modelMemory')}</th><th>{t('catalog.fit')}</th>
-              <th>{t('catalog.action')}</th>
+              <th>{t('catalog.capabilities')}</th><th>{t('catalog.action')}</th>
             </tr></thead>
             <tbody>{filteredCatalog.map(item => <tr key={item.model.id}>
               <td className="modelCatalogIdentity">
@@ -460,9 +460,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                 <p className="muted modelCatalogNotes">{item.model.notes}</p>
                 <div className="modelCatalogLinks">
                   <a href={item.model.sourceUrl} target="_blank" rel="noreferrer">{t('catalog.modelCard')}</a>
-                  {item.capabilities && <button type="button" className="secondary"
-                    onClick={() => setCapabilityDetails({ title: item.model.displayName, profile: item.capabilities! })}>
-                    {t('catalog.capabilities')}</button>}
+
                 </div>
               </td>
               <td className="modelCatalogFacts">
@@ -488,6 +486,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                 <p className="muted">{item.compatibility.summary}</p>
                 {!overview?.agentAvailable && <p className="muted">{t('catalog.cached')}</p>}
               </td>
+              <td className="modelCatalogCapabilities">
+                <ModelCapabilitySummary profile={item.capabilities}/>
+              </td>
               <td className="modelCatalogAction">
                 <button className="primary" type="button"
                   disabled={!canWrite || !overview?.agentAvailable ||
@@ -511,6 +512,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                     setKvCacheDtype('auto'); setCpuOffloadGiB(0); setLogicalAlias(''); setInstallPort('')
                   }}>{item.compatibility.status === 'insufficient' ?
                     t('catalog.inspectFit') : t('catalog.install')}</button>
+                {item.capabilities && <button type="button" className="secondary capabilityActionButton"
+                  aria-label={`${t('catalog.capabilities')} · ${item.model.displayName}`}
+                  title={t('cap.inspectDetails')}
+                  onClick={() => setCapabilityDetails({ title: item.model.displayName,
+                    profile: item.capabilities!, logicalModel: item.model.id })}>
+                  <span aria-hidden="true">ⓘ</span> {t('cap.details')}
+                </button>}
               </td>
             </tr>)}</tbody>
           </table>
@@ -554,7 +562,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <div className="actions"><span>{t('catalog.editTip')}</span>
           <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
             onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
-        </div></div><table className="managedInstalledTable"><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
+        </div></div><div className="tableScroll installedTableScroll"><table className="managedInstalledTable"><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.capabilities')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
               {['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') ? <div className="muted">
                 {item.runtime === 'faster-whisper' ? 'Audio input ≤25 MiB' :
                   item.runtime === 'laya' ? 'Typed English classifier' :
@@ -564,7 +572,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               <div className="muted">{t('catalog.revision')}: {item.agentState?.sourceRevision?.slice(0,12) ?? t('catalog.unknownRevision')}</div>
               {upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId) &&
                 <div className="notice">{upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId)?.update.message}</div>}
-            {item.capabilities && <button type="button" className="secondary" onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model', profile: item.capabilities! })}>Capabilities & client setup</button>}</td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
+          </td><td className="installedCapabilities">
+            <ModelCapabilitySummary profile={item.capabilities}/>
+          </td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? t('catalog.emptyMetrics')}</span>}</td><td className="mono">
           <strong>POST {managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? '')}</strong>
@@ -579,6 +589,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           item.agentStatus.toLowerCase() === 'running'
             ? <><strong>{t('catalog.disabled')}</strong><div className="muted">{t('catalog.unrouted')}</div></>
             : t('catalog.disabled')}</td><td className="actions">
+          {item.capabilities && <button type="button" className="secondary capabilityActionButton"
+            aria-label={`${t('catalog.capabilities')} · ${item.logicalModel ?? item.providerModelName ?? 'Model'}`}
+            title={t('cap.inspectDetails')}
+            onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model',
+              profile: item.capabilities!, logicalModel: item.logicalModel ?? item.catalogModelId ?? item.modelId })}>
+            <span aria-hidden="true">ⓘ</span> {t('cap.details')}
+          </button>}
           <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'}
             onClick={() => void action('start', item.id)}>{t('catalog.start')}</button>
           {item.agentStatus.toLowerCase() === 'running' && !item.enabled &&
@@ -589,7 +606,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || ['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') || item.agentStatus.toLowerCase() === 'running'}
             title={['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') ? 'This typed media runtime has fixed concurrency and no Chat-token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
             onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{!['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table>
+          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{!['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></div>
         {(overview?.installations.length ?? 0) === 0 && <div className="emptyState">
           <strong>{t('model.noInstalled')}</strong><p>{t('model.installFirst')}</p>
           <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>
@@ -600,10 +617,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           canWrite={canWrite} refresh={refresh} embedded />}
     </>}
 
-    <Modal open={Boolean(capabilityDetails)} title={`Capabilities · ${capabilityDetails?.title ?? ''}`}
-      description="Automatically detected from known model declarations and the installed serving adapter."
+    <Modal open={Boolean(capabilityDetails)} title={`${t('catalog.capabilities')} · ${capabilityDetails?.title ?? ''}`}
+      description={t('cap.dialogDescription')} className="capabilitiesModal"
       onClose={() => setCapabilityDetails(null)}>
-      {capabilityDetails && <ModelCapabilityPanel profile={capabilityDetails.profile} />}
+      {capabilityDetails && <ModelCapabilityPanel profile={capabilityDetails.profile}
+        logicalModel={capabilityDetails.logicalModel}/>}
     </Modal>
 
     <Modal open={Boolean(editingInstall)} title={`${t('catalog.editTitle')} · ${editingInstall?.logicalModel ?? ''}`}
