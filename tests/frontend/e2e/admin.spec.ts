@@ -523,20 +523,60 @@ test('AirLLM installation advertises real runtime capabilities and client limits
   await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
   await page.getByRole('tab', { name: /Installed/ }).click()
 
-  await page.getByRole('button', { name: 'Capabilities & client setup' }).click()
+  await expect(page.getByRole('columnheader', { name: 'Capabilities' })).toBeVisible()
+  await expect(page.locator('.managedInstalledTable .capabilitySummary')).toContainText('Chat')
+  await expect(page.locator('.managedInstalledTable .capabilitySummary')).toContainText('Tools')
+  await expect(page.locator('.managedInstalledTable').getByLabel('Tool calling: Not supported')).toBeVisible()
+  await expect(page.locator('.managedInstalledTable').getByLabel('Thinking / reasoning: Partial')).toBeVisible()
+  await expect(page.locator('.managedInstalledTable td').filter({ has: page.locator('.capabilitySummary') })).toHaveCount(1)
+  await page.getByRole('button', { name: 'Capabilities · qwen3-8b-airllm' }).click()
   const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
   await expect(dialog.getByText('Tool calling')).toBeVisible()
   await expect(dialog.getByText('AirLLM does not parse tools')).toBeVisible()
   await expect(dialog.locator('pre')).toContainText('"streaming": false')
   await expect(dialog.locator('pre')).toContainText('"maximumInputTokens": 8192')
   await expect(dialog.locator('pre')).toContainText('"maximumOutputTokens": 256')
+  await expect(dialog.locator('.capabilityFeatureGrid')).toBeVisible()
+  await expect(dialog.getByText('Native context')).toBeVisible()
   await dialog.getByRole('button', { name: /Close Capabilities/ }).click()
   await page.getByRole('tab', { name: /Discover/ }).click()
+  await expect(page.locator('.modelCatalogTable th').filter({ hasText: 'Capabilities' })).toBeVisible()
+  await expect(page.locator('.modelCatalogTable .capabilitySummary')).toContainText('Tools')
+  await expect(page.getByRole('button', { name: /Capabilities · Qwen3 8B/ })).toBeVisible()
+  await page.getByRole('button', { name: /Capabilities · Qwen3 8B/ }).click()
+  await expect(page.getByRole('dialog', { name: /Capabilities · Qwen3 8B/ })).toBeVisible()
+  await page.getByRole('dialog', { name: /Capabilities · Qwen3 8B/ })
+    .getByRole('button', { name: /Close Capabilities/ }).click()
 
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   await expect(page.getByText('Automatically detected capabilities & client token limits')).toBeVisible()
 })
 
+
+test('Admin scrollbars follow theme tokens for page, modal and scrollable tables', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  const styles = async (theme: 'dark' | 'light') => page.evaluate(value => {
+    document.documentElement.setAttribute('data-theme', value)
+    const root = getComputedStyle(document.documentElement)
+    const table = document.querySelector('.tableScroll') ?? document.body
+    const tableStyle = getComputedStyle(table)
+    return {
+      track: root.getPropertyValue('--scroll-track').trim(),
+      thumb: root.getPropertyValue('--scroll-thumb').trim(),
+      scrollbarColor: tableStyle.scrollbarColor,
+      width: tableStyle.scrollbarWidth,
+      scheme: root.colorScheme
+    }
+  }, theme)
+  const dark = await styles('dark')
+  const light = await styles('light')
+  expect(light.track).not.toBe(dark.track)
+  expect(light.thumb).not.toBe(dark.thumb)
+  expect(dark.width).toBe('thin')
+  expect(light.width).toBe('thin')
+  expect(light.scrollbarColor).not.toBe(dark.scrollbarColor)
+})
 
 test('live HF discovery and saved AirLLM token limits preserve downloaded model files', async ({ page }) => {
   await installAdminApi(page)

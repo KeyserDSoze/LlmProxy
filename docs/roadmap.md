@@ -1,5 +1,13 @@
 # Roadmap
 
+## 2026-10-13 — System One / managed catalog publication
+
+- [x] Implement persistent preferred System One model and fallback, with explicit alias override and shared Gateway selection (PR #39).
+- [x] Implement opt-in curated model install/start/verify/publish and safe automatic reconciliation; retain download-only option (PR #39).
+- [ ] Recheck combined PR #39 CI with new capability columns before promoting to main.
+- [ ] Complete actual GB10/ARM64 end-to-end evidence before claiming support for Laya/Kokoro/Diffusers (#40).
+
+
 Status legend: `DONE` implemented and validated; `PLANNED` not complete; `EXTERNAL` requires target infrastructure/tenant/hardware; `OWNER ACTION` requires an explicit product-owner decision.
 
 For canonical current state use `docs/project-status.md`. Product-visible changes live in `CHANGELOG.md` and `/admin/releases`.

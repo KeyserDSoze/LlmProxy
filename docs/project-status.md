@@ -1,5 +1,12 @@
 # Project status / handover snapshot
 
+## Persisted System One default and curated one-click start/publish — PR #39 combined CI pending (2026-10-13)
+
+- Admin can persist the preferred System One logical alias, with deterministic fallback when an explicit request alias is absent. Public `/v1/systemone` still uses a typed classifier contract, not Chat.
+- Curated runtime installs offer explicit download-only versus start/check/publish. Agent persists job intent and verifies a running runtime; Gateway reconciles only the matching live installation before enabling routing. Custom models cannot auto-start.
+- Original PR #39 branch CI was green; merged tree with the latest capability-column UI requires fresh CI before release. Native Laya/Kokoro/Diffusers readiness and GB10/Spark inference remain EXTERNAL acceptance (#40).
+
+
 ## Managed runtime limits + HF Hub discovery — SOURCE / CI PENDING (2026-10-11)
 
 - User requests larger context/output limits and ability to inspect defaults, adjust configuration at installation time or after stopping an installed runtime, and explicitly uninstall. AirLLM previous server maximum generated output was hardcoded 256; new `AIRLLM_MAX_OUTPUT_TOKENS` cap allows 1–4096 with shared prompt+completion context enforcement. Qwen3 native max 32,768 without unverified YaRN tuning. vLLM/SGLang/llama.cpp already receive per-request max_tokens; no supported global max output profile override.

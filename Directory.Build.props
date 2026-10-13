@@ -6,6 +6,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <Version>0.2.0-preview.8</Version>
+    <!-- Stable ABI version: do not use this for Agent update/release reporting.
+         Agent heartbeat and local /health must use AssemblyInformationalVersion,
+         which follows the MSBuild -p:Version value of the published artifact. -->
     <AssemblyVersion>0.2.0.0</AssemblyVersion>
     <FileVersion>0.2.0.0</FileVersion>
     <Product>LlmProxy</Product>
