@@ -1,5 +1,13 @@
 # Roadmap
 
+## 2026-10-13 — Laya installer reliability
+
+- [x] Implement cached curated Laya image builds, transient retry, actionable failed-job diagnostics and EN/IT UI guidance (PR #42).
+- [ ] Verify combined PR #42 head in CI after integrating the new capability-column UI.
+- [ ] Validate interrupted native ARM64 Laya build, cached retry, reboot recovery and real `/v1/systemone` classifier inference on Spark (#40).
+
+
+
 ## 2026-10-13 — System One / managed catalog publication
 
 - [x] Implement persistent preferred System One model and fallback, with explicit alias override and shared Gateway selection (PR #39).

@@ -402,15 +402,23 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                 <button className="secondary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
             </div>
             <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
-            {job.percent != null ? <div className="stack">
+            {job.status === 'running' && job.percent != null ? <div className="stack">
               <progress max="100" value={Math.min(100, Math.max(0, job.percent))} aria-label={'Download stage progress ' + job.request.catalogModelId} style={{width: '100%'}} />
               <strong>{job.percent.toFixed(1)}% <span className="muted">of current stage/file</span></strong>
             </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
-            {job.completedBytes != null && job.totalBytes != null &&
+            {job.status === 'running' && job.completedBytes != null && job.totalBytes != null &&
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
             {job.status === 'completed' && <p className="muted">
               {job.request.startAfterInstall && job.result?.status === 'running'
                 ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
+            </p>}
+            {job.status === 'running' && job.stage === 'container-image' && <p className="muted">
+              {t('catalog.buildInfo')}
+              {t('catalog.buildCache')}
+            </p>}
+            {job.status === 'failed' && <p className="muted">
+              {t('catalog.progressScope')}
+              {t('catalog.retryDiagnostics')}
             </p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}

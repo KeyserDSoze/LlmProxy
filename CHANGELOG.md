@@ -1,3 +1,9 @@
+## Unreleased — Laya ARM64 installation reliability (2026-10-13)
+
+- Node Agent Laya Docker image builds reuse BuildKit pip dependencies, retry classified transient connection failures and show the last actionable failure rather than early pip logs.
+- Duplicate active install attempts are coalesced; Admin distinguishes layer/file progress from overall installation completion with bilingual retry guidance.
+- Real GB10/ARM64 build and inference remain pending certification; software CI is not hardware acceptance.
+
 ## Unreleased — System One default and managed one-click publication (2026-10-13)
 
 - Administrators can choose a persistent default classifier model for `/v1/systemone`, while explicit aliases override the default and fallback remains deterministic.

@@ -79,6 +79,10 @@ if (typeof window !== 'undefined') {
 // Every UI string that we migrate uses a stable semantic key rather than
 // looking up the rendered English text. New strings must be added in BOTH catalogs.
 const en = {
+  'catalog.buildInfo': 'ARM64 runtime dependency builds can take several minutes even with no measurable percentage.',
+  'catalog.buildCache': 'Downloaded Docker layers and completed pip wheels are cached for retries.',
+  'catalog.progressScope': 'The previous percentage described one Docker layer or file, not overall installation completion.',
+  'catalog.retryDiagnostics': 'Retry preserves cached downloads; check the Node Agent journal if the error persists.',
   'nav.dashboard': 'Dashboard',
   'nav.settings': 'Settings',
   'page.settings.title': 'Settings',
@@ -523,6 +527,10 @@ const en = {
 } as const
 
 const it: Record<keyof typeof en, string> = {
+  'catalog.buildInfo': 'La compilazione delle dipendenze ARM64 può richiedere diversi minuti anche senza una percentuale misurabile.',
+  'catalog.buildCache': 'I layer Docker e i pacchetti pip già completati vengono riutilizzati ai tentativi successivi.',
+  'catalog.progressScope': 'La percentuale precedente indicava un singolo layer Docker o file, non il completamento dell’intera installazione.',
+  'catalog.retryDiagnostics': 'Riprova conservando i download in cache; se l’errore persiste, controlla il journal del Node Agent.',
   'nav.dashboard': 'Panoramica',
   'nav.settings': 'Impostazioni',
   'page.settings.title': 'Impostazioni',

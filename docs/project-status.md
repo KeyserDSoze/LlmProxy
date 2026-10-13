@@ -1,5 +1,13 @@
 # Project status / handover snapshot
 
+## Laya ARM64 Docker build recovery — combined PR #42 / CI pending (2026-10-13)
+
+- Agent uses cached pip dependencies for curated Laya images, retries transient network failures only, deduplicates active installs and preserves useful final error lines.
+- Admin progress does not show a completed layer percentage on failed jobs; EN/IT messages explain unmeasured builds and recovery. Changes integrate over the current capability-column UX (#44).
+- Original PR #42 CI was green; combined commit needs fresh CI. Interrupted PyPI downloads, native ARM64 build and typed classifier inference remain EXTERNAL Spark acceptance, not certified by software CI.
+
+
+
 ## Persisted System One default and curated one-click start/publish — PR #39 combined CI pending (2026-10-13)
 
 - Admin can persist the preferred System One logical alias, with deterministic fallback when an explicit request alias is absent. Public `/v1/systemone` still uses a typed classifier contract, not Chat.

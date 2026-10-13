@@ -161,7 +161,7 @@ public sealed class ManagedRuntimeProfilesTests
 
 
     [Theory]
-    [InlineData("laya", "laya-english-cpu", "convaiinnovations/laya", "llmproxy-laya:0.1")]
+    [InlineData("laya", "laya-english-cpu", "convaiinnovations/laya", "llmproxy-laya:0.2")]
     [InlineData("kokoro", "kokoro-english-cpu", "hexgrad/Kokoro-82M", "llmproxy-kokoro:0.1")]
     public void Curated_cpu_media_profiles_reject_chat_and_gpu_options(
         string runtime, string catalogId, string repo, string expectedImage)
