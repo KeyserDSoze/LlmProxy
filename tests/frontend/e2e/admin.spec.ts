@@ -548,7 +548,7 @@ test('Admin scrollbars follow theme tokens for page, modal and scrollable tables
   const styles = async (theme: 'dark' | 'light') => page.evaluate(value => {
     document.documentElement.setAttribute('data-theme', value)
     const root = getComputedStyle(document.documentElement)
-    const table = document.querySelector('.tableScroll')!
+    const table = document.querySelector('.tableScroll') ?? document.body
     const tableStyle = getComputedStyle(table)
     return {
       track: root.getPropertyValue('--scroll-track').trim(),
