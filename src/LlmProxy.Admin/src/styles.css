@@ -296,3 +296,159 @@ main{padding:12px 10px 44px}
 }
 
 .modelExternalInfo p{padding:0 20px 18px;margin:0;line-height:1.5}
+
+
+/* Global, theme-aware scrollbars. Used by page, tables, sidebar, modals, code,
+   input areas and every independently scrollable surface. */
+:root{
+  --scroll-track:#101827;
+  --scroll-thumb:#34445f;
+  --scroll-thumb-hover:#556989;
+  color-scheme:dark;
+}
+:root[data-theme="dark"]{
+  --scroll-track:#101827;
+  --scroll-thumb:#34445f;
+  --scroll-thumb-hover:#556989;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --scroll-track:#e9eef6;
+  --scroll-thumb:#acbacd;
+  --scroll-thumb-hover:#8194b0;
+  color-scheme:light;
+}
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) var(--scroll-track)}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-track{background:var(--scroll-track);border-radius:999px}
+*::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:999px;
+  border:2px solid var(--scroll-track);min-height:34px}
+*::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover)}
+*::-webkit-scrollbar-corner{background:var(--scroll-track)}
+
+/* Capabilities are a separate, scannable column—not an oversized provider button. */
+.modelCatalogTable{min-width:1100px}
+.modelCatalogTable th:nth-child(1){width:24%}
+.modelCatalogTable th:nth-child(2){width:15%}
+.modelCatalogTable th:nth-child(3){width:18%}
+.modelCatalogTable th:nth-child(4){width:17%}
+.modelCatalogTable th:nth-child(5){width:15%}
+.modelCatalogTable th:nth-child(6){width:11%}
+.modelCatalogCapabilities,.installedCapabilities{vertical-align:top}
+.capabilitySummary{display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;
+  min-width:0;max-width:100%}
+.capabilityMini,.capabilityTypeTag{display:inline-flex;align-items:center;gap:4px;
+  padding:4px 7px;border:1px solid var(--border-strong);border-radius:7px;
+  background:var(--surface-raised);color:var(--text-secondary);font-size:11px;
+  line-height:1.25;white-space:nowrap}
+.capabilityMini--supported{color:var(--success-text);border-color:var(--success-border);background:var(--success-bg)}
+.capabilityMini--partial{color:var(--warning-text);border-color:var(--warning-border);background:var(--warning-bg)}
+.capabilityMini--unsupported{color:var(--text-muted)}
+.capabilityMini--unverified,.capabilityMini--unknown{border-style:dashed;color:var(--text-muted)}
+.capabilityTypeTag{color:var(--selected-text);background:var(--selected-bg);font-weight:650}
+.capabilitySummaryNote{color:var(--text-muted);font-size:11px;line-height:1.4;flex-basis:100%}
+.modelCatalogAction .capabilityActionButton,.managedInstalledTable .capabilityActionButton{
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;
+  max-width:100%;width:auto;padding:6px 9px;font-size:11px;line-height:1.25;
+  border-radius:8px;white-space:nowrap}
+.modelCatalogAction .capabilityActionButton{margin-top:9px}
+.modelCatalogAction .capabilityActionButton span,
+.managedInstalledTable .capabilityActionButton span{font-size:14px;line-height:1}
+.installedTableScroll{max-width:100%;overflow-x:auto}
+.managedInstalledTable{width:100%;min-width:1250px;table-layout:fixed}
+.managedInstalledTable th:nth-child(1){width:13%}
+.managedInstalledTable th:nth-child(2){width:15%}
+.managedInstalledTable th:nth-child(3){width:13%}
+.managedInstalledTable th:nth-child(4){width:9%}
+.managedInstalledTable th:nth-child(5){width:12%}
+.managedInstalledTable th:nth-child(6){width:16%}
+.managedInstalledTable th:nth-child(7){width:8%}
+.managedInstalledTable th:nth-child(8){width:14%}
+.modelHardware .managedInstalledTable .actions{min-width:0;align-content:start}
+
+/* Capabilities dialog: clear hierarchy, status cards, and small technical details. */
+.capabilitiesModal{width:min(920px,calc(100vw - 32px));max-width:100%}
+.capabilitiesModal .modalBody{padding:0;overflow-y:auto;min-height:0;
+  max-height:calc(90dvh - 100px)}
+.capabilitiesModal .modalHeader{padding:17px 22px}
+.capabilityProfile{display:grid;gap:18px;min-width:0;padding:22px}
+.capabilityIntro{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  padding:16px 18px;background:var(--surface-secondary);border:1px solid var(--border-soft);
+  border-radius:12px;min-width:0}
+.capabilityEyebrow{font-size:10px;font-weight:750;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:.075em}
+.capabilityIntro h3{margin:6px 0;font-size:18px;line-height:1.25}
+.capabilityIntro p{margin:4px 0 0;color:var(--text-secondary);font-size:12px;
+  line-height:1.55;max-width:65ch}
+.capabilityRuntimePill{flex:0 0 auto;display:grid;gap:3px;font-size:10px;
+  color:var(--text-muted);border:1px solid var(--border-strong);
+  background:var(--surface-raised);border-radius:9px;padding:8px 12px}
+.capabilityRuntimePill strong{font-size:12px;color:var(--text)}
+.capabilityTokenGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.capabilityTokenGrid>div{display:grid;gap:6px;border:1px solid var(--border-soft);
+  border-radius:10px;padding:12px 15px;background:var(--field);min-width:0}
+.capabilityTokenGrid span{font-size:11px;color:var(--text-muted)}
+.capabilityTokenGrid strong{font-size:17px;font-variant-numeric:tabular-nums}
+.capabilityEndpoint{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  border:1px solid var(--border-soft);border-radius:9px;background:var(--field);padding:12px}
+.capabilityEndpoint span{font-size:11px;color:var(--text-muted)}
+.capabilityEndpoint code{font-size:12px;color:var(--text);overflow-wrap:anywhere}
+.capabilityGroupHead h3{font-size:14px;margin:0 0 4px}
+.capabilityGroupHead p{margin:0;color:var(--text-muted);font-size:12px;line-height:1.5}
+.capabilityFeatureGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.capabilityFeature{min-width:0;display:grid;align-content:start;gap:9px;
+  padding:14px 16px;border:1px solid var(--border-soft);border-radius:10px;
+  background:var(--surface-secondary)}
+.capabilityFeatureHead{display:flex;align-items:start;justify-content:space-between;
+  flex-wrap:wrap;gap:7px}
+.capabilityFeatureHead strong{font-size:12px;line-height:1.45}
+.capabilityStatus{display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;line-height:1.2;padding:4px 7px;border-radius:6px;
+  color:var(--text-muted);background:var(--surface-raised);white-space:nowrap}
+.capabilityStatus--supported{color:var(--success-text);background:var(--success-bg)}
+.capabilityStatus--partial{color:var(--warning-text);background:var(--warning-bg)}
+.capabilityStatus--unverified,.capabilityStatus--unknown{border:1px dashed var(--border-strong)}
+.capabilityFeatureModel{font-size:11px;color:var(--text-subtle)}
+.capabilityFeature p{margin:0;font-size:12px;line-height:1.55;color:var(--text-secondary);
+  overflow-wrap:anywhere}
+.capabilityNote{margin:0;font-size:12px;line-height:1.5;color:var(--text-muted);
+  border-left:2px solid var(--border-strong);padding:6px 0 6px 11px;overflow-wrap:anywhere}
+.capabilityFooter{display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:14px;padding:14px 16px;border-radius:10px;
+  border:1px solid var(--border-soft);background:var(--field)}
+.capabilityFooter>div{flex:1 1 230px;min-width:0}
+.capabilityFooter strong{font-size:13px}
+.capabilityFooter p{font-size:12px;color:var(--text-secondary);margin:5px 0}
+.capabilityFooter small{font-size:10px;color:var(--text-muted);overflow-wrap:anywhere}
+.capabilityAdvanced{border:1px solid var(--border-soft);border-radius:10px;
+  background:var(--surface-secondary);min-width:0;overflow:hidden}
+.capabilityAdvanced summary{cursor:pointer;font-size:12px;font-weight:650;color:var(--text-secondary);
+  padding:12px 14px;list-style-position:inside}
+.capabilityAdvanced summary:hover{background:var(--surface-hover);color:var(--text)}
+.capabilityAdvanced .capabilityFeatureGrid{padding:0 12px 12px}
+.capabilityAdvanced pre{padding:14px;margin:0;background:var(--surface-deep);
+  font-size:11px;color:var(--text-secondary);white-space:pre-wrap;
+  overflow-wrap:anywhere;overflow-x:auto}
+.capabilityModelCard{font-size:12px;justify-self:start}
+@media(max-width:1180px) and (min-width:821px){
+  .modelCatalogTable th:nth-child(1){width:24%}
+  .modelCatalogTable th:nth-child(2){width:15%}
+  .modelCatalogTable th:nth-child(3){width:18%}
+  .modelCatalogTable th:nth-child(4){width:17%}
+  .modelCatalogTable th:nth-child(5){width:15%}
+  .modelCatalogTable th:nth-child(6){width:11%}
+}
+@media(max-width:820px){
+  .modelHardware .modelCatalogTable,.modelHardware .managedInstalledTable{
+    width:100%;min-width:0;table-layout:auto}
+  .modelCatalogAction .capabilityActionButton{margin-left:8px}
+  .capabilitiesModal{width:calc(100vw - 16px)}
+  .capabilitiesModal .modalBody{max-height:calc(100dvh - 105px)}
+  .capabilityProfile{padding:14px;gap:14px}
+  .capabilityIntro{padding:13px;flex-wrap:wrap}
+  .capabilityFeatureGrid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:480px){
+  .capabilityTokenGrid{grid-template-columns:minmax(0,1fr)}
+  .capabilityFooter button{width:100%}
+}
