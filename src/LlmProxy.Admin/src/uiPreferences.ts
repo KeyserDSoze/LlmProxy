@@ -79,7 +79,6 @@ if (typeof window !== 'undefined') {
 // Every UI string that we migrate uses a stable semantic key rather than
 // looking up the rendered English text. New strings must be added in BOTH catalogs.
 const en = {
-const en = {
   'catalog.buildInfo': 'ARM64 runtime dependency builds can take several minutes even with no measurable percentage.',
   'catalog.buildCache': 'Downloaded Docker layers and completed pip wheels are cached for retries.',
   'catalog.progressScope': 'The previous percentage described one Docker layer or file, not overall installation completion.',
@@ -527,7 +526,6 @@ const en = {
   'help.documentation': 'Page documentation'
 } as const
 
-const it: Record<keyof typeof en, string> = {
 const it: Record<keyof typeof en, string> = {
   'catalog.buildInfo': 'La compilazione delle dipendenze ARM64 può richiedere diversi minuti anche senza una percentuale misurabile.',
   'catalog.buildCache': 'I layer Docker e i pacchetti pip già completati vengono riutilizzati ai tentativi successivi.',
