@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useT } from './uiPreferences'
 import type { Deployment, Model, Node } from './types'
@@ -29,6 +29,37 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [defaultState, setDefaultState] = useState<{
+    configuredModel: string | null; effectiveModel: string | null; options: string[]
+  } | null>(null)
+  const [defaultChoice, setDefaultChoice] = useState('')
+  const [defaultBusy, setDefaultBusy] = useState(false)
+  const [defaultError, setDefaultError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void api.getSystemOneDefault().then(value => {
+      if (!active) return
+      setDefaultState(value)
+      setDefaultChoice(value.configuredModel ?? '')
+    }).catch(reason => {
+      if (active) setDefaultError(reason instanceof Error ? reason.message : String(reason))
+    })
+    return () => { active = false }
+  }, [])
+
+  async function saveDefault(event: FormEvent) {
+    event.preventDefault()
+    if (!canWrite || defaultBusy) return
+    setDefaultBusy(true); setDefaultError(null)
+    try {
+      const value = await api.setSystemOneDefault(defaultChoice || null)
+      setDefaultState(value)
+      setDefaultChoice(value.configuredModel ?? '')
+    } catch (reason) {
+      setDefaultError(reason instanceof Error ? reason.message : String(reason))
+    } finally { setDefaultBusy(false) }
+  }
   // A failed second request must not duplicate an already-created logical model.
   const [pendingModel, setPendingModel] = useState<Model | null>(null)
 
@@ -96,6 +127,34 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
         <strong>{classifiers.length} {t('systemOne.modelName')}</strong>
         <span>{activeRoutes.length} {t('systemOne.routeEnabled')}</span>
       </div>
+    </section>
+
+    <section className="panel">
+      <div className="panelTitle"><div>
+        <h2>{t('systemOne.defaultTitle')}</h2>
+        <span>{t('systemOne.defaultHelp')}</span>
+      </div></div>
+      <form className="formPanel" onSubmit={event => void saveDefault(event)}>
+        <label>{t('systemOne.defaultLabel')}
+          <select aria-label={t('systemOne.defaultLabel')}
+            value={defaultChoice} disabled={!canWrite || defaultBusy || !defaultState}
+            onChange={event => setDefaultChoice(event.target.value)}>
+            <option value="">{t('systemOne.defaultAutomatic')}</option>
+            {defaultState?.options.map(name => <option value={name} key={name}>{name}</option>)}
+          </select>
+        </label>
+        <p className="muted">{t('systemOne.defaultEffective')}: <strong>
+          {defaultState?.effectiveModel ?? t('systemOne.none')}
+        </strong> · POST /v1/systemone</p>
+        {defaultError && <p className="error" role="alert">{defaultError}</p>}
+        <div className="actions">
+          <button type="submit" className="primary"
+            disabled={!canWrite || !defaultState || defaultBusy ||
+              defaultChoice === (defaultState?.configuredModel ?? '')}>
+            {defaultBusy ? t('systemOne.defaultSaving') : t('systemOne.defaultSave')}
+          </button>
+        </div>
+      </form>
     </section>
 
     <section className="panel modelExternalInfo">
@@ -181,7 +240,9 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
         {classifiers.map(model => {
           const routes = deployments.filter(dep => dep.modelId === model.id)
           return <tr key={model.id}>
-            <td><strong>{model.publicName}</strong></td>
+            <td><strong>{model.publicName}</strong>
+              {model.publicName === defaultState?.effectiveModel && <div className="muted">{t('systemOne.defaultActive')}</div>}
+            </td>
             <td className="mono">{model.providerModelName}</td>
             <td>{routes.map(route => <div key={route.id}>
               <strong>{nodeName.get(route.nodeId) ?? route.nodeId}</strong>

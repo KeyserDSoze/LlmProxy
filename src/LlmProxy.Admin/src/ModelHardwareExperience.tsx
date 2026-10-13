@@ -26,6 +26,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [installCatalogId, setInstallCatalogId] = useState<string | null>(null)
+  const [startAfterInstall, setStartAfterInstall] = useState(true)
   const [forceHardwareAcknowledged, setForceHardwareAcknowledged] = useState(false)
   const [capabilityDetails, setCapabilityDetails] = useState<{ title: string; profile: ModelCapabilityProfile; logicalModel?: string } | null>(null)
   const [installCapabilities, setInstallCapabilities] = useState<ModelCapabilityProfile | null>(null)
@@ -151,7 +152,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           try {
             await api.finalizeModelInstall(nodeId, job.id)
             if (!active) return
-            setMessage('Download completed; deployment registered. You can start the model.')
+            setMessage(job.request.startAfterInstall && job.result?.status === 'running'
+              ? t('catalog.autoStartCompleted') : t('catalog.readyToStart'))
             await Promise.all([load(), refresh()])
           } catch (reason) {
             finalizing.current.delete(key)
@@ -214,6 +216,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       const job = await api.queueModelInstall(nodeId, catalogId, {
         publicName: logicalAlias.trim() || (catalogId === 'custom' ? customRepository.replace(/[^a-zA-Z0-9_-]/g, '-') : null),
         providerModelName: catalogId === 'custom' ? customRepository.trim() : null,
+        startAfterInstall: catalogId !== 'custom' && startAfterInstall,
         force: catalogId === 'custom' ? customConfirmed : (requiresHardwareOverride && forceHardwareAcknowledged),
         port: installPort ? Number(installPort) : null,
         runtime: runtimeChoice,
@@ -229,7 +232,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
       setPanel('activity')
-      setMessage(t('catalog.jobQueued'))
+      setMessage(catalogId !== 'custom' && startAfterInstall ?
+        t('catalog.autoStartQueued') : t('catalog.jobQueued'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -307,7 +311,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     finally { setRevisionBusy(false) }
   }
   function reviewHubModel(repoId: string) {
-    setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+    setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
     setCustomRepository(repoId); setCustomConfirmed(false)
     setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
     setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
@@ -404,7 +408,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
             {job.completedBytes != null && job.totalBytes != null &&
               <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
-            {job.status === 'completed' && <p className="muted">{t('catalog.completeNext')}</p>}
+            {job.status === 'completed' && <p className="muted">
+              {job.request.startAfterInstall && job.result?.status === 'running'
+                ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
+            </p>}
             {job.error && <p className="error">{job.error}</p>}
           </div>)}</div>}
       </section>}
@@ -417,7 +424,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {(modelKind === 'all' || modelKind === 'OpenAi') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? t('catalog.requiresAgent') : undefined}
               onClick={() => {
-                setInstallCatalogId('custom'); setRuntimeChoice('vllm')
+                setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
                 setCustomRepository(''); setCustomConfirmed(false)
                 setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
                 setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
@@ -491,6 +498,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                     t('catalog.forceMismatch') : t('catalog.installHere')}
                   onClick={() => {
                     setInstallCatalogId(item.model.id)
+                    setStartAfterInstall(true)
                     setRuntimeChoice(item.model.runtime === 'faster-whisper' ? 'faster-whisper' :
                       item.model.runtime === 'laya' ? 'laya' :
                       item.model.runtime === 'kokoro' ? 'kokoro' :
@@ -574,7 +582,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <div><button className="secondary" type="button"
             onClick={() => void navigator.clipboard.writeText(window.location.origin +
               managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? ''))}>
-            {t('catalog.copyEndpoint')}</button></div>
+            {t('catalog.copyEndpoint')}</button>
+            <button className="secondary" type="button"
+              title={t('catalog.copyCurlHelp')}
+              onClick={() => void navigator.clipboard.writeText(
+                managedCurlExample(item.runtime, item.logicalModel ?? item.catalogModelId ?? '', window.location.origin))}>
+              {t('catalog.copyCurl')}</button>
+            </div>
           <div className="muted">{t('catalog.enabled')}: {item.enabled ? 'yes' : 'no'}</div>
           <div className="muted">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? t('catalog.notRunning')}</div>
         </td><td>{item.enabled ? t('catalog.enabled') :
@@ -645,6 +659,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
+        {installCatalogId !== 'custom' && <label className="hardwareOverrideConsent">
+          <input type="checkbox" aria-label={t('catalog.startAfterInstall')}
+            checked={startAfterInstall} onChange={event => setStartAfterInstall(event.target.checked)} />
+          {t('catalog.startAfterInstall')}
+        </label>}
+        {installCatalogId !== 'custom' && <p className="muted">{t('catalog.startAfterInstallHelp')}</p>}
         {requiresHardwareOverride && <section className="hardwareOverride" role="group"
           aria-label={t('catalog.forceTitle')}>
           <strong>{t('catalog.forceTitle')}</strong>
@@ -660,7 +680,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         {runtimeChoice === 'laya' && <div className="notice"><strong>System One / Laya · CPU (experimental)</strong><p>{t('catalog.layaInstallInfo')}</p></div>}
         {runtimeChoice === 'kokoro' && <div className="notice"><strong>Kokoro Text-to-speech · CPU (experimental)</strong><p>{t('catalog.kokoroInstallInfo')}</p></div>}
         {runtimeChoice === 'diffusers' && <div className="notice"><strong>SSD-1B Images · NVIDIA GPU (experimental)</strong><p>{t('catalog.diffusersInstallInfo')}</p></div>}
-        {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. After installing, start and activate the deployment.</p></div>}
+        {runtimeChoice === 'faster-whisper' && <div className="notice"><strong>Speech-to-text / English translation (CPU)</strong><p>OpenAI-compatible audio upload: POST /v1/audio/transcriptions and /v1/audio/translations. CPU int8 on x64/ARM64. Audio uploads up to 25 MiB; no Chat context, GPU acceleration, SSE or speech generation. Start and routing are automatic when the checkbox is selected.</p></div>}
         {installCapabilities && <details className="notice">
           <summary><strong>Automatically detected capabilities & client token limits</strong> — {installCapabilities.toolCalling.serving === 'supported' ? 'tools' : 'no verified tools'}, {installCapabilities.streaming.serving === 'supported' ? 'SSE' : 'no SSE'}, {installCapabilities.vision.serving === 'supported' ? 'vision' : 'no verified vision'}</summary>
           <ModelCapabilityPanel profile={installCapabilities} />
@@ -776,5 +796,31 @@ function managedPublicEndpoint(runtime: string | undefined, model: string): stri
     case 'diffusers': return '/v1/images/generations'
     case 'faster-whisper': return '/v1/audio/transcriptions'
     default: return '/v1/chat/completions'
+  }
+}
+
+/** Ready-to-copy public API examples. Use the logical alias, never upstream HF name. */
+function managedCurlExample(runtime: string | undefined, model: string, origin: string): string {
+  const endpoint = managedPublicEndpoint(runtime, model)
+  const base = `curl --fail-with-body -sS -X POST ${shellQuote(origin + endpoint)} -H "Authorization: Bearer $LLMPROXY_API_KEY"`
+  const json = (body: object) =>
+    `${base} -H 'Content-Type: application/json' -d ${shellQuote(JSON.stringify(body))}`
+  switch (runtime) {
+    case 'laya':
+      return json({
+        state: 'The customer was charged twice.',
+        questions: { team: { type: 'choice', instructions: 'Which team should help?',
+          criteria: { billing: 'payments and refunds', general: 'general assistance' } } }
+      })
+    case 'kokoro':
+      return json({ model, input: 'Hello from LLMProxy.', voice: 'af_heart',
+        response_format: 'wav' }) + ' --output speech.wav'
+    case 'diffusers':
+      return json({ model, prompt: 'A lighthouse on a hill at sunset',
+        size: '512x512', n: 1, response_format: 'b64_json' })
+    case 'faster-whisper':
+      return `${base} -F ${shellQuote('model=' + model)} -F 'file=@./audio.wav'`
+    default:
+      return json({ model, messages: [{ role: 'user', content: 'Hello!' }], max_tokens: 64 })
   }
 }

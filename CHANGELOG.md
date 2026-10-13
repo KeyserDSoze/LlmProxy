@@ -1,3 +1,9 @@
+## Unreleased — System One default and managed one-click publication (2026-10-13)
+
+- Administrators can choose a persistent default classifier model for `/v1/systemone`, while explicit aliases override the default and fallback remains deterministic.
+- Curated model installs can automatically start, verify and publish their runtime after download, or stop after download when unchecked. Custom repositories require explicit review/start; disconnected browser does not prevent Agent job progress.
+- Installed models include ready-to-copy public cURL examples with logical model aliases. New UI is integrated with latest model capability columns; real Spark end-to-end proof is still pending.
+
 ## Unreleased — OpenAI-compatible multimodal gateway surfaces (2026-10-11)
 
 - Add strictly isolated logical model surfaces for image generation, text-to-speech and speech-to-text. No audio or image traffic is routed to Chat-only or System One deployments.

@@ -35,6 +35,42 @@ public sealed class ManagedInstallJobReconciliationTests
     }
 
     [Fact]
+    public void Opted_in_autostart_requires_a_matching_live_runtime_address()
+    {
+        var job = Job() with {
+            Request = Request with { StartAfterInstall = true },
+            Result = State with { Status = "running", RuntimeBaseAddress = "http://agent:18001", Port = 18001 }
+        };
+        var verified = State with { Status = "running", RuntimeBaseAddress = "http://agent:18001", Port = 18001 };
+        Assert.Equal("running", NodeModelManagementEndpoints.ResolveVerifiedCompletedState(job, [verified]).Status);
+        Assert.Equal("http://agent:18001",
+            NodeModelManagementEndpoints.ResolveVerifiedCompletedState(job, [verified]).RuntimeBaseAddress);
+
+        var missing = NodeModelManagementEndpoints.ResolveVerifiedCompletedState(job, []);
+        Assert.Equal("stopped", missing.Status);
+        Assert.Null(missing.RuntimeBaseAddress);
+
+        var mismatched = NodeModelManagementEndpoints.ResolveVerifiedCompletedState(job, [
+            verified with { ProviderModelName = "attacker/other" }
+        ]);
+        Assert.Equal("stopped", mismatched.Status);
+
+        var stopped = NodeModelManagementEndpoints.ResolveVerifiedCompletedState(job, [
+            verified with { Status = "stopped" }
+        ]);
+        Assert.Equal("stopped", stopped.Status);
+    }
+
+    [Fact]
+    public void Download_only_jobs_never_enable_routing_automatically()
+    {
+        var state = State with { Status = "running", RuntimeBaseAddress = "http://agent:18001", Port = 18001 };
+        var result = NodeModelManagementEndpoints.ResolveVerifiedCompletedState(Job(), [state]);
+        Assert.Equal("stopped", result.Status);
+        Assert.Null(result.RuntimeBaseAddress);
+    }
+
+    [Fact]
     public void Unknown_custom_models_cannot_be_automatically_published()
     {
         var customRequest = Request with { CatalogModelId = "custom" };

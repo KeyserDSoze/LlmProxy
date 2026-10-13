@@ -375,6 +375,16 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("daily_usage_rollups");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.SystemOneDefaultRecord", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<string>("PublicModelName").HasMaxLength(160).HasColumnType("character varying(160)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("systemone_default", t => t.HasCheckConstraint(
+                "CK_systemone_default_singleton", "\"Id\" = 1"));
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.ProductUpdatePolicyRecord", b =>
         {
             b.Property<int>("Id").HasColumnType("integer");
