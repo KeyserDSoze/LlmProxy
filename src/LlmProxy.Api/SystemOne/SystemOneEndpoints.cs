@@ -6,6 +6,8 @@ using LlmProxy.Application.Routing;
 using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Security;
+using LlmProxy.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace LlmProxy.Api.SystemOne;
 
@@ -41,6 +43,7 @@ public static class SystemOneEndpoints
         HttpContext context,
         IConfiguration configuration,
         IDeploymentCatalog catalog,
+        GatewayDbContext db,
         RoutingService routingService,
         IRequestCapacityGate capacityGate,
         RequestRateLimiter rateLimiter,
@@ -91,31 +94,21 @@ public static class SystemOneEndpoints
             var requested = string.IsNullOrWhiteSpace(pathModel) ? headerModel : pathModel;
             if (string.IsNullOrWhiteSpace(requested))
             {
-                requested = configuration["SystemOne:DefaultModel"];
-            }
-
-            if (string.IsNullOrWhiteSpace(requested))
-            {
-                if (models.Count == 1)
-                {
-                    requested = models[0].PublicName;
-                }
-                else if (models.Count == 0)
+                var saved = await db.SystemOneDefaults.AsNoTracking()
+                    .Where(x => x.Id == SystemOneDefaultRecord.SingletonId)
+                    .Select(x => x.PublicModelName)
+                    .FirstOrDefaultAsync(context.RequestAborted);
+                var published = await SystemOneDefaultResolver.GetPublishedModelNamesAsync(
+                    catalog, context.RequestAborted);
+                requested = SystemOneDefaultResolver.Resolve(
+                    published, saved, configuration["SystemOne:DefaultModel"]);
+                if (requested is null)
                 {
                     finalStatusCode = StatusCodes.Status503ServiceUnavailable;
                     finalErrorCode = "classifier_unavailable";
-                    await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode, "No enabled System One logical model is configured.");
+                    await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode,
+                        "No enabled System One logical model is configured.");
                     return;
-                }
-                else
-                {
-                    // The default endpoint remains functional when several classifier
-                    // aliases are published. Operators can override with
-                    // SystemOne:DefaultModel; callers can always select by URL/header.
-                    // Prefer the curated Laya alias, otherwise choose stable lexical order.
-                    requested = models.FirstOrDefault(model =>
-                        string.Equals(model.PublicName, "laya-english-cpu", StringComparison.Ordinal))?.PublicName
-                        ?? models.OrderBy(model => model.PublicName, StringComparer.Ordinal).First().PublicName;
                 }
             }
 

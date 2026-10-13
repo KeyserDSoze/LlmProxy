@@ -257,6 +257,7 @@ app.UseWebSockets(new WebSocketOptions
 });
 app.MapOpenAiEndpoints();
 app.MapSystemOneEndpoints();
+app.MapSystemOneDefaultAdminEndpoints(entraEnabled);
 app.MapMultimodalEndpoints();
 app.MapIdentitySelfServiceEndpoints(entraEnabled);
 app.MapIdentityAdminEndpoints(entraEnabled);

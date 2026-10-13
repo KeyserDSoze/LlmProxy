@@ -6,6 +6,13 @@
 - Added bilingual download-stage/retry explanations; full CI for combined commit and native Spark interruption/inference tests remain outstanding.
 
 
+
+## 2026-10-13 — Combine default System One and one-click publish with current Admin UX
+
+- Combined PR #39 default classifier selection, durable curated start-after-download and public API examples over the latest Admin UI changes without discarding capability columns or theme-aware scrolling.
+- Existing PR CI passed; combined code requires fresh CI before a main merge. Physical Spark multimodal inference and packaging obligations remain tracked in #40.
+
+
 ## 2026-10-11 — Isolated OpenAI image/audio gateway surfaces
 
 - Clarified Hugging Face stores some model weights; the serving runtime and System One transport are independent of where checkpoints originate.

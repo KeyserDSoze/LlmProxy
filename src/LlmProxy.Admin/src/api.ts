@@ -263,12 +263,16 @@ export const api = {
   installManagedModel: (nodeId: string, catalogId: string, body: { publicName?: string | null; port?: number | null; force?: boolean; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null }) =>
     request<unknown>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install`, { method: 'POST', body: JSON.stringify(body) }),
   installJobs: (nodeId: string) => request<ModelInstallJob[]>(`/api/admin/model-management/nodes/${nodeId}/install-jobs`),
-  queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null }) =>
+  queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null; startAfterInstall?: boolean }) =>
     request<ModelInstallJob>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install-jobs`, { method: 'POST', body: JSON.stringify(body) }),
   retryModelInstall: (nodeId: string, jobId: string) => request<ModelInstallJob>(
     `/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/retry`, { method: 'POST' }),
   finalizeModelInstall: (nodeId: string, jobId: string) => request<unknown>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/finalize`, { method: 'POST' }),
   cancelModelInstall: (nodeId: string, jobId: string) => request<void>(`/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}`, { method: 'DELETE' }),
+  getSystemOneDefault: () => request<{ configuredModel: string | null; effectiveModel: string | null; options: string[] }>(
+    '/api/admin/systemone/default'),
+  setSystemOneDefault: (model: string | null) => request<{ configuredModel: string | null; effectiveModel: string | null; options: string[] }>(
+    '/api/admin/systemone/default', { method: 'PUT', body: JSON.stringify({ model }) }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
   configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null }) =>

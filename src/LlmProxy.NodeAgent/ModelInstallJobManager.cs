@@ -103,9 +103,22 @@ public sealed class ModelInstallJobManager
                         CompletedBytes = step.CompletedBytes,
                         TotalBytes = step.TotalBytes
                     }));
+                var request = Get(id)!.Request;
+                if (request.StartAfterInstall)
+                {
+                    // Preserve durable job state until the runtime has completed its own
+                    // health/startup checks. Failed start leaves cached weights in place.
+                    Update(id, j => j with { Status = "running", Stage = "starting", Percent = 100,
+                        Detail = "Downloaded; starting runtime and checking readiness", Result = result });
+                    result = await _manager.StartAsync(result.InstallationId, cts.Token);
+                    if (result.Status != "running" || string.IsNullOrWhiteSpace(result.RuntimeBaseAddress))
+                        throw new InvalidOperationException("Agent did not confirm a healthy running runtime.");
+                }
                 Update(id, j => j with { Status = "completed", Stage = "complete", Percent = 100,
-                    Detail = "Model files ready; register deployment from Admin", Result = result,
-                    CompletedAtUtc = DateTimeOffset.UtcNow });
+                    Detail = request.StartAfterInstall
+                        ? "Runtime started; Gateway registration and routing pending"
+                        : "Model files ready; register deployment from Admin",
+                    Result = result, CompletedAtUtc = DateTimeOffset.UtcNow });
             }
             finally { _singleInstall.Release(); }
         }

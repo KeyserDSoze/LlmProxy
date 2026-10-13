@@ -47,6 +47,7 @@ async function installAdminApi(page: Page) {
     recommendedMaxConcurrency: null, benchmarkP95TtftMilliseconds: null, benchmarkP95DurationMilliseconds: null,
     sustainableOutputTokensPerSecond: null, benchmarkSource: null, benchmarkMeasuredAtUtc: null
   }]
+  let systemOneDefault: string | null = null
   let routingStrategy = 'WeightedLeastLoaded'
   let tuning = {
     warmupSamples: 3, ttftTargetMilliseconds: 2000, ttftPenaltyWeight: 0.25, failurePenaltyWeight: 1.5,
@@ -117,6 +118,16 @@ async function installAdminApi(page: Page) {
     }
 
     if (request.method() === 'GET' && path === '/api/admin/nodes') return json(route, nodes)
+    if (path === '/api/admin/systemone/default') {
+      if (request.method() === 'PUT') {
+        const body = request.postDataJSON() as { model?: string | null }
+        systemOneDefault = body.model ?? null
+      }
+      return json(route, {
+        configuredModel: systemOneDefault, effectiveModel: systemOneDefault ?? 'systemone-laya',
+        options: ['systemone-laya']
+      })
+    }
     if (request.method() === 'GET' && path === '/api/admin/models') return json(route, [
       { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'bootstrap-model', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
       { id: 'model-systemone', publicName: 'systemone-laya', providerModelName: 'convaiinnovations/laya', supportsStreaming: false, supportsTools: false, surface: 'SystemOne', enabled: true }
@@ -676,6 +687,22 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
 })
 
+test('System One default selection persists and can return to automatic mode', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/system-one')
+  const choice = page.getByRole('combobox', { name: 'Default classifier' })
+  await expect(choice).toHaveValue('')
+  await expect(page.getByText('Currently resolved model:')).toContainText('systemone-laya')
+  await choice.selectOption('systemone-laya')
+  await page.getByRole('button', { name: 'Save default' }).click()
+  await expect(page.getByRole('button', { name: 'Save default' })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Default classifier' })).toHaveValue('systemone-laya')
+  await choice.selectOption('')
+  await page.getByRole('button', { name: 'Save default' }).click()
+  await expect(choice).toHaveValue('')
+})
+
 test('guided System One connection creates only a classifier alias and a specified runtime route', async ({ page }) => {
   await installAdminApi(page)
   const modelsCreated: unknown[] = []
@@ -906,10 +933,12 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
   await expect(modal.getByLabel('Runtime maximum context')).toHaveCount(0)
   await expect(modal.getByLabel('Tensor parallel size')).toHaveCount(0)
   await expect(modal.getByLabel('Install maximum output tokens')).toHaveCount(0)
+  await expect(modal.getByRole('checkbox', { name: 'Start and publish model automatically after download' })).toBeChecked()
   await modal.getByRole('button', { name: 'Download & install' }).click()
-  await expect(page.getByText(/Download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled|Installation queued/)).toBeVisible()
   expect(queued).toMatchObject({
     runtime: 'faster-whisper',
+    startAfterInstall: true,
     maxNumSeqs: 1,
     maxModelLen: null,
     maxOutputTokens: null,
@@ -1089,7 +1118,7 @@ test('undersized curated model requires explicit admin consent and sends force o
   await modal.getByRole('checkbox', { name: /I understand the hardware risk/ }).check()
   await expect(submit).toBeEnabled()
   await submit.click()
-  await expect(page.getByText(/Download scheduled/)).toBeVisible()
+  await expect(page.getByText(/Download scheduled|Installation queued/)).toBeVisible()
   expect(queued).toMatchObject({ force: true, runtime: 'vllm' })
 })
 
