@@ -1,5 +1,10 @@
 # Development log
 
+## 2026-10-20 — Python executable missing during Docker prefetch
+
+The shared Hugging Face prefetch subprocess forced Docker `--entrypoint python`. Some vLLM/SGLang inference images ship only `python3`, causing `exec: "python": executable file not found in $PATH` before any model weights were downloaded. Switch the versioned Python 3 executable for supported managed prefetch images; keep HF cache reuse and the rest of the pipeline unchanged. Confirm actual host images still provide `python3` and `huggingface_hub` in end-to-end acceptance.
+
+
 ## 2026-10-20 — CI restore security gate
 
 The first LFM2.5 CI attempt failed before compilation because NuGet audit treated known System.Security.Cryptography.Pkcs and System.Security.Cryptography.Xml 10.0.10 vulnerabilities as errors. Both advisories have 10.0.13 patched versions. Central transitive package pinning upgrades both without bypassing NuGet audit; rerun exact-head CI to verify restore and tests.

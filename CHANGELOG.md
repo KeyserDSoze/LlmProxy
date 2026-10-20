@@ -1,3 +1,7 @@
+## Unreleased — Docker checkpoint prefetch compatibility (2026-10-20)
+
+- Use the `python3` executable for the Hugging Face prefetch subprocess: GPU serving images may lack the unversioned `python` alias, which previously caused Docker exit 127 during installation.
+
 ## Unreleased — Dependency security maintenance (2026-10-20)
 
 - Enforce patched 10.0.13 transitive NuGet dependencies for System.Security.Cryptography.Pkcs and System.Security.Cryptography.Xml; retain vulnerability checks as build errors.

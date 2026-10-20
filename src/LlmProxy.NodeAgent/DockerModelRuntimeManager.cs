@@ -134,7 +134,7 @@ for index, entry in enumerate(files):
                     await PullCommandAsync(
                     [
                         "run", "--rm",
-                        "--entrypoint", "python",
+                        "--entrypoint", "python3",
                         ..(record.Runtime is "laya" or "kokoro" or "diffusers" ? new[] { "-e", "HF_HUB_OFFLINE=0" } : Array.Empty<string>()),
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         record.Runtime is "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers"
