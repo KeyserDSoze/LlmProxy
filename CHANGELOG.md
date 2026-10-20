@@ -1,3 +1,7 @@
+## Unreleased — CI integration registry reliability (2026-10-20)
+
+- Align the integration job's Node.js base-image prefetch with the same Docker Hub image used by the Dockerfile and the passing full-stack gate. Avoid public ECR data-quota failures before integration tests start, without skipping any integration tests.
+
 ## Unreleased — Docker checkpoint prefetch compatibility (2026-10-20)
 
 - Use the `python3` executable for the Hugging Face prefetch subprocess: GPU serving images may lack the unversioned `python` alias, which previously caused Docker exit 127 during installation.

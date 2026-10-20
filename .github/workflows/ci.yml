@@ -518,13 +518,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Retry independent registry base image prefetch
+      - name: Retry Docker Hub base image prefetch
         shell: bash
         run: |
-          # auth.docker.io can briefly return 504 even when all source/tests are healthy.
-          # Pre-pulling here keeps transient registry failures out of the release gate.
+          # Use the same base image and registry as docker/Dockerfile and the
+          # green full-stack CI job. Public ECR can hit a separate data limit.
           for attempt in 1 2 3 4 5; do
-            if docker pull public.ecr.aws/docker/library/node:22-alpine; then exit 0; fi
+            if docker pull node:22-alpine; then exit 0; fi
             echo "Docker Hub unavailable; retry $attempt/5" >&2
             sleep $((attempt * 10))
           done
