@@ -1,3 +1,10 @@
+## Unreleased — Liquid AI LFM2.5-24B-A2B and context presets (2026-10-20)
+
+- Add curated Liquid AI BF16 / FP8 / GGUF Q4_K_M model options with documented LFM Open License 1.0 and 131,072-token published context limit. Engine compatibility must still be validated on actual hosts.
+- Display native checkpoint capabilities separately from unverified runtime support (tool-call and reasoning parsers).
+- Add install/edit context presets and an explicit "Use maximum" option, bounded by the curated native context; retain safe 8K install defaults and stopped-only edits without weight re-download.
+- Context growth can exhaust KV-cache memory or reduce concurrency. The unsupported YaRN override is not silently enabled.
+
 ## Unreleased — System One default and managed one-click publication (2026-10-13)
 
 - Administrators can choose a persistent default classifier model for `/v1/systemone`, while explicit aliases override the default and fallback remains deterministic.

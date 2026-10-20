@@ -35,8 +35,10 @@ public static class ModelCapabilitiesCatalog
             or "ggml-org/Qwen3-4B-GGUF:Q4_K_M";
         var standardQwen = name is
             "Qwen/Qwen3-4B" or "Qwen/Qwen3-8B" or "Qwen/Qwen3-14B" or "Qwen/Qwen3-32B";
+        var liquid25 = name is "LiquidAI/LFM2.5-24B-A2B" or
+            "LiquidAI/LFM2.5-24B-A2B-FP8" or "LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M";
         var mistralText = name == "mistralai/Mistral-7B-Instruct-v0.3";
-        var knownText = qwen3 || mistralText;
+        var knownText = qwen3 || liquid25 || mistralText;
         var modelCardUrl = name.Contains(':')
             ? "https://huggingface.co/" + name.Split(':')[0]
             : name.Contains('/') && name.Length <= 220
@@ -77,11 +79,13 @@ public static class ModelCapabilitiesCatalog
             serving is "vllm" or "sglang" or "llama.cpp" or "airllm" ? "supported" : "unknown",
             "OpenAI-compatible text Chat endpoint; a successful generation is still required for runtime acceptance.");
 
-        Feature tools = qwen3
+        Feature tools = qwen3 || liquid25
             ? new("supported", serving == "airllm" ? "unsupported" : "unverified",
                 serving == "airllm"
-                    ? "Qwen3 supports function calling, but this AirLLM adapter does not accept or parse tools."
-                    : "The model supports tool use; the managed launch has not verified its tool-call parser and structured API responses.")
+                    ? "The AirLLM adapter does not accept or parse tool calls."
+                    : liquid25
+                        ? "LFM2.5 emits special tool-call delimiters and Pythonic calls by default. The engine's OpenAI structured tool_calls parser still needs acceptance."
+                        : "The model supports tool use; the managed launch has not verified its tool-call parser and structured API responses.")
             : new("unknown", serving == "airllm" ? "unsupported" : "unverified",
                 "Tool calling has not been established for this checkpoint and serving configuration.");
 
@@ -103,10 +107,13 @@ public static class ModelCapabilitiesCatalog
                 serving == "airllm"
                     ? "Qwen3 can emit <think> text using its chat template, but AirLLM exposes no per-request thinking switch or structured reasoning_content."
                     : "Qwen3 supports thinking and non-thinking modes, but a managed runtime needs verified thinking controls and a reasoning parser for structured client integration.")
-            : new("unknown", "unverified",
-                "Dedicated reasoning mode has not been established for this checkpoint and adapter.");
+            : liquid25
+                ? new("supported", "partial",
+                    "LFM2.5 always reasons and emits <think> text; structured reasoning_content parsing is not verified for this serving image.")
+                : new("unknown", "unverified",
+                    "Dedicated reasoning mode has not been established for this checkpoint and adapter.");
 
-        int? nativeContext = qwen3 ? 32768 : mistralText ? 32768 : null;
+        int? nativeContext = liquid25 ? 131072 : qwen3 ? 32768 : mistralText ? 32768 : null;
         int? extendedContext = standardQwen ? 131072 : null;
         // The embedded AirLLM adapter enforces MAX_CONTEXT at tokenization and
         // caps max_tokens to the configured per-installation limit (default 256).
@@ -118,6 +125,7 @@ public static class ModelCapabilitiesCatalog
 
         return new Profile(name, serving,
             qwen3 ? "Qwen3 published model card + local adapter contract" :
+                liquid25 ? "Liquid AI LFM2.5 published model card + local adapter contract" :
                 mistralText ? "Curated text model + local adapter contract" :
                 "Unknown checkpoint; no trusted feature declaration",
             modelCardUrl, chat, tools, streaming, vision, thinking,

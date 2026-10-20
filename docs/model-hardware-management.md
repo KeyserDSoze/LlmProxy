@@ -1,3 +1,14 @@
+## 2026-10-20 — Liquid AI LFM2.5 and context presets (source; CI/hardware acceptance pending)
+
+LFM2.5-24B-A2B is now curated in the official Liquid AI BF16, FP8 and Q4_K_M GGUF formats, with 131,072 native tokens. The checkpoints have their own LFM Open License 1.0 terms. This catalog addition does not guarantee that the configured vLLM, SGLang or llama.cpp Docker image already implements the new lfm2_moe architecture, FP8 kernels or structured OpenAI tools/reasoning parsers. Real-host tests must prove Chat, SSE, tool-call parsing, memory, long context and restart behaviour before production routing.
+
+On Admin → Models & inference → Install & manage models, installation has explicit 8/16/32/64/128K context presets bounded by the model's published native context and a "Use maximum" shortcut. Installed models can be stopped, edited without re-downloading weights, and restarted to apply the new persisted maxModelLen. The initial 8192-token setting remains conservative. For custom checkpoints the 262144-token Agent policy limit is explicitly unverified as a native model limit. For vLLM and SGLang maxModelLen is per request; llama.cpp --ctx-size is the total context pool shared across slots. Longer context can increase KV cache significantly and reduce sustainable concurrency; catalog memory estimates are not sufficient evidence for 128K operation.
+
+Official sources:
+- https://huggingface.co/LiquidAI/LFM2.5-24B-A2B
+- https://huggingface.co/LiquidAI/LFM2.5-24B-A2B-FP8
+- https://huggingface.co/LiquidAI/LFM2.5-24B-A2B-GGUF
+
 ## Existing hardware Agent recovery and reinstall
 
 A 30-minute `lpe_` invitation is **only** for registering new hardware. Once paired, the Agent stores a private operational bearer in `<NodeAgent:DataDirectory>/gateway-connection.json` (root-only on Linux) and reuses that identity across reboots and ordinary updates. A model runtime is NOT required for a healthy Agent heartbeat; an enrolled hardware node without one shows **No runtime** and is not routable.

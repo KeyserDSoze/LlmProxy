@@ -61,6 +61,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
 
   const installCatalogEntry = overview?.catalog.find(item => item.model.id === installCatalogId)
   const installDescriptor = installCatalogEntry?.model
+  const installContextCeiling = Math.min(262144, installDescriptor?.contextTokens ?? 262144)
+  const editCatalogMax = overview?.catalog.find(item => item.model.id === editingInstall?.catalogModelId)?.model.contextTokens
+  const editContextCeiling = Math.min(262144, editCatalogMax ?? 262144)
   const fixedMediaRuntime = runtimeChoice === 'faster-whisper' || runtimeChoice === 'laya' ||
     runtimeChoice === 'kokoro' || runtimeChoice === 'diffusers'
   const cpuMediaRuntime = runtimeChoice === 'faster-whisper' || runtimeChoice === 'laya' || runtimeChoice === 'kokoro'
@@ -469,7 +472,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                   item.model.runtime === 'laya' ? 'System One classifier' :
                   item.model.runtime === 'kokoro' ? 'Speech WAV · af_heart' :
                   item.model.runtime === 'diffusers' ? 'Images · PNG 512–1024' :
-                  formatTokens(item.model.contextTokens) + ' context'}</span>
+                  formatTokens(item.model.contextTokens) + ' native max'}</span>
               </td>
               <td className="modelCatalogRequirements">
                 <strong>{['faster-whisper', 'laya', 'kokoro'].includes(item.model.runtime ?? '') ? 'CPU · x64 / ARM64' :
@@ -639,9 +642,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           Higher values may increase memory usage, latency and GPU pressure.</p>
         <label>Maximum context (prompt + completion) tokens
           <input aria-label={t('model.editContext')} type="number" min="256"
-            max={overview?.catalog.find(x => x.model.id === editingInstall?.catalogModelId)?.model.contextTokens ?? 262144}
+            max={editContextCeiling}
             value={editContext} onChange={event => setEditContext(Number(event.target.value))} required />
         </label>
+        <ContextPresets value={editContext} onChange={setEditContext}
+          ceiling={editContextCeiling} curated={editCatalogMax != null}
+          sharedPool={editingInstall?.runtime === 'llama.cpp'} />
         {editingInstall?.runtime === 'airllm' && <label>Maximum output tokens per request
           <input aria-label={t('model.editOutput')} type="number" min="1" max={Math.min(4096, editContext)}
             value={editOutput} onChange={event => setEditOutput(Number(event.target.value))} required />
@@ -736,7 +742,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <label>{t('model.port')} (optional)<input aria-label={t('model.port')} type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
         {!fixedMediaRuntime && <p className="notice"><strong>{t('model.defaults')}:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>}
         {!fixedMediaRuntime && <label>{t('model.sequences')}<input aria-label={t('model.sequences')} type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>}
-        {!fixedMediaRuntime && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={overview?.catalog.find(item => item.model.id === installCatalogId)?.model.contextTokens ?? 262144} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
+        {!fixedMediaRuntime && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={installContextCeiling} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
+        {!fixedMediaRuntime && <ContextPresets value={maxModelLen} onChange={setMaxModelLen}
+          ceiling={installContextCeiling} curated={Boolean(installDescriptor)}
+          sharedPool={runtimeChoice === 'llama.cpp'} />}
         {runtimeChoice === 'airllm' && <label>{t('model.maxOutput')}
           <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
             value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
@@ -780,6 +789,24 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       </div>
     </Modal>
     <Modal open={agentOpen} title="Management agent" description="Configure the management service root. The bearer is encrypted at rest and never returned by the API." onClose={() => setAgentOpen(false)}><form className="formPanel" onSubmit={configure}><label>Management service root<input aria-label="Management service root" value={managementBaseAddress} onChange={event => setManagementBaseAddress(event.target.value)} placeholder="http://10.0.0.21:9900" /></label><label>Bearer token<input aria-label="Management bearer token" type="password" value={bearerToken} onChange={event => setBearerToken(event.target.value)} placeholder={overview?.node.hasManagementCredential ? 'Configured · leave blank to keep it' : 'Optional only on isolated development networks'} /></label><div className="modalActions"><button type="button" className="secondary" disabled={!overview?.node.hasManagementCredential || busy === 'credential'} onClick={() => void clearCredential()}>Clear bearer</button><button className="primary" disabled={!canWrite || busy === 'configure'}>{busy === 'configure' ? 'Saving…' : 'Save agent'}</button></div></form></Modal>
+  </div>
+}
+
+function ContextPresets({ value, onChange, ceiling, curated, sharedPool }: {
+  value: number; onChange: (next: number) => void; ceiling: number;
+  curated: boolean; sharedPool: boolean
+}) {
+  const t = useT()
+  const options = [8192, 16384, 32768, 65536, 131072].filter(limit => limit < ceiling)
+  return <div className="stack">
+    <div className="actions" role="group" aria-label={t('model.contextPresets')}>
+      {options.map(limit => <button key={limit} className="secondary" type="button"
+        disabled={value === limit} onClick={() => onChange(limit)}>{formatTokens(limit)}</button>)}
+      <button className="secondary" type="button" disabled={value === ceiling}
+        onClick={() => onChange(ceiling)}>{t('model.useContextMaximum')} · {formatTokens(ceiling)}</button>
+    </div>
+    <p className="muted">{curated ? t('model.contextNativeDisclaimer') : t('model.contextUnknownDisclaimer')}
+      {' '}{sharedPool ? t('model.contextSharedDisclaimer') : t('model.contextMemoryDisclaimer')}</p>
   </div>
 }
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }

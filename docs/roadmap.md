@@ -1,5 +1,12 @@
 # Roadmap
 
+## 2026-10-20 — LFM2.5 and long-context controls
+
+- [x] Catalog official LiquidAI BF16 / FP8 / GGUF checkpoints with native-context and license metadata.
+- [x] Expose native-context presets and maximum shortcut at installation and stopped-only editing; do not assume larger context is safe.
+- [ ] Green exact-head CI for C#/TypeScript and real GPU/ARM64 runtime compatibility acceptance, including tool parser, SSE, 128K memory and concurrency.
+
+
 ## 2026-10-13 — System One / managed catalog publication
 
 - [x] Implement persistent preferred System One model and fallback, with explicit alias override and shared Gateway selection (PR #39).
