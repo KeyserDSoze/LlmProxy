@@ -1,3 +1,7 @@
+## Unreleased — Dependency security maintenance (2026-10-20)
+
+- Enforce patched 10.0.13 transitive NuGet dependencies for System.Security.Cryptography.Pkcs and System.Security.Cryptography.Xml; retain vulnerability checks as build errors.
+
 ## Unreleased — Liquid AI LFM2.5-24B-A2B and context presets (2026-10-20)
 
 - Add curated Liquid AI BF16 / FP8 / GGUF Q4_K_M model options with documented LFM Open License 1.0 and 131,072-token published context limit. Engine compatibility must still be validated on actual hosts.

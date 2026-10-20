@@ -1,5 +1,10 @@
 # Development log
 
+## 2026-10-20 — CI restore security gate
+
+The first LFM2.5 CI attempt failed before compilation because NuGet audit treated known System.Security.Cryptography.Pkcs and System.Security.Cryptography.Xml 10.0.10 vulnerabilities as errors. Both advisories have 10.0.13 patched versions. Central transitive package pinning upgrades both without bypassing NuGet audit; rerun exact-head CI to verify restore and tests.
+
+
 ## 2026-10-20 — Liquid AI LFM2.5 and context presets (source; CI/hardware acceptance pending)
 
 LFM2.5-24B-A2B is now curated in the official Liquid AI BF16, FP8 and Q4_K_M GGUF formats, with 131,072 native tokens. The checkpoints have their own LFM Open License 1.0 terms. This catalog addition does not guarantee that the configured vLLM, SGLang or llama.cpp Docker image already implements the new lfm2_moe architecture, FP8 kernels or structured OpenAI tools/reasoning parsers. Real-host tests must prove Chat, SSE, tool-call parsing, memory, long context and restart behaviour before production routing.
