@@ -21,7 +21,9 @@ public sealed record NodeAgentOptions(
     string ConnectionMode = "outbound",
     Guid? RecoveryNodeId = null,
     string? RecoveryToken = null,
-    bool ForceRecovery = false)
+    bool ForceRecovery = false,
+    double GpuStartMaxTemperatureCelsius = 80,
+    bool RequireGpuTemperatureSensor = false)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -45,11 +47,18 @@ public sealed record NodeAgentOptions(
             section["ConnectionMode"] ?? "outbound",
             Guid.TryParse(section["RecoveryNodeId"], out var recoveryNodeId) ? recoveryNodeId : null,
             section["RecoveryToken"],
-            ParseBool(section["ForceRecovery"], false));
+            ParseBool(section["ForceRecovery"], false),
+            ParseTemperature(section["GpuStartMaxTemperatureCelsius"], 80),
+            ParseBool(section["RequireGpuTemperatureSensor"], false));
     }
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>
         int.TryParse(raw, out var parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+
+    private static double ParseTemperature(string? raw, double fallback) =>
+        double.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+        double.IsFinite(parsed) && parsed is >= 60 and <= 100 ? parsed : fallback;
 
     private static bool ParseBool(string? raw, bool fallback) =>
         bool.TryParse(raw, out var parsed) ? parsed : fallback;

@@ -791,6 +791,14 @@ export type NodeResourceSnapshot = {
   containers: Array<{ name: string; installationId?: string | null; modelName?: string | null; runtime?: string | null; dockerMemoryGiB?: number | null }>
   recentVllmMemoryFailures: Array<{ installationId: string; modelName: string; gpuIndex: number; freeAtStartupGiB: number; requestedAtStartupGiB: number; shortfallAtStartupGiB: number }>
   gpuProcesses: Array<{ gpuIndex: number; pid: number; processName: string; processType: string; reportedGpuMemoryGiB?: number | null }>
+  thermal?: {
+    checkedAtUtc: string
+    sensorAvailable: boolean
+    startupLimitCelsius: number
+    maximumObservedCelsius?: number | null
+    startupBlocked: boolean
+    explanation: string
+  }
   warnings: string[]
 }
 export type ModelManagementOverview = {

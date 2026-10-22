@@ -9,7 +9,8 @@ public sealed class DockerModelRuntimeManager(
     NodeAgentOptions options,
     ProcessRunner runner,
     ManagedModelRegistry registry,
-    IHttpClientFactory httpClientFactory)
+    IHttpClientFactory httpClientFactory,
+    GpuRuntimeSafety gpuSafety)
 {
     private readonly SemaphoreSlim _operations = new(1, 1);
 
@@ -250,15 +251,19 @@ for index, entry in enumerate(files):
             else if (record.Runtime is "laya" or "kokoro" or "diffusers")
                 await EnsureMediaImageAsync(record, cancellationToken);
             var name = ContainerName(record);
-            await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
-
-            var args = new List<string> { "run", "-d", "--name", name, "--restart", "unless-stopped", "--ipc=host" };
             var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
             if (record.Runtime == "diffusers" && !gpuReady)
                 throw new InvalidOperationException("Image generation requires a working NVIDIA driver and Docker GPU runtime.");
             if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
                 throw new InvalidOperationException(
                     "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
+            var gpuRuntime = ManagedRuntimeRestartGuard.RequiresManualGpuRestart(
+                record.Runtime, options.UseNvidiaGpus) && gpuReady;
+            if (gpuRuntime) await gpuSafety.EnsureAllowedAsync(cancellationToken);
+            // Do not remove any previous container before thermal admission check.
+            await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
+            var args = new List<string> { "run", "-d", "--name", name,
+                "--restart", gpuRuntime ? "no" : "unless-stopped", "--ipc=host" };
             if (gpuReady && record.Runtime is not ("faster-whisper" or "laya" or "kokoro"))
             {
                 args.Add("--gpus");
@@ -309,7 +314,7 @@ for index, entry in enumerate(files):
             try
             {
                 await RequireDockerAsync(args, cancellationToken);
-                await WaitForHealthyAsync(record.Port, cancellationToken);
+                await WaitForHealthyAsync(record, cancellationToken);
                 if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
                 record.Status = "running";
                 record.RuntimeBaseAddress = RuntimeAddress(record.Port);
@@ -319,10 +324,22 @@ for index, entry in enumerate(files):
             }
             catch (Exception exception)
             {
+                // Failed startup must release GPU allocation and cannot leave a
+                // crashing inference container behind.
+                try
+                {
+                    await runner.RunAsync(options.DockerExecutable, ["update", "--restart=no", name],
+                        TimeSpan.FromSeconds(10), CancellationToken.None);
+                    await runner.RunAsync(options.DockerExecutable, ["rm", "-f", name],
+                        TimeSpan.FromSeconds(20), CancellationToken.None);
+                }
+                catch (Exception) { /* Preserve the original startup failure. */ }
                 record.Status = "error";
-                record.Error = exception.Message;
+                record.Error = exception is OperationCanceledException
+                    ? "Runtime startup cancelled; container cleanup requested."
+                    : exception.Message;
                 record.RuntimeBaseAddress = null;
-                await registry.UpsertAsync(record, cancellationToken);
+                await registry.UpsertAsync(record, CancellationToken.None);
                 throw;
             }
         }
@@ -594,12 +611,12 @@ for index, entry in enumerate(files):
         }
     }
 
-    private async Task WaitForHealthyAsync(int port, CancellationToken cancellationToken)
+    private async Task WaitForHealthyAsync(ManagedModelRecord record, CancellationToken cancellationToken)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromMinutes(options.StartupTimeoutMinutes));
         var client = httpClientFactory.CreateClient("runtime-health");
-        var url = $"http://127.0.0.1:{port}/health";
+        var url = $"http://127.0.0.1:{record.Port}/health";
 
         while (true)
         {
@@ -613,6 +630,13 @@ for index, entry in enumerate(files):
             {
             }
 
+            var state = await runner.RunAsync(options.DockerExecutable,
+                ["inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", ContainerName(record)],
+                TimeSpan.FromSeconds(8), timeoutCts.Token);
+            if (state.Success && state.StandardOutput.Trim().StartsWith("false ", StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "Model process exited during startup (" + state.StandardOutput.Trim() +
+                    "). Automatic GPU restart is disabled; inspect container logs before retrying.");
             await Task.Delay(TimeSpan.FromSeconds(2), timeoutCts.Token);
         }
     }

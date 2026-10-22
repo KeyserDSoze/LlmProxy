@@ -15,11 +15,13 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<HardwareInventoryReader>();
 builder.Services.AddSingleton<NodeResourceDiagnostics>();
+builder.Services.AddSingleton<GpuRuntimeSafety>();
 builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddSingleton<ModelInstallJobManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHostedService<ManagedRuntimeRestartGuard>();
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
 builder.Services.AddHostedService<OutboundAgentRelayWorker>();
 builder.Services.AddHttpClient("relay-local", client => client.Timeout = Timeout.InfiniteTimeSpan)

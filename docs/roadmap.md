@@ -1,5 +1,13 @@
 # Roadmap
 
+## 2026-10-23 — GPU safety after Spark shutdown
+- [x] No automatic restart for managed GPU inference; reconcile legacy Docker policies; explicit restart after host reboot.
+- [x] Remove failed runtime containers to release device allocations; do not touch external Docker.
+- [x] Best-effort NVIDIA start-temperature gate (80 C default, strict missing-sensor option) and Admin visibility.
+- [ ] Validate exact-head CI and release packaging, and measure actual behavior on DGX Spark before declaring hardware-safe.
+- [ ] Investigate power/thermal cause and collect firmware/board sensors; add reliable live-monitor/kill controls only after hardware acceptance.
+- [ ] Design opt-in safe restart after reboot with backoff and hardware admission proofs instead of unconditional Docker restarts.
+
 ## 2026-10-22 — Managed memory diagnosis
 - [x] Verified Docker Stop, explicit audited force-stop for registered managed installations only.
 - [x] Read-only resource snapshot, approximate Docker RAM and historical vLLM startup shortfall.

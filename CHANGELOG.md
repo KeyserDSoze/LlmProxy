@@ -1,3 +1,10 @@
+## Unreleased — GPU crash-loop and thermal start protections (2026-10-23)
+
+- Stop endless GPU Docker runtime restart loops by requiring deliberate starts after failures and host reboot. Migrate existing managed GPU containers to a no-restart policy when their Node Agent connects.
+- Tear down failed/timed-out GPU runtime startups and preserve the model-weight cache.
+- Check available NVIDIA temperature sensors before new GPU starts with default 80 °C threshold; show availability and threshold in Admin's Memory & processes. Strict no-sensor blocking can be explicitly enabled.
+- Software startup checks cannot prevent hardware overheating or replace NVIDIA firmware, cooling and power protections.
+
 ## Unreleased — Host GPU process diagnostics (2026-10-22)
 
 - Include NVIDIA process PID, executable and driver-reported GPU memory in the memory diagnostics panel, including processes outside Docker (e.g. host llama-server). Provide GB10 table fallback for missing structured per-process memory.

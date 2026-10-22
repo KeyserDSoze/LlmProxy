@@ -1,3 +1,14 @@
+## 2026-10-23 — GPU crash-loop prevention and temperature start gate (source; CI and real hardware acceptance pending)
+
+A DGX Spark experienced severe heat followed by an abrupt physical shutdown while a large vLLM model repeatedly failed to become healthy. Cause of shutdown is **unverified**: power supply, ventilation, CPU/board and firmware must still be investigated. Software safeguards are not hardware thermal protection.
+
+- Managed GPU-serving Docker containers (vLLM/SGLang/AirLLM/Diffusers and CUDA llama.cpp) are launched with `--restart=no`; this prevents unbounded crash/restart loops and means **manual Admin Start after reboot**. CPU-only media containers keep the previous persistence policy.
+- Agent background reconciliation removes `unless-stopped` restart policy from preexisting registered GPU containers without killing them; untracked Docker workloads are untouched.
+- A failed or timed-out runtime start requests removal of its own managed container while preserving cached model weights. The Agent records an error and an explicit new Start is required.
+- Before new GPU starts, the Agent checks NVIDIA GPU temperature. Default block threshold is **80 Celsius**, adjustable through `NodeAgent__GpuStartMaxTemperatureCelsius` (60–100). An unavailable sensor is reported as unknown; opt-in `NodeAgent__RequireGpuTemperatureSensor=true` rejects starts when thermal data are unavailable. The GPU sensor is **not** a CPU, PSU or enclosure sensor and the Agent does not autonomously shut down a running hot server. Hardware safety remains the operator's responsibility.
+- Admin Memory & processes shows temperature, configured start threshold, sensor availability and explanation. Tests cover hot/unknown/cool telemetry and runtime classification.
+- After a physical thermal event, inspect power, ventilation, firmware and logs before attempting a restart; never treat a successful model health request as proof of hardware health.
+
 ## 2026-10-22 — DGX Spark GPU process attribution follow-up
 
 Actual Spark `nvidia-smi` identified a host PID `llama-server` reserving 58,119 MiB (~56.8 GiB), even though only the LFM2.5 vLLM and Laya Docker containers were running. Docker stats alone would hide this critical clue. Extend the on-demand read-only Agent resource snapshot with structured NVIDIA compute PID/name/memory query and classic process-table fallback, with PID and reported memory rendered in Admin. No external PID termination endpoint is exposed. On GB10/NVIDIA UMA, process-reported GPU memory overlaps with RAM and Docker memory and must never be double counted. Identifying the owning model/systemd service still requires host inspection.

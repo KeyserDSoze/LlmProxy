@@ -15,7 +15,8 @@ public sealed record ResourceDiagnosticSnapshot(DateTimeOffset ObservedAtUtc,
     IReadOnlyList<ResourceContainer> Containers,
     IReadOnlyList<RuntimeMemoryShortfall> RecentVllmMemoryFailures,
     IReadOnlyList<HostGpuProcess> GpuProcesses,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    GpuThermalStatus Thermal);
 
 /// <summary>
 /// Read-only, bounded host snapshot. Docker cgroup RAM is not equivalent to
@@ -23,7 +24,7 @@ public sealed record ResourceDiagnosticSnapshot(DateTimeOffset ObservedAtUtc,
 /// reconfigure a process based on these estimates.
 /// </summary>
 public sealed class NodeResourceDiagnostics(NodeAgentOptions options, ProcessRunner runner,
-    ManagedModelRegistry registry)
+    ManagedModelRegistry registry, GpuRuntimeSafety gpuSafety)
 {
     private static readonly Regex MemoryValue = new(
         @"(?<amount>\d+(?:\.\d+)?)\s*(?<unit>TiB|GiB|MiB|KiB|B)",
@@ -207,6 +208,8 @@ public sealed class NodeResourceDiagnostics(NodeAgentOptions options, ProcessRun
                 System.ComponentModel.Win32Exception) { /* Docker logs optional. */ }
         }
         warnings.Add("GPU process memory (NVIDIA) overlaps RAM and Docker stats on unified-memory hosts. PID is diagnostic only, not proof of which model/manager owns the process. Other host RAM and file cache cannot be attributed.");
-        return new ResourceDiagnosticSnapshot(DateTimeOffset.UtcNow, containers, failures, gpuProcesses, warnings);
+        var thermal = await gpuSafety.ReadAsync(token);
+        if (!thermal.SensorAvailable || thermal.StartupBlocked) warnings.Add(thermal.Explanation);
+        return new ResourceDiagnosticSnapshot(DateTimeOffset.UtcNow, containers, failures, gpuProcesses, warnings, thermal);
     }
 }

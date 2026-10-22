@@ -658,6 +658,15 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <button className="secondary" disabled={resourcesLoading} onClick={() => void loadResources()}>
             {resourcesLoading ? t('model.memoryLoading') : t('model.memoryRefresh')}</button></div>
         {resourcesError && <div className="error" role="alert">{resourcesError}</div>}
+        {resources?.thermal && <div className={resources.thermal.startupBlocked ? 'error' : 'notice'}
+          role={resources.thermal.startupBlocked ? 'alert' : 'status'}>
+          <strong>{t('model.thermalStatus')}</strong>
+          <p>{t('model.thermalObserved')}: {resources.thermal.maximumObservedCelsius == null
+            ? t('model.thermalUnknown') : resources.thermal.maximumObservedCelsius.toFixed(1) + ' °C'}
+            {' · '}{t('model.thermalStartLimit')}: {resources.thermal.startupLimitCelsius.toFixed(0)} °C</p>
+          <p>{resources.thermal.explanation}</p>
+          <p className="muted">{t('model.thermalDisclaimer')}</p>
+        </div>}
         {overview?.hardware && <div className="cards compactCards">
           <Metric label={t('model.memoryAvailable')} value={formatGiB(overview.hardware.systemMemoryAvailableGiB)} />
           <Metric label={t('model.memoryTotal')} value={formatGiB(overview.hardware.systemMemoryTotalGiB)} />
