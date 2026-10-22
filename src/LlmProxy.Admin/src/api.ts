@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus, NodeResourceSnapshot } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
@@ -256,6 +256,8 @@ export const api = {
     request<ModelRevisionStatus[]>(`/api/admin/model-management/nodes/${nodeId}/upstream-updates`),
   modelManagementOverview: (nodeId: string) =>
     request<ModelManagementOverview>(`/api/admin/model-management/nodes/${nodeId}/overview`),
+  nodeResourceDiagnostics: (nodeId: string) =>
+    request<NodeResourceSnapshot>(`/api/admin/model-management/nodes/${nodeId}/resources`),
   inspectModelCapabilities: (providerModelName: string, runtime: string, maxModelLen?: number | null, maxOutputTokens?: number | null) =>
     request<ModelCapabilityProfile>(`/api/admin/model-management/capabilities?providerModelName=${encodeURIComponent(providerModelName)}&runtime=${encodeURIComponent(runtime)}${maxModelLen ? '&maxModelLen=' + maxModelLen : ''}${maxOutputTokens ? '&maxOutputTokens=' + maxOutputTokens : ''}`),
   configureNodeManagement: (nodeId: string, body: { managementBaseAddress?: string | null; bearerToken?: string | null; clearBearerToken?: boolean }) =>
@@ -281,6 +283,8 @@ export const api = {
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/activate`, { method: 'POST' }),
   stopManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/stop`, { method: 'POST' }),
+  forceStopManagedDeployment: (deploymentId: string) =>
+    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/force-stop`, { method: 'POST' }),
   removeManagedDeployment: (deploymentId: string) =>
     request<void>(`/api/admin/model-management/deployments/${deploymentId}`, { method: 'DELETE' })
 }

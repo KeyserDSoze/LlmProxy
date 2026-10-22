@@ -1,3 +1,8 @@
+## Unreleased — Verified managed stop and memory troubleshooting (2026-10-22)
+
+- Verify Docker Stop before reporting a model stopped; add explicit audited force-stop only for LLMProxy-owned runtimes.
+- Show read-only memory diagnosis, Docker cgroup estimates and recent vLLM memory shortfalls. External containers cannot be stopped from the panel; no automatic process termination.
+
 ## Unreleased — CI integration registry reliability (2026-10-20)
 
 - Align the integration job's Node.js base-image prefetch with the same Docker Hub image used by the Dockerfile and the passing full-stack gate. Avoid public ECR data-quota failures before integration tests start, without skipping any integration tests.

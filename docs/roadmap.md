@@ -1,5 +1,11 @@
 # Roadmap
 
+## 2026-10-22 — Managed memory diagnosis
+- [x] Verified Docker Stop, explicit audited force-stop for registered managed installations only.
+- [x] Read-only resource snapshot, approximate Docker RAM and historical vLLM startup shortfall.
+- [ ] CI and live DGX Spark test: verify runtime release, actual memory recovery after stop, and inference health.
+- [ ] Future: measured NVIDIA per-process attribution where the GB10 driver reliably exposes it.
+
 ## 2026-10-20 — LFM2.5 and long-context controls
 
 - [x] Catalog official LiquidAI BF16 / FP8 / GGUF checkpoints with native-context and license metadata.

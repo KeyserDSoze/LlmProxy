@@ -786,6 +786,12 @@ export type ModelRevisionStatus = {
   }
 }
 
+export type NodeResourceSnapshot = {
+  observedAtUtc: string
+  containers: Array<{ name: string; installationId?: string | null; modelName?: string | null; runtime?: string | null; dockerMemoryGiB?: number | null }>
+  recentVllmMemoryFailures: Array<{ installationId: string; modelName: string; gpuIndex: number; freeAtStartupGiB: number; requestedAtStartupGiB: number; shortfallAtStartupGiB: number }>
+  warnings: string[]
+}
 export type ModelManagementOverview = {
   node: {
     id: string

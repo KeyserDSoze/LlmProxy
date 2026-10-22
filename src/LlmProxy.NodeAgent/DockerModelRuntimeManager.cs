@@ -332,24 +332,68 @@ for index, entry in enumerate(files):
         }
     }
 
-    public async Task<ManagedModelState> StopAsync(string installationId, CancellationToken cancellationToken)
+    // Stop must be observed in Docker, not inferred from a best-effort command.
+    // Force may only target a registered, managed installation; it does not touch
+    // Docker containers or GPU processes owned by other services.
+    public async Task<ManagedModelState> StopAsync(string installationId,
+        CancellationToken cancellationToken, bool force = false)
     {
         await _operations.WaitAsync(cancellationToken);
         try
         {
             var record = await RequireRecordAsync(installationId, cancellationToken);
-            await RunDockerIgnoringFailureAsync(["stop", ContainerName(record)], cancellationToken);
+            var name = ContainerName(record);
+            var before = await runner.RunAsync(options.DockerExecutable,
+                ["inspect", "-f", "{{.State.Running}}", name],
+                TimeSpan.FromSeconds(10), cancellationToken);
+            if (!before.Success && !DockerContainerMissing(before.StandardError))
+                throw new InvalidOperationException(
+                    "Cannot inspect managed Docker runtime before stopping: " + Trim(before.StandardError));
+            if (before.Success)
+            {
+                var command = force ? new[] { "kill", name } : new[] { "stop", "--time", "30", name };
+                var stopped = await runner.RunAsync(options.DockerExecutable, command,
+                    TimeSpan.FromSeconds(55), cancellationToken);
+                if (!stopped.Success)
+                {
+                    // An already-exited container can race with the stop command.
+                    var check = await runner.RunAsync(options.DockerExecutable,
+                        ["inspect", "-f", "{{.State.Running}}", name],
+                        TimeSpan.FromSeconds(10), cancellationToken);
+                    if (check.Success && check.StandardOutput.Trim() == "true" ||
+                        !check.Success && !DockerContainerMissing(check.StandardError))
+                        throw new InvalidOperationException(
+                            "Managed Docker stop failed: " + Trim(stopped.StandardError));
+                }
+            }
+
+            // Verify state on two reads so a crashing/restarting runtime does not
+            // look stopped during the instant between restart-policy attempts.
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var verify = await runner.RunAsync(options.DockerExecutable,
+                    ["inspect", "-f", "{{.State.Running}}", name],
+                    TimeSpan.FromSeconds(10), cancellationToken);
+                if (!verify.Success && !DockerContainerMissing(verify.StandardError))
+                    throw new InvalidOperationException(
+                        "Cannot verify managed Docker stop: " + Trim(verify.StandardError));
+                if (verify.Success && verify.StandardOutput.Trim() != "false")
+                    throw new InvalidOperationException(
+                        "Docker still reports the managed runtime as running. Memory is not confirmed released.");
+                if (attempt == 0) await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
             record.Status = "stopped";
             record.RuntimeBaseAddress = null;
             record.Error = null;
             await registry.UpsertAsync(record, cancellationToken);
             return ToState(record, "stopped", null);
         }
-        finally
-        {
-            _operations.Release();
-        }
+        finally { _operations.Release(); }
     }
+
+    private static bool DockerContainerMissing(string message) =>
+        message.Contains("No such object", StringComparison.OrdinalIgnoreCase) ||
+        message.Contains("No such container", StringComparison.OrdinalIgnoreCase);
 
     public async Task<ManagedModelState> ConfigureAsync(string installationId,
         ManagedProfileUpdate update, CancellationToken cancellationToken)

@@ -130,6 +130,27 @@ public static class NodeModelManagementEndpoints
             }
         });
 
+        group.MapGet("/nodes/{id:guid}/resources", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var data = await SendAgentAsync<JsonElement>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Get, "/v1/system/resources", null, token);
+                return Results.Ok(data);
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         var prepare = group.MapPost("/nodes/{id:guid}/prepare", async (
             Guid id, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
@@ -692,6 +713,40 @@ public static class NodeModelManagementEndpoints
             }
         });
 
+        // Explicit administrative last resort. No untracked Docker processes can
+        // be killed: the Agent resolves the registered installation ID itself.
+        var forceStop = group.MapPost("/deployments/{id:guid}/force-stop", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context,
+            CancellationToken token) =>
+        {
+            var deployment = await db.Deployments.FindAsync([id], token);
+            if (deployment is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
+                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
+            var node = await db.Nodes.FindAsync([deployment.NodeId], token);
+            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.BadRequest(new { error = "management_agent_not_configured" });
+            deployment.Disable();
+            AddAudit(db, context, "model.force_stop", "deployment", id.ToString(),
+                new { node.Name, deployment.ManagedInstallationId });
+            await db.SaveChangesAsync(token);
+            try
+            {
+                var state = await SendAgentAsync<ManagedModelState>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Post, $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/force-stop",
+                    new { action = "force-stop" }, token);
+                return Results.Ok(new { deployment, state });
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(
+                    "Routing was disabled but the Agent could not verify force-stop: " + error.Message,
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         var remove = group.MapDelete("/deployments/{id:guid}", async (
             Guid id,
             GatewayDbContext dbContext,
@@ -741,6 +796,7 @@ public static class NodeModelManagementEndpoints
             start.RequireAuthorization("AdminWrite");
             activate.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");
+            forceStop.RequireAuthorization("AdminWrite");
             remove.RequireAuthorization("AdminWrite");
             configureProfile.RequireAuthorization("AdminWrite");
         }

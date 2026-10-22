@@ -1,3 +1,6 @@
+## 2026-10-22 — Spark RAM diagnosis and verified Docker stop (source, CI + hardware acceptance pending)
+Stop now checks real Docker state twice before declaring a managed model stopped. Admin also offers explicit audited force-stop restricted to its own registered containers. On-demand Memory & processes lists Docker cgroup RAM usage, managed/external ownership, and recently logged vLLM requested/free/shortfall (historical, not current headroom). No host process kill, automatic victim selection, GPU reset or cache deletion. DGX Spark uses unified CPU/GPU memory: Docker cgroup RSS is not GPU-resident memory, and other host processes/file cache are not attributed. Real Spark/Agent test and exact-head CI remain pending.
+
 ## 2026-10-20 — Liquid AI LFM2.5 and context presets (source; CI/hardware acceptance pending)
 
 LFM2.5-24B-A2B is now curated in the official Liquid AI BF16, FP8 and Q4_K_M GGUF formats, with 131,072 native tokens. The checkpoints have their own LFM Open License 1.0 terms. This catalog addition does not guarantee that the configured vLLM, SGLang or llama.cpp Docker image already implements the new lfm2_moe architecture, FP8 kernels or structured OpenAI tools/reasoning parsers. Real-host tests must prove Chat, SSE, tool-call parsing, memory, long context and restart behaviour before production routing.

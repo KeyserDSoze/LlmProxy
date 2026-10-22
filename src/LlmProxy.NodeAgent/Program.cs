@@ -14,6 +14,7 @@ Directory.CreateDirectory(options.ModelCacheDirectory);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<HardwareInventoryReader>();
+builder.Services.AddSingleton<NodeResourceDiagnostics>();
 builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
@@ -33,6 +34,8 @@ app.MapGet("/v1/system", async (HardwareInventoryReader inventory, CancellationT
     Results.Ok(await inventory.ReadAsync(cancellationToken)));
 app.MapPost("/v1/system/prepare", async (NodeHostPreparer preparer, CancellationToken token) =>
     Results.Ok(await preparer.RunAsync(token)));
+app.MapGet("/v1/system/resources", async (NodeResourceDiagnostics diagnostics, CancellationToken token) =>
+    Results.Ok(await diagnostics.ReadAsync(token)));
 app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
     Results.Ok(await manager.ListAsync(cancellationToken)));
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
@@ -72,6 +75,15 @@ app.MapPost("/v1/models/{installationId}/stop", async (string installationId, Do
 {
     try { return Results.Ok(await manager.StopAsync(installationId, cancellationToken)); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+    { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
+});
+app.MapPost("/v1/models/{installationId}/force-stop", async (string installationId, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await manager.StopAsync(installationId, cancellationToken, force: true)); }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+    { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
 });
 app.MapDelete("/v1/models/{installationId}", async (string installationId, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
 {

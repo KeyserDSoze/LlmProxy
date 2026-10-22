@@ -6,7 +6,7 @@ import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
-import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, Node, Model, Deployment } from './types'
+import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
   const t = useT()
@@ -17,6 +17,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     'kind', ['all', 'OpenAi', 'SystemOne', 'ImageGeneration', 'SpeechSynthesis', 'AudioTranscription'], 'all')
   const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
+  const [resourcesOpen, setResourcesOpen] = useState(false)
+  const [resources, setResources] = useState<NodeResourceSnapshot | null>(null)
+  const [resourcesLoading, setResourcesLoading] = useState(false)
+  const [resourcesError, setResourcesError] = useState<string | null>(null)
   const [nodeId, setNodeId] = useRouteHardware(nodes)
   const currentNodeId = useRef(nodeId)
   currentNodeId.current = nodeId
@@ -89,6 +93,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     // Hardware can change via dropdown or browser history; never show a stale
     // inventory or let an old request re-enable installation on another node.
     setOverview(null); setDownloadJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setEditingInstall(null)
+    setResourcesOpen(false); setResources(null); setResourcesError(null)
     setMessage(null); setError(null)
   }, [nodeId])
   const load = useCallback(async () => {
@@ -267,20 +272,38 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
-  async function action(kind: 'start' | 'activate' | 'stop' | 'remove', deploymentId: string) {
+  async function loadResources() {
+    if (!nodeId) return
+    const requestedNode = nodeId
+    setResourcesLoading(true); setResourcesError(null)
+    try {
+      const next = await api.nodeResourceDiagnostics(requestedNode)
+      if (currentNodeId.current === requestedNode) setResources(next)
+    } catch (reason) {
+      if (currentNodeId.current === requestedNode)
+        setResourcesError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      if (currentNodeId.current === requestedNode) setResourcesLoading(false)
+    }
+  }
+  async function action(kind: 'start' | 'activate' | 'stop' | 'forceStop' | 'remove', deploymentId: string) {
     setBusy(kind + ':' + deploymentId); setMessage(null); setError(null)
     try {
       if (kind === 'start') await api.startManagedDeployment(deploymentId)
       if (kind === 'activate') await api.activateManagedDeployment(deploymentId)
       if (kind === 'stop') await api.stopManagedDeployment(deploymentId)
+      if (kind === 'forceStop') {
+        if (!window.confirm(t('model.forceStopConfirm'))) return
+        await api.forceStopManagedDeployment(deploymentId)
+      }
       if (kind === 'remove') {
         if (!window.confirm('Uninstall this runtime container and remove its deployment? Cached downloaded model weights are retained for reuse.')) return
         await api.removeManagedDeployment(deploymentId)
       }
       setMessage(kind === 'start' ? 'Model started and enabled for routing.' :
         kind === 'activate' ? 'Runtime /health verified; existing model enabled for routing.' :
-        kind === 'stop' ? 'Model removed from routing and stopped.' : 'Managed runtime uninstalled; cached model files are preserved.')
-      await Promise.all([load(), refresh()])
+        kind === 'stop' || kind === 'forceStop' ? t('model.stopVerified') : 'Managed runtime uninstalled; cached model files are preserved.')
+      await Promise.all([load(), refresh(), ...(resourcesOpen ? [loadResources()] : [])])
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -336,6 +359,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         </span>
       </div>
       <div className="modelWorkspaceToolbarActions">
+        <button className="secondary" disabled={!nodeId || !overview?.agentAvailable}
+          onClick={() => { setResourcesOpen(true); void loadResources() }}>{t('model.memoryDiagnostics')}</button>
         <button className="secondary" disabled={!nodeId || loading} onClick={() => void load()}>
           {loading ? t('model.reading') : t('model.refresh')}</button>
         <button className="secondary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>
@@ -626,6 +651,49 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           canWrite={canWrite} refresh={refresh} embedded />}
     </>}
 
+    <Modal open={resourcesOpen} title={t('model.memoryDiagnostics')}
+      description={t('model.memoryDescription')} onClose={() => setResourcesOpen(false)}>
+      <div className="stack">
+        <div className="actions"><strong>{overview?.node.name ?? ''}</strong>
+          <button className="secondary" disabled={resourcesLoading} onClick={() => void loadResources()}>
+            {resourcesLoading ? t('model.memoryLoading') : t('model.memoryRefresh')}</button></div>
+        {resourcesError && <div className="error" role="alert">{resourcesError}</div>}
+        {overview?.hardware && <div className="cards compactCards">
+          <Metric label={t('model.memoryAvailable')} value={formatGiB(overview.hardware.systemMemoryAvailableGiB)} />
+          <Metric label={t('model.memoryTotal')} value={formatGiB(overview.hardware.systemMemoryTotalGiB)} />
+        </div>}
+        {(resources?.recentVllmMemoryFailures.length ?? 0) > 0 && <div className="notice">
+          <strong>{t('model.memoryVllmFailure')}</strong>
+          {resources!.recentVllmMemoryFailures.map(issue => <p key={issue.installationId}>
+            <strong>{issue.modelName}</strong> · GPU {issue.gpuIndex}
+            {' · '}{t('model.memoryRequested')} {formatGiB(issue.requestedAtStartupGiB)}
+            {' · '}{t('model.memoryFreeAtStartup')} {formatGiB(issue.freeAtStartupGiB)}
+            {' · '}{t('model.memoryShortfall')} <strong>{formatGiB(issue.shortfallAtStartupGiB)}</strong>
+          </p>)}
+          <p className="muted">{t('model.memoryHistorical')}</p>
+        </div>}
+        <div className="tableScroll"><table><thead><tr>
+          <th>{t('model.memoryContainer')}</th><th>{t('model.memoryDockerUsage')}</th>
+          <th>{t('model.memoryOwnership')}</th><th>{t('catalog.actions')}</th>
+        </tr></thead><tbody>{(resources?.containers ?? []).map(item => {
+          const deployment = overview?.installations.find(row => row.managedInstallationId === item.installationId)
+          return <tr key={item.name}>
+            <td><strong>{item.modelName ?? item.name}</strong><div className="muted mono">{item.name}</div></td>
+            <td>{item.dockerMemoryGiB == null ? '—' : formatGiB(item.dockerMemoryGiB)}</td>
+            <td>{item.installationId ? t('model.memoryManaged') : t('model.memoryExternal')}</td>
+            <td>{deployment && canWrite && <div className="actions">
+              <button className="secondary" disabled={busy !== null}
+                onClick={() => void action('stop', deployment.id)}>{t('catalog.stop')}</button>
+              <button className="secondary" disabled={busy !== null}
+                onClick={() => void action('forceStop', deployment.id)}>{t('model.forceStop')}</button>
+            </div>}</td>
+          </tr>
+        })}</tbody></table></div>
+        {resources && resources.containers.length === 0 && <p className="muted">{t('model.memoryNoContainers')}</p>}
+        {resources?.warnings.map((warning, index) => <p className="muted" key={index}>{warning}</p>)}
+        <p className="muted">{t('model.memorySafety')}</p>
+      </div>
+    </Modal>
     <Modal open={Boolean(capabilityDetails)} title={`${t('catalog.capabilities')} · ${capabilityDetails?.title ?? ''}`}
       description={t('cap.dialogDescription')} className="capabilitiesModal"
       onClose={() => setCapabilityDetails(null)}>
