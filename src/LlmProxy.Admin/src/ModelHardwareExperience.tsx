@@ -672,6 +672,21 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           </p>)}
           <p className="muted">{t('model.memoryHistorical')}</p>
         </div>}
+        <section className="stack">
+          <h3>{t('model.gpuProcessTitle')}</h3>
+          <p className="muted">{t('model.gpuProcessDisclaimer')}</p>
+          <div className="tableScroll"><table><thead><tr>
+            <th>{t('model.gpuProcessName')}</th><th>PID</th><th>GPU</th>
+            <th>{t('model.gpuProcessMemory')}</th>
+          </tr></thead><tbody>
+            {(resources?.gpuProcesses ?? []).map(process => <tr key={process.pid}>
+              <td className="mono">{process.processName}</td>
+              <td className="mono">{process.pid}</td><td>{process.gpuIndex}</td>
+              <td>{process.reportedGpuMemoryGiB == null ? '—' : formatGiB(process.reportedGpuMemoryGiB)}</td>
+            </tr>)}
+          </tbody></table></div>
+          {resources && resources.gpuProcesses.length === 0 && <p className="muted">{t('model.gpuProcessEmpty')}</p>}
+        </section>
         <div className="tableScroll"><table><thead><tr>
           <th>{t('model.memoryContainer')}</th><th>{t('model.memoryDockerUsage')}</th>
           <th>{t('model.memoryOwnership')}</th><th>{t('catalog.actions')}</th>

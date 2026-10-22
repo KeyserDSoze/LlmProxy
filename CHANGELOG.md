@@ -1,3 +1,8 @@
+## Unreleased — Host GPU process diagnostics (2026-10-22)
+
+- Include NVIDIA process PID, executable and driver-reported GPU memory in the memory diagnostics panel, including processes outside Docker (e.g. host llama-server). Provide GB10 table fallback for missing structured per-process memory.
+- Do not double-count unified GPU/RAM figures or permit killing unidentified host processes from Admin.
+
 ## Unreleased — Verified managed stop and memory troubleshooting (2026-10-22)
 
 - Verify Docker Stop before reporting a model stopped; add explicit audited force-stop only for LLMProxy-owned runtimes.

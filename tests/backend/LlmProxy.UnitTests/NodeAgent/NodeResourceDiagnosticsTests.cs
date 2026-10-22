@@ -27,6 +27,32 @@ public sealed class NodeResourceDiagnosticsTests
     }
 
     [Fact]
+    public void Compute_query_exposes_gpu_host_pid_and_memory()
+    {
+        var rows = NodeResourceDiagnostics.ParseComputeGpuProcesses(
+            "3365, /home/agic/llama.cpp/build/bin/llama-server, 58119\n148918, /usr/lib/xorg/Xorg, N/A");
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(3365, rows[0].Pid);
+        Assert.Equal("llama-server", rows[0].ProcessName);
+        Assert.Equal(58119d / 1024, rows[0].ReportedGpuMemoryGiB);
+        Assert.Null(rows[1].ReportedGpuMemoryGiB);
+    }
+
+    [Fact]
+    public void Nvidia_display_recovers_spark_gpu_memory_if_compute_query_is_incomplete()
+    {
+        const string output = """
+|    0   N/A  N/A            3365      C   ...ma.cpp/build/bin/llama-server      58119MiB |
+|    0   N/A  N/A          148918      G   /usr/lib/xorg/Xorg                      124MiB |
+""";
+        var rows = NodeResourceDiagnostics.ParseDisplayedGpuProcesses(output);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("llama-server", rows[0].ProcessName);
+        Assert.Equal(58119d / 1024, rows[0].ReportedGpuMemoryGiB);
+        Assert.Equal("G", rows[1].ProcessType);
+    }
+
+    [Fact]
     public void Unknown_log_does_not_claim_a_memory_shortfall() =>
         Assert.Null(NodeResourceDiagnostics.ParseRecentVllmShortfall(
             "CUDA initialization failed", "id", "model"));

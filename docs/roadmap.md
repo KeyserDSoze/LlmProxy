@@ -4,7 +4,8 @@
 - [x] Verified Docker Stop, explicit audited force-stop for registered managed installations only.
 - [x] Read-only resource snapshot, approximate Docker RAM and historical vLLM startup shortfall.
 - [ ] CI and live DGX Spark test: verify runtime release, actual memory recovery after stop, and inference health.
-- [ ] Future: measured NVIDIA per-process attribution where the GB10 driver reliably exposes it.
+- [x] Read-only NVIDIA GPU PID inventory, with GB10 fallback and tests. Values may overlap system RAM and Docker RSS.
+- [ ] Associate host PIDs to specific models/systemd units without exposing secret process arguments; no auto-termination of unknown processes.
 
 ## 2026-10-20 — LFM2.5 and long-context controls
 

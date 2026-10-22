@@ -1,3 +1,7 @@
+## 2026-10-22 — DGX Spark GPU process attribution follow-up
+
+Actual Spark `nvidia-smi` identified a host PID `llama-server` reserving 58,119 MiB (~56.8 GiB), even though only the LFM2.5 vLLM and Laya Docker containers were running. Docker stats alone would hide this critical clue. Extend the on-demand read-only Agent resource snapshot with structured NVIDIA compute PID/name/memory query and classic process-table fallback, with PID and reported memory rendered in Admin. No external PID termination endpoint is exposed. On GB10/NVIDIA UMA, process-reported GPU memory overlaps with RAM and Docker memory and must never be double counted. Identifying the owning model/systemd service still requires host inspection.
+
 ## 2026-10-22 — Spark RAM diagnosis and verified Docker stop (source, CI + hardware acceptance pending)
 Stop now checks real Docker state twice before declaring a managed model stopped. Admin also offers explicit audited force-stop restricted to its own registered containers. On-demand Memory & processes lists Docker cgroup RAM usage, managed/external ownership, and recently logged vLLM requested/free/shortfall (historical, not current headroom). No host process kill, automatic victim selection, GPU reset or cache deletion. DGX Spark uses unified CPU/GPU memory: Docker cgroup RSS is not GPU-resident memory, and other host processes/file cache are not attributed. Real Spark/Agent test and exact-head CI remain pending.
 
