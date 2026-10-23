@@ -71,6 +71,33 @@ public sealed class NodeAgentUpgradeMaintenanceWorker(
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         var coordinator = scope.ServiceProvider.GetRequiredService<INodeMaintenanceCoordinator>();
+
+        // Never hold a PostgreSQL row lock while sending Agent HTTP probes.
+        // An 18-second health check could otherwise block the authenticated
+        // heartbeat update and recreate the Agent's 15-second timeout issue.
+        // The phase/version is rechecked after reacquiring the short SQL lock.
+        bool? preflightHealthy = null;
+        var preflightError = "";
+        var snapshot = await db.NodeEnrollments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.NodeId == id, token);
+        var expectedTarget = snapshot?.AgentUpgradeTargetVersion;
+        if (expectedTarget is not null &&
+            snapshot?.AgentUpgradeMaintenanceStage is "updating" or "verifying" or "needs_attention" &&
+            (IsVerifiedUpgrade(snapshot.AgentVersion, snapshot.AgentUpdateStatus, expectedTarget) ||
+             IsFailedUpgrade(snapshot.AgentUpdateStatus, expectedTarget)) &&
+            snapshot.LastHeartbeatAtUtc >= DateTimeOffset.UtcNow.AddSeconds(-40))
+        {
+            var candidate = await db.Nodes.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == id, token);
+            if (candidate?.Status == NodeStatus.Draining)
+            {
+                var factory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+                var protector = scope.ServiceProvider.GetRequiredService<UpstreamCredentialProtector>();
+                (preflightHealthy, preflightError) = await ProbeAsync(
+                    db, candidate, factory, protector, token);
+            }
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(token);
 
         // Multiple Gateway replicas share this upgrade. Never let two workers
@@ -142,17 +169,19 @@ public sealed class NodeAgentUpgradeMaintenanceWorker(
         var before = await coordinator.GetStatusAsync(id, token);
         if (!before.Drained) return;
 
-        var factory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
-        var protector = scope.ServiceProvider.GetRequiredService<UpstreamCredentialProtector>();
-        var (healthy, error) = await ProbeAsync(db, node, factory, protector, token);
-        if (!healthy)
+        if (preflightHealthy is null || expectedTarget != target)
+            return; // A heartbeat/upgrade state transition raced with the probe.
+        if (preflightHealthy != true)
         {
             // Fail closed. Keep the admission gate and Draining node while an
             // operator can inspect the runtime; never run docker start here.
+            var firstFailure = enrollment.AgentUpgradeMaintenanceStage != "needs_attention";
             enrollment.AgentUpgradeMaintenanceStage = "needs_attention";
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
-            logger.LogWarning("Node {NodeId} Agent changed but routing stays drained: {Error}", id, error);
+            if (firstFailure)
+                logger.LogWarning("Node {NodeId} Agent changed but routing stays drained: {Error}",
+                    id, preflightError);
             return;
         }
 
