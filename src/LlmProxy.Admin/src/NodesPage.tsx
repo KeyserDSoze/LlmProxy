@@ -81,7 +81,13 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       (pair.desiredAgentVersion || pair.agentUpgradeTargetVersion))) return
     if (!window.confirm('Update the Node Agent? LLMProxy will automatically drain new routing and wait for active inference requests to finish, then update the Agent and restore routing after verifying the running models. Docker containers stay running and model weights are not reloaded. If verification fails, the node remains safely drained.')) return
     setError(null); setBusy('agent-update:' + nodeId)
-    try { await api.updatePairedAgent(nodeId); }
+    try {
+      const queued = await api.updatePairedAgent(nodeId)
+      setPairedNodes(current => current.map(pair => pair.nodeId === nodeId
+        ? { ...pair, agentUpgradeTargetVersion: queued.targetVersion,
+            agentUpgradeMaintenanceStage: queued.maintenanceStage }
+        : pair))
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -253,12 +259,12 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
               onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) && (() => {
               const state = pairedNodes.find(pair => pair.nodeId === node.id)!
-              const queued = !!state.desiredAgentVersion
+              const queued = !!state.desiredAgentVersion || !!state.agentUpgradeTargetVersion
               const running = state.agentUpdateStatus?.startsWith('running:')
               return <button disabled={busy === 'agent-update:' + node.id || queued}
                 title={queued ? 'The update has been accepted. The Agent downloads, installs, verifies and reports the new version asynchronously; status refreshes every 10 seconds.' : undefined}
                 onClick={() => void updateAgent(node.id)}>
-                {running ? 'Updating Agent…' : queued ? 'Queued · waiting for Agent' : 'Update agent'}
+                {running ? 'Updating Agent…' : queued ? 'Update in progress…' : 'Update agent'}
               </button>
             })()}
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) &&
@@ -268,7 +274,11 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             {canWrite && nodes.length > 1 && <button onClick={() => openConsolidate(node)}>Consolidate</button>}
             {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button>}
             {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button>}
-            {canWrite && (!node.enabled || node.status === 'Draining') && <button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button>}
+            {canWrite && (!node.enabled || node.status === 'Draining') &&
+              <button disabled={pairedNodes.some(pair => pair.nodeId === node.id && !!pair.agentUpgradeTargetVersion)}
+                title={pairedNodes.some(pair => pair.nodeId === node.id && !!pair.agentUpgradeTargetVersion) ?
+                  'Upgrade maintenance is controlling this drain; wait for verified routing restoration.' : undefined}
+                onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button>}
             {canWrite && !node.enabled && <button className="danger" disabled={busy === `delete:${node.id}`} onClick={() => void deleteNode(node)}>{busy === `delete:${node.id}` ? 'Deleting…' : 'Delete'}</button>}
           </td>
         </tr>)}

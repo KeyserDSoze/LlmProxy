@@ -102,7 +102,7 @@ export const api = {
   rotateAgentRecovery: (nodeId: string) => request<AgentRecoverySecret>(
     `/api/admin/node-enrollment/nodes/${nodeId}/recovery/rotate`, { method: 'POST' }),
   updatePairedAgent: (nodeId: string, version?: string) =>
-    request<{ desiredAgentVersion: string }>(`/api/admin/node-enrollment/nodes/${nodeId}/update`, {
+    request<{ targetVersion: string; maintenanceStage: string }>(`/api/admin/node-enrollment/nodes/${nodeId}/update`, {
       method: 'POST', body: JSON.stringify({ version: version ?? null })
     }),
   models: () => request<Model[]>('/api/admin/models'),
