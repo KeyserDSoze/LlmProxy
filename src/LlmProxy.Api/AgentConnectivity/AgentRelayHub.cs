@@ -1,12 +1,14 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Threading.Channels;
 
 namespace LlmProxy.Api.AgentConnectivity;
 
 /// <summary>Outbound Agent-owned multiplexed HTTP relay. Sessions are deliberately local to this API replica.</summary>
-public sealed class AgentRelayHub
+public sealed class AgentRelayHub(ILogger<AgentRelayHub>? logger = null)
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
@@ -14,15 +16,43 @@ public sealed class AgentRelayHub
     public async Task AttachAsync(Guid nodeId, WebSocket socket, CancellationToken cancellationToken)
     {
         var session = new Session(socket);
+        var timer = Stopwatch.StartNew();
         if (_sessions.TryGetValue(nodeId, out var previous))
+        {
+            logger?.LogWarning("Node Agent {NodeId} WebSocket session replaced an existing connection. Check for duplicate Agents or an unstable reverse proxy.", nodeId);
             previous.Abort("A newer agent connection replaced this session.");
+        }
         _sessions[nodeId] = session;
-        try { await session.RunAsync(cancellationToken); }
+        logger?.LogInformation("Node Agent {NodeId} WebSocket session accepted.", nodeId);
+        var reason = "closed";
+        try
+        {
+            await session.RunAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            reason = "server-shutdown";
+        }
+        catch (WebSocketException error)
+        {
+            reason = "websocket-" + error.WebSocketErrorCode;
+            logger?.LogWarning("Node Agent {NodeId} WebSocket ended with {Reason}: {Detail}",
+                nodeId, reason, error.Message);
+        }
+        catch (Exception error)
+        {
+            reason = error.GetType().Name;
+            logger?.LogWarning("Node Agent {NodeId} relay session ended unexpectedly: {Reason}",
+                nodeId, reason);
+        }
         finally
         {
             if (_sessions.TryGetValue(nodeId, out var current) && ReferenceEquals(current, session))
                 _sessions.TryRemove(nodeId, out _);
             session.Abort("Agent connection lost.");
+            logger?.LogInformation(
+                "Node Agent {NodeId} WebSocket disconnected after {UptimeSeconds:n1}s; reason={Reason}; closeCode={CloseCode}",
+                nodeId, timer.Elapsed.TotalSeconds, reason, socket.CloseStatus?.ToString() ?? "none");
         }
     }
 
@@ -127,7 +157,15 @@ public sealed class AgentRelayHub
             while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
             {
                 var message = await ReadAsync(socket, token);
-                if (message is null) return;
+                if (message is null)
+                {
+                    // Complete the RFC 6455 close handshake if the peer sent a
+                    // Close control frame. Abrupt Abort() is for broken sockets.
+                    if (socket.State == WebSocketState.CloseReceived)
+                        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure,
+                            "agent tunnel closing", CancellationToken.None);
+                    return;
+                }
                 if (!_requests.TryGetValue(message.Id, out var pending)) continue;
                 switch (message.Type)
                 {

@@ -1,3 +1,7 @@
+## 2026-10-23 — Stop polling stopped Agent runtime and trace WebSocket disconnects (source; CI pending)
+
+Live Spark/Gateway logs for 0.2.54 show the Gateway healthy, Redis/PG healthy, repeated outbound WebSocket starts and old `/runtime/18000/metrics` requests even though the Qwen3 managed deployment is disabled. Fixed legacy node-scoped vLLM metrics collection so it only polls enabled, non-Agent-managed deployments. The independent enabled-managed-deployment metrics collector continues observing real runtimes. Added Gateway WebSocket attach/replacement/disconnect diagnostics, including session uptime, close code and categorized error reason; do not log node secrets or inference messages. Respond to peer Close frames with a proper close handshake instead of unconditionally aborting. These changes improve observability but DO NOT prove the root reason for current tunnel drops; correlate with Cloudflare ingress logs, Agent reconnects and duplicate Agent PIDs.
+
 ## 2026-10-23 — Recovering Admin from Spark outbound Agent disconnects (source; CI pending)
 
 Observed after Agent v0.2.53 upgrade: heartbeat shows Agent connected and tunnel ready, but the model overview falls back to cached inventory with `Agent connection lost`; routing remains disabled and the legacy physical node's `BaseAddress` points to stopped Qwen3 at `/runtime/18000`. These signals measure different things; a heartbeat is not proof that the management request relay succeeded.

@@ -1,3 +1,8 @@
+## Unreleased — Reduce noisy stopped-runtime probes and diagnose Spark WebSocket drops (2026-10-23)
+
+- Do not poll old node-level `/runtime/18000/metrics` when no enabled legacy unmanaged inference deployment exists; managed deployment metrics retain their independent collector.
+- Log Agent WebSocket acceptance, duplicate-session replacement, disconnect reason and uptime on the Gateway. Complete graceful peer Close handshakes.
+
 ## 2026-10-23 — Recovering Admin from Spark outbound Agent disconnects (source; CI pending)
 
 Observed after Agent v0.2.53 upgrade: heartbeat shows Agent connected and tunnel ready, but the model overview falls back to cached inventory with `Agent connection lost`; routing remains disabled and the legacy physical node's `BaseAddress` points to stopped Qwen3 at `/runtime/18000`. These signals measure different things; a heartbeat is not proof that the management request relay succeeded.

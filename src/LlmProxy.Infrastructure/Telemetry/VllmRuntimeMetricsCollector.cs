@@ -44,9 +44,21 @@ public sealed class VllmRuntimeMetricsCollector(
         {
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+            // Node-scoped /metrics applies only to legacy manually configured
+            // inference services. Agent-managed deployments have their own
+            // per-deployment collector below; when a model is stopped, the
+            // physical node's old BaseAddress can still point at /runtime/18000.
+            // Polling it every few seconds creates misleading errors and
+            // unnecessary traffic through the Agent's WebSocket tunnel.
+            var legacyNodeIds = await dbContext.Deployments.AsNoTracking()
+                .Where(deployment => deployment.Enabled &&
+                    deployment.ManagedInstallationId == null)
+                .Select(deployment => deployment.NodeId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
             var nodes = await dbContext.Nodes
                 .AsNoTracking()
-                .Where(node => node.Enabled)
+                .Where(node => node.Enabled && legacyNodeIds.Contains(node.Id))
                 .Select(node => new RuntimeNode(node.Id, node.Name, node.BaseAddress, node.UpstreamBearerTokenCiphertext))
                 .ToListAsync(cancellationToken);
 
