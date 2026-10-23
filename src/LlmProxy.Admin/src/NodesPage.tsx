@@ -92,6 +92,18 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
     finally { setBusy(null) }
   }
 
+  async function abandonAgentUpgrade(nodeId: string) {
+    if (!window.confirm('The Agent/runtimes could not be verified after updating. Exit upgrade maintenance for manual repair? ALL routing deployments on this server will stay disabled until you explicitly verify and reactivate them. Model containers and cached weights will not be removed.')) return
+    setBusy('agent-repair:' + nodeId); setError(null)
+    try {
+      const result = await api.abandonAgentUpgrade(nodeId)
+      setError(`Upgrade maintenance exited safely. ${result.disabledDeployments} deployment(s) disabled for manual health verification and reactivation.`)
+      await refresh()
+      setPairedNodes(await api.pairedAgentNodes())
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    finally { setBusy(null) }
+  }
+
   async function beginPair() {
     setError(null); setBusy('pair')
     try {
@@ -197,7 +209,14 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                 Agent upgrade to v{pair.agentUpgradeTargetVersion}: {pair.agentUpgradeMaintenanceStage ?? 'preparing'}.
                 Routing is temporarily drained; models remain running in Docker.
                 {pair.agentUpgradeMaintenanceStage === 'verifying' && ' Verifying Agent and inference health before restoring routing.'}
-                {pair.agentUpgradeMaintenanceStage === 'needs_attention' && ' Automatic restore could not verify health. Keep the node in maintenance and inspect the Agent / runtime.'}
+                {pair.agentUpgradeMaintenanceStage === 'needs_attention' && <>
+                  <p>Automatic restore could not verify health. The node remains drained.</p>
+                  {canWrite && <button type="button" className="secondary"
+                    disabled={busy === 'agent-repair:' + pair.nodeId}
+                    onClick={() => void abandonAgentUpgrade(pair.nodeId)}>
+                    Exit maintenance · keep routing off
+                  </button>}
+                </>}
               </div>}
               {pair.agentUpdateStatus && (() => {
                 const [status, target, phase, detail] = pair.agentUpdateStatus.split(':')

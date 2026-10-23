@@ -188,6 +188,43 @@ public static class NodeEnrollmentEndpoints
                 message = "Routing paused; existing requests will drain before the Agent update. Running model containers will not be restarted." });
         });
 
+        // Explicit fail-safe escape hatch: a failed runtime verification must
+        // not trap administrators in Draining forever. Never silently re-enable
+        // any deployment while the required Agent/runtime checks are failing.
+        var abandonUpgrade = admin.MapPost("/nodes/{nodeId:guid}/update/abandon", async (
+            Guid nodeId, GatewayDbContext db, INodeMaintenanceCoordinator coordinator,
+            HttpContext context, CancellationToken token) =>
+        {
+            var agent = await db.NodeEnrollments.SingleOrDefaultAsync(x => x.NodeId == nodeId, token);
+            if (agent?.AgentUpgradeMaintenanceStage != "needs_attention" ||
+                agent.AgentUpgradeTargetVersion is null)
+                return Results.Conflict(new { error = "upgrade_not_recoverable",
+                    message = "Only an upgrade blocked on failed runtime verification can be abandoned." });
+            var node = await db.Nodes.SingleOrDefaultAsync(x => x.Id == nodeId, token);
+            if (node is null) return Results.NotFound();
+            var deployments = await db.Deployments
+                .Where(x => x.NodeId == nodeId && x.Enabled)
+                .ToArrayAsync(token);
+            foreach (var deployment in deployments) deployment.Disable();
+            // Unknown is operational for manual model management, but no
+            // deployment is routable. Operator must explicitly re-activate.
+            node.Disable();
+            node.Enable();
+            agent.DesiredAgentVersion = null;
+            agent.AgentUpgradeMaintenanceStage = "releasing";
+            db.AuditEvents.Add(new AuditEvent(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
+                "agent.update.abandon_safely", "node", nodeId.ToString(),
+                context.Connection.RemoteIpAddress?.ToString(),
+                JsonSerializer.Serialize(new { disabledDeployments = deployments.Length,
+                    agent.AgentUpgradeTargetVersion })));
+            await db.SaveChangesAsync(token);
+            var unblocked = await coordinator.TryResumeAsync(nodeId, token);
+            return Results.Ok(new {
+                nodeId, disabledDeployments = deployments.Length,
+                coordinationPending = !unblocked,
+                message = "Upgrade maintenance exited. All routing on this node remains off until an operator verifies and enables deployments." });
+        });
+
         // Per-node recovery is deliberately separate from the 30-minute invitation.
         // Encrypted-at-rest code is revealable only through audited AdminWrite actions.
         var revealRecovery = admin.MapPost("/nodes/{nodeId:guid}/recovery/reveal", async (
@@ -242,6 +279,7 @@ public static class NodeEnrollmentEndpoints
         {
             invite.RequireAuthorization("AdminWrite");
             update.RequireAuthorization("AdminWrite");
+            abandonUpgrade.RequireAuthorization("AdminWrite");
             revealRecovery.RequireAuthorization("AdminWrite");
             rotateRecovery.RequireAuthorization("AdminWrite");
         }

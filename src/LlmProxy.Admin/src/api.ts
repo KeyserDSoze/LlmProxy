@@ -101,6 +101,8 @@ export const api = {
     `/api/admin/node-enrollment/nodes/${nodeId}/recovery/reveal`, { method: 'POST' }),
   rotateAgentRecovery: (nodeId: string) => request<AgentRecoverySecret>(
     `/api/admin/node-enrollment/nodes/${nodeId}/recovery/rotate`, { method: 'POST' }),
+  abandonAgentUpgrade: (nodeId: string) => request<{ disabledDeployments: number; coordinationPending: boolean }>(
+    `/api/admin/node-enrollment/nodes/${nodeId}/update/abandon`, { method: 'POST' }),
   updatePairedAgent: (nodeId: string, version?: string) =>
     request<{ targetVersion: string; maintenanceStage: string }>(`/api/admin/node-enrollment/nodes/${nodeId}/update`, {
       method: 'POST', body: JSON.stringify({ version: version ?? null })
