@@ -1,3 +1,8 @@
+## Unreleased — Agent WebSocket keepalive compatibility (2026-10-23)
+
+- Reduce Gateway and Node Agent WebSocket Ping/Pong interval from 20 to 5 seconds to tolerate aggressively short proxy idle timeouts observed after 101 upgrades. Preserve the 15-second dead-link detection deadline.
+- Validate live relay stability after updating both Gateway and Node Agent; shorter heartbeat cannot solve a forced absolute WebSocket lifetime cap.
+
 ## Unreleased — Reduce noisy stopped-runtime probes and diagnose Spark WebSocket drops (2026-10-23)
 
 - Do not poll old node-level `/runtime/18000/metrics` when no enabled legacy unmanaged inference deployment exists; managed deployment metrics retain their independent collector.

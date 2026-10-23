@@ -252,7 +252,10 @@ app.MapGet("/readyz", async (GatewayDbContext dbContext, CancellationToken cance
 // Without a Pong deadline an unplugged server may remain falsely "connected".
 app.UseWebSockets(new WebSocketOptions
 {
-    KeepAliveInterval = TimeSpan.FromSeconds(20),
+    // The public Cloudflare path has exhibited ~10 s WebSocket lifetimes.
+    // Emit RFC 6455 Ping/Pong traffic before an aggressive intermediary idle
+    // timeout, while still detecting half-open connections via a Pong deadline.
+    KeepAliveInterval = TimeSpan.FromSeconds(5),
     KeepAliveTimeout = TimeSpan.FromSeconds(15)
 });
 app.MapOpenAiEndpoints();

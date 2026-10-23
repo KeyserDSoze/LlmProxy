@@ -37,9 +37,11 @@ public sealed class OutboundAgentRelayWorker(
                 var wsUri = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws" }.Uri;
                 using var socket = new ClientWebSocket();
                 socket.Options.SetRequestHeader("Authorization", "Bearer " + pair.AgentSecret);
-                socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
-                // Ping/Pong timeout is essential: a broken WAN path can leave a TCP
-                // socket apparently open forever without a close frame.
+                // Proxy-independent keepalive: previously 20 seconds, longer
+                // than the ~10 second disconnect window observed on the live
+                // Cloudflare route. This is not a cure for proxy hard timeouts.
+                socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+                // Ping/Pong deadline remains bounded for half-open WAN links.
                 socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(15);
                 // A gateway that silently drops SYN/TLS handshakes must not
                 // block future reconnect attempts indefinitely.

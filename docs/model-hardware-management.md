@@ -1,3 +1,7 @@
+## 2026-10-23 — Test ~10 second outbound WebSocket closures with a 5-second keepalive (CI pending)
+
+The deployed Spark Agent v0.2.53 repeatedly reaches the Gateway v0.2.54 (`101 Switching Protocols`) but two captured Kestrel sessions terminate without a WebSocket Close frame after 10.34/10.44 seconds. This is not an enrollment or authentication failure. Neither Kestrel logs nor empty cloudflared logs prove whether the client, Cloudflare edge, cloudflared, intermediary NAT, or an origin proxy closed the TCP connection. Both application sides previously sent Ping/Pong only every **20 seconds**, so a 10-second idle intermediary can kill an unused session before the first heartbeat. Move Gateway and Agent WebSocket keepalive interval to **5 seconds** while retaining **15-second Pong deadline**; test with a paired rollout of both binaries and confirm whether session uptime improves beyond 10 seconds. A hard lifetime cap will not be fixed by pings; use network/Cloudflare diagnostics if disconnect persists. Do not start any GPU model during tunnel acceptance after Spark's unexplained thermal/power shutdown.
+
 ## 2026-10-23 — GPU crash-loop prevention and temperature start gate (source; CI and real hardware acceptance pending)
 
 A DGX Spark experienced severe heat followed by an abrupt physical shutdown while a large vLLM model repeatedly failed to become healthy. Cause of shutdown is **unverified**: power supply, ventilation, CPU/board and firmware must still be investigated. Software safeguards are not hardware thermal protection.
