@@ -77,7 +77,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   async function updateAgent(nodeId: string) {
     // The Gateway retains the desired version until the Agent acknowledges it.
     // Never queue a second identical update while one is pending.
-    if (pairedNodes.some(pair => pair.nodeId === nodeId && pair.desiredAgentVersion)) return
+    if (pairedNodes.some(pair => pair.nodeId === nodeId &&
+      (pair.desiredAgentVersion || pair.agentUpgradeTargetVersion))) return
+    if (!window.confirm('Update the Node Agent? LLMProxy will automatically drain new routing and wait for active inference requests to finish, then update the Agent and restore routing after verifying the running models. Docker containers stay running and model weights are not reloaded. If verification fails, the node remains safely drained.')) return
     setError(null); setBusy('agent-update:' + nodeId)
     try { await api.updatePairedAgent(nodeId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -185,6 +187,12 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             return <div key={pair.nodeId} className="muted">
               Agent {fresh ? 'connected' : 'offline'} · {pair.mode}
               {pair.agentVersion ? ' · installed v' + pair.agentVersion : ''}
+              {pair.agentUpgradeTargetVersion && <div role="status" className="notice">
+                Agent upgrade to v{pair.agentUpgradeTargetVersion}: {pair.agentUpgradeMaintenanceStage ?? 'preparing'}.
+                Routing is temporarily drained; models remain running in Docker.
+                {pair.agentUpgradeMaintenanceStage === 'verifying' && ' Verifying Agent and inference health before restoring routing.'}
+                {pair.agentUpgradeMaintenanceStage === 'needs_attention' && ' Automatic restore could not verify health. Keep the node in maintenance and inspect the Agent / runtime.'}
+              </div>}
               {pair.agentUpdateStatus && (() => {
                 const [status, target, phase, detail] = pair.agentUpdateStatus.split(':')
                 const errorDescriptions: Record<string, string> = {

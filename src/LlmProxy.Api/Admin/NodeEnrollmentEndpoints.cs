@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using LlmProxy.Api.AgentConnectivity;
+using LlmProxy.Application.Abstractions;
 using LlmProxy.Api.Product;
 using LlmProxy.Domain.Audit;
 using LlmProxy.Domain.Nodes;
@@ -111,7 +112,7 @@ public static class NodeEnrollmentEndpoints
         {
             var records = await db.NodeEnrollments.AsNoTracking()
                 .Where(x => x.NodeId != null)
-                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus, x.RecoverySecretCreatedAtUtc, HasRecoverySecret = x.RecoverySecretHash != null })
+                .Select(x => new { x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus, x.AgentUpgradeTargetVersion, x.AgentUpgradeMaintenanceStage, x.RecoverySecretCreatedAtUtc, HasRecoverySecret = x.RecoverySecretHash != null })
                 .ToListAsync(token);
             var bridge = services.GetService<RedisAgentRelayBridge>();
             var states = new Dictionary<Guid, bool>();
@@ -123,7 +124,7 @@ public static class NodeEnrollmentEndpoints
                 catch (Exception) when (!token.IsCancellationRequested) { states[id] = false; }
             }
             return Results.Ok(records.Select(x => new {
-                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus,
+                x.NodeId, x.Mode, x.LastHeartbeatAtUtc, x.AgentVersion, x.DesiredAgentVersion, x.AgentUpdateStatus, x.AgentUpgradeTargetVersion, x.AgentUpgradeMaintenanceStage,
                 x.RecoverySecretCreatedAtUtc, x.HasRecoverySecret,
                 tunnelConnected = x.NodeId.HasValue && states.GetValueOrDefault(x.NodeId.Value)
             }));
@@ -131,30 +132,60 @@ public static class NodeEnrollmentEndpoints
 
         var update = admin.MapPost("/nodes/{nodeId:guid}/update", async (
             Guid nodeId, AgentUpdateRequest request, GatewayDbContext db,
-            ReleaseDiscoveryService releases, HttpContext context, CancellationToken token) =>
+            ReleaseDiscoveryService releases, INodeMaintenanceCoordinator coordinator,
+            HttpContext context, CancellationToken token) =>
         {
             var agent = await db.NodeEnrollments.SingleOrDefaultAsync(
                 x => x.NodeId == nodeId && x.AgentSecretHash != null, token);
             if (agent is null) return Results.NotFound();
-            // A version swap restarts the local Agent. Never interrupt deployed models
-            // during a production request: stop managed deployments through Admin first.
-            if (await db.Deployments.AnyAsync(d => d.NodeId == nodeId && d.Enabled &&
-                d.ManagedInstallationId != null, token))
-                return Results.Conflict(new { error = "active_managed_models",
-                    message = "Stop all active managed deployments before upgrading the Agent." });
+            // No inference container needs to be stopped for an Agent binary swap.
+            // Admission must be blocked and in-flight requests drained BEFORE
+            // instructing the Agent to restart its tunnel. On successful health
+            // verification the worker releases exactly that routing drain.
+            if (agent.AgentUpgradeTargetVersion != null || agent.DesiredAgentVersion != null)
+                return Results.Conflict(new { error = "agent_upgrade_in_progress",
+                    message = "An Agent update is already scheduled. Check the maintenance status first." });
+            var node = await db.Nodes.SingleOrDefaultAsync(x => x.Id == nodeId, token);
+            if (node is null) return Results.NotFound();
+            if (!node.Enabled || node.Status == NodeStatus.Draining)
+                return Results.Conflict(new { error = "node_not_available_for_upgrade",
+                    message = "The node must be enabled and not already draining for separate maintenance." });
             var available = await releases.GetAvailableAsync(agent.AgentVersion ?? "0.0.0", token);
             var selected = string.IsNullOrWhiteSpace(request.Version)
                 ? available.FirstOrDefault(x => x.IsNewer)
                 : available.FirstOrDefault(x => x.Version == request.Version && x.IsNewer);
             if (selected is null)
                 return Results.BadRequest(new { error = "no_verified_newer_release" });
-            agent.DesiredAgentVersion = selected.Version;
-            db.AuditEvents.Add(new AuditEvent(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
-                "agent.update.schedule", "node", nodeId.ToString(),
-                context.Connection.RemoteIpAddress?.ToString(),
-                JsonSerializer.Serialize(new { version = selected.Version })));
-            await db.SaveChangesAsync(token);
-            return Results.Accepted($"/api/admin/node-enrollment/nodes", new { nodeId, desiredAgentVersion = selected.Version });
+            if (!await coordinator.TryBeginDrainAsync(nodeId, token))
+                return Results.Json(new { error = "maintenance_coordination_unavailable",
+                    message = "Cannot safely block new inference requests before upgrading the Agent." },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            try
+            {
+                node.StartDrain();
+                agent.AgentUpgradeTargetVersion = selected.Version;
+                agent.AgentUpgradeMaintenanceStage = "draining";
+                agent.AgentUpgradeStartedAtUtc = DateTimeOffset.UtcNow;
+                // No DesiredAgentVersion yet: the worker waits for ALL admitted
+                // in-flight inference to finish before triggering the upgrade.
+                db.AuditEvents.Add(new AuditEvent(
+                    context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "local-admin",
+                    "agent.update.drain", "node", nodeId.ToString(),
+                    context.Connection.RemoteIpAddress?.ToString(),
+                    JsonSerializer.Serialize(new { version = selected.Version,
+                        routingPaused = true, inferenceContainersStopped = false })));
+                await db.SaveChangesAsync(token);
+                await coordinator.TryConfirmDrainAsync(nodeId, token);
+            }
+            catch
+            {
+                await coordinator.CancelPendingDrainAsync(nodeId, CancellationToken.None);
+                throw;
+            }
+            return Results.Accepted("/api/admin/node-enrollment/nodes", new {
+                nodeId, targetVersion = selected.Version,
+                maintenanceStage = "draining",
+                message = "Routing paused; existing requests will drain before the Agent update. Running model containers will not be restarted." });
         });
 
         // Per-node recovery is deliberately separate from the 30-minute invitation.

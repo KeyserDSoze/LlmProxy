@@ -20,4 +20,9 @@ public sealed class NodeEnrollmentRecord
     public string? AgentVersion { get; set; }
     public string? DesiredAgentVersion { get; set; }
     public string? AgentUpdateStatus { get; set; }
+    // Durable, non-disruptive Agent upgrade maintenance. Docker runtimes stay
+    // running; routing is drained and only resumed after Agent/runtime checks.
+    public string? AgentUpgradeTargetVersion { get; set; }
+    public string? AgentUpgradeMaintenanceStage { get; set; }
+    public DateTimeOffset? AgentUpgradeStartedAtUtc { get; set; }
 }
