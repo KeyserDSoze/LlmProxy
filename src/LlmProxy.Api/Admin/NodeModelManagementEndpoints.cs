@@ -526,7 +526,7 @@ public static class NodeModelManagementEndpoints
                     factory.CreateClient("node-management"), node, protector,
                     HttpMethod.Post, path, null, token);
                 AddAudit(db, context, "model.start_queued", "deployment", id.ToString(),
-                    new { node.Id, deployment.ManagedInstallationId, job.Id });
+                    new { nodeId = node.Id, deployment.ManagedInstallationId, jobId = job.Id });
                 await db.SaveChangesAsync(token);
                 return Results.Accepted(value: job);
             }
@@ -1412,6 +1412,9 @@ public static class NodeModelManagementEndpoints
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null,
         string? GpuDevices = null, int? MaxOutputTokens = null,
         bool StartAfterInstall = false);
+    public sealed record ModelStartJob(Guid Id, string InstallationId, string Status, string Detail,
+        string? Error, ManagedModelState? Result, DateTimeOffset CreatedAtUtc,
+        DateTimeOffset? CompletedAtUtc = null);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
