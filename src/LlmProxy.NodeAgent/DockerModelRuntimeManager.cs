@@ -324,6 +324,7 @@ for index, entry in enumerate(files):
             }
             catch (Exception exception)
             {
+                var diagnostics = await ReadFailedDockerLogsAsync(name);
                 // Failed startup must release GPU allocation and cannot leave a
                 // crashing inference container behind.
                 try
@@ -335,9 +336,13 @@ for index, entry in enumerate(files):
                 }
                 catch (Exception) { /* Preserve the original startup failure. */ }
                 record.Status = "error";
-                record.Error = exception is OperationCanceledException
-                    ? "Runtime startup cancelled; container cleanup requested."
+                var cause = exception is OperationCanceledException
+                    ? cancellationToken.IsCancellationRequested
+                        ? "Startup cancelled by Agent stop/operator request; GPU container cleanup requested."
+                        : $"Runtime did not become healthy within {options.StartupTimeoutMinutes} minutes."
                     : exception.Message;
+                var combined = cause + diagnostics;
+                record.Error = combined.Length > 3000 ? combined[..3000] : combined;
                 record.RuntimeBaseAddress = null;
                 await registry.UpsertAsync(record, CancellationToken.None);
                 throw;
@@ -347,6 +352,24 @@ for index, entry in enumerate(files):
         {
             _operations.Release();
         }
+    }
+
+    private async Task<string> ReadFailedDockerLogsAsync(string name)
+    {
+        try
+        {
+            var result = await runner.RunAsync(options.DockerExecutable,
+                ["logs", "--tail", "35", name], TimeSpan.FromSeconds(8), CancellationToken.None);
+            if (!result.Success) return "";
+            var tail = (result.StandardError + "\n" + result.StandardOutput).Trim();
+            if (tail.Length == 0) return "";
+            // Do not store incidental Hugging Face credentials or bearer tokens.
+            tail = Regex.Replace(tail, @"hf_[a-zA-Z0-9]{12,}", "[REDACTED]");
+            tail = Regex.Replace(tail, @"(?i)(Bearer\s+)[a-zA-Z0-9._-]{12,}", "$1[REDACTED]");
+            if (tail.Length > 1900) tail = tail[^1900..];
+            return "\nRecent Docker log tail:\n" + tail;
+        }
+        catch (Exception) { return ""; }
     }
 
     // Stop must be observed in Docker, not inferred from a best-effort command.

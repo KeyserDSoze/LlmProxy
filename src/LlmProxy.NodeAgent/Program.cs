@@ -20,6 +20,7 @@ builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddSingleton<ModelInstallJobManager>();
+builder.Services.AddSingleton<ModelStartJobManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHostedService<ManagedRuntimeRestartGuard>();
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
@@ -41,6 +42,15 @@ app.MapGet("/v1/system/resources", async (NodeResourceDiagnostics diagnostics, C
 app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
     Results.Ok(await manager.ListAsync(cancellationToken)));
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
+app.MapGet("/v1/models/start-jobs", (ModelStartJobManager jobs) => Results.Ok(jobs.List()));
+app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs) =>
+{
+    try { return Results.Accepted(value: jobs.Enqueue(installationId)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+});
+app.MapDelete("/v1/models/start-jobs/{jobId:guid}", (Guid jobId, ModelStartJobManager jobs) =>
+    jobs.Cancel(jobId) ? Results.Accepted() : Results.NotFound());
 app.MapGet("/v1/models/install-jobs/{id:guid}", (Guid id, ModelInstallJobManager jobs) =>
     jobs.Get(id) is { } job ? Results.Ok(job) : Results.NotFound());
 app.MapPost("/v1/models/install-jobs", (InstallRequest request, ModelInstallJobManager jobs) =>
