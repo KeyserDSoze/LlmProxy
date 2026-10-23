@@ -1026,14 +1026,18 @@ test('a completed installation offers Start directly from Jobs', async ({ page }
     result: { installationId: 'install-airllm', runtime: 'airllm', status: 'stopped' },
     createdAtUtc: '2026-10-12T08:00:00Z'
   }]))
-  await page.route('**/api/admin/model-management/deployments/deployment-airllm/start', route => {
+  await page.route('**/api/admin/model-management/nodes/*/start-jobs', route =>
+    json(route, [{ id: 'start-job', installationId: 'install-airllm', status: 'starting',
+      detail: 'Loading model weights and waiting for /health', createdAtUtc: '2026-10-23T16:00:00Z' }]))
+  await page.route('**/api/admin/model-management/deployments/deployment-airllm/start-jobs', route => {
     startCount++
-    return json(route, { deployment: { id: 'deployment-airllm', enabled: true } })
+    return json(route, { id: 'start-job', installationId: 'install-airllm',
+      status: 'queued', detail: 'Queued on the Agent', createdAtUtc: '2026-10-23T16:00:00Z' })
   })
   await page.goto('/admin/catalog?tab=deploy&node=node-1')
   await page.getByRole('tab', { name: /Jobs/ }).click()
   await page.getByRole('button', { name: 'Start', exact: true }).click()
-  await expect(page.getByText('Model started and enabled for routing.')).toBeVisible()
+  await expect(page.getByText(/Model startup queued on the Agent/)).toBeVisible()
   expect(startCount).toBe(1)
 })
 
