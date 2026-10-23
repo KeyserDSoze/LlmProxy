@@ -122,6 +122,21 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     }, 15000)
     return () => window.clearInterval(timer)
   }, [nodeId, tab])
+  // A WebSocket or Cloudflare interruption is transient. Keep cached
+  // installations visible and retry the read-only management overview in
+  // Deploy models too, without requiring the operator to repeatedly click.
+  useEffect(() => {
+    if (!nodeId || overview?.agentAvailable || tab === 'inventory') return
+    const timer = window.setInterval(() => {
+      void api.modelManagementOverview(nodeId).then(next => {
+        if (currentNodeId.current !== nodeId) return
+        setOverview(next)
+        if (next.agentAvailable) setError(null)
+      }).catch(() => { /* Keep the last useful cached inventory while offline. */ })
+    }, 12000)
+    return () => window.clearInterval(timer)
+  }, [nodeId, overview?.agentAvailable, tab])
+
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
   const filteredCatalog = (overview?.catalog ?? []).filter(item => modelKind === 'all' ||
