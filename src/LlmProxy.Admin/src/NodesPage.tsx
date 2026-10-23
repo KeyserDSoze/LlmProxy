@@ -242,7 +242,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           <td className="actions">
             <button disabled={node.baseAddress === 'http://127.0.0.1:1' && !node.managementBaseAddress}
               title="Checks Agent health if all deployments are stopped; otherwise checks the enabled inference runtime. Does not start any model."
-              onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test connection'}</button>
+              onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) && (() => {
               const state = pairedNodes.find(pair => pair.nodeId === node.id)!
               const queued = !!state.desiredAgentVersion
