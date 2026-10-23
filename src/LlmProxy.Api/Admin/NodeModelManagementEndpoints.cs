@@ -1289,8 +1289,19 @@ public static class NodeModelManagementEndpoints
         if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
             return default!;
 
-        return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
-            ?? throw new AgentException("Management agent returned an empty response.");
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
+                ?? throw new AgentException("Management agent returned an empty response.");
+        }
+        catch (IOException error)
+        {
+            throw new AgentException("Agent response stream was interrupted: " + error.Message);
+        }
+        catch (JsonException)
+        {
+            throw new AgentException("Agent response was incomplete or invalid JSON. Retry the read after the tunnel reconnects.");
+        }
         }
     }
 

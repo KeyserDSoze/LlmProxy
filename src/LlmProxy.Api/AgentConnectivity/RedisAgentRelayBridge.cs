@@ -63,7 +63,7 @@ public sealed class RedisAgentRelayBridge(
                         _ = Task.Run(() => ServeAsync(frame, token), CancellationToken.None);
                 });
                 _ready = true;
-                using var ticker = new PeriodicTimer(TimeSpan.FromSeconds(3));
+                using var ticker = new PeriodicTimer(TimeSpan.FromSeconds(2));
                 do
                 {
                     var db = await redis.GetDatabaseAsync(token);
@@ -74,12 +74,12 @@ public sealed class RedisAgentRelayBridge(
                         if (!owner.HasValue)
                         {
                             // Never displace another live gateway; wait for its lease to expire.
-                            await db.StringSetAsync(key, _instance, TimeSpan.FromSeconds(10),
+                            await db.StringSetAsync(key, _instance, TimeSpan.FromSeconds(6),
                                 when: When.NotExists);
                         }
                         else if (owner == _instance)
                         {
-                            await db.KeyExpireAsync(key, TimeSpan.FromSeconds(10));
+                            await db.KeyExpireAsync(key, TimeSpan.FromSeconds(6));
                         }
                     }
                 } while (await ticker.WaitForNextTickAsync(token));
@@ -184,9 +184,17 @@ public sealed class RedisAgentRelayBridge(
                 Body: Convert.ToBase64String(body), Authorization: request.Headers.Authorization?.ToString());
             if (await sub.PublishAsync(RedisChannel.Literal(Queue(owner.ToString())), Encode(outbound)) == 0)
                 throw new HttpRequestException("Agent owner is no longer listening.");
+            // A stale Agent owner must not leave an Admin GET hanging for 30
+            // minutes. Long-running Start/Install POSTs keep the original limit.
             using var headersTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-            headersTimeout.CancelAfter(TimeSpan.FromMinutes(30));
-            var headers = await pending.Headers.Task.WaitAsync(headersTimeout.Token);
+            headersTimeout.CancelAfter(request.Method == HttpMethod.Get
+                ? TimeSpan.FromSeconds(8) : TimeSpan.FromMinutes(30));
+            Frame headers;
+            try { headers = await pending.Headers.Task.WaitAsync(headersTimeout.Token); }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                throw new HttpRequestException("Agent read timed out before a relay response. The tunnel may be reconnecting.");
+            }
             var response = new HttpResponseMessage((HttpStatusCode)(headers.Status ?? 502))
             {
                 Content = new StreamContent(new RemoteStream(pending.Chunks.Reader, () => CloseAsync(true)))

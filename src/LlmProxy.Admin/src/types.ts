@@ -77,10 +77,11 @@ export type NodeConnectionTest = {
   nodeId: string
   nodeName: string
   serviceRoot: string
+  probeMode?: 'agent' | 'inference'
   healthUrl: string
-  modelsUrl: string
-  chatCompletionsUrl: string
-  responsesUrl: string
+  modelsUrl: string | null
+  chatCompletionsUrl: string | null
+  responsesUrl: string | null
   success: boolean
   health: EndpointProbe
   openAi: EndpointProbe

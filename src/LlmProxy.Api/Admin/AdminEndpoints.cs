@@ -195,21 +195,47 @@ public static class AdminEndpoints
             var node = await dbContext.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
             if (node is null) return Results.NotFound();
 
-            var serviceRoot = InferenceEndpoint.NormalizeBaseAddress(node.BaseAddress);
+            // A physical Agent is independently reachable when all deployments
+            // are stopped. Never probe a historic /runtime/18000 model root as
+            // evidence that the hardware/Agent itself has failed.
+            var enabled = await dbContext.Deployments.AsNoTracking()
+                .Where(x => x.NodeId == id && x.Enabled).ToListAsync(cancellationToken);
+            var agentOnly = enabled.Count == 0 &&
+                !string.IsNullOrWhiteSpace(node.ManagementBaseAddress);
+            var target = enabled
+                .Where(x => !string.IsNullOrWhiteSpace(x.RuntimeBaseAddress))
+                .OrderBy(x => x.Id).FirstOrDefault();
+            var availableRoots = enabled
+                .Where(x => !string.IsNullOrWhiteSpace(x.RuntimeBaseAddress))
+                .OrderBy(x => x.Id).Select(x => x.RuntimeBaseAddress!).ToArray();
+            var serviceRoot = InferenceEndpoint.NormalizeBaseAddress(
+                agentOnly || availableRoots.Length > 0
+                    ? ChooseNodeTestRoot(node, availableRoots)
+                    : node.BaseAddress);
             var healthUrl = InferenceEndpoint.Combine(serviceRoot, "/health");
             var modelsUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/models");
-            var chatUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/chat/completions");
-            var responsesUrl = InferenceEndpoint.Combine(serviceRoot, "/v1/responses");
+            var chatUrl = agentOnly ? null :
+                InferenceEndpoint.Combine(serviceRoot, "/v1/chat/completions");
+            var responsesUrl = agentOnly ? null :
+                InferenceEndpoint.Combine(serviceRoot, "/v1/responses");
             var client = httpClientFactory.CreateClient("probe");
+            var credential = agentOnly ? node.ManagementBearerTokenCiphertext :
+                target?.UpstreamBearerTokenCiphertext ?? node.UpstreamBearerTokenCiphertext;
 
-            var health = await ProbeAsync(client, healthUrl, node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
-            var openAi = await ProbeAsync(client, modelsUrl, node.UpstreamBearerTokenCiphertext, upstreamCredentialProtector, cancellationToken);
-            var success = health.Success && openAi.Success;
+            var health = await ProbeAsync(client, healthUrl, credential,
+                upstreamCredentialProtector, cancellationToken);
+            var openAi = agentOnly
+                ? new EndpointProbe(modelsUrl.ToString(), false, null, 0,
+                    "Not tested: no enabled inference runtime. Agent health is checked independently.")
+                : await ProbeAsync(client, modelsUrl, credential,
+                    upstreamCredentialProtector, cancellationToken);
+            var success = health.Success && (agentOnly || openAi.Success);
 
             AddAudit(dbContext, httpContext, "node.test_connection", "node", node.Id.ToString(), new
             {
                 node.Name,
                 serviceRoot,
+                probeMode = agentOnly ? "agent" : "inference",
                 success,
                 health = new { health.Success, health.StatusCode, health.LatencyMilliseconds, health.Error },
                 openAi = new { openAi.Success, openAi.StatusCode, openAi.LatencyMilliseconds, openAi.Error }
@@ -221,10 +247,11 @@ public static class AdminEndpoints
                 nodeId = node.Id,
                 nodeName = node.Name,
                 serviceRoot,
+                probeMode = agentOnly ? "agent" : "inference",
                 healthUrl = healthUrl.ToString(),
-                modelsUrl = modelsUrl.ToString(),
-                chatCompletionsUrl = chatUrl.ToString(),
-                responsesUrl = responsesUrl.ToString(),
+                modelsUrl = agentOnly ? null : modelsUrl.ToString(),
+                chatCompletionsUrl = chatUrl?.ToString(),
+                responsesUrl = responsesUrl?.ToString(),
                 success,
                 health,
                 openAi
@@ -746,6 +773,15 @@ public static class AdminEndpoints
         node.LastHealthCheckUtc, node.LastHealthyAtUtc, node.LastHealthLatencyMilliseconds,
         node.LastHealthError, node.ConsecutiveHealthSuccesses, node.ConsecutiveHealthFailures
     };
+
+    // Pure decision helper used by the connection test: never select the
+    // stale physical-node runtime root when all deployments are disabled.
+    public static string ChooseNodeTestRoot(InferenceNode node,
+        IReadOnlyList<string> enabledRuntimeRoots) =>
+        enabledRuntimeRoots.Count > 0 ? enabledRuntimeRoots[0] :
+        !string.IsNullOrWhiteSpace(node.ManagementBaseAddress)
+            ? node.ManagementBaseAddress
+            : node.BaseAddress;
 
     private static async Task<EndpointProbe> ProbeAsync(HttpClient client, Uri url, string? upstreamBearerTokenCiphertext, UpstreamCredentialProtector upstreamCredentialProtector, CancellationToken cancellationToken)
     {

@@ -1,3 +1,11 @@
+## 2026-10-23 — Recovering Admin from Spark outbound Agent disconnects (source; CI pending)
+
+Observed after Agent v0.2.53 upgrade: heartbeat shows Agent connected and tunnel ready, but the model overview falls back to cached inventory with `Agent connection lost`; routing remains disabled and the legacy physical node's `BaseAddress` points to stopped Qwen3 at `/runtime/18000`. These signals measure different things; a heartbeat is not proof that the management request relay succeeded.
+
+- The Admin node connection test selects a current enabled deployment runtime, or the **management Agent /health** when none is enabled; it never probes an old stopped model as proof that the Agent is unavailable. Result explicitly declares `probeMode: agent|inference`; inference endpoints are not advertised when no inference is active.
+- Read-only GET relay requests retry briefly across WebSocket/Redis owner handoffs, while POST/PUT/DELETE cannot be replayed automatically. Cross-replica owner lease refresh is shorter, and relay GETs fail with an actionable timeout rather than silently waiting 30 minutes. Truncated management JSON is reported as an Agent connection error rather than an unhandled 500.
+- Admin does not automatically enable stopped models. This change does not imply the Spark hardware shutdown or original tunnel drop was resolved. NodeAgent and Gateway logs remain necessary for root-cause proof.
+
 ## 2026-10-23 — GPU crash-loop prevention and temperature start gate (source; CI and real hardware acceptance pending)
 
 A DGX Spark experienced severe heat followed by an abrupt physical shutdown while a large vLLM model repeatedly failed to become healthy. Cause of shutdown is **unverified**: power supply, ventilation, CPU/board and firmware must still be investigated. Software safeguards are not hardware thermal protection.

@@ -240,8 +240,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             </>}</td>
           <td>{node.maxConcurrency}</td>
           <td className="actions">
-            <button disabled={node.baseAddress === 'http://127.0.0.1:1'} title={node.baseAddress === 'http://127.0.0.1:1' ? 'Start a model before testing inference endpoints.' : 'Checks inference HTTP connectivity; not Agent version, authenticated update status, or actual model inference.'}
-              onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
+            <button disabled={node.baseAddress === 'http://127.0.0.1:1' && !node.managementBaseAddress}
+              title="Checks Agent health if all deployments are stopped; otherwise checks the enabled inference runtime. Does not start any model."
+              onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test connection'}</button>
             {canWrite && pairedNodes.some(pair => pair.nodeId === node.id) && (() => {
               const state = pairedNodes.find(pair => pair.nodeId === node.id)!
               const queued = !!state.desiredAgentVersion
@@ -266,7 +267,13 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
         {visible.length === 0 && <tr><td colSpan={6} className="muted">No nodes in this view.</td></tr>}
       </tbody></table></div>
       {Object.values(connectionTests).map(result => <div className="secretBox" key={result.nodeId}>
-        <strong>{result.success ? '✓' : '✕'} Connection test: {result.nodeName}</strong><p className="mono">Root: {result.serviceRoot}</p><p>Health: {probeSummary(result.health)}</p><p>OpenAI models: {probeSummary(result.openAi)}</p><p className="mono">Chat: {result.chatCompletionsUrl}</p><p className="mono">Responses: {result.responsesUrl}</p>
+        <strong>{result.success ? '✓' : '✕'} {result.probeMode === 'agent' ? 'Agent health' : 'Inference connection'}: {result.nodeName}</strong>
+        <p className="mono">Root: {result.serviceRoot}</p><p>Health: {probeSummary(result.health)}</p>
+        {result.probeMode === 'agent'
+          ? <p className="muted">All deployments are disabled. Only management Agent connectivity was checked; no inference model was started or tested.</p>
+          : <><p>OpenAI models: {probeSummary(result.openAi)}</p>
+            <p className="mono">Chat: {result.chatCompletionsUrl}</p>
+            <p className="mono">Responses: {result.responsesUrl}</p></>}
       </div>)}
     </section>
 
