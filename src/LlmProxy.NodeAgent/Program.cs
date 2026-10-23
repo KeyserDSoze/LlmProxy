@@ -50,7 +50,7 @@ app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, Mo
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
 app.MapDelete("/v1/models/start-jobs/{jobId:guid}", (Guid jobId, ModelStartJobManager jobs) =>
-    jobs.Cancel(jobId) ? Results.Accepted() : Results.NotFound());
+    jobs.Cancel(jobId) ? Results.Ok(new { cancelRequested = true }) : Results.NotFound());
 app.MapGet("/v1/models/install-jobs/{id:guid}", (Guid id, ModelInstallJobManager jobs) =>
     jobs.Get(id) is { } job ? Results.Ok(job) : Results.NotFound());
 app.MapPost("/v1/models/install-jobs", (InstallRequest request, ModelInstallJobManager jobs) =>

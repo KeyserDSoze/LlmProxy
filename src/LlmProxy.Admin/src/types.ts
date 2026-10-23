@@ -740,6 +740,17 @@ export type ModelRouteDiagnosis = {
   }>
 }
 
+export type ModelStartJob = {
+  id: string
+  installationId: string
+  status: 'queued' | 'starting' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  detail: string
+  error?: string | null
+  result?: { status: string; runtimeBaseAddress?: string | null } | null
+  createdAtUtc: string
+  completedAtUtc?: string | null
+}
+
 export type ModelInstallJob = {
   id: string
   request: { catalogModelId: string; providerModelName: string; runtime: string; publicName?: string | null; port?: number | null; extraArguments?: string[]; maxNumSeqs?: number | null; maxModelLen?: number | null; maxOutputTokens?: number | null; tensorParallelSize?: number; gpuDevices?: string | null; startAfterInstall?: boolean }

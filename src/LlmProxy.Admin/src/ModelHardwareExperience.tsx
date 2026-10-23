@@ -6,7 +6,7 @@ import { Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
-import type { ModelCapabilityProfile, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment } from './types'
+import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment } from './types'
 
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
   const t = useT()
@@ -41,6 +41,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [customRepository, setCustomRepository] = useState('')
   const [customConfirmed, setCustomConfirmed] = useState(false)
   const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
+  const [startJobs, setStartJobs] = useState<ModelStartJob[]>([])
+  const activatingStarts = useRef(new Set<string>())
   const finalizing = useRef(new Set<string>())
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
   const [maxModelLen, setMaxModelLen] = useState(8192)
@@ -92,7 +94,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   useEffect(() => {
     // Hardware can change via dropdown or browser history; never show a stale
     // inventory or let an old request re-enable installation on another node.
-    setOverview(null); setDownloadJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setEditingInstall(null)
+    setOverview(null); setDownloadJobs([]); setStartJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setEditingInstall(null)
     setResourcesOpen(false); setResources(null); setResourcesError(null)
     setMessage(null); setError(null)
   }, [nodeId])
@@ -189,6 +191,52 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     const timer = window.setInterval(() => { void poll() }, 2500)
     return () => { active = false; window.clearInterval(timer) }
   }, [nodeId, canWrite, load, refresh, overview?.installations])
+
+  // Agent-owned startup jobs survive WebSocket/Cloudflare and browser
+  // disconnections; polling is read-only. On completion, reuse the Gateway's
+  // explicit /health-verified Activate flow rather than assuming Docker
+  // running equals a routable model. A failed activation is never retried in
+  // a loop, and operators retain the manual health/activate control.
+  useEffect(() => {
+    if (!nodeId) return
+    let mounted = true
+    const poll = async () => {
+      try {
+        const jobs = await api.modelStartJobs(nodeId)
+        if (!mounted || currentNodeId.current !== nodeId) return
+        setStartJobs(jobs)
+        for (const job of jobs) {
+          if (!canWrite || job.status !== 'completed' || job.result?.status !== 'running') continue
+          const installation = overview?.installations.find(x =>
+            x.managedInstallationId === job.installationId)
+          if (!installation || installation.enabled) continue
+          const key = nodeId + ':' + job.id
+          if (activatingStarts.current.has(key)) continue
+          activatingStarts.current.add(key)
+          try {
+            await api.activateManagedDeployment(installation.id)
+            if (!mounted) return
+            setMessage('Startup completed. Runtime /health verified; routing enabled.')
+            await Promise.all([load(), refresh()])
+          } catch (error) {
+            if (mounted) setError('Model is running but routing activation needs attention: ' +
+              (error instanceof Error ? error.message : String(error)))
+          }
+        }
+      } catch { /* Agent offline: keep last useful job state. */ }
+    }
+    void poll()
+    const timer = window.setInterval(() => { void poll() }, 3000)
+    return () => { mounted = false; window.clearInterval(timer) }
+  }, [nodeId, canWrite, overview?.installations, load, refresh])
+
+  async function cancelStartJob(jobId: string) {
+    if (!nodeId || !window.confirm('Cancel this pending startup? The Agent will stop and clean up the runtime; cached weights are preserved.')) return
+    try {
+      await api.cancelManagedStartJob(nodeId, jobId)
+      setMessage('Startup cancellation requested on Agent.')
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+  }
 
   async function cancelBenchmark() {
     if (!recentBenchmark) return
@@ -304,7 +352,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   async function action(kind: 'start' | 'activate' | 'stop' | 'forceStop' | 'remove', deploymentId: string) {
     setBusy(kind + ':' + deploymentId); setMessage(null); setError(null)
     try {
-      if (kind === 'start') await api.startManagedDeployment(deploymentId)
+      if (kind === 'start') {
+        const job = await api.queueManagedStartJob(deploymentId)
+        setStartJobs(current => [job, ...current.filter(x => x.id !== job.id)])
+      }
       if (kind === 'activate') await api.activateManagedDeployment(deploymentId)
       if (kind === 'stop') await api.stopManagedDeployment(deploymentId)
       if (kind === 'forceStop') {
@@ -315,7 +366,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         if (!window.confirm('Uninstall this runtime container and remove its deployment? Cached downloaded model weights are retained for reuse.')) return
         await api.removeManagedDeployment(deploymentId)
       }
-      setMessage(kind === 'start' ? 'Model started and enabled for routing.' :
+      setMessage(kind === 'start'
+        ? 'Model startup queued on the Agent. It continues through browser and tunnel disconnects; follow the job status below.' :
         kind === 'activate' ? 'Runtime /health verified; existing model enabled for routing.' :
         kind === 'stop' || kind === 'forceStop' ? t('model.stopVerified') : 'Managed runtime uninstalled; cached model files are preserved.')
       await Promise.all([load(), refresh(), ...(resourcesOpen ? [loadResources()] : [])])
@@ -617,7 +669,19 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                 <div className="notice">{upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId)?.update.message}</div>}
           </td><td className="installedCapabilities">
             <ModelCapabilitySummary profile={item.capabilities}/>
-          </td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}</td><td>{item.runtimeMetrics?.available
+          </td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}
+            {startJobs.filter(job => job.installationId === item.managedInstallationId).slice(0, 1).map(job =>
+              <div className={job.status === 'failed' || job.status === 'interrupted' ? 'error' : 'notice'}
+                key={job.id} role="status">
+                <strong>Startup: {job.status}</strong>
+                <div>{job.detail}</div>
+                {job.error && <div className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{job.error}</div>}
+                {job.status === 'queued' || job.status === 'starting' ?
+                  <button className="secondary" type="button" onClick={() => void cancelStartJob(job.id)}>Cancel startup</button> : null}
+                {job.status === 'completed' && !item.enabled &&
+                  <div className="muted">Runtime started; verifying health and routing activation.</div>}
+              </div>)}
+          </td><td>{item.runtimeMetrics?.available
           ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
           : <span className="muted">{item.runtimeMetrics?.error ?? t('catalog.emptyMetrics')}</span>}</td><td className="mono">
           <strong>POST {managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? '')}</strong>
@@ -645,7 +709,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               profile: item.capabilities!, logicalModel: item.logicalModel ?? item.catalogModelId ?? item.modelId })}>
             <span aria-hidden="true">ⓘ</span> {t('cap.details')}
           </button>}
-          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running'}
+          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running' ||
+              startJobs.some(job => job.installationId === item.managedInstallationId &&
+                (job.status === 'queued' || job.status === 'starting'))}
             onClick={() => void action('start', item.id)}>{t('catalog.start')}</button>
           {item.agentStatus.toLowerCase() === 'running' && !item.enabled &&
             <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
