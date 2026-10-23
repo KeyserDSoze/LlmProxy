@@ -501,6 +501,83 @@ public static class NodeModelManagementEndpoints
             catch (HttpRequestException error) { return Results.Problem(error.Message, statusCode: 502); }
         });
 
+        // Start is a potentially 20-minute GPU initialization. Enqueue on
+        // the Agent and return immediately: browser/Cloudflare/relay disconnects
+        // MUST NOT cancel an already accepted Docker startup.
+        group.MapPost("/deployments/{id:guid}/start-jobs", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var deployment = await db.Deployments.FindAsync([id], token);
+            if (deployment is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
+                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
+            var node = await db.Nodes.FindAsync([deployment.NodeId], token);
+            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            if (!node.Enabled || node.Status == LlmProxy.Domain.Nodes.NodeStatus.Draining)
+                return Results.Conflict(new { error = "node_not_routable",
+                    message = "Enable the node and exit maintenance before starting models." });
+            try
+            {
+                var path = "/v1/models/" +
+                    Uri.EscapeDataString(deployment.ManagedInstallationId) + "/start-jobs";
+                var job = await SendAgentAsync<ModelStartJob>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Post, path, null, token);
+                AddAudit(db, context, "model.start_queued", "deployment", id.ToString(),
+                    new { node.Id, deployment.ManagedInstallationId, job.Id });
+                await db.SaveChangesAsync(token);
+                return Results.Accepted(value: job);
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        group.MapGet("/nodes/{id:guid}/start-jobs", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Ok(Array.Empty<ModelStartJob>());
+            try
+            {
+                var jobs = await SendAgentAsync<IReadOnlyList<ModelStartJob>>(
+                    factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Get, "/v1/models/start-jobs", null, token);
+                return Results.Ok(jobs);
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        group.MapDelete("/nodes/{id:guid}/start-jobs/{jobId:guid}", async (
+            Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                await SendAgentAsync<JsonElement>(factory.CreateClient("node-management"),
+                    node, protector, HttpMethod.Delete,
+                    "/v1/models/start-jobs/" + jobId, null, token);
+                return Results.Accepted();
+            }
+            catch (AgentException error)
+            {
+                return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         var start = group.MapPost("/deployments/{id:guid}/start", async (
             Guid id,
             GatewayDbContext dbContext,
