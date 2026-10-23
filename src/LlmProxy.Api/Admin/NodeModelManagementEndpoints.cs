@@ -504,7 +504,7 @@ public static class NodeModelManagementEndpoints
         // Start is a potentially 20-minute GPU initialization. Enqueue on
         // the Agent and return immediately: browser/Cloudflare/relay disconnects
         // MUST NOT cancel an already accepted Docker startup.
-        group.MapPost("/deployments/{id:guid}/start-jobs", async (
+        var enqueueModelStart = group.MapPost("/deployments/{id:guid}/start-jobs", async (
             Guid id, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
         {
@@ -557,7 +557,7 @@ public static class NodeModelManagementEndpoints
             }
         });
 
-        group.MapDelete("/nodes/{id:guid}/start-jobs/{jobId:guid}", async (
+        var cancelModelStart = group.MapDelete("/nodes/{id:guid}/start-jobs/{jobId:guid}", async (
             Guid id, Guid jobId, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, CancellationToken token) =>
         {
@@ -870,6 +870,8 @@ public static class NodeModelManagementEndpoints
             finalizeJob.RequireAuthorization("AdminWrite");
             retryJob.RequireAuthorization("AdminWrite");
             cancelJob.RequireAuthorization("AdminWrite");
+            enqueueModelStart.RequireAuthorization("AdminWrite");
+            cancelModelStart.RequireAuthorization("AdminWrite");
             start.RequireAuthorization("AdminWrite");
             activate.RequireAuthorization("AdminWrite");
             stop.RequireAuthorization("AdminWrite");

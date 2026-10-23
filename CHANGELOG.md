@@ -1,3 +1,9 @@
+## Unreleased — Async managed model startup and failed-container diagnostics (2026-10-23)
+
+- Execute potentially long GPU `Start` as a durable Agent-owned job instead of coupling it to the Admin HTTP request/WebSocket lifetime. Show progress and failure status in the installed model table and provide explicit cancellation.
+- Capture a bounded/redacted Docker log tail before failed containers are removed, retaining cache and actionable startup errors.
+- Only enable routing after a distinct `/health`-verified activation step. Preserve strict AdminWrite authorization for remote start/cancel.
+
 ## Unreleased — Health checks honor enabled classifier deployment endpoints (2026-10-23)
 
 - Fix physical-node health selection with enabled unmanaged/System One workloads using an explicit runtime root. Do not probe stale `node.BaseAddress` pointing at stopped Qwen3 when a classifier deployment is enabled on another port.

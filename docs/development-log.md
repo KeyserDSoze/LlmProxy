@@ -1,3 +1,14 @@
+## 2026-10-23 — Detached persistent GPU model Start jobs and retained failure diagnostics (CI pending)
+
+User observed that LFM2.5 `Start` ends with `Runtime startup cancelled; container cleanup requested`, a generic proxy HTTP 502 and no surviving Docker container logs. The old Admin route waited synchronously for GPU Docker startup and model `/health`; the Node Agent tied the operation to a request cancellation token propagated through Cloudflare/WebSocket, so a transient disconnect aborted model initialization and deleted its container.
+
+- New Agent-local persistent `start-jobs.json`: enqueue with POST and poll with GET over short authenticated relay calls. Starting continues through a browser disconnect or lost relay. On Agent restart, previously queued/running jobs are marked `interrupted`, **never restarted automatically** (GPU safety).
+- Gateway enqueue and list routes; Admin installed-model status shows queued/starting/completed/failed, recent Docker error excerpts, explicit cancellation and a separate `/health`-verified routing activation after a completed start.
+- New Start and Cancel endpoints require `AdminWrite` when Entra is enabled; status lists retain `AdminRead`.
+- Failed startup attempts collect a short token-redacted Docker log tail *before* removing failed containers. Distinguish explicit cancellation from health readiness timeout. Model weights remain cached.
+- UI must never show `Model started and enabled` immediately when a background job is merely queued.
+- Safety: this doesn't resolve the earlier physical DGX Spark heat/shutdown; do not start the heavy GPU model until cooling/power diagnosis is complete. Real Spark validation pending.
+
 ## 2026-10-23 — Wrong physical node health target with enabled external System One deployment (source, CI pending)
 
 Real Admin screenshots: `spark-1d52-a97bbb9e` has four routing deployments, three disabled Agent-managed models on virtual ports 18000/18002/18005 and one **enabled unmanaged** `systemone` classifier at `http://10.0.0.2:8002`. Previously `NodeHealthMonitor` loaded only enabled *managed* runtime roots, then treated *any* enabled deployment as a reason to fall back to `node.BaseAddress`. Consequently, it queried stopped Qwen3 `/runtime/18000/health` instead of the live configured classifier, forcing `Unhealthy` even when the classifier might be working. Fix health selection to check all enabled deployment-specific runtime roots and their credentials, using the legacy node root only for unmanaged deployments without overrides. A managed deployment without an address reports missing runtime rather than checking another model's port. When no deployments are enabled, continue checking the physical Agent `/management/health`. Unit cases explicitly cover external System One, managed port, missing managed root and legacy fallback.
