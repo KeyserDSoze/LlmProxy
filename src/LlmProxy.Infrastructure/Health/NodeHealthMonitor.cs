@@ -39,47 +39,56 @@ public sealed class NodeHealthMonitor(
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
             var nodes = await dbContext.Nodes.Where(node => node.Enabled).ToListAsync(cancellationToken);
-            var activeManagedRuntimes = await dbContext.Deployments.AsNoTracking()
-                .Where(deployment => deployment.Enabled && deployment.ManagedInstallationId != null
-                    && deployment.RuntimeBaseAddress != null)
+            // Probe the actual target of every enabled deployment, not just
+            // Agent-managed deployments. In particular a System One classifier
+            // can use an explicit external runtime such as 10.0.0.2:8002 while
+            // the physical node's legacy BaseAddress still points to a stopped
+            // /runtime/18000 model.
+            var enabledDeployments = await dbContext.Deployments.AsNoTracking()
+                .Where(deployment => deployment.Enabled)
                 .Select(deployment => new {
                     deployment.NodeId,
-                    RuntimeBaseAddress = deployment.RuntimeBaseAddress!,
+                    deployment.ManagedInstallationId,
+                    deployment.RuntimeBaseAddress,
                     deployment.UpstreamBearerTokenCiphertext
                 })
                 .ToListAsync(cancellationToken);
-            var serviceRoots = activeManagedRuntimes.GroupBy(x => x.NodeId)
+            var serviceRoots = enabledDeployments.GroupBy(x => x.NodeId)
                 .ToDictionary(g => g.Key, g => g.ToList());
             // A paired server can be up even when no inference model is installed.
             // In that case do not probe the historic node.BaseAddress (often a
             // stopped /runtime/18000 virtual host) as if it were Agent health.
             // Running deployments still use their real inference runtime /health.
-            var nodesWithDeployments = await dbContext.Deployments.AsNoTracking()
-                .Where(deployment => deployment.Enabled)
-                .Select(deployment => deployment.NodeId)
-                .Distinct().ToListAsync(cancellationToken);
-            var hasActiveInference = nodesWithDeployments.ToHashSet();
             var client = httpClientFactory.CreateClient("health");
 
             foreach (var node in nodes.Where(node => node.Status != NodeStatus.Draining))
             {
-                // A physical node stays routable when ANY of its enabled managed runtimes is healthy.
-                // A stopped second model must not make a still-running first model disappear.
+                // An enabled runtime's /health decides inference readiness;
+                // a stopped second model must not hide a healthy first model.
+                // When no deployment is enabled, probe the paired Agent's
+                // management /health to assess physical-server connectivity.
                 HealthCheckResult result;
                 if (serviceRoots.TryGetValue(node.Id, out var runtimes))
                 {
-                    result = new HealthCheckResult(false, 0, "No managed runtime is healthy.");
+                    result = new HealthCheckResult(false, 0, "No enabled deployment is healthy.");
                     foreach (var runtime in runtimes)
                     {
-                        var check = await CheckNodeAsync(client, node, runtime.RuntimeBaseAddress,
+                        var runtimeRoot = ChooseDeploymentHealthRoot(node.BaseAddress,
+                            runtime.RuntimeBaseAddress, runtime.ManagedInstallationId is not null);
+                        if (runtimeRoot is null)
+                        {
+                            result = new HealthCheckResult(false, 0,
+                                "Enabled managed deployment has no runtime address; start the model.");
+                            continue;
+                        }
+                        var check = await CheckNodeAsync(client, node, runtimeRoot,
                             runtime.UpstreamBearerTokenCiphertext ?? node.UpstreamBearerTokenCiphertext,
                             cancellationToken);
                         if (check.Success) { result = check; break; }
                         result = check;
                     }
                 }
-                else if (!hasActiveInference.Contains(node.Id) &&
-                    !string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                else if (!string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
                 {
                     // Outbound relays authenticate /management/health internally;
                     // direct installations use the protected Agent management token.
@@ -114,6 +123,17 @@ public sealed class NodeHealthMonitor(
             logger.LogError(exception, "Node health monitor iteration failed.");
         }
     }
+
+    /// <summary>
+    /// An explicitly configured classifier/legacy runtime takes precedence over
+    /// the old node-level inference address. A managed runtime without a
+    /// registered endpoint must never fall back to a different model's port.
+    /// </summary>
+    public static string? ChooseDeploymentHealthRoot(string nodeBaseAddress,
+        string? deploymentRuntimeBaseAddress, bool isManaged) =>
+        !string.IsNullOrWhiteSpace(deploymentRuntimeBaseAddress)
+            ? deploymentRuntimeBaseAddress
+            : isManaged ? null : nodeBaseAddress;
 
     private async Task<HealthCheckResult> CheckNodeAsync(
         HttpClient client,

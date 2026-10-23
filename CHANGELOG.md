@@ -1,3 +1,8 @@
+## Unreleased — Health checks honor enabled classifier deployment endpoints (2026-10-23)
+
+- Fix physical-node health selection with enabled unmanaged/System One workloads using an explicit runtime root. Do not probe stale `node.BaseAddress` pointing at stopped Qwen3 when a classifier deployment is enabled on another port.
+- Preserve disabled-deployment and no-serving-address safety; no Agent pairing, inference runtime, or credential changes.
+
 ## Unreleased — Agent WebSocket keepalive compatibility (2026-10-23)
 
 - Reduce Gateway and Node Agent WebSocket Ping/Pong interval from 20 to 5 seconds to tolerate aggressively short proxy idle timeouts observed after 101 upgrades. Preserve the 15-second dead-link detection deadline.
