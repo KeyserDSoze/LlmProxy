@@ -209,8 +209,16 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                 Agent upgrade to v{pair.agentUpgradeTargetVersion}: {pair.agentUpgradeMaintenanceStage ?? 'preparing'}.
                 Routing is temporarily drained; models remain running in Docker.
                 {pair.agentUpgradeMaintenanceStage === 'verifying' && ' Verifying Agent and inference health before restoring routing.'}
+                {pair.agentUpgradeMaintenanceStage === 'updating' && pair.lastHeartbeatAtUtc &&
+                  Date.now() - Date.parse(pair.lastHeartbeatAtUtc) > 3 * 60_000 &&
+                  <p>Agent heartbeat is stale. The update cannot complete remotely while the Agent is offline.
+                    Inspect systemd updater logs on the inference host; do not restart Docker or GPU models.</p>}
                 {pair.agentUpgradeMaintenanceStage === 'needs_attention' && <>
-                  <p>Automatic restore could not verify health. The node remains drained.</p>
+                  <p>Update needs attention: the Agent may be offline or runtime health could not be verified.
+                    On the inference host inspect <code>sudo systemctl status llmproxy-node-agent llmproxy-node-agent-update</code>,
+                    <code>sudo journalctl -u llmproxy-node-agent-update -n 80 --no-pager</code>,
+                    and <code>sudo cat /var/lib/llmproxy-node-agent/update-status.json</code>.
+                    The node remains drained.</p>
                   {canWrite && <button type="button" className="secondary"
                     disabled={busy === 'agent-repair:' + pair.nodeId}
                     onClick={() => void abandonAgentUpgrade(pair.nodeId)}>

@@ -5,6 +5,20 @@ namespace LlmProxy.UnitTests.Nodes;
 public sealed class AgentUpgradeMaintenanceTests
 {
     [Fact]
+    public void Upgrade_missing_contact_alerts_after_elapsed_threshold_only()
+    {
+        var now = DateTimeOffset.Parse("2026-10-25T01:00:00Z");
+        Assert.False(NodeAgentUpgradeMaintenanceWorker.IsUpgradeContactStalled(
+            now.AddMinutes(-5), now.AddMinutes(-4), now));
+        Assert.False(NodeAgentUpgradeMaintenanceWorker.IsUpgradeContactStalled(
+            now.AddMinutes(-15), now.AddMinutes(-1), now));
+        Assert.True(NodeAgentUpgradeMaintenanceWorker.IsUpgradeContactStalled(
+            now.AddMinutes(-15), now.AddMinutes(-4), now));
+        Assert.True(NodeAgentUpgradeMaintenanceWorker.IsUpgradeContactStalled(
+            now.AddMinutes(-15), null, now));
+    }
+
+    [Fact]
     public void Update_does_not_resume_when_only_the_requested_version_matches()
     {
         Assert.False(NodeAgentUpgradeMaintenanceWorker.IsVerifiedUpgrade(

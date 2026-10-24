@@ -30,6 +30,14 @@ public sealed class NodeAgentUpgradeMaintenanceWorker(
         status == "failed:" + target ||
         status?.StartsWith("failed:" + target + ":", StringComparison.Ordinal) == true;
 
+    // Downloads still progress with a healthy old Agent heartbeat. Only flag
+    // unattended upgrades after both an extended elapsed time and sustained
+    // loss of contact. This is an alert, not permission to restart a GPU model.
+    public static bool IsUpgradeContactStalled(
+        DateTimeOffset? startedAt, DateTimeOffset? lastHeartbeat, DateTimeOffset now) =>
+        startedAt.HasValue && startedAt <= now.AddMinutes(-12) &&
+        (!lastHeartbeat.HasValue || lastHeartbeat < now.AddMinutes(-3));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try { await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken); }
@@ -138,6 +146,24 @@ public sealed class NodeAgentUpgradeMaintenanceWorker(
             enrollment.AgentUpgradeMaintenanceStage = "needs_attention";
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
+            return;
+        }
+
+        if (enrollment.AgentUpgradeMaintenanceStage == "updating" &&
+            IsUpgradeContactStalled(enrollment.AgentUpgradeStartedAtUtc,
+                enrollment.LastHeartbeatAtUtc, DateTimeOffset.UtcNow))
+        {
+            enrollment.AgentUpgradeMaintenanceStage = "needs_attention";
+            db.AuditEvents.Add(new AuditEvent("llmproxy-agent-upgrade",
+                "agent.update.offline_timeout", "node", id.ToString(), null,
+                JsonSerializer.Serialize(new { targetVersion = target,
+                    note = "No heartbeat after extended upgrade period; routing remains safely drained." })));
+            await db.SaveChangesAsync(token);
+            await transaction.CommitAsync(token);
+            logger.LogWarning(
+                "Node {NodeId} Agent has not sent a heartbeat for over three minutes during a 12+ minute upgrade. "+
+                "The node remains drained. Check systemd update unit and Agent logs on the host.",
+                id);
             return;
         }
 

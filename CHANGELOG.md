@@ -1,3 +1,8 @@
+## Unreleased — Detect offline Agent stalled during upgrade (2026-10-25)
+
+- Avoid indefinite `updating` after an Agent goes offline. With a stale heartbeat and elapsed timeout, switch to `needs_attention` while preserving distributed routing drain.
+- Show safe systemd updater/Agent diagnostics in Fleet. Resume automatically only after verified Agent connectivity and runtime health; manual exit disables all routing instead of implicitly restarting models.
+
 ## Unreleased — Async managed model startup and failed-container diagnostics (2026-10-23)
 
 - Execute potentially long GPU `Start` as a durable Agent-owned job instead of coupling it to the Admin HTTP request/WebSocket lifetime. Show progress and failure status in the installed model table and provide explicit cancellation.
