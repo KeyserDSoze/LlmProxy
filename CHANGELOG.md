@@ -1,3 +1,10 @@
+## Unreleased — Configure memory reservation for existing vLLM installations (2026-10-25)
+
+- Admin *Edit limits* can now set vLLM's `--gpu-memory-utilization` as a typed fractional option (0.10–0.95), defaulting to a suggested conservative **0.70** when first editing on a unified-memory host; changing it does not delete model weights or reinstall the model.
+- Existing free-form `--gpu-memory-utilization` flags are superseded when a typed value is configured, avoiding duplicate/conflicting CLI flags. Runtime must be stopped before changing limits.
+- Lowering this fraction can fix vLLM startup requests that reserve too much of the Spark's GPU-visible unified memory, but is not guaranteed when host memory is occupied; check actual free memory and competing GPU processes. Thermal incident still requires separate hardware validation.
+- A context reduction (e.g. 131072 → 16384) and fewer sequences (4 → 1) lower KV-cache pressure; do not attempt new GPU loading until thermal/power root cause has been assessed.
+
 ## Unreleased — Explain vLLM worker root exceptions after failed startup (2026-10-25)
 
 - Docker GPU model startup failure reads a bounded 600-line Docker log before container cleanup, surfaces the original CUDA/ValueError/OutOfMemoryError/ImportError before the generic EngineCore initialization traceback, and retains an abbreviated last-lines excerpt.

@@ -19,6 +19,39 @@ public sealed class ManagedRuntimeProfilesTests
     }
 
     [Fact]
+    public void Vllm_memory_fraction_is_explicit_editable_and_validated()
+    {
+        var request = new InstallRequest("lfm-test", "LiquidAI/LFM2.5-24B-A2B-FP8",
+            null, 1, [], "vllm", 1, 16384, GpuMemoryUtilization: 0.7);
+        ManagedRuntimeProfiles.Validate(request);
+        var args = ManagedRuntimeProfiles.Arguments(ToRecord(request), Options()).ToArray();
+        var index = Array.IndexOf(args, "--gpu-memory-utilization");
+        Assert.True(index >= 0);
+        Assert.Equal("0.7", args[index + 1]);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ManagedRuntimeProfiles.Validate(request with { GpuMemoryUtilization = 0.99 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ManagedRuntimeProfiles.Validate(request with { GpuMemoryUtilization = 0.01 }));
+        Assert.Throws<ArgumentException>(() =>
+            ManagedRuntimeProfiles.Validate(request with { Runtime = "sglang" }));
+        Assert.False(ManagedRuntimeProfiles.Matches(ToRecord(request),
+            request with { GpuMemoryUtilization = 0.8 }));
+    }
+
+    [Fact]
+    public void Typed_memory_fraction_replaces_obsolete_extra_flag_without_duplicates()
+    {
+        var record = ToRecord(new InstallRequest("lfm-test", "LiquidAI/LFM2.5-24B-A2B-FP8",
+            null, 1, ["--gpu-memory-utilization", "0.92", "--enforce-eager"],
+            "vllm", 1, 16384, GpuMemoryUtilization: 0.7));
+        var args = ManagedRuntimeProfiles.Arguments(record, Options()).ToArray();
+        Assert.Equal(1, args.Count(arg => arg == "--gpu-memory-utilization"));
+        Assert.DoesNotContain("0.92", args);
+        Assert.Contains("--enforce-eager", args);
+    }
+
+    [Fact]
     public void Llama_profile_uses_gguf_and_correct_port_and_parallel_flag()
     {
         var request = new InstallRequest("qwen3-4b-gguf-q4", "ggml-org/Qwen3-4B-GGUF:Q4_K_M", null, 1, [], "llama.cpp", 4, 32768);
@@ -210,6 +243,7 @@ public sealed class ManagedRuntimeProfilesTests
         MaxModelLen = r.MaxModelLen,
         KvCacheDtype = r.KvCacheDtype,
         CpuOffloadGiB = r.CpuOffloadGiB,
+        GpuMemoryUtilization = r.GpuMemoryUtilization,
         GpuDevices = r.GpuDevices,
         Port = 18000,
         TensorParallelSize = r.TensorParallelSize,
