@@ -38,6 +38,12 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentException("KV cache dtype must be auto or fp8.");
         if (request.CpuOffloadGiB is < 0 or > 1024 or double.NaN or double.PositiveInfinity or double.NegativeInfinity)
             throw new ArgumentOutOfRangeException(nameof(request.CpuOffloadGiB));
+        if (request.GpuMemoryUtilization is double memoryFraction &&
+            (!double.IsFinite(memoryFraction) || memoryFraction < 0.1 || memoryFraction > 0.95))
+            throw new ArgumentOutOfRangeException(nameof(request.GpuMemoryUtilization),
+                "vLLM GPU memory fraction must be between 0.10 and 0.95.");
+        if (request.GpuMemoryUtilization is not null && request.Runtime != "vllm")
+            throw new ArgumentException("GPU memory utilization setting is supported for vLLM only.");
 
         if (!string.IsNullOrEmpty(request.GpuDevices))
         {
@@ -131,6 +137,7 @@ public static class ManagedRuntimeProfiles
         record.MaxOutputTokens == request.MaxOutputTokens &&
         record.KvCacheDtype == request.KvCacheDtype &&
         record.CpuOffloadGiB == request.CpuOffloadGiB &&
+        record.GpuMemoryUtilization == request.GpuMemoryUtilization &&
         record.GpuDevices == request.GpuDevices &&
         record.ExtraArguments.SequenceEqual(request.ExtraArguments ?? []);
 
@@ -179,8 +186,22 @@ public static class ManagedRuntimeProfiles
             if (record.MaxModelLen is int context) args.AddRange(["--max-model-len", context.ToString(CultureInfo.InvariantCulture)]);
             if (record.KvCacheDtype is not null) args.AddRange(["--kv-cache-dtype", record.KvCacheDtype]);
             if (record.CpuOffloadGiB is double cpu) args.AddRange(["--cpu-offload-gb", cpu.ToString(CultureInfo.InvariantCulture)]);
+            if (record.GpuMemoryUtilization is double fraction)
+                args.AddRange(["--gpu-memory-utilization", fraction.ToString(CultureInfo.InvariantCulture)]);
         }
-        args.AddRange(record.ExtraArguments);
+        // The typed safety setting is authoritative when an older profile
+        // already contains the same vLLM flag as a free-form extra argument.
+        for (var i = 0; i < record.ExtraArguments.Count; i++)
+        {
+            var arg = record.ExtraArguments[i];
+            if (record.Runtime == "vllm" && record.GpuMemoryUtilization is not null &&
+                (arg == "--gpu-memory-utilization" || arg.StartsWith("--gpu-memory-utilization=", StringComparison.Ordinal)))
+            {
+                if (arg == "--gpu-memory-utilization" && i + 1 < record.ExtraArguments.Count) i++;
+                continue;
+            }
+            args.Add(arg);
+        }
         return args;
     }
 }

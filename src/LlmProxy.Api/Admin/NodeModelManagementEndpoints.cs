@@ -716,7 +716,9 @@ public static class NodeModelManagementEndpoints
         {
             if (settings.MaxModelLen is < 256 or > 262144 ||
                 settings.MaxNumSeqs is < 1 or > 128 ||
-                settings.MaxOutputTokens is < 1 or > 4096)
+                settings.MaxOutputTokens is < 1 or > 4096 ||
+                settings.GpuMemoryUtilization is double fraction &&
+                (!double.IsFinite(fraction) || fraction < 0.1 || fraction > 0.95))
                 return Results.BadRequest(new { error = "invalid_runtime_limits" });
             var deployment = await db.Deployments.FindAsync([id], token);
             if (deployment is null) return Results.NotFound();
@@ -739,6 +741,8 @@ public static class NodeModelManagementEndpoints
                 var descriptor = DeployableModelCatalog.Find(deployment.CatalogModelId ?? "");
                 if (descriptor is not null && settings.MaxModelLen > descriptor.ContextTokens)
                     return Results.BadRequest(new { error = "context_exceeds_supported_profile", maxContextTokens = descriptor.ContextTokens });
+                if (state.Runtime != "vllm" && settings.GpuMemoryUtilization is not null)
+                    return Results.BadRequest(new { error = "gpu_memory_utilization_vllm_only" });
                 if (state.Runtime != "airllm" && settings.MaxOutputTokens is not null)
                     return Results.BadRequest(new { error = "output_cap_supported_by_airllm_only",
                         message = "For vLLM/SGLang/llama.cpp, output tokens are controlled by each inference request within the context window." });
@@ -747,7 +751,8 @@ public static class NodeModelManagementEndpoints
                     HttpMethod.Put, path, settings, token);
                 deployment.Disable();
                 AddAudit(db, context, "model.runtime.configure", "deployment", id.ToString(),
-                    new { node.Id, deployment.ManagedInstallationId, settings.MaxModelLen, settings.MaxNumSeqs, settings.MaxOutputTokens });
+                    new { node.Id, deployment.ManagedInstallationId, settings.MaxModelLen,
+                        settings.MaxNumSeqs, settings.MaxOutputTokens, settings.GpuMemoryUtilization });
                 await db.SaveChangesAsync(token);
                 return Results.Ok(new { deployment, state = updated });
             }
@@ -1401,7 +1406,8 @@ public static class NodeModelManagementEndpoints
             JsonSerializer.Serialize(details)));
     }
 
-    public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens);
+    public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
+        double? GpuMemoryUtilization = null);
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
@@ -1455,6 +1461,7 @@ public static class NodeModelManagementEndpoints
         string? KvCacheDtype = null,
         double? CpuOffloadGiB = null,
         string? GpuDevices = null, int? MaxOutputTokens = null,
-        string? SourceRevision = null);
+        string? SourceRevision = null,
+        double? GpuMemoryUtilization = null);
     private sealed class AgentException(string message) : Exception(message);
 }

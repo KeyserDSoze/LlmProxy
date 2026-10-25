@@ -51,6 +51,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [editContext, setEditContext] = useState(8192)
   const [editSequences, setEditSequences] = useState(1)
   const [editOutput, setEditOutput] = useState(256)
+  const [editGpuMemoryFraction, setEditGpuMemoryFraction] = useState(0.7)
   const [upstreamRevisions, setUpstreamRevisions] = useState<ModelRevisionStatus[]>([])
   const [revisionBusy, setRevisionBusy] = useState(false)
   const [kvCacheDtype, setKvCacheDtype] = useState<'auto' | 'fp8'>('auto')
@@ -380,6 +381,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     setEditContext(item.agentState?.maxModelLen ?? 8192)
     setEditSequences(item.agentState?.maxNumSeqs ?? 1)
     setEditOutput(item.agentState?.maxOutputTokens ?? 256)
+    setEditGpuMemoryFraction(item.agentState?.gpuMemoryUtilization ?? 0.7)
     setMessage(null); setError(null)
   }
   async function saveProfile(event: FormEvent) {
@@ -389,7 +391,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     try {
       await api.configureManagedDeployment(editingInstall.id, {
         maxModelLen: editContext, maxNumSeqs: editSequences,
-        maxOutputTokens: editingInstall.runtime === 'airllm' ? editOutput : null
+        maxOutputTokens: editingInstall.runtime === 'airllm' ? editOutput : null,
+        gpuMemoryUtilization: editingInstall.runtime === 'vllm' ? editGpuMemoryFraction : null
       })
       setEditingInstall(null)
       setMessage('Runtime limits updated without deleting model weights. Press Start to apply the new limits.')
@@ -829,9 +832,18 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <input aria-label={t('model.editSequences')} type="number" min="1" max="128"
             value={editSequences} onChange={event => setEditSequences(Number(event.target.value))} required />
         </label>
+        {editingInstall?.runtime === 'vllm' && <label>vLLM GPU memory utilization (0.10–0.95)
+          <input aria-label="vLLM GPU memory fraction" type="number" min="0.1" max="0.95" step="0.05"
+            value={editGpuMemoryFraction} onChange={event => setEditGpuMemoryFraction(Number(event.target.value))} required />
+          <span className="muted">Suggested conservative starting value on unified-memory systems: 0.70.
+            This reserves a fraction of GPU-visible memory; it does not guarantee that enough RAM is currently free.
+            Check competing GPU processes and hardware cooling before starting.</span>
+        </label>}
         <p className="muted">{t('model.editNotice')}</p>
         <div className="modalActions"><button className="secondary" type="button" onClick={() => setEditingInstall(null)}>Cancel</button>
-          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext}>{t('catalog.saveLimits')}</button></div>
+          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext ||
+            (editingInstall?.runtime === 'vllm' &&
+              (!Number.isFinite(editGpuMemoryFraction) || editGpuMemoryFraction < 0.1 || editGpuMemoryFraction > 0.95))}>{t('catalog.saveLimits')}</button></div>
       </form>
     </Modal>
 

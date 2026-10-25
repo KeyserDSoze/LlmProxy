@@ -284,7 +284,7 @@ export const api = {
     '/api/admin/systemone/default', { method: 'PUT', body: JSON.stringify({ model }) }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
-  configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null }) =>
+  configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null; gpuMemoryUtilization?: number | null }) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
   activateManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/activate`, { method: 'POST' }),

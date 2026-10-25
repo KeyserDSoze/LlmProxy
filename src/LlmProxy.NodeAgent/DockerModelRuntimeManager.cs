@@ -79,6 +79,7 @@ public sealed class DockerModelRuntimeManager(
                 MaxOutputTokens = request.MaxOutputTokens,
                 KvCacheDtype = request.KvCacheDtype,
                 CpuOffloadGiB = request.CpuOffloadGiB,
+                GpuMemoryUtilization = request.GpuMemoryUtilization,
                 GpuDevices = request.GpuDevices,
                 Port = port,
                 TensorParallelSize = request.TensorParallelSize,
@@ -470,12 +471,13 @@ for index, entry in enumerate(files):
                 record.Port, record.TensorParallelSize, record.ExtraArguments,
                 record.Runtime, update.MaxNumSeqs, update.MaxModelLen,
                 record.KvCacheDtype, record.CpuOffloadGiB, null, record.GpuDevices,
-                update.MaxOutputTokens);
+                update.MaxOutputTokens, false, update.GpuMemoryUtilization);
             ManagedRuntimeProfiles.Validate(request);
             var changed = record with {
                 MaxModelLen = update.MaxModelLen,
                 MaxNumSeqs = update.MaxNumSeqs,
                 MaxOutputTokens = update.MaxOutputTokens,
+                GpuMemoryUtilization = update.GpuMemoryUtilization,
                 Status = "stopped",
                 RuntimeBaseAddress = null,
                 Error = null
@@ -707,7 +709,8 @@ for index, entry in enumerate(files):
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
-            record.GpuDevices, record.MaxOutputTokens, record.SourceRevision);
+            record.GpuDevices, record.MaxOutputTokens, record.SourceRevision,
+            record.GpuMemoryUtilization);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 
