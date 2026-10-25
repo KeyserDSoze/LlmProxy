@@ -1,3 +1,11 @@
+## Unreleased — Explain vLLM worker root exceptions after failed startup (2026-10-25)
+
+- Docker GPU model startup failure reads a bounded 600-line Docker log before container cleanup, surfaces the original CUDA/ValueError/OutOfMemoryError/ImportError before the generic EngineCore initialization traceback, and retains an abbreviated last-lines excerpt.
+- Save the latest bounded, token-redacted postmortem on the inference host under `/var/lib/llmproxy-node-agent/startup-logs/<installationId>.log` (actual directory obeys `NodeAgent:DataDirectory`); owner-only directory/file permissions on Linux, overwrite on each failed attempt.
+- A generic vLLM `Engine core initialization failed` does **not** establish the root cause. Previous Spark incident showed insufficient available CUDA/unified memory, but current failure must be diagnosed from its own earlier log lines.
+- Never retry a large GPU model automatically after the Spark's thermal/power shutdown. Verify hardware thermals and competing memory consumers first.
+
+
 ## 2026-10-25 — Surface stalled Agent upgrade with missing heartbeat (source; CI pending)
 
 Real Spark fleet screenshot: Node remains `Draining`, Agent reported offline and old installed v0.2.57, requested v0.2.59, stage `updating`, tunnel has no owner. Verified that release 0.2.59 and ARM64 Agent asset are actually published. Updater status/heartbeat cannot be determined from the screenshot alone: inspect systemd `llmproxy-node-agent-update`, Node Agent service and `/var/lib/llmproxy-node-agent/update-status.json` locally on Spark. A successful 101 WebSocket from earlier is not proof of current connectivity.
