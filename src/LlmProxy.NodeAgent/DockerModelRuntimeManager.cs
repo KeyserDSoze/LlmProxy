@@ -324,7 +324,7 @@ for index, entry in enumerate(files):
             }
             catch (Exception exception)
             {
-                var diagnostics = await ReadFailedDockerLogsAsync(name);
+                var diagnostics = await ReadFailedDockerLogsAsync(name, record.InstallationId);
                 // Failed startup must release GPU allocation and cannot leave a
                 // crashing inference container behind.
                 try
@@ -354,20 +354,41 @@ for index, entry in enumerate(files):
         }
     }
 
-    private async Task<string> ReadFailedDockerLogsAsync(string name)
+    private async Task<string> ReadFailedDockerLogsAsync(string name, string installationId)
     {
         try
         {
             var result = await runner.RunAsync(options.DockerExecutable,
-                ["logs", "--tail", "35", name], TimeSpan.FromSeconds(8), CancellationToken.None);
+                ["logs", "--tail", "600", name], TimeSpan.FromSeconds(12), CancellationToken.None);
             if (!result.Success) return "";
-            var tail = (result.StandardError + "\n" + result.StandardOutput).Trim();
-            if (tail.Length == 0) return "";
-            // Do not store incidental Hugging Face credentials or bearer tokens.
-            tail = Regex.Replace(tail, @"hf_[a-zA-Z0-9]{12,}", "[REDACTED]");
-            tail = Regex.Replace(tail, @"(?i)(Bearer\s+)[a-zA-Z0-9._-]{12,}", "$1[REDACTED]");
-            if (tail.Length > 1900) tail = tail[^1900..];
-            return "\nRecent Docker log tail:\n" + tail;
+            var logs = DockerStartupDiagnostics.Sanitize(
+                (result.StandardError + "\n" + result.StandardOutput).Trim());
+            if (logs.Length == 0) return "";
+
+            // Persist a bounded, token-redacted postmortem BEFORE docker rm.
+            // Keep only the latest attempt per installation; no unbounded
+            // logs and no need to preserve Docker restart loops.
+            string? file = null;
+            if (Regex.IsMatch(installationId, "^[a-z0-9-]{1,100}$"))
+            {
+                try
+                {
+                    var directory = Path.Combine(options.DataDirectory, "startup-logs");
+                    Directory.CreateDirectory(directory);
+                    if (OperatingSystem.IsLinux())
+                        File.SetUnixFileMode(directory,
+                            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                    file = Path.Combine(directory, installationId + ".log");
+                    // Keep the latest ~48 KiB; the UI's extracted root cause
+                    // comes from the entire captured (up to 600-line) output.
+                    var bounded = logs.Length > 48000 ? logs[^48000..] : logs;
+                    await File.WriteAllTextAsync(file, bounded, CancellationToken.None);
+                    if (OperatingSystem.IsLinux())
+                        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                }
+                catch (Exception) { file = null; /* Best effort. */ }
+            }
+            return DockerStartupDiagnostics.ForUi(logs, file);
         }
         catch (Exception) { return ""; }
     }
