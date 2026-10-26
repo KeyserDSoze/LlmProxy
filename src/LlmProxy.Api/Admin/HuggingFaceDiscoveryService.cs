@@ -15,7 +15,7 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
         string Id, string? Revision, DateTimeOffset? LastModified,
         long Downloads, long Likes, double? TrendingScore,
         string? PipelineTag, bool Gated, bool Private, string? License,
-        string Url);
+        string Url, bool HasGguf = false);
 
     public sealed record RevisionStatus(
         string Id, string? CachedRevision, string? LatestRevision,
@@ -24,6 +24,15 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
     public static bool ValidRepository(string id) =>
         id.Length is > 2 and <= 200 && Regex.IsMatch(id, @"^[A-Za-z0-9][A-Za-z0-9_.-]{0,98}/[A-Za-z0-9][A-Za-z0-9_.-]{0,98}$");
 
+    public static string BuildDiscoverUrl(string search, string sort, int limit)
+    {
+        var sortKey = sort switch { "downloads" => "downloads", "recent" => "lastModified", _ => "trendingScore" };
+        return "https://huggingface.co/api/models?" +
+            (string.IsNullOrWhiteSpace(search) ? "pipeline_tag=text-generation&" : "") +
+            "limit=" + limit + "&sort=" + sortKey + "&direction=-1" +
+            (string.IsNullOrWhiteSpace(search) ? "" : "&search=" + Uri.EscapeDataString(search.Trim()));
+    }
+
     public async Task<IReadOnlyList<HubModel>> DiscoverAsync(string search, string sort,
         int limit, CancellationToken token)
     {
@@ -31,14 +40,8 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
             sort is not ("trending" or "downloads" or "recent") ||
             search.Any(ch => char.IsControl(ch)))
             throw new ArgumentException("Invalid Hugging Face search or sorting parameters.");
-        var sortKey = sort switch {
-            "downloads" => "downloads",
-            "recent" => "lastModified",
-            _ => "trendingScore"
-        };
-        var uri = "https://huggingface.co/api/models?pipeline_tag=text-generation&limit=" + limit +
-            "&sort=" + sortKey + "&direction=-1" +
-            (string.IsNullOrWhiteSpace(search) ? "" : "&search=" + Uri.EscapeDataString(search.Trim()));
+        // Non-empty search includes multimodal (image-text-to-text) and GGUF repositories.
+        var uri = BuildDiscoverUrl(search, sort, limit);
         var key = "huggingface:search:" + uri;
         var rows = await cache.GetOrCreateAsync(key, async entry =>
         {
@@ -55,6 +58,16 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
                     result.Add(model);
             return (IReadOnlyList<HubModel>)result;
         });
+        // Exact org/model lookup bypasses ranking, format/task filters and
+        // short lists. ID is strictly validated: no arbitrary host or URL.
+        if (ValidRepository(search.Trim()))
+        {
+            var exact = await LatestAsync(search.Trim(), token);
+            if (exact is { Private: false })
+                return new[] { exact }.Concat((rows ?? [])
+                    .Where(model => !string.Equals(model.Id, exact.Id, StringComparison.OrdinalIgnoreCase)))
+                    .Take(limit).ToArray();
+        }
         return rows ?? [];
     }
 
@@ -112,13 +125,18 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
              gatedValue.ValueKind == JsonValueKind.String &&
              gatedValue.ToString() is not ("false" or ""));
         string? license = null;
+        var hasGguf = false;
         if (obj.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
-            license = tags.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
-                .Select(x => x.GetString()).FirstOrDefault(x => x?.StartsWith("license:", StringComparison.Ordinal) == true)?["license:".Length..];
+        {
+            var values = tags.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()).ToArray();
+            license = values.FirstOrDefault(x => x?.StartsWith("license:", StringComparison.Ordinal) == true)?["license:".Length..];
+            hasGguf = values.Any(x => string.Equals(x, "gguf", StringComparison.OrdinalIgnoreCase));
+        }
         DateTimeOffset? last = DateTimeOffset.TryParse(str("lastModified"), out var parsed) ? parsed : null;
         double? trending = obj.TryGetProperty("trendingScore", out var score) &&
             score.ValueKind == JsonValueKind.Number && score.TryGetDouble(out var d) ? d : null;
         return new(id, str("sha"), last, num("downloads"), num("likes"), trending,
-            str("pipeline_tag"), gated, flag("private"), license, "https://huggingface.co/" + id);
+            str("pipeline_tag"), gated, flag("private"), license, "https://huggingface.co/" + id, hasGguf);
     }
 }

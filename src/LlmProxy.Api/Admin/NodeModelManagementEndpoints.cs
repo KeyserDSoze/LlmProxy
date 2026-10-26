@@ -237,6 +237,9 @@ public static class NodeModelManagementEndpoints
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
+            var customError = ExplainInvalidCustomRepository(catalogId, request);
+            if (customError is not null)
+                return Results.BadRequest(new { error = "invalid_custom_model", message = customError });
             var descriptor = ResolveDescriptor(catalogId, request);
             if (request.StartAfterInstall && catalogId == "custom")
                 return Results.BadRequest(new { error = "custom_autostart_not_supported" });
@@ -323,6 +326,9 @@ public static class NodeModelManagementEndpoints
             Guid id, string catalogId, InstallManagedModelRequest request, GatewayDbContext db,
             IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
         {
+            var customError = ExplainInvalidCustomRepository(catalogId, request);
+            if (customError is not null)
+                return Results.BadRequest(new { error = "invalid_custom_model", message = customError });
             var descriptor = ResolveDescriptor(catalogId, request);
             if (request.StartAfterInstall && catalogId == "custom")
                 return Results.BadRequest(new { error = "custom_autostart_not_supported" });
@@ -1144,6 +1150,16 @@ public static class NodeModelManagementEndpoints
             state,
             compatibility
         });
+    }
+
+    public static string? ExplainInvalidCustomRepository(string catalogId, InstallManagedModelRequest request)
+    {
+        if (catalogId != "custom") return null;
+        if (request.Runtime == "llama.cpp" && request.ProviderModelName is { } id && !id.Contains(':'))
+            return "GGUF/llama.cpp requires a quantization tag. Use owner/repository:Q4_K_M only if that quant exists on Hugging Face.";
+        if (request.Runtime != "llama.cpp" && request.ProviderModelName?.Contains(':') == true)
+            return "A GGUF :quant tag requires llama.cpp. Choose llama.cpp instead of vLLM, SGLang or AirLLM.";
+        return null;
     }
 
     private static DeployableModelDescriptor? ResolveDescriptor(string catalogId, InstallManagedModelRequest request)

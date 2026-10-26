@@ -7,6 +7,7 @@ public sealed class HuggingFaceDiscoveryTests
     [Theory]
     [InlineData("Qwen/Qwen3-8B", true)]
     [InlineData("org/my_model-v1", true)]
+    [InlineData("HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive", true)]
     [InlineData("../private", false)]
     [InlineData("evil.com/path/extra", false)]
     [InlineData("https://evil.test/repo", false)]
@@ -17,6 +18,17 @@ public sealed class HuggingFaceDiscoveryTests
         string id, bool expected)
     {
         Assert.Equal(expected, HuggingFaceDiscoveryService.ValidRepository(id));
+    }
+
+    [Fact]
+    public void Explicit_search_accepts_multimodal_gguf_models()
+    {
+        var url = HuggingFaceDiscoveryService.BuildDiscoverUrl(
+            "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive", "trending", 20);
+        Assert.DoesNotContain("pipeline_tag=text-generation", url);
+        Assert.Contains("search=HauhauCS%2FQwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive", url);
+        Assert.Contains("pipeline_tag=text-generation",
+            HuggingFaceDiscoveryService.BuildDiscoverUrl("", "trending", 20));
     }
 
     [Fact]

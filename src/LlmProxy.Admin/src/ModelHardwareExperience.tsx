@@ -406,8 +406,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setRevisionBusy(false) }
   }
-  function reviewHubModel(repoId: string) {
-    setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
+  function reviewHubModel(repoId: string, hasGguf: boolean) {
+    setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice(hasGguf ? 'llama.cpp' : 'vllm')
     setCustomRepository(repoId); setCustomConfirmed(false)
     setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
     setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
@@ -903,6 +903,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           </label>
           <label><input type="checkbox" checked={customConfirmed} onChange={event => setCustomConfirmed(event.target.checked)} />
             {t('model.licenseConfirm')}</label>
+          {runtimeChoice === 'llama.cpp' && <>
+            <p className="notice">GGUF needs a quantization tag, such as <code>org/model:Q4_K_M</code>,
+              if that file exists. Choose a quantization from the Hugging Face Files tab.</p>
+            {!customRepository.includes(':') && <p className="error" role="alert">Missing GGUF quantization suffix (for example :Q4_K_M).</p>}
+          </>}
           <p className="notice">{t('model.licenseNotice')}</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
@@ -941,7 +946,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
         {!fixedMediaRuntime && <p className="muted">{t('model.profileInfo')}</p>}
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim()))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim() ||
+            (runtimeChoice === 'llama.cpp' && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/.test(customRepository.trim()))))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>

@@ -1,3 +1,9 @@
+## Unreleased — Custom GGUF model discovery and validation
+
+- Explicit Hugging Face searches include all task tags, including image-text-to-text GGUF; exact public owner/model IDs get direct metadata lookup, bypassing ranking limits.
+- GGUF-tagged results suggest llama.cpp in the review dialog. Custom llama.cpp requires an explicit :quant suffix, with UI guidance and HTTP 400 rather than misleading model-not-found 404.
+- No automatic start or inference capability claims for third-party checkpoints; real hardware validation still required.
+
 ## Unreleased — Configure memory reservation for existing vLLM installations (2026-10-25)
 
 - Admin *Edit limits* can now set vLLM's `--gpu-memory-utilization` as a typed fractional option (0.10–0.95), defaulting to a suggested conservative **0.70** when first editing on a unified-memory host; changing it does not delete model weights or reinstall the model.

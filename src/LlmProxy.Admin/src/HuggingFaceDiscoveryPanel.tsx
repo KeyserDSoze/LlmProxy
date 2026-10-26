@@ -7,7 +7,7 @@ export default function HuggingFaceDiscoveryPanel({
   canWrite, onReview
 }: {
   canWrite: boolean
-  onReview: (repoId: string) => void
+  onReview: (repoId: string, hasGguf: boolean) => void
 }) {
   const t = useT()
   const { locale } = useUiPreferences()
@@ -60,7 +60,7 @@ export default function HuggingFaceDiscoveryPanel({
       <th>{t('hf.model')}</th><th>{t('hf.popularity')}</th><th>{t('hf.latest')}</th><th>{t('hf.access')}</th><th>{t('hf.action')}</th>
     </tr></thead><tbody>
       {models.map(model => <tr key={model.id}>
-        <td><strong>{model.id}</strong><div className="muted">{model.pipelineTag ?? t('hf.taskUnknown')} · {model.license ?? t('hf.licenseUnknown')}</div>
+        <td><strong>{model.id}</strong><div className="muted">{model.pipelineTag ?? t('hf.taskUnknown')} · {model.license ?? t('hf.licenseUnknown')}{model.hasGguf ? ' · GGUF (llama.cpp)' : ''}</div>
           <a href={model.url} target="_blank" rel="noreferrer">{t('hf.modelCard')}</a>
         </td>
         <td>{model.downloads.toLocaleString(locale)} {t('hf.downloads')}<div className="muted">{model.likes.toLocaleString(locale)} {t('hf.likes')}</div></td>
@@ -68,7 +68,7 @@ export default function HuggingFaceDiscoveryPanel({
         <td>{model.gated ? t('hf.gated') : t('hf.public')}<div className="muted">{t('hf.unverified')}</div></td>
         <td><button disabled={!canWrite || model.gated}
           title={model.gated ? t('hf.gatedHelp') : t('hf.reviewHelp')}
-          onClick={() => onReview(model.id)}>{t('hf.review')}</button></td>
+          onClick={() => onReview(model.id, Boolean(model.hasGguf))}>{t('hf.review')}</button></td>
       </tr>)}
       {models.length === 0 && <tr><td colSpan={5} className="muted">{busy ? t('hf.loading') : t('hf.noResults')}</td></tr>}
     </tbody></table></div>

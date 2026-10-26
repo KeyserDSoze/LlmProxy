@@ -778,6 +778,7 @@ export type HuggingFaceModel = {
   private: boolean
   license?: string | null
   url: string
+  hasGguf?: boolean
 }
 export type HuggingFaceDiscoveryResponse = {
   source: string
