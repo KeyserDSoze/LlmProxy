@@ -647,7 +647,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await edit.getByLabel('Edit runtime sequences').fill('2')
   await edit.getByRole('button', { name: 'Save limits' }).click()
   await expect(page.getByText(/Runtime limits updated without deleting model weights/)).toBeVisible()
-  expect(savedLimits).toEqual({ maxModelLen: 16384, maxNumSeqs: 2, maxOutputTokens: 1024 })
+  expect(savedLimits).toEqual({ maxModelLen: 16384, maxNumSeqs: 2, maxOutputTokens: 1024, gpuMemoryUtilization: null })
   await page.getByRole('tab', { name: /Discover/ }).click()
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   const install = page.getByRole('dialog', { name: 'Install inference profile' })
