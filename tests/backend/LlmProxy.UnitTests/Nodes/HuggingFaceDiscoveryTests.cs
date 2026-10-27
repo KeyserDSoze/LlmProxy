@@ -32,6 +32,34 @@ public sealed class HuggingFaceDiscoveryTests
     }
 
     [Fact]
+    public void Gguf_variants_exclude_mmproj_and_prioritize_real_q4_k_m()
+    {
+        using var metadata = System.Text.Json.JsonDocument.Parse("""
+        {
+          "siblings": [
+            { "rfilename": "Qwen3.6-35B-Aggressive-Q4_K_P.gguf" },
+            { "rfilename": "Qwen3.6-35B-Aggressive-mmproj-F16.gguf" },
+            { "rfilename": "mmproj-vision-f16.gguf" },
+            { "rfilename": "Qwen3.6-35B-Aggressive-Q4_K_M.gguf" },
+            { "rfilename": "Qwen3.6-35B-Aggressive-IQ2_M.gguf" },
+            { "rfilename": "subdir/something-Q6_K.gguf" },
+            { "rfilename": "Qwen3.6-35B-Aggressive-Q8_K_P-00001-of-00002.gguf" }
+          ]
+        }
+        """);
+        var variants = HuggingFaceDiscoveryService.ParseGgufVariants(metadata.RootElement);
+        Assert.Equal(new[] { "Q4_K_M", "IQ2_M", "Q4_K_P" },
+            variants.Select(x => x.Quantization).ToArray());
+    }
+
+    [Fact]
+    public void Gguf_variants_empty_when_hub_did_not_include_file_list()
+    {
+        using var metadata = System.Text.Json.JsonDocument.Parse("""{"id":"foo/bar"}""");
+        Assert.Empty(HuggingFaceDiscoveryService.ParseGgufVariants(metadata.RootElement));
+    }
+
+    [Fact]
     public void Native_Qwen3_context_is_default_without_opt_in_YaRN_extension()
     {
         var qwen = DeployableModelCatalog.Find("qwen3-8b");

@@ -40,6 +40,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [extraArgumentsText, setExtraArgumentsText] = useState('')
   const [customRepository, setCustomRepository] = useState('')
   const [customConfirmed, setCustomConfirmed] = useState(false)
+  const [ggufVariants, setGgufVariants] = useState<{ quantization: string; fileName: string }[]>([])
+  const [ggufVariantMessage, setGgufVariantMessage] = useState<string | null>(null)
   const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
   const [startJobs, setStartJobs] = useState<ModelStartJob[]>([])
   const activatingStarts = useRef(new Set<string>())
@@ -77,6 +79,25 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const requiresHardwareOverride = installCatalogEntry?.compatibility.status === 'insufficient'
   useEffect(() => { setForceHardwareAcknowledged(false) }, [installCatalogId, nodeId])
   const installProviderName = installCatalogId === 'custom' ? customRepository.trim() : installDescriptor?.providerModelName ?? ''
+  const customBaseRepository = customRepository.trim().split(':')[0]
+  useEffect(() => {
+    if (installCatalogId !== 'custom' || runtimeChoice !== 'llama.cpp' ||
+        !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(customBaseRepository)) {
+      setGgufVariants([]); setGgufVariantMessage(null)
+      return
+    }
+    let live = true
+    setGgufVariants([]); setGgufVariantMessage(null)
+    void api.huggingFaceGgufVariants(customBaseRepository)
+      .then(result => {
+        if (!live) return
+        setGgufVariants(result.variants)
+        if (result.variants.length === 0)
+          setGgufVariantMessage('No selectable single-file GGUF quantizations were returned. Check the Files tab before installing.')
+      })
+      .catch(() => { if (live) setGgufVariantMessage('Could not inspect GGUF files. You may enter a verified quantization manually.') })
+    return () => { live = false }
+  }, [installCatalogId, runtimeChoice, customBaseRepository])
   useEffect(() => {
     if (!installCatalogId || !installProviderName || !installProviderName.includes('/')) {
       setInstallCapabilities(null)
@@ -904,10 +925,24 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label><input type="checkbox" checked={customConfirmed} onChange={event => setCustomConfirmed(event.target.checked)} />
             {t('model.licenseConfirm')}</label>
           {runtimeChoice === 'llama.cpp' && <>
-            <p className="notice">GGUF needs a quantization tag, such as <code>org/model:Q4_K_M</code>,
-              if that file exists. Choose a quantization from the Hugging Face Files tab.</p>
-            {!customRepository.includes(':') && <p className="error" role="alert">Missing GGUF quantization suffix (for example :Q4_K_M).</p>}
-          </>}
+            <p className="notice">GGUF / llama.cpp accepts a repository alone, or an explicit quantization
+              (such as <code>:Q4_K_M</code>). Without a suffix llama.cpp selects Q4_K_M
+              if available, otherwise its first matching file. Prefer selecting an actual filename.</p>
+            {ggufVariants.length > 0 && <label>Available GGUF quantization
+              <select aria-label="Available GGUF quantizations"
+                value={customRepository.includes(':') ? customRepository.split(':')[1] : ''}
+                onChange={event => setCustomRepository(customBaseRepository +
+                  (event.target.value ? ':' + event.target.value : ''))}>
+                <option value="">Automatic llama.cpp selection</option>
+                {ggufVariants.map(variant => <option key={variant.quantization} value={variant.quantization}>
+                  {variant.quantization} · {variant.fileName}
+                </option>)}
+              </select>
+            </label>}
+            {ggufVariantMessage && <p className="muted">{ggufVariantMessage}</p>}
+            <p className="muted">Third-party architecture, GPU memory and multimodal serving have not been verified on this hardware.
+              Downloading does not imply that the selected llama.cpp image can run the model.</p>
+          </>
           <p className="notice">{t('model.licenseNotice')}</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
@@ -946,8 +981,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
         {!fixedMediaRuntime && <p className="muted">{t('model.profileInfo')}</p>}
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed || !customRepository.trim() ||
-            (runtimeChoice === 'llama.cpp' && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/.test(customRepository.trim()))))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed ||
+            !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$/.test(customRepository.trim()) ||
+            (runtimeChoice !== 'llama.cpp' && customRepository.includes(':'))))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
       </form>
     </Modal>
     <Modal open={benchmarkDeploymentId !== null} title="Automated inference benchmark" description="Launch a background synthetic prompt sweep through the selected managed runtime, without using SSH or copying any commands." onClose={() => { setBenchmarkDeploymentId(null); setBenchmarkJobs([]) }}>

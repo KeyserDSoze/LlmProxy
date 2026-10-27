@@ -1,3 +1,9 @@
+## Unreleased — Select real Hugging Face GGUF quantizations and support llama.cpp defaults
+
+- Expose a metadata-only public Hub GGUF filename/quantization selector through a strict validated repository-id endpoint. Parse bounded sibling file metadata, excluding mmproj and incomplete multipart checkpoint filenames; the frontend presents actual supported selections.
+- Do not reject a bare GGUF repository for llama.cpp. Its documented --hf-repo default tries Q4_K_M, otherwise falls back to the first matching file. Invalid :quant use with vLLM/SGLang remains a clear HTTP 400.
+- Quantization discovery is a *file presence* check, not a guarantee of compatible llama.cpp architecture, multimodal wiring, RAM fit or launch success on DGX Spark.
+
 ## Unreleased — Custom GGUF model discovery and validation
 
 - Explicit Hugging Face searches include all task tags, including image-text-to-text GGUF; exact public owner/model IDs get direct metadata lookup, bypassing ranking limits.

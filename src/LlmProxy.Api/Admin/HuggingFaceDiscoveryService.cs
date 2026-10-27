@@ -17,6 +17,54 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
         string? PipelineTag, bool Gated, bool Private, string? License,
         string Url, bool HasGguf = false);
 
+    public sealed record GgufVariant(string Quantization, string FileName);
+
+    public static IReadOnlyList<GgufVariant> ParseGgufVariants(JsonElement metadata)
+    {
+        if (!metadata.TryGetProperty("siblings", out var siblings) ||
+            siblings.ValueKind != JsonValueKind.Array) return [];
+        var result = new Dictionary<string, GgufVariant>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in siblings.EnumerateArray().Take(2000))
+        {
+            if (!item.TryGetProperty("rfilename", out var path) ||
+                path.ValueKind != JsonValueKind.String) continue;
+            var file = path.GetString() ?? "";
+            // Only root-level, single-part GGUF model files are selectable.
+            // mmproj files and incomplete split quantizations are not choices.
+            if (file.Contains('/') || file.StartsWith("mmproj", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var match = Regex.Match(file,
+                @"(?:^|[-_])(?<quant>(?:IQ\d+|Q\d+)_[A-Za-z0-9_]+|BF16|F16|F32)\.gguf$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!match.Success) continue;
+            var quant = match.Groups["quant"].Value.ToUpperInvariant();
+            result.TryAdd(quant, new GgufVariant(quant, file));
+        }
+        return result.Values.OrderBy(x => x.Quantization == "Q4_K_M" ? 0 : 1)
+            .ThenBy(x => x.Quantization, StringComparer.Ordinal).Take(40).ToArray();
+    }
+
+    public async Task<IReadOnlyList<GgufVariant>> GgufVariantsAsync(string repoId, CancellationToken token)
+    {
+        if (!ValidRepository(repoId)) throw new ArgumentException("Invalid Hugging Face repository ID.");
+        var key = "huggingface:gguf-variants:" + repoId;
+        return await cache.GetOrCreateAsync(key, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+            using var response = await clients.CreateClient("huggingface-hub")
+                .GetAsync("https://huggingface.co/api/models/" + repoId, token);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return (IReadOnlyList<GgufVariant>)[];
+            response.EnsureSuccessStatusCode();
+            using var stream = await response.Content.ReadAsStreamAsync(token);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+            var model = Parse(document.RootElement);
+            if (model is null || model.Private || model.Gated)
+                return (IReadOnlyList<GgufVariant>)[];
+            return ParseGgufVariants(document.RootElement);
+        }) ?? [];
+    }
+
     public sealed record RevisionStatus(
         string Id, string? CachedRevision, string? LatestRevision,
         bool? UpdatedUpstream, string Message, DateTimeOffset? LastModified);

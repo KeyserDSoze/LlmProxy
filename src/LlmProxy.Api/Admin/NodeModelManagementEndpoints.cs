@@ -41,6 +41,25 @@ public static class NodeModelManagementEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable); }
         });
 
+        group.MapGet("/hugging-face/gguf-variants", async (
+            string repository, HuggingFaceDiscoveryService hub, CancellationToken token) =>
+        {
+            try
+            {
+                var variants = await hub.GgufVariantsAsync(repository, token);
+                return Results.Ok(new { repository, variants });
+            }
+            catch (ArgumentException)
+            {
+                return Results.BadRequest(new { error = "invalid_hugging_face_repository" });
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return Results.Problem("Could not retrieve GGUF filenames from Hugging Face; enter a valid :quant manually or retry.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
+
         group.MapGet("/nodes/{id:guid}/upstream-updates", async (
             Guid id, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, HuggingFaceDiscoveryService hub,
@@ -1155,8 +1174,10 @@ public static class NodeModelManagementEndpoints
     public static string? ExplainInvalidCustomRepository(string catalogId, InstallManagedModelRequest request)
     {
         if (catalogId != "custom") return null;
-        if (request.Runtime == "llama.cpp" && request.ProviderModelName is { } id && !id.Contains(':'))
-            return "GGUF/llama.cpp requires a quantization tag. Use owner/repository:Q4_K_M only if that quant exists on Hugging Face.";
+        // llama.cpp supports --hf-repo owner/model without :quant.
+        // Its documented default is Q4_K_M, falling back to the first GGUF
+        // if Q4_K_M is absent. Offer an explicit file choice in the UI
+        // rather than rejecting valid repo identifiers as model-not-found.
         if (request.Runtime != "llama.cpp" && request.ProviderModelName?.Contains(':') == true)
             return "A GGUF :quant tag requires llama.cpp. Choose llama.cpp instead of vLLM, SGLang or AirLLM.";
         return null;
@@ -1173,8 +1194,7 @@ public static class NodeModelManagementEndpoints
             !System.Text.RegularExpressions.Regex.IsMatch(request.ProviderModelName,
                 @"^[A-Za-z0-9][A-Za-z0-9_.-]{0,98}/[A-Za-z0-9][A-Za-z0-9_.-]{0,98}(:[A-Za-z0-9_.-]{1,50})?$"))
             return null;
-        if (request.Runtime == "llama.cpp" && !request.ProviderModelName.Contains(':'))
-            return null; // Require an explicit GGUF quant tag for custom llama.cpp deployments.
+        // llama.cpp accepts a bare repo and selects a default quant itself.
         if (request.Runtime != "llama.cpp" && request.ProviderModelName.Contains(':'))
             return null;
         return new DeployableModelDescriptor("custom", request.PublicName, request.ProviderModelName,

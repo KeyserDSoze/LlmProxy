@@ -254,6 +254,9 @@ export const api = {
     request<{ success: boolean; code: string }>(`/api/admin/model-management/nodes/${nodeId}/prepare`, { method: 'POST' }),
   discoverHuggingFaceModels: (search: string, sort: 'trending' | 'downloads' | 'recent', limit = 20) =>
     request<HuggingFaceDiscoveryResponse>(`/api/admin/model-management/hugging-face?search=${encodeURIComponent(search)}&sort=${sort}&limit=${limit}`),
+  huggingFaceGgufVariants: (repository: string) =>
+    request<{ repository: string; variants: Array<{ quantization: string; fileName: string }> }>(
+      `/api/admin/model-management/hugging-face/gguf-variants?repository=${encodeURIComponent(repository)}`),
   checkManagedModelUpdates: (nodeId: string) =>
     request<ModelRevisionStatus[]>(`/api/admin/model-management/nodes/${nodeId}/upstream-updates`),
   modelManagementOverview: (nodeId: string) =>
