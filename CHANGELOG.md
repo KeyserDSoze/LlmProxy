@@ -1,3 +1,7 @@
+## Unreleased — Reliable browser test runner for release CI
+
+- Playwright still runs Chromium-engine E2E tests, but CI uses the preinstalled Google Chrome on ubuntu-latest instead of potentially hanging on a second browser download. Local Playwright retains its normal browser behavior.
+
 ## Unreleased — Select real Hugging Face GGUF quantizations and support llama.cpp defaults
 
 - Expose a metadata-only public Hub GGUF filename/quantization selector through a strict validated repository-id endpoint. Parse bounded sibling file metadata, excluding mmproj and incomplete multipart checkpoint filenames; the frontend presents actual supported selections.

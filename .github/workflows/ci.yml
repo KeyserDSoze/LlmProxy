@@ -493,9 +493,12 @@ jobs:
         working-directory: tests/frontend
         run: npm test
 
-      - name: Install Playwright Chromium
-        working-directory: tests/frontend
-        run: npx playwright install --with-deps chromium
+      # ubuntu-latest has Google Chrome preinstalled. Use the same Chromium
+      # engine without fetching another ~150 MB browser binary: the download
+      # had stalled for over ten minutes and blocked the immutable-release gate.
+      # The Playwright tests still execute in a real browser.
+      - name: Verify runner Chrome
+        run: google-chrome --version
 
       - name: Playwright E2E
         working-directory: tests/frontend
