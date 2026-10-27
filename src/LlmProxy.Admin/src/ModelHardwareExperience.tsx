@@ -942,7 +942,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
             {ggufVariantMessage && <p className="muted">{ggufVariantMessage}</p>}
             <p className="muted">Third-party architecture, GPU memory and multimodal serving have not been verified on this hardware.
               Downloading does not imply that the selected llama.cpp image can run the model.</p>
-          </>
+          </>}
           <p className="notice">{t('model.licenseNotice')}</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
