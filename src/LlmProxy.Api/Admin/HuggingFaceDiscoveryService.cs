@@ -31,7 +31,7 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
             var file = path.GetString() ?? "";
             // Only root-level, single-part GGUF model files are selectable.
             // mmproj files and incomplete split quantizations are not choices.
-            if (file.Contains('/') || file.StartsWith("mmproj", StringComparison.OrdinalIgnoreCase))
+            if (file.Contains('/') || file.Contains("mmproj", StringComparison.OrdinalIgnoreCase))
                 continue;
             var match = Regex.Match(file,
                 @"(?:^|[-_])(?<quant>(?:IQ\d+|Q\d+)_[A-Za-z0-9_]+|BF16|F16|F32)\.gguf$",
