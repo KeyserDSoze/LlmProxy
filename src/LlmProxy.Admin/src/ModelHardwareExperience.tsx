@@ -9,6 +9,7 @@ import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
 import StartupDiagnosis from './StartupDiagnosis'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
+import HuggingFaceRepositoryInspector from './HuggingFaceRepositoryInspector'
 import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
 type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
@@ -886,6 +887,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
               onChange={event => setCustomRepository(event.target.value)}
               placeholder="Qwen/Qwen3-8B" required />
           </label>
+          <HuggingFaceRepositoryInspector repository={customBaseRepository}
+            onChoose={choice => {
+              setCustomRepository(choice.repository)
+              setRuntimeChoice(choice.runtime)
+              if (choice.maxModelLen) setMaxModelLen(Math.min(choice.maxModelLen, installContextCeiling))
+            }} />
           <label><input type="checkbox" checked={customConfirmed} onChange={event => setCustomConfirmed(event.target.checked)} />
             {t('model.licenseConfirm')}</label>
           {runtimeChoice === 'llama.cpp' && <>

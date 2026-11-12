@@ -1,3 +1,7 @@
+## 2026-11-13 — Hugging Face repository inspector for custom installs (source; CI pending)
+
+Custom install reads parameters, formats, context window, GGUF quantizations and community quantized builds from the Hub and pre-fills engine/context. Details and validation: `docs/development-log.md`. External validation still required: live Hub for the intended repositories.
+
 ## 2026-11-12 — Guided Hugging Face access for gated models (source; CI pending)
 
 Admin can store a Hugging Face read token per server from the failed install/start card and retry; the Agent keeps it owner-only on the inference host, the gateway stores nothing. Details and validation: `docs/development-log.md`, `docs/security.md`. External validation still required: real gated repository on the Spark through the outbound tunnel.

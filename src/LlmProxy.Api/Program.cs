@@ -43,6 +43,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ReleaseDiscoveryService>();
 builder.Services.AddSingleton<HuggingFaceDiscoveryService>();
+builder.Services.AddSingleton<HuggingFaceRepositoryInspector>();
 builder.Services.AddSingleton<AgentRelayHub>();
 builder.Services.AddTransient<AgentRelayHttpHandler>();
 builder.Services.AddSingleton<UpdateAgentClient>();

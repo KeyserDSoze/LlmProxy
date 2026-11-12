@@ -5,6 +5,8 @@ import { defineConfig, devices } from '@playwright/test'
 const useSystemChrome = process.env.PLAYWRIGHT_USE_SYSTEM_CHROME === '1'
   || (Boolean(process.env.CI) && process.env.PLAYWRIGHT_USE_SYSTEM_CHROME !== '0')
 const chromeChannel = useSystemChrome ? { channel: 'chrome' as const } : {}
+// Override when 4173 is taken by another project's dev server (reuseExistingServer would attach to it).
+const port = process.env.LLMPROXY_E2E_PORT ?? '4173'
 
 export default defineConfig({
   testDir: './e2e',
@@ -23,13 +25,13 @@ export default defineConfig({
     toHaveScreenshot: { maxDiffPixels: 100, animations: 'disabled', caret: 'hide', scale: 'css' }
   },
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${port}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure'
   },
   webServer: {
-    command: 'npm --prefix ../../src/LlmProxy.Admin run dev -- --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173',
+    command: `npm --prefix ../../src/LlmProxy.Admin run dev -- --host 127.0.0.1 --port ${port}`,
+    url: `http://127.0.0.1:${port}/admin/`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   },

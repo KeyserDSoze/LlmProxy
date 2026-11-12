@@ -235,6 +235,24 @@ tbody tr:hover td{background:var(--row-hover)}
 .diagnosisActions{display:flex;flex-wrap:wrap;gap:8px}
 .modelJobCard .diagnosis{margin-top:2px}
 
+/* Hugging Face repository inspector (custom install) */
+.hfInspect{display:grid;gap:12px;min-width:0;padding:14px 16px;border-radius:12px;border:1px solid var(--border);background:var(--surface-secondary)}
+.hfInspectHeader{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px}
+.hfInspectHeader strong{font-size:13.5px}
+.hfInspectHeader a{font-size:12px;overflow-wrap:anywhere}
+.hfInspectFacts{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.hfInspectFacts>div{flex:1 1 130px;min-width:0;padding:8px 12px;border:1px solid var(--border-soft);border-radius:10px;background:var(--field)}
+.hfInspectFacts dt{font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.hfInspectFacts dd{margin:3px 0 0;font-size:13px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.hfSuggestion{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;
+  border-radius:10px;border:1px solid var(--info-border);background:var(--info-bg)}
+.hfSuggestion p{margin:0;flex:1 1 280px;font-size:13px;line-height:1.5;color:var(--text)}
+.hfInspect table{width:100%}
+.hfInspect caption{padding:0 0 6px;text-align:left;font-size:12.5px;font-weight:650;color:var(--text)}
+.hfInspect caption .muted{font-weight:400;max-width:none}
+.hfInspect th,.hfInspect td{padding:8px 12px}
+.hfInspect .muted,.hfInspect .notice{margin:0;max-width:none}
+
 /* Hugging Face access guide (inside a diagnosis) */
 .hfAccess{display:grid;gap:10px;min-width:0;padding:14px 16px;border-radius:10px;border:1px solid var(--info-border);
   background:var(--info-bg);color:var(--text)}

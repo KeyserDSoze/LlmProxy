@@ -1,3 +1,10 @@
+## Unreleased — Hugging Face repository inspector for custom installs
+
+- Typing `org/model` in *Install custom Hugging Face model* now reads the repository from the public Hugging Face API and shows parameters, precision, weights size, context window, architecture, license and whether it is gated. It suggests an engine (safetensors -> vLLM, GGUF -> llama.cpp) and the context to use, applied with one click.
+- GGUF repositories list every quantization with size and split-part count. Repositories without GGUF files list the quantized builds other publishers derived from them (`base_model:quantized:` filter: GGUF, AWQ, GPTQ, FP8, ...), most downloaded first; choosing one switches repository and engine. Formats no available engine can load (MLX, EXL2) are shown but not selectable.
+- New `GET /api/admin/model-management/hugging-face/inspect?repository=org/model` (AdminRead, cached 10 minutes, validated repository id, fixed Hub host, bounded `config.json` read). Hub failures degrade to a message; manual entry keeps working.
+- Playwright: `LLMPROXY_E2E_PORT` selects another dev-server port when 4173 is occupied by an unrelated project, and the server readiness check now requires `/admin/`.
+
 ## Unreleased — Guided Hugging Face access for gated models
 
 - When an install or start fails because a Hugging Face repository is gated/private (HTTP 401/403, rejected token), the Admin shows a guided form on the failed card: open the repository to accept its license, create a read token, paste it, **Save token and retry**. No SSH or environment editing on the inference host.

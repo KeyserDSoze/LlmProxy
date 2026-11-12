@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, HuggingFaceInspectionResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
@@ -264,6 +264,9 @@ export const api = {
   huggingFaceGgufVariants: (repository: string) =>
     request<{ repository: string; variants: GgufVariant[] }>(
       `/api/admin/model-management/hugging-face/gguf-variants?repository=${encodeURIComponent(repository)}`),
+  inspectHuggingFaceRepository: (repository: string) =>
+    request<HuggingFaceInspectionResponse>(
+      `/api/admin/model-management/hugging-face/inspect?repository=${encodeURIComponent(repository)}`),
   checkManagedModelUpdates: (nodeId: string) =>
     request<ModelRevisionStatus[]>(`/api/admin/model-management/nodes/${nodeId}/upstream-updates`),
   modelManagementOverview: (nodeId: string) =>

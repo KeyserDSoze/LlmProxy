@@ -140,6 +140,23 @@ const startJobs = [{
   error: ggufFailure, createdAtUtc: '2026-11-12T09:30:00Z', completedAtUtc: '2026-11-12T09:30:42Z'
 }]
 
+export const museGlimmerInspection = {
+  inspection: {
+    id: 'meta-models/Muse-Glimmer-30B', found: true, gated: false, private: false, license: 'apache-2.0',
+    pipelineTag: 'text-generation', libraryName: 'transformers', architecture: 'GlimmerForCausalLM',
+    parameterCount: 30_532_000_000, precision: 'BF16', weightsBytes: 61_064_000_000, contextLength: 131072,
+    quantization: null, multimodal: false, hasGguf: false, hasSafetensors: true, ggufVariants: [],
+    suggestion: { runtime: 'vllm', reason: 'Safetensors weights; vLLM serves them directly. Smaller GGUF or quantized builds from other publishers are listed below when they exist.', contextTokens: 32768 },
+    url: 'https://huggingface.co/meta-models/Muse-Glimmer-30B'
+  },
+  quantizedBuilds: [
+    { id: 'unsloth/Muse-Glimmer-30B-GGUF', format: 'gguf', downloads: 184_200, likes: 212, parameterCount: 30_532_000_000, lastModified: '2026-11-10T09:00:00Z' },
+    { id: 'meta-models/Muse-Glimmer-30B-AWQ', format: 'awq', downloads: 96_400, likes: 58, parameterCount: 30_532_000_000, lastModified: '2026-11-09T09:00:00Z' },
+    { id: 'meta-models/Muse-Glimmer-30B-FP8', format: 'fp8', downloads: 41_300, likes: 31, parameterCount: null, lastModified: '2026-11-09T09:00:00Z' },
+    { id: 'mlx-community/Muse-Glimmer-30B-4bit', format: 'mlx', downloads: 8_900, likes: 12, parameterCount: null, lastModified: '2026-11-11T09:00:00Z' }
+  ]
+}
+
 const metricsSummary = {
   windowHours: 24, sinceUtc: '2026-11-11T10:00:00Z', requestCount: 18420, successCount: 18312, errorCount: 108,
   successRatePercent: 99.4, p50DurationMilliseconds: 1840, p95DurationMilliseconds: 6200, p50TimeToFirstByteMilliseconds: 210,
@@ -266,6 +283,11 @@ export async function installMockAdmin(page: Page) {
     }
     if (path.startsWith('/api/admin/benchmarks/deployments/')) return json(route, [])
     if (path.startsWith('/api/admin/model-management/capabilities')) return json(route, chatCapabilities('Qwen/Qwen3-8B', 'vllm'))
+    if (path === '/api/admin/model-management/hugging-face/inspect') return json(route, museGlimmerInspection)
+    if (path === '/api/admin/model-management/hugging-face/gguf-variants') return json(route, {
+      repository: url.searchParams.get('repository'),
+      variants: [{ quantization: 'Q4_K_M', fileName: 'Muse-Glimmer-30B-Q4_K_M.gguf', parts: 1, sizeBytes: 18_600_000_000 }, { quantization: 'Q8_0', fileName: 'Muse-Glimmer-30B-Q8_0.gguf', parts: 2, sizeBytes: 32_500_000_000 }]
+    })
     if (path.startsWith('/api/admin/model-management/hugging-face')) return json(route, { source: 'Hugging Face Hub public models', discoveredAtUtc: FIXED_NOW, verifiedForLocalRuntime: false, models: [] })
     return json(route, { error: `Unhandled visual fixture route ${method} ${path}` }, 500)
   })

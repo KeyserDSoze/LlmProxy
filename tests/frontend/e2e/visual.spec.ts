@@ -156,6 +156,18 @@ test('phone navigation drawer opens with every workspace grouped', async ({ page
   expect(problems).toEqual([])
 })
 
+test('custom install shows parameters, formats and quantized builds of the typed repository', async ({ page }, testInfo) => {
+  const problems = await open(page, screens[2], 'light')
+  await page.getByRole('button', { name: 'Install custom Hugging Face model' }).click()
+  await page.getByLabel('Custom Hugging Face repository').fill('meta-models/Muse-Glimmer-30B')
+  const details = page.getByRole('region', { name: 'Repository details from Hugging Face' })
+  await expect(details.getByRole('table', { name: 'Quantized builds from other publishers' })).toBeVisible()
+  await expectAccessible(page)
+  if (compareScreenshots) await expect(details).toHaveScreenshot('hf-repository-inspector.png')
+  else await testInfo.attach('hf-repository-inspector', { body: await details.screenshot(), contentType: 'image/png' })
+  expect(problems).toEqual([])
+})
+
 test('gated Hugging Face install failure offers the guided token form', async ({ page }, testInfo) => {
   const problems = await open(page, screens[3], 'light')
   const card = page.locator('.modelJobCard', { hasText: "requires authentication for 'meta/muse-glimmer'" })

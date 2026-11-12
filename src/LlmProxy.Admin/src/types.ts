@@ -782,6 +782,40 @@ export type GgufVariant = {
   parts?: number
   sizeBytes?: number | null
 }
+export type HuggingFaceEngineSuggestion = { runtime: 'vllm' | 'llama.cpp'; reason: string; contextTokens: number }
+export type HuggingFaceInspection = {
+  id: string
+  found: boolean
+  gated: boolean
+  private: boolean
+  license?: string | null
+  pipelineTag?: string | null
+  libraryName?: string | null
+  architecture?: string | null
+  parameterCount?: number | null
+  precision?: string | null
+  weightsBytes?: number | null
+  contextLength?: number | null
+  quantization?: string | null
+  multimodal: boolean
+  hasGguf: boolean
+  hasSafetensors: boolean
+  ggufVariants: GgufVariant[]
+  suggestion?: HuggingFaceEngineSuggestion | null
+  url: string
+}
+export type HuggingFaceQuantizedBuild = {
+  id: string
+  format: string
+  downloads: number
+  likes: number
+  parameterCount?: number | null
+  lastModified?: string | null
+}
+export type HuggingFaceInspectionResponse = {
+  inspection: HuggingFaceInspection
+  quantizedBuilds: HuggingFaceQuantizedBuild[]
+}
 export type HuggingFaceModel = {
   id: string
   revision?: string | null

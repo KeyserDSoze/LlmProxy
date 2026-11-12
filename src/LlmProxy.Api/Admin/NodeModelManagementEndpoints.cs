@@ -41,6 +41,30 @@ public static class NodeModelManagementEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable); }
         });
 
+        group.MapGet("/hugging-face/inspect", async (
+            string repository, HuggingFaceRepositoryInspector inspector, CancellationToken token) =>
+        {
+            try
+            {
+                var buildsTask = inspector.QuantizedBuildsAsync(repository, token);
+                var inspection = await inspector.InspectAsync(repository, token);
+                IReadOnlyList<HuggingFaceRepositoryInspector.QuantizedDerivative> builds = [];
+                try { builds = await buildsTask; }
+                catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+                { /* The quantized-build list is a convenience; the inspection stands without it. */ }
+                return Results.Ok(new { inspection, quantizedBuilds = builds });
+            }
+            catch (ArgumentException)
+            {
+                return Results.BadRequest(new { error = "invalid_hugging_face_repository" });
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return Results.Problem("Could not read this repository from Hugging Face; you can still enter its settings manually.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
+
         group.MapGet("/hugging-face/gguf-variants", async (
             string repository, HuggingFaceDiscoveryService hub, CancellationToken token) =>
         {

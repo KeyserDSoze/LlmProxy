@@ -1,6 +1,8 @@
 # Roadmap
 
 ## 2026-11-12 — Model startup reliability and Admin UX
+- [x] Repository inspector in custom install (parameters, formats, context, GGUF quantizations, community quantized builds).
+- [ ] Compare weights size with the selected server's free memory and show fit (needs a verified KV-cache/unified-memory model first).
 - [x] Guided Hugging Face token flow on failed install/start cards (Admin -> Agent, owner-only storage).
 - [ ] Validate the gated-model flow on the Spark (outbound tunnel + `meta/muse-glimmer`-style repository).
 - [ ] Show the configured Hugging Face account per server in *Servers & hardware* and allow removal there.

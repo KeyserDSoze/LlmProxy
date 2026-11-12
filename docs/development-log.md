@@ -1,3 +1,13 @@
+## 2026-11-13 — Hugging Face repository inspector for custom installs (source; CI pending)
+
+Request: pasting `meta-models/Muse-Glimmer-30B` showed nothing about quantizations; the GGUF selector only appeared after switching to llama.cpp, and that repository has no GGUF at all.
+
+Design: Hugging Face exposes everything needed on public endpoints. `GET /api/models/{id}?blobs=true` returns tags, config summary, `safetensors.{parameters,total}`, `gguf.{total,architecture,context_length}` and file sizes; `config.json` (via `/resolve/main/`) gives the context window and `quantization_config`; `GET /api/models?filter=base_model:quantized:{id}&sort=downloads` lists community quantized builds (verified against `Qwen/Qwen3-8B`). The gateway does the reads (cache 10 min, validated id, fixed hosts, 512 KiB cap) so no browser CORS or token handling is involved.
+
+Memory estimates are deliberately not computed: weights size is shown, but KV-cache/runtime overhead on unified-memory GB10 hardware is unverified, so fit remains a benchmark question.
+
+Validation (local): backend 406/406, Vitest 50/50, Playwright functional 42/42 and visual 51/51 (new baseline `hf-repository-inspector.png`). Playwright attached to an unrelated Vite preview on port 4173 (another project), which produced misleading failures; `LLMPROXY_E2E_PORT` and a `/admin/` readiness URL now prevent that. Not verified: the inspector against the live Hub for the real target repository.
+
 ## 2026-11-12 — Guided Hugging Face access for gated models (source; CI pending)
 
 Trigger: with the pinned GGUF download the real Spark showed `Hugging Face requires authentication for 'meta/muse-glimmer' (HTTP 401)`. The error was correct but fixing it needed SSH and `/etc/llmproxy/node-agent.env`.
