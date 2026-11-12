@@ -502,7 +502,7 @@ jobs:
 
       - name: Playwright E2E
         working-directory: tests/frontend
-        run: npm run test:e2e
+        run: npm run test:e2e -- --project=chromium
 
       - name: Upload Playwright report
         if: failure()
@@ -510,6 +510,46 @@ jobs:
         with:
           name: playwright-report
           path: tests/frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  visual:
+    name: Visual regression, layout and accessibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Baselines in tests/frontend/e2e/__screenshots__ are rendered by this same
+      # image locally (npm run test:visual:update), so pixels match on every OS.
+      - name: Pull pinned Playwright image
+        working-directory: tests/frontend
+        run: |
+          image="mcr.microsoft.com/playwright:v$(node -p "require('./package.json').devDependencies['@playwright/test']")-noble"
+          for attempt in 1 2 3; do
+            if docker pull --quiet "$image"; then exit 0; fi
+            echo "Pull attempt $attempt for $image failed; retrying." >&2
+            sleep $((attempt * 15))
+          done
+          exit 1
+
+      - name: Screenshot comparison, overflow and axe checks
+        working-directory: tests/frontend
+        run: node scripts/visual-docker.mjs
+
+      - name: Upload visual diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            tests/frontend/test-results/
+            tests/frontend/playwright-report/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -663,6 +703,26 @@ jobs:
 
       - name: PowerShell backup and restore smoke suite
         run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
+
+      - name: Setup Node.js for the live Admin UI smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Real gateway + PostgreSQL, no API mocks; uses the runner's preinstalled Chrome.
+      - name: Admin UI live smoke suite
+        run: bash tests/backend/integration/admin_ui_live_smoke.sh
+
+      - name: Upload live Admin UI report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-ui-live-report
+          path: |
+            tests/frontend/playwright-report/live/
+            tests/frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
 
   full_stack:

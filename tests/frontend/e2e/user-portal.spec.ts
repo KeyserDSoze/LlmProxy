@@ -140,7 +140,9 @@ test('normal Entra user can manage personal API keys without loading admin APIs'
   await page.goto('/admin/me')
   await expect(page.getByRole('heading', { name: 'My dashboard' })).toBeVisible()
   await expect(page.getByText('Example User')).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Project Alpha', exact: true })).toBeVisible()
+  // The request-audit table also names the credential once it loads; scope to the key list.
+  const personalKeys = page.locator('section.panel', { has: page.getByRole('heading', { name: 'Personal credentials' }) })
+  await expect(personalKeys.getByRole('cell', { name: 'Project Alpha', exact: true })).toBeVisible()
   await expect(page.getByText('30d requests').locator('..').getByText('12', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'My limits' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'My recent calls' })).toBeVisible()

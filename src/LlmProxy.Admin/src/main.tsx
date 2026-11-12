@@ -4,6 +4,10 @@ import App from './App'
 import UserPortal from './UserPortal'
 import './styles.css'
 import './requestAudit.css'
+import './theme.css'
+import { enhanceScrollableRegions } from './scrollableRegions'
+
+enhanceScrollableRegions(document)
 
 const userRoute = window.location.pathname.replace(/\/+$/, '').endsWith('/admin/me')
 

@@ -43,13 +43,39 @@ public sealed class HuggingFaceDiscoveryTests
             { "rfilename": "Qwen3.6-35B-Aggressive-Q4_K_M.gguf" },
             { "rfilename": "Qwen3.6-35B-Aggressive-IQ2_M.gguf" },
             { "rfilename": "subdir/something-Q6_K.gguf" },
-            { "rfilename": "Qwen3.6-35B-Aggressive-Q8_K_P-00001-of-00002.gguf" }
+            { "rfilename": "Qwen3.6-35B-Aggressive-Q8_K_P-00001-of-00002.gguf", "size": 10 },
+            { "rfilename": "Qwen3.6-35B-Aggressive-Q8_K_P-00002-of-00002.gguf", "lfs": { "size": 15 } }
           ]
         }
         """);
         var variants = HuggingFaceDiscoveryService.ParseGgufVariants(metadata.RootElement);
-        Assert.Equal(new[] { "Q4_K_M", "IQ2_M", "Q4_K_P" },
+        // llama.cpp resolves split shards and subdirectory files by tag as well.
+        Assert.Equal(new[] { "Q4_K_M", "IQ2_M", "Q4_K_P", "Q6_K", "Q8_K_P" },
             variants.Select(x => x.Quantization).ToArray());
+        var split = variants.Single(x => x.Quantization == "Q8_K_P");
+        Assert.Equal(2, split.Parts);
+        Assert.Equal(25, split.SizeBytes);
+    }
+
+    [Fact]
+    public void Unresolvable_gguf_requests_are_rejected_before_queueing()
+    {
+        using var metadata = System.Text.Json.JsonDocument.Parse(
+            """{ "siblings": [ { "rfilename": "model-Q8_0.gguf" }, { "rfilename": "mmproj-F16.gguf" } ] }""");
+        var repo = HuggingFaceDiscoveryService.ParseGgufRepository(metadata.RootElement);
+        Assert.Null(HuggingFaceDiscoveryService.ExplainUnresolvableGguf(repo, "org/model", null));
+        Assert.Null(HuggingFaceDiscoveryService.ExplainUnresolvableGguf(repo, "org/model", "q8_0"));
+        Assert.Contains("Available: Q8_0",
+            HuggingFaceDiscoveryService.ExplainUnresolvableGguf(repo, "org/model", "Q4_K_M"));
+
+        using var safetensors = System.Text.Json.JsonDocument.Parse(
+            """{ "siblings": [ { "rfilename": "model.safetensors" } ] }""");
+        Assert.Contains("no GGUF model files", HuggingFaceDiscoveryService.ExplainUnresolvableGguf(
+            HuggingFaceDiscoveryService.ParseGgufRepository(safetensors.RootElement), "Qwen/Qwen3-8B", null));
+        Assert.Contains("was not found", HuggingFaceDiscoveryService.ExplainUnresolvableGguf(
+            new HuggingFaceDiscoveryService.GgufRepository(false, false, [], []), "org/missing", null));
+        Assert.Null(HuggingFaceDiscoveryService.ExplainUnresolvableGguf(
+            new HuggingFaceDiscoveryService.GgufRepository(true, true, [], []), "org/gated", "Q4_K_M"));
     }
 
     [Fact]

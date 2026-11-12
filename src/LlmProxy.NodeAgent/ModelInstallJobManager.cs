@@ -139,14 +139,11 @@ public sealed class ModelInstallJobManager
             if (!_jobs.TryGetValue(id, out var original)) return;
             var next = update(original);
             if (next == original) return;
-            // UI needs visible state, but there is no need to write every terminal carriage return.
-            var stageChanged = original.Stage != next.Stage || original.Status != next.Status;
-            var meaningfulPercent = original.Percent is double previous && next.Percent is double current
-                ? Math.Abs(current - previous) >= 1 : original.Percent != next.Percent;
-            if (!stageChanged && DateTimeOffset.UtcNow - _lastProgressPersistedUtc < TimeSpan.FromSeconds(1))
-                return;
-            if (!stageChanged && !meaningfulPercent && original.Detail == next.Detail) return;
+            // Polling UIs always see the newest state; disk writes are throttled for progress noise.
             _jobs[id] = next;
+            var stageChanged = original.Stage != next.Stage || original.Status != next.Status;
+            if (!stageChanged && DateTimeOffset.UtcNow - _lastProgressPersistedUtc < TimeSpan.FromSeconds(5))
+                return;
             Save();
             _lastProgressPersistedUtc = DateTimeOffset.UtcNow;
         }

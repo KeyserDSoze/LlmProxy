@@ -1,6 +1,26 @@
 import { useEffect, useRef } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import { navigateAdmin } from './adminNavigation'
 import { useT } from './uiPreferences'
+
+/** In-app link: real href (open in new tab works) with client-side navigation on plain click. */
+export function AdminLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    navigateAdmin(href)
+  }
+  return <a href={href} className={className} onClick={onClick}>{children}</a>
+}
+
+/** Decorative "info" glyph as SVG, so it never becomes part of a button's visible text. */
+export function InfoIcon() {
+  return <svg className="infoIcon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+    <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M8 7.2v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
+  </svg>
+}
 
 export function Tabs<T extends string>({ value, onChange, items }: {
   value: T; onChange: (value: T) => void;

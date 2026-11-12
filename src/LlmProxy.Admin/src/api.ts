@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus, NodeResourceSnapshot } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
@@ -255,7 +255,7 @@ export const api = {
   discoverHuggingFaceModels: (search: string, sort: 'trending' | 'downloads' | 'recent', limit = 20) =>
     request<HuggingFaceDiscoveryResponse>(`/api/admin/model-management/hugging-face?search=${encodeURIComponent(search)}&sort=${sort}&limit=${limit}`),
   huggingFaceGgufVariants: (repository: string) =>
-    request<{ repository: string; variants: Array<{ quantization: string; fileName: string }> }>(
+    request<{ repository: string; variants: GgufVariant[] }>(
       `/api/admin/model-management/hugging-face/gguf-variants?repository=${encodeURIComponent(repository)}`),
   checkManagedModelUpdates: (nodeId: string) =>
     request<ModelRevisionStatus[]>(`/api/admin/model-management/nodes/${nodeId}/upstream-updates`),

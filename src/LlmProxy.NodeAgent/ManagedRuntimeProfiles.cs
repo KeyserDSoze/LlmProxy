@@ -6,6 +6,19 @@ namespace LlmProxy.NodeAgent;
 /// <summary>Explicit, inspectable launch profiles. No shell interpretation or implicit model conversion.</summary>
 public static class ManagedRuntimeProfiles
 {
+    // Switches that select served weights or the listener belong to the managed profile.
+    private static readonly string[] ReservedSwitches =
+    [
+        "--model", "-m", "--model-path", "--hf-repo", "-hf", "-hfr", "--hf-file", "-hff",
+        "--model-url", "-mu", "--docker-repo", "-dr", "--mmproj", "-mm", "--host", "--port"
+    ];
+
+    public static bool IsReservedSwitch(string argument)
+    {
+        var name = argument.Split('=', 2)[0].Trim();
+        return ReservedSwitches.Contains(name, StringComparer.Ordinal);
+    }
+
     public static void Validate(InstallRequest request)
     {
         if (request.StartAfterInstall && request.CatalogModelId == "custom")
@@ -22,6 +35,9 @@ public static class ManagedRuntimeProfiles
             throw new ArgumentOutOfRangeException(nameof(request.Port));
         if (request.ExtraArguments is { Count: > 64 } || request.ExtraArguments?.Any(arg => arg.Length > 500) == true)
             throw new ArgumentException("Too many or too-long runtime arguments.");
+        if (request.ExtraArguments?.FirstOrDefault(IsReservedSwitch) is { } reserved)
+            throw new ArgumentException(
+                $"Runtime argument '{reserved}' is managed by LlmProxy (model source, host, port) and cannot be overridden.");
         if (request.MaxNumSeqs is < 1 or > 128)
             throw new ArgumentOutOfRangeException(nameof(request.MaxNumSeqs), "Allowed concurrent sequence configuration: 1–128.");
         if (request.MaxModelLen is < 256 or > 262144)
@@ -154,7 +170,8 @@ public static class ManagedRuntimeProfiles
             _ => options.DockerImage
         };
 
-    public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options)
+    public static IReadOnlyList<string> Arguments(ManagedModelRecord record, NodeAgentOptions options,
+        bool? gpuAvailable = null)
     {
         var args = new List<string>();
         if (record.Runtime is "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers")
@@ -164,9 +181,18 @@ public static class ManagedRuntimeProfiles
         }
         else if (record.Runtime == "llama.cpp")
         {
-            args.AddRange(["--hf-repo", record.ProviderModelName, "--alias", record.ProviderModelName,
+            if (record.ModelFile is { Length: > 0 } file && record.SourceRevision is { Length: 40 } revision)
+            {
+                // Pinned local GGUF prepared by the Agent: llama-server never resolves -hf at start.
+                var (repository, _) = GgufFileSelector.SplitRepositoryTag(record.ProviderModelName);
+                args.AddRange(["--model", GgufModelStore.ContainerPath(repository, revision, file)]);
+                if (record.MmprojFile is { Length: > 0 } mmproj)
+                    args.AddRange(["--mmproj", GgufModelStore.ContainerPath(repository, revision, mmproj)]);
+            }
+            else args.AddRange(["--hf-repo", record.ProviderModelName]);
+            args.AddRange(["--alias", record.ProviderModelName,
                 "--host", "0.0.0.0", "--port", "8080", "--cont-batching", "--metrics"]);
-            if (options.UseNvidiaGpus) args.AddRange(["--n-gpu-layers", "-1"]);
+            if (gpuAvailable ?? options.UseNvidiaGpus) args.AddRange(["--n-gpu-layers", "-1"]);
             if (record.MaxNumSeqs is int parallel) args.AddRange(["--parallel", parallel.ToString(CultureInfo.InvariantCulture)]);
             if (record.MaxModelLen is int context) args.AddRange(["--ctx-size", context.ToString(CultureInfo.InvariantCulture)]);
         }

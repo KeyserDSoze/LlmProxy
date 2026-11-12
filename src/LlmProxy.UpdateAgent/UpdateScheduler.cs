@@ -218,7 +218,22 @@ public sealed partial class UpdateScheduler(
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
         var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
-        await process.WaitForExitAsync(timeout.Token);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // A failed/timed-out job must not leave a privileged bootstrap running
+            // while the scheduler accepts the next update.
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30)); }
+            catch (TimeoutException) { }
+            if (stoppingToken.IsCancellationRequested) throw;
+            throw new TimeoutException(
+                $"Update to {version} exceeded {options.CommandTimeoutMinutes} minutes and was terminated.");
+        }
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
 

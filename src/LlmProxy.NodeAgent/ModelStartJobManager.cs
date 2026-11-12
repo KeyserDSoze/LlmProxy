@@ -88,7 +88,14 @@ public sealed class ModelStartJobManager
             var job = Get(id)!;
             Update(id, x => x with { Status = "starting", Detail =
                 "Starting Docker runtime; waiting for model /health. No automatic crash restarts." });
-            var result = await _runtime.StartAsync(job.InstallationId, cts.Token);
+            var lastDetail = DateTimeOffset.MinValue;
+            var result = await _runtime.StartAsync(job.InstallationId, cts.Token, detail =>
+            {
+                // Long GGUF preparation reports often; persist at most once per second.
+                if (DateTimeOffset.UtcNow - lastDetail < TimeSpan.FromSeconds(1)) return;
+                lastDetail = DateTimeOffset.UtcNow;
+                Update(id, x => x with { Detail = detail.Length > 250 ? detail[..250] : detail });
+            });
             Update(id, x => x with { Status = "completed", Detail =
                 "Runtime healthy. Routing activation requires a separate verified operation.",
                 Result = result, CompletedAtUtc = DateTimeOffset.UtcNow });

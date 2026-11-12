@@ -60,6 +60,9 @@ public sealed record ManagedModelRecord
     public int? MaxModelLen { get; init; }
     public int? MaxOutputTokens { get; init; }
     public string? SourceRevision { get; init; }
+    // llama.cpp: repository-relative GGUF selected and downloaded at SourceRevision.
+    public string? ModelFile { get; init; }
+    public string? MmprojFile { get; init; }
     public string? KvCacheDtype { get; init; }
     public double? CpuOffloadGiB { get; init; }
     public double? GpuMemoryUtilization { get; init; }
@@ -89,7 +92,8 @@ public sealed record ManagedModelState(
     string? GpuDevices = null,
     int? MaxOutputTokens = null,
     string? SourceRevision = null,
-    double? GpuMemoryUtilization = null);
+    double? GpuMemoryUtilization = null,
+    string? ModelFile = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);
 

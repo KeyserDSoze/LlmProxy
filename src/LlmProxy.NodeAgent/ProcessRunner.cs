@@ -48,8 +48,9 @@ public sealed class ProcessRunner
             await process.WaitForExitAsync(timeoutCts.Token);
             return new CommandResult(process.ExitCode, await stdoutTask, await stderrTask);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // Caller cancellation must not leave docker/nvidia-smi children running.
             try
             {
                 if (!process.HasExited) process.Kill(entireProcessTree: true);
@@ -58,6 +59,7 @@ public sealed class ProcessRunner
             {
             }
 
+            if (cancellationToken.IsCancellationRequested) throw;
             throw new TimeoutException($"'{executable}' exceeded the {timeout} timeout.");
         }
     }

@@ -190,13 +190,25 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       {canWrite && <div className="actions"><button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button><button onClick={() => setAddOpen(true)}>Add inference node</button></div>}
     </section>}
 
-    {embedded && canWrite && <section className="panel pageToolbar"><div><h2>Hardware fleet</h2><p className="muted">Register one row per physical machine. Use deployment runtime roots when models listen on different ports.</p></div><div className="actions"><button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button><button onClick={() => setAddOpen(true)}>Add hardware node</button></div></section>}
-
     {error && <div className="error">{error}</div>}
-    <Tabs value={tab} onChange={setTab} items={[{ value: 'active', label: 'Active nodes', count: active.length }, { value: 'disabled', label: 'Disabled nodes', count: disabled.length }]} />
+    {!embedded && <Tabs value={tab} onChange={setTab} items={[{ value: 'active', label: 'Active nodes', count: active.length }, { value: 'disabled', label: 'Disabled nodes', count: disabled.length }]} />}
 
     <section className="panel">
-      <div className="panelTitle"><h2>{tab === 'active' ? 'Active nodes' : 'Disabled nodes'}</h2><span>{visible.length} shown</span></div>
+      {embedded ? <div className="panelTitle">
+        <div><h2>Servers</h2><span>One row per physical machine. Use deployment runtime roots when models listen on different ports.</span></div>
+        <div className="panelTitleActions">
+          <div className="segmented" role="group" aria-label="Show servers">
+            <button type="button" aria-pressed={tab === 'active'} className={tab === 'active' ? 'active' : ''} onClick={() => setTab('active')}>
+              Active <span className="tabCount">{active.length}</span></button>
+            <button type="button" aria-pressed={tab === 'disabled'} className={tab === 'disabled' ? 'active' : ''} onClick={() => setTab('disabled')}>
+              Disabled <span className="tabCount">{disabled.length}</span></button>
+          </div>
+          {canWrite && <>
+            <button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button>
+            <button className="secondary" onClick={() => setAddOpen(true)}>Add hardware node</button>
+          </>}
+        </div>
+      </div> : <div className="panelTitle"><h2>{tab === 'active' ? 'Active nodes' : 'Disabled nodes'}</h2><span>{visible.length} shown</span></div>}
       <div className="tableScroll"><table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
         {visible.map(node => <tr key={node.id}>
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>

@@ -17,52 +17,118 @@ public sealed class HuggingFaceDiscoveryService(IHttpClientFactory clients, IMem
         string? PipelineTag, bool Gated, bool Private, string? License,
         string Url, bool HasGguf = false);
 
-    public sealed record GgufVariant(string Quantization, string FileName);
+    public sealed record GgufVariant(string Quantization, string FileName, int Parts = 1, long? SizeBytes = null);
 
-    public static IReadOnlyList<GgufVariant> ParseGgufVariants(JsonElement metadata)
+    public sealed record GgufRepository(bool Found, bool Gated, IReadOnlyList<string> ModelFiles,
+        IReadOnlyList<GgufVariant> Variants);
+
+    private static readonly string[] GgufSidecars = ["mmproj", "mtp-", "dflash-", "eagle3-", "dspark-"];
+
+    // Same file rules llama.cpp applies to -hf repo[:quant]: split shards and
+    // subdirectories are selectable, projector/imatrix/draft sidecars are not.
+    private static bool IsGgufModelFile(string path)
+    {
+        if (!path.EndsWith(".gguf", StringComparison.Ordinal)) return false;
+        var name = path[(path.LastIndexOf('/') + 1)..];
+        return !name.Contains("imatrix", StringComparison.Ordinal) &&
+               !GgufSidecars.Any(keyword => name.Contains(keyword, StringComparison.Ordinal));
+    }
+
+    private static (string Prefix, string Tag, int Index, int Count) GgufSplit(string path)
+    {
+        var prefix = path[..^".gguf".Length];
+        int index = 1, count = 1;
+        var split = Regex.Match(prefix, @"^(.+)-([0-9]{5})-of-([0-9]{5})$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (split.Success)
+        {
+            index = int.Parse(split.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+            count = int.Parse(split.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
+            prefix = split.Groups[1].Value;
+        }
+        var tag = Regex.Match(prefix, @"[-.]([A-Z0-9_]+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return (prefix, tag.Success ? tag.Groups[1].Value.ToUpperInvariant() : "", index, count);
+    }
+
+    public static IReadOnlyList<GgufVariant> ParseGgufVariants(JsonElement metadata) =>
+        ParseGgufRepository(metadata).Variants;
+
+    public static GgufRepository ParseGgufRepository(JsonElement metadata)
     {
         if (!metadata.TryGetProperty("siblings", out var siblings) ||
-            siblings.ValueKind != JsonValueKind.Array) return [];
-        var result = new Dictionary<string, GgufVariant>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in siblings.EnumerateArray().Take(2000))
+            siblings.ValueKind != JsonValueKind.Array) return new(true, false, [], []);
+        var files = new List<(string Path, long? Size)>();
+        foreach (var item in siblings.EnumerateArray().Take(5000))
         {
-            if (!item.TryGetProperty("rfilename", out var path) ||
-                path.ValueKind != JsonValueKind.String) continue;
-            var file = path.GetString() ?? "";
-            // Only root-level, single-part GGUF model files are selectable.
-            // mmproj files and incomplete split quantizations are not choices.
-            if (file.Contains('/') || file.Contains("mmproj", StringComparison.OrdinalIgnoreCase))
-                continue;
-            var match = Regex.Match(file,
-                @"(?:^|[-_])(?<quant>(?:IQ\d+|Q\d+)_[A-Za-z0-9_]+|BF16|F16|F32)\.gguf$",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (!match.Success) continue;
-            var quant = match.Groups["quant"].Value.ToUpperInvariant();
-            result.TryAdd(quant, new GgufVariant(quant, file));
+            if (!item.TryGetProperty("rfilename", out var path) || path.ValueKind != JsonValueKind.String) continue;
+            long? size = item.TryGetProperty("size", out var s) && s.TryGetInt64(out var bytes) ? bytes : null;
+            if (item.TryGetProperty("lfs", out var lfs) && lfs.ValueKind == JsonValueKind.Object &&
+                lfs.TryGetProperty("size", out var lfsSize) && lfsSize.TryGetInt64(out var lfsBytes)) size = lfsBytes;
+            files.Add((path.GetString() ?? "", size));
         }
-        return result.Values.OrderBy(x => x.Quantization == "Q4_K_M" ? 0 : 1)
+        files.Sort((left, right) => string.CompareOrdinal(left.Path, right.Path));
+        var models = files.Where(file => IsGgufModelFile(file.Path)).ToArray();
+        var result = new Dictionary<string, GgufVariant>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in models)
+        {
+            var split = GgufSplit(file.Path);
+            if (split.Index != 1 || split.Tag.Length == 0) continue;
+            var parts = models.Where(other => GgufSplit(other.Path) is var info &&
+                info.Prefix == split.Prefix && info.Count == split.Count).ToArray();
+            long? size = parts.All(part => part.Size is not null) ? parts.Sum(part => part.Size!.Value) : null;
+            result.TryAdd(split.Tag, new GgufVariant(split.Tag, file.Path, split.Count, size));
+        }
+        var variants = result.Values.OrderBy(x => x.Quantization == "Q4_K_M" ? 0 : 1)
             .ThenBy(x => x.Quantization, StringComparer.Ordinal).Take(40).ToArray();
+        return new(true, false, models.Select(file => file.Path).ToArray(), variants);
+    }
+
+    /// <summary>Mirror llama.cpp's repo[:quant] resolution so impossible installs fail before queueing.</summary>
+    public static string? ExplainUnresolvableGguf(GgufRepository repository, string repoId, string? tag)
+    {
+        if (!repository.Found)
+            return $"Hugging Face repository '{repoId}' was not found. Check the org/model ID.";
+        if (repository.Gated) return null;
+        if (repository.ModelFiles.Count == 0)
+            return $"'{repoId}' contains no GGUF model files, so llama.cpp cannot load it. " +
+                   "Choose a GGUF repository (for example one ending in -GGUF) or install with vLLM/SGLang.";
+        if (string.IsNullOrEmpty(tag)) return null;
+        var pattern = new Regex("(^|[-./])" + Regex.Escape(tag) + "[.-]",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (repository.ModelFiles.Any(file => pattern.IsMatch(file) && GgufSplit(file).Index == 1)) return null;
+        return $"No GGUF file in '{repoId}' matches quantization '{tag}'." +
+               (repository.Variants.Count > 0
+                   ? " Available: " + string.Join(", ", repository.Variants.Select(x => x.Quantization)) + "."
+                   : "");
     }
 
     public async Task<IReadOnlyList<GgufVariant>> GgufVariantsAsync(string repoId, CancellationToken token)
     {
+        var repository = await GgufRepositoryAsync(repoId, token);
+        return repository.Found && !repository.Gated ? repository.Variants : [];
+    }
+
+    public async Task<GgufRepository> GgufRepositoryAsync(string repoId, CancellationToken token)
+    {
         if (!ValidRepository(repoId)) throw new ArgumentException("Invalid Hugging Face repository ID.");
-        var key = "huggingface:gguf-variants:" + repoId;
+        var key = "huggingface:gguf-repository:" + repoId;
         return await cache.GetOrCreateAsync(key, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
             using var response = await clients.CreateClient("huggingface-hub")
-                .GetAsync("https://huggingface.co/api/models/" + repoId, token);
+                .GetAsync("https://huggingface.co/api/models/" + repoId + "?blobs=true", token);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                return (IReadOnlyList<GgufVariant>)[];
+                return new GgufRepository(false, false, [], []);
+            // Private or gated metadata: the Agent may hold HF_TOKEN, so do not block here.
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                return new GgufRepository(true, true, [], []);
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: token);
             var model = Parse(document.RootElement);
-            if (model is null || model.Private || model.Gated)
-                return (IReadOnlyList<GgufVariant>)[];
-            return ParseGgufVariants(document.RootElement);
-        }) ?? [];
+            var parsed = ParseGgufRepository(document.RootElement);
+            return model is null || model.Private || model.Gated ? parsed with { Gated = true } : parsed;
+        }) ?? new GgufRepository(true, true, [], []);
     }
 
     public sealed record RevisionStatus(

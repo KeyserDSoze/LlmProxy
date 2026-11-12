@@ -36,11 +36,11 @@ export function ModelCapabilitySummary({ profile }: { profile?: ModelCapabilityP
   const t = useT()
   if (!profile) return <span className="muted">{t('cap.unknown')}</span>
   const typed = typedApis[profile.runtime]
-  if (typed) return <div className="capabilitySummary" aria-label={t('catalog.capabilities')}>
+  if (typed) return <div className="capabilitySummary" role="group" aria-label={t('catalog.capabilities')}>
     <span className="capabilityTypeTag">{typed.label}</span>
     <span className="capabilitySummaryNote">{t('cap.typedRuntime')}</span>
   </div>
-  return <div className="capabilitySummary" aria-label={t('catalog.capabilities')}>
+  return <div className="capabilitySummary" role="group" aria-label={t('catalog.capabilities')}>
     {checks.map(({ key, short, label }) => {
       const serving = profile[key].serving
       return <span key={key} className={`capabilityMini capabilityMini--${serving}`}

@@ -23,6 +23,38 @@ export function urlForAdminView(view: AdminView): string {
   return '/admin/' + view
 }
 
+/** Client-side navigation: views and URL-driven tabs re-read location on popstate. */
+export function navigateAdmin(url: string) {
+  const target = new URL(url, window.location.origin)
+  if (target.pathname + target.search === window.location.pathname + window.location.search) return
+  window.history.pushState(null, '', target.pathname + target.search + target.hash)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+/**
+ * Model lifecycle moved out of Servers into the Models workspace. Old bookmarks
+ * (`/admin/infrastructure?section=inventory&tab=deploy&node=x`) keep working.
+ */
+export function normalizeLegacyAdminUrl(pathname: string, search: string): string | null {
+  const path = pathname.replace(/\/+$/, '').toLowerCase()
+  if (path !== '/admin/infrastructure') return null
+  const params = new URLSearchParams(search)
+  if (params.get('section') !== 'inventory') return null
+  if (params.get('tab') === 'deploy') {
+    const next = new URLSearchParams()
+    for (const key of ['node', 'panel', 'kind', 'advancedTab']) {
+      const value = params.get(key)
+      if (value) next.set(key, value)
+    }
+    const query = next.toString()
+    // The former "Deploy models" tab opened on the catalog unless a panel was explicit.
+    return (params.get('panel') ? '/admin/models' : '/admin/catalog') + (query ? '?' + query : '')
+  }
+  params.set('section', 'hardware')
+  params.delete('tab')
+  return '/admin/infrastructure?' + params.toString()
+}
+
 // A query parameter records the tab of the currently displayed workspace.
 // Native history and popstate restore it, including after a hard refresh.
 export function useRouteTab<T extends string>(key: string, permitted: readonly T[], fallback: T):
@@ -41,8 +73,8 @@ export function useRouteTab<T extends string>(key: string, permitted: readonly T
     if (value === tab) return
     const url = new URL(window.location.href)
     url.searchParams.set(key, value)
-    // Avoid retaining irrelevant tabs when leaving the infrastructure section.
-    if (key === 'section' && value !== 'inventory') url.searchParams.delete('tab')
+    // Each server section owns its own `tab` values; never carry one across sections.
+    if (key === 'section') url.searchParams.delete('tab')
     window.history.pushState(null, '', url.pathname + url.search + url.hash)
     setTab(value)
   }

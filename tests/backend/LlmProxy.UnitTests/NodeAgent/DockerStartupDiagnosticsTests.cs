@@ -52,4 +52,44 @@ public sealed class DockerStartupDiagnosticsTests
         Assert.DoesNotContain("abcdefghijklmnopqrstuvwxyz", sanitized);
         Assert.Contains("ValueError", sanitized);
     }
+
+    // The exact tail reported from a DGX host when -hf could not resolve a GGUF.
+    private const string EmptyModelTail = """
+        0.00.750.554 E llama_model_load_from_file_impl: exactly one out metadata, path_model, and file must be defined
+        0.00.750.571 E common_fit_params: encountered an error while trying to fit params to free device memory: failed to load model
+        0.00.750.578 E cmn common_init_: failed to load model ''
+        0.00.750.580 E srv load_model: failed to load model, ''
+        0.00.751.477 E srv server_run_i: exiting due to model loading error
+        """;
+
+    [Fact]
+    public void Llama_cpp_empty_model_path_is_explained_instead_of_unidentified()
+    {
+        var detail = DockerStartupDiagnostics.ForUi(EmptyModelTail, null);
+        Assert.Contains("Likely root cause:", detail);
+        Assert.Contains("exactly one out metadata", detail);
+        Assert.Contains("What to do: llama.cpp started without a resolved GGUF file", detail);
+        Assert.DoesNotContain("did not contain an identifiable root exception", detail);
+    }
+
+    [Fact]
+    public void Earlier_llama_cpp_hub_error_wins_over_the_empty_model_symptom()
+    {
+        var log = "common_download_get_hf_plan: no GGUF files found in repository org/model\n" +
+                  "Available GGUF files:\n" + EmptyModelTail;
+        Assert.Contains("no GGUF files found in repository org/model", DockerStartupDiagnostics.FindRootCause(log));
+        Assert.Contains("Pick an available quantization", DockerStartupDiagnostics.ForUi(log, null));
+
+        var gated = "get_repo_commit: error: GET failed (401): Invalid credentials\n" + EmptyModelTail;
+        Assert.Contains("GET failed (401)", DockerStartupDiagnostics.FindRootCause(gated));
+    }
+
+    [Fact]
+    public void Unsupported_llama_cpp_architecture_suggests_a_newer_image()
+    {
+        var log = "llama_model_load: error loading model: error loading model architecture: unknown model architecture: 'lfm2moe'\n" +
+                  "llama_model_load_from_file_impl: failed to load model\n";
+        Assert.Contains("unknown model architecture: 'lfm2moe'", DockerStartupDiagnostics.FindRootCause(log));
+        Assert.Contains("LlamaCppDockerImage", DockerStartupDiagnostics.ForUi(log, null));
+    }
 }

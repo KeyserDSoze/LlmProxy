@@ -6,10 +6,15 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "playwright test --project=visual",
+    "test:visual:docker": "node scripts/visual-docker.mjs",
+    "test:visual:update": "node scripts/visual-docker.mjs --update-snapshots",
+    "test:live": "playwright test --config=playwright.live.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "latest",
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.0",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
     "@testing-library/user-event": "latest",

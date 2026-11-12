@@ -23,7 +23,9 @@ public sealed record NodeAgentOptions(
     string? RecoveryToken = null,
     bool ForceRecovery = false,
     double GpuStartMaxTemperatureCelsius = 80,
-    bool RequireGpuTemperatureSensor = false)
+    bool RequireGpuTemperatureSensor = false,
+    string HuggingFaceEndpoint = "https://huggingface.co",
+    string? HuggingFaceToken = null)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -49,8 +51,20 @@ public sealed record NodeAgentOptions(
             section["RecoveryToken"],
             ParseBool(section["ForceRecovery"], false),
             ParseTemperature(section["GpuStartMaxTemperatureCelsius"], 80),
-            ParseBool(section["RequireGpuTemperatureSensor"], false));
+            ParseBool(section["RequireGpuTemperatureSensor"], false),
+            ParseEndpoint(section["HuggingFaceEndpoint"] ?? configuration["HF_ENDPOINT"]),
+            NullIfBlank(section["HuggingFaceToken"]) ?? NullIfBlank(configuration["HF_TOKEN"]));
     }
+
+    // Mirrors are allowed (HF_ENDPOINT), but only as an absolute http(s) root.
+    private static string ParseEndpoint(string? raw) =>
+        Uri.TryCreate(raw?.Trim(), UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) &&
+        string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.UserInfo)
+            ? uri.GetLeftPart(UriPartial.Path).TrimEnd('/')
+            : "https://huggingface.co";
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static int ParseInt(string? raw, int fallback, int minimum, int maximum) =>
         int.TryParse(raw, out var parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;

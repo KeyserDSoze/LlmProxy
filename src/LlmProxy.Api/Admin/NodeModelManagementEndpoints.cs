@@ -343,7 +343,8 @@ public static class NodeModelManagementEndpoints
         // Registration happens only after a completed job is finalized (safe/idempotent).
         var startJob = group.MapPost("/nodes/{id:guid}/models/{catalogId}/install-jobs", async (
             Guid id, string catalogId, InstallManagedModelRequest request, GatewayDbContext db,
-            IHttpClientFactory factory, UpstreamCredentialProtector protector, CancellationToken token) =>
+            IHttpClientFactory factory, UpstreamCredentialProtector protector,
+            HuggingFaceDiscoveryService hub, CancellationToken token) =>
         {
             var customError = ExplainInvalidCustomRepository(catalogId, request);
             if (customError is not null)
@@ -373,6 +374,12 @@ public static class NodeModelManagementEndpoints
             if (descriptor is null) return Results.NotFound(new { error = "catalog_model_not_found" });
             var runtime = ResolveRuntime(descriptor, request.Runtime);
             if (runtime is null) return Results.BadRequest(new { error = "incompatible_runtime" });
+            if (runtime == "llama.cpp")
+            {
+                var ggufError = await ExplainUnresolvableGgufAsync(hub, descriptor.ProviderModelName, token);
+                if (ggufError is not null)
+                    return Results.BadRequest(new { error = "gguf_not_resolvable", message = ggufError });
+            }
             var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, token);
             if (node is null) return Results.NotFound();
             if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
@@ -1171,6 +1178,25 @@ public static class NodeModelManagementEndpoints
         });
     }
 
+    // Best effort: Hub outages never block, the Agent re-checks before downloading.
+    private static async Task<string?> ExplainUnresolvableGgufAsync(HuggingFaceDiscoveryService hub,
+        string providerModelName, CancellationToken token)
+    {
+        var colon = providerModelName.IndexOf(':');
+        var repository = colon < 0 ? providerModelName : providerModelName[..colon];
+        var tag = colon < 0 ? null : providerModelName[(colon + 1)..];
+        if (!HuggingFaceDiscoveryService.ValidRepository(repository)) return null;
+        try
+        {
+            var details = await hub.GgufRepositoryAsync(repository, token);
+            return HuggingFaceDiscoveryService.ExplainUnresolvableGguf(details, repository, tag);
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
     public static string? ExplainInvalidCustomRepository(string catalogId, InstallManagedModelRequest request)
     {
         if (catalogId != "custom") return null;
@@ -1498,6 +1524,7 @@ public static class NodeModelManagementEndpoints
         double? CpuOffloadGiB = null,
         string? GpuDevices = null, int? MaxOutputTokens = null,
         string? SourceRevision = null,
-        double? GpuMemoryUtilization = null);
+        double? GpuMemoryUtilization = null,
+        string? ModelFile = null);
     private sealed class AgentException(string message) : Exception(message);
 }

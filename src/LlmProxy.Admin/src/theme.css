@@ -1,0 +1,292 @@
+/* ==========================================================================
+   LlmProxy Admin design layer (v2)
+   Loaded after styles.css and requestAudit.css. It refines tokens and shared
+   primitives (shell, panels, tabs, buttons, tables, forms) and styles the
+   model-lifecycle components (installed model cards, startup diagnosis,
+   attention center). Legacy contextual rules that are more specific still win.
+   Guarded by tests/frontend/e2e/visual.spec.ts (layout, axe and screenshots).
+   ========================================================================== */
+
+/* 1. Tokens --------------------------------------------------------------- */
+:root{
+  --panel-pad:20px;
+  --radius-control:9px;
+  --radius-card:14px;
+}
+:root,:root[data-theme="dark"]{
+  --text-subtle:#8b9ab0;
+  --code-text:#a7f3d0;
+  --info-bg:#0b2540;--info-border:#1d4f86;--info-text:#93c5fd;
+  --success-dot:#4ade80;--danger-dot:#f87171;--warning-dot:#fbbf24;--info-dot:#60a5fa;--neutral-dot:#94a3b8;
+  --shadow-sm:0 1px 2px #0000004d;
+  --shadow-md:0 16px 40px #00000073;
+  --row-hover:#16203380;
+}
+:root[data-theme="light"]{
+  --text-subtle:#5d6b82;
+  --code-text:#0f6b5e;
+  --info-bg:#eef5ff;--info-border:#bfd5f7;--info-text:#1e4fb4;
+  --success-dot:#16a34a;--danger-dot:#dc2626;--warning-dot:#d97706;--info-dot:#2563eb;--neutral-dot:#8794a8;
+  --shadow-sm:0 1px 2px #1018280d,0 1px 3px #1018280f;
+  --shadow-md:0 16px 40px #10182826;
+  --row-hover:#f3f6fb;
+}
+
+/* 2. Base ----------------------------------------------------------------- */
+.srOnly{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+body{font-size:14px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+h1{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+code,kbd,pre,.mono{font-family:ui-monospace,"SFMono-Regular","Cascadia Mono",Consolas,"Liberation Mono",monospace}
+a{color:var(--link)}
+.muted{color:var(--text-muted)}
+.pageDocumentationBody code,.formPanel code,.updateCommand{color:var(--code-text)}
+
+/* 3. Shell ---------------------------------------------------------------- */
+@media(min-width:821px){
+  /* The sidebar scrolls with the document; paint its column down to the last pixel of the page. */
+  .shell{background:linear-gradient(to right,var(--surface-secondary) 0 263px,var(--border) 263px 264px,var(--bg) 264px)}
+  .sidebar{padding:18px 12px 22px;background:transparent;border-right:0}
+  .sidebar nav{gap:2px}
+}
+.sidebarTop{min-height:72px}
+.brand{padding:6px 10px 16px}
+.sidebar nav button{min-height:38px;padding:8px 12px;border-radius:var(--radius-control);gap:11px;
+  font-size:14px;font-weight:500;color:var(--text-muted);line-height:1.3}
+.sidebar nav button:hover{background:var(--surface-hover);color:var(--text)}
+.sidebar nav button.active{background:var(--selected-bg);color:var(--selected-text);font-weight:600}
+.sidebar .navGroupLabel{padding:16px 12px 6px;margin-top:4px;border-top:0;font-size:10.5px;letter-spacing:.09em;color:var(--text-subtle)}
+.navSecondary{margin-top:8px;padding-top:4px;gap:2px}
+.navBadge{margin-left:auto;display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
+  font-size:11px;font-weight:700;line-height:1;background:var(--error-bg);color:var(--error-text);border:1px solid var(--error-border)}
+.sidebarFooter{color:var(--text-subtle)}
+.shell>main header{margin-bottom:22px;align-items:flex-end}
+.shell>main header p{color:var(--text-muted);font-size:13.5px;max-width:78ch}
+.uxBreadcrumb{font-size:12px;margin-bottom:6px;color:var(--text-muted)}
+.uxBreadcrumb button{font-size:12px}
+
+/* 4. Surfaces ------------------------------------------------------------- */
+.panel{border-radius:var(--radius-card);box-shadow:var(--shadow-sm)}
+.panelTitle{padding:16px var(--panel-pad);gap:12px}
+.panel h2,.panelTitle h2{font-size:15px;font-weight:650;letter-spacing:-.005em}
+.panelTitle span{color:var(--text-muted)}
+.formPanel{padding:var(--panel-pad)}
+.tuningTitle{margin:calc(var(--panel-pad) * -1) calc(var(--panel-pad) * -1) var(--panel-pad)}
+.panel>.notice,.panel>.error,.panel>p.notice{margin:14px var(--panel-pad)}
+.panel:not(.formPanel)>p:not(.notice):not(.error),.panel:not(.formPanel)>.metric{margin:14px var(--panel-pad)}
+.metric{border-radius:var(--radius-card);box-shadow:var(--shadow-sm);padding:16px 18px}
+.metric span{font-size:12px;font-weight:600;color:var(--text-muted)}
+.metric strong{font-size:26px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:6px}
+.notice,.error,.loading{border-radius:12px}
+.notice{color:var(--text)}
+.modalPanel{border-radius:16px;box-shadow:var(--shadow-md)}
+.pageDocumentation{border-radius:12px;margin:18px 0}
+
+/* Two peer panels (tables): side by side only when both have room. */
+.gridEqual{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:18px;align-items:start}
+.panelTitleActions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.segmented{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--surface-secondary);border:1px solid var(--border)}
+.segmented button{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:4px 11px;border:0;border-radius:7px;
+  background:transparent;color:var(--text-muted);font-size:12.5px;font-weight:600}
+.segmented button:hover{color:var(--text);background:var(--surface-hover)}
+.segmented button.active{background:var(--selected-bg);color:var(--selected-text)}
+.segmented .tabCount{font-size:10.5px;color:inherit}
+
+/* 5. Tabs ----------------------------------------------------------------- */
+.tabs{gap:4px;padding:4px;border-radius:12px;box-shadow:var(--shadow-sm)}
+.tabButton{border-radius:var(--radius-control);padding:8px 14px;font-weight:550;color:var(--text-muted)}
+.tabButton:hover{background:var(--surface-hover);color:var(--text)}
+.tabButton.active{background:var(--selected-bg);border-color:transparent;color:var(--selected-text);font-weight:650}
+.tabButton.active .tabCount{background:var(--surface);color:var(--selected-text)}
+.tabCount{font-weight:650}
+
+/* 6. Buttons -------------------------------------------------------------- */
+.primary,.secondary,.danger,.buttonLink{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:36px;padding:7px 14px;border-radius:var(--radius-control);font-size:13px;font-weight:600;line-height:1.25;
+  text-decoration:none;transition:background-color .12s ease,border-color .12s ease,color .12s ease,box-shadow .12s ease}
+.secondary{background:var(--surface);color:var(--text);border:1px solid var(--border-strong)}
+.secondary:hover:not(:disabled){background:var(--surface-hover)}
+.primary{box-shadow:var(--shadow-sm)}
+.primary:hover:not(:disabled){background:var(--primary-hover);border-color:var(--primary-hover)}
+.danger{background:transparent!important;color:var(--error-text)!important;border:1px solid var(--error-border)!important}
+.danger:hover:not(:disabled){background:var(--error-bg)!important}
+.primary:disabled,.secondary:disabled,.danger:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.secondary.compact,.primary.compact,button.compact{min-height:28px;padding:4px 10px;font-size:12px;border-radius:7px}
+.pagination button{background:var(--surface);color:var(--text);border:1px solid var(--border-strong);border-radius:8px;padding:6px 12px;font-weight:600}
+.pagination button:disabled{opacity:.45;cursor:not-allowed}
+.tableScroll:focus-visible,.panel:focus-visible{outline:2px solid var(--primary-hover);outline-offset:-2px}
+
+/* 7. Forms ---------------------------------------------------------------- */
+.formPanel input,.formPanel select,.formPanel textarea,.modalPanel input,.modalPanel select,.modalPanel textarea,
+.filterBar input,.filterBar select,.pageToolbar select,.modelWorkspaceNode select{border-radius:var(--radius-control)}
+.formPanel input:focus,.formPanel select:focus,.formPanel textarea:focus,.modalPanel input:focus,.modalPanel select:focus,
+.modalPanel textarea:focus,.filterBar input:focus,.filterBar select:focus,.modelWorkspaceNode select:focus{
+  border-color:var(--primary-hover);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-hover) 22%,transparent)}
+
+/* 8. Tables --------------------------------------------------------------- */
+th,td{padding:12px 16px}
+th{font-size:11px;font-weight:650;letter-spacing:.06em;color:var(--text-muted)}
+tbody tr:hover td{background:var(--row-hover)}
+/* Words and numbers stay whole (wide tables scroll); only code-like values break anywhere. */
+.shell .panel td,.shell .panel th{overflow-wrap:break-word}
+.shell .panel td.mono,.shell .panel td code,.shell .panel td .mono,
+.shell .panel .modelCatalogTable td,.shell .panel .managedInstalledTable td{overflow-wrap:anywhere}
+.modelCatalogTable{min-width:960px}
+.modelCatalogTable th:nth-child(1){width:22%}
+.modelCatalogTable th:nth-child(2){width:15%}
+.modelCatalogTable th:nth-child(3){width:18%}
+.modelCatalogTable th:nth-child(4){width:16%}
+.modelCatalogTable th:nth-child(5){width:15%}
+.modelCatalogTable th:nth-child(6){width:14%}
+.modelCatalogAction button{min-width:0}
+
+/* 9. Status chips --------------------------------------------------------- */
+.pill{display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--border-strong);background:var(--surface-raised);color:var(--text-secondary);
+  font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--neutral-dot);flex:0 0 7px}
+.pill-success{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
+.pill-success i{background:var(--success-dot)}
+.pill-danger{background:var(--error-bg);border-color:var(--error-border);color:var(--error-text)}
+.pill-danger i{background:var(--danger-dot)}
+.pill-warning{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning-text)}
+.pill-warning i{background:var(--warning-dot)}
+.pill-info{background:var(--info-bg);border-color:var(--info-border);color:var(--info-text)}
+.pill-info i{background:var(--info-dot);animation:pillPulse 1.4s ease-in-out infinite}
+@keyframes pillPulse{50%{opacity:.35}}
+.status{font-weight:600;font-size:13px}
+.scope-personal{color:var(--success-text)}
+.mutedChip{opacity:1;color:var(--text-muted);border-style:dashed}
+
+/* 10. Workspace toolbars -------------------------------------------------- */
+.modelWorkspaceToolbar{background:var(--surface);border-radius:var(--radius-card);box-shadow:var(--shadow-sm);padding:12px 16px;gap:12px 18px}
+.modelWorkspaceNode{gap:10px}
+.modelWorkspaceNode select{min-height:38px;padding:8px 12px}
+.modelAgentConnected{font-size:12px}
+.serverSummary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;font-size:13px;color:var(--text-muted)}
+.serverSummary strong{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums;margin-right:2px}
+.modelWorkspaceToolbarActions{gap:8px}
+.workspaceHint{margin:-4px 2px 0;font-size:12.5px;color:var(--text-muted);line-height:1.5}
+.workspaceSummary{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.workspaceSummary .workspaceSummarySpacer{flex:1 1 auto}
+.workspaceSummary .muted{margin:0;max-width:none;font-size:13px}
+
+/* 11. Installed model cards ---------------------------------------------- */
+.installedPanel{overflow:visible}
+.installedModelGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:16px;
+  align-items:start;padding:18px var(--panel-pad) var(--panel-pad)}
+.installedModelCard{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0;
+  padding:18px 18px 14px 20px;border:1px solid var(--border);border-radius:var(--radius-card);
+  background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden}
+.installedModelCard::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--neutral-dot)}
+.installedModelCard--success::before{background:var(--success-dot)}
+.installedModelCard--info::before{background:var(--info-dot)}
+.installedModelCard--danger{border-color:var(--error-border)}
+.installedModelCard--danger::before{background:var(--danger-dot)}
+.installedModelHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.installedModelTitle{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
+.installedModelTitle h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.25;overflow-wrap:anywhere}
+.installedModelSubtitle{margin-top:-6px;font-size:12px;color:var(--text-muted);overflow-wrap:anywhere}
+.installedModelHint{margin:0;padding:8px 11px;border-radius:10px;font-size:12.5px;line-height:1.45;
+  color:var(--warning-text);background:var(--warning-bg);border:1px solid var(--warning-border)}
+.installedModelFacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:1px;margin:0;
+  border:1px solid var(--border-soft);border-radius:11px;overflow:hidden;background:var(--border-soft)}
+.installedModelFacts>div{min-width:0;padding:9px 12px;background:var(--field)}
+.installedModelFacts dt{font-size:10.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.installedModelFacts dd{margin:3px 0 0;font-size:13px;font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.installedModelFacts dd.mono{font-weight:500}
+.installedModelFacts .installedModelWide{grid-column:1/-1}
+.installedModelRow{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;align-items:center;font-size:13px;min-width:0}
+.installedModelLabel{font-size:12px;font-weight:600;color:var(--text-muted)}
+.installedModelRow .muted{margin:0;font-size:12.5px;max-width:none}
+.installedModelEndpoint{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.installedModelEndpoint code{padding:4px 8px;border-radius:7px;font-size:12px;background:var(--surface-deep);
+  color:var(--text-secondary);overflow-wrap:anywhere}
+.installedModelProgress{margin:0}
+.installedModelProgress p{margin:4px 0 8px}
+.installedModelActions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:auto;padding-top:12px;
+  border-top:1px solid var(--border-soft)}
+.installedModelActions>button{min-height:32px;padding:5px 11px;font-size:12.5px}
+.installedModelSpacer{flex:1 1 auto}
+.installedModelId{margin:-4px 0 0;font-size:11px;color:var(--text-subtle);overflow-wrap:anywhere}
+.installedModelCard .capabilitySummary{gap:4px}
+
+/* 12. Startup / install diagnosis ---------------------------------------- */
+.diagnosis{display:grid;gap:10px;min-width:0;padding:14px 16px;border-radius:12px;
+  border:1px solid var(--error-border);background:color-mix(in srgb,var(--error-bg) 70%,var(--surface));color:var(--text)}
+.diagnosis-warning{border-color:var(--warning-border);background:color-mix(in srgb,var(--warning-bg) 70%,var(--surface))}
+.diagnosisHeader{display:flex;align-items:center;gap:10px;color:var(--error-text)}
+.diagnosis-warning .diagnosisHeader{color:var(--warning-text)}
+.diagnosisHeader strong{font-size:14px}
+.diagnosisIcon{display:inline-grid;place-items:center;flex:0 0 22px;width:22px;height:22px;border-radius:50%;
+  background:var(--danger-dot);color:#fff;font-size:13px;font-weight:800}
+.diagnosis-warning .diagnosisIcon{background:var(--warning-dot)}
+.diagnosisSummary,.diagnosisDetail{margin:0;font-size:13px;line-height:1.5;color:var(--text-secondary);overflow-wrap:anywhere}
+.diagnosisField,.diagnosisAdvice{display:grid;gap:5px;min-width:0}
+.diagnosisLabel{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted)}
+.diagnosisCode{display:block;padding:8px 10px;border-radius:8px;border:1px solid var(--border-soft);background:var(--surface);
+  color:var(--text);font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.diagnosisAdvice{padding:10px 12px;border-radius:10px;border:1px solid var(--border-soft);border-left:3px solid var(--primary-hover);
+  background:var(--surface)}
+.diagnosisAdvice p{margin:0;font-size:13px;line-height:1.55;color:var(--text)}
+.diagnosisTail{border:1px solid var(--border-soft);border-radius:10px;background:var(--surface);overflow:hidden}
+.diagnosisTail summary{cursor:pointer;padding:8px 12px;font-size:12px;font-weight:600;color:var(--text-secondary)}
+.diagnosisTail pre{margin:0;padding:10px 12px;max-height:260px;overflow:auto;background:var(--surface-deep);
+  color:var(--text-secondary);font-size:11.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.diagnosisActions{display:flex;flex-wrap:wrap;gap:8px}
+.modelJobCard .diagnosis{margin-top:2px}
+
+/* 13. Dashboard attention center ----------------------------------------- */
+.attentionPanel{margin-bottom:18px}
+.attentionList{list-style:none;margin:0;padding:4px 0}
+.attentionItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;
+  padding:12px var(--panel-pad);border-top:1px solid var(--border-soft)}
+.attentionItem:first-child{border-top:0}
+.attentionDot{width:10px;height:10px;border-radius:50%;background:var(--info-dot);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--info-dot) 18%,transparent)}
+.attentionItem--danger .attentionDot{background:var(--danger-dot);box-shadow:0 0 0 4px color-mix(in srgb,var(--danger-dot) 18%,transparent)}
+.attentionItem--warning .attentionDot{background:var(--warning-dot);box-shadow:0 0 0 4px color-mix(in srgb,var(--warning-dot) 18%,transparent)}
+.attentionText{display:grid;gap:2px;min-width:0}
+.attentionText strong{font-size:13.5px;font-weight:650;overflow-wrap:anywhere}
+.attentionText span{font-size:12.5px;color:var(--text-muted);overflow-wrap:anywhere}
+.attentionItem .buttonLink{min-height:32px;padding:5px 12px;font-size:12.5px;white-space:nowrap}
+.attentionOk{display:flex;align-items:center;gap:12px;padding:16px var(--panel-pad)}
+.attentionOk p{margin:2px 0 0;font-size:13px;color:var(--text-muted)}
+.attentionOkIcon{display:inline-grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:50%;
+  background:var(--success-bg);border:1px solid var(--success-border);color:var(--success-text);font-weight:800}
+
+/* 14. Hardware inventory -------------------------------------------------- */
+.inventoryMeta{padding:12px var(--panel-pad);flex-wrap:wrap}
+.hardwareReadiness{padding:0 var(--panel-pad) 16px;gap:10px}
+.hardwareReadiness .actions{align-items:center;gap:10px}
+.hardwareReadiness>div{color:var(--text-secondary);font-size:13px}
+.modelJobCard progress{width:100%;height:8px;border:0;border-radius:999px;overflow:hidden;
+  background:var(--surface-raised);accent-color:var(--primary);-webkit-appearance:none;appearance:none}
+.modelJobCard progress::-webkit-progress-bar{background:var(--surface-raised);border-radius:999px}
+.modelJobCard progress::-webkit-progress-value{background:var(--primary);border-radius:999px}
+.modelJobCard progress::-moz-progress-bar{background:var(--primary);border-radius:999px}
+
+/* User portal: same rhythm as the Admin workspaces. */
+.userPortalSidebar~main>.panel,.userPortalSidebar~main>.gridTwo{margin-bottom:18px}
+.userPortalSidebar~main .shellHeaderControls .actions{align-items:center;gap:8px}
+.userPortalSidebar~main .shellHeaderControls .actions>button,.userPortalSidebar~main .shellHeaderControls .actions>a{
+  min-height:36px;padding:7px 14px;font-size:13px}
+@media(min-width:821px){.userPortalSidebar~main .shellHeaderControls .appearanceControls{display:none}}
+
+/* 15. Responsive ---------------------------------------------------------- */
+@media(max-width:820px){
+  :root{--panel-pad:14px}
+  .metric strong{font-size:22px}
+  .installedModelRow{grid-template-columns:minmax(0,1fr);gap:4px}
+  .installedModelGrid{padding:12px}
+  .installedModelCard{padding:14px 14px 12px 17px}
+  .attentionItem{grid-template-columns:auto minmax(0,1fr)}
+  .attentionItem .buttonLink{grid-column:2;justify-self:start}
+  .modelWorkspaceToolbar{padding:12px}
+  .serverSummary{width:100%}
+}
+@media(max-width:480px){
+  :root{--panel-pad:12px}
+  .cards .metric strong{font-size:19px}
+  .installedModelActions .installedModelSpacer{display:none}
+}
+@media(prefers-reduced-motion:reduce){.pill-info i{animation:none}*{transition:none!important}}

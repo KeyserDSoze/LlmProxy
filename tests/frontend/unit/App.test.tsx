@@ -185,7 +185,7 @@ describe('admin application', () => {
   it('renders fleet and inference observability on the dashboard', async () => {
     render(<App />)
     expect(await screen.findByText('inference-01')).toBeInTheDocument()
-    expect(screen.getByText('1 H / 0 D')).toBeInTheDocument()
+    expect(screen.getByText('1/1')).toBeInTheDocument()
     expect(screen.getByText('12 ms')).toBeInTheDocument()
     expect(screen.getByText('4 ok')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()

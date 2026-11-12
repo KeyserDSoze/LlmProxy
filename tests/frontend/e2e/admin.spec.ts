@@ -268,7 +268,7 @@ test('admin can inspect health, observability, add a path-prefixed node and test
 
 test('infrastructure exposes telemetry, physical capacity and explicit capacity profiles', async ({ page }) => {
   await installAdminApi(page); await page.goto('/'); await page.getByRole('button', { name: 'Servers & hardware' }).click()
-  await expect(page.getByRole('heading', { name: 'Servers, agents & hardware', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Servers, agents & hardware', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /Capacity & telemetry/ }).click()
   await expect(page.getByRole('heading', { name: 'Hardware telemetry', exact: true })).toBeVisible()
   await expect(page.getByText('60.0% avg · 80.0% max')).toBeVisible()
@@ -359,24 +359,42 @@ test('authorization failures do not invite an authentication loop', async ({ pag
   await page.route('**/api/admin/**', route => route.fulfill({ status: 403, body: '' })); await page.goto('/'); await expect(page.getByText(/Access denied/)).toBeVisible(); await expect(page.getByRole('link', { name: 'Sign in with Entra ID' })).toHaveCount(0)
 })
 
-test('admin navigation preserves top-level pages and infrastructure tabs across refresh and history', async ({ page }) => {
+test('admin navigation preserves top-level pages and workspace tabs across refresh and history', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/')
   await page.getByRole('button', { name: 'Servers & hardware' }).click()
   await expect(page).toHaveURL(/\/admin\/infrastructure$/)
-  await page.getByRole('tab', { name: /Hardware inventory & runtimes/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1$/)
-  await page.getByRole('tab', { name: /Deploy models/ }).click()
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
+  await page.getByRole('tab', { name: /Hardware & agent/ }).click()
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=hardware&node=node-1$/)
   await page.reload()
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /Hardware & agent/ })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin\/models/)
+  await page.getByRole('tab', { name: /Publishing/ }).click()
+  await expect(page).toHaveURL(/\/admin\/models\?.*panel=advanced/)
+  await page.reload()
+  await expect(page.getByRole('tab', { name: /Publishing/ })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Routing', exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/routing$/)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Smart-routing tuning' })).toBeVisible()
   await page.goBack()
-  await expect(page.getByRole('tab', { name: /Deploy models/ })).toHaveAttribute('aria-selected', 'true')
-  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=inventory&node=node-1&tab=deploy$/)
+  await expect(page.getByRole('tab', { name: /Publishing/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/\/admin\/models\?.*panel=advanced/)
+})
+
+test('legacy Servers → model inventory bookmarks open the matching Models or Hardware view', async ({ page }) => {
+  await installAdminApi(page)
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1&panel=activity')
+  await expect(page).toHaveURL(/\/admin\/models\?node=node-1&panel=activity$/)
+  await expect(page.getByRole('tab', { name: /Jobs/ })).toHaveAttribute('aria-selected', 'true')
+  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await expect(page).toHaveURL(/\/admin\/catalog\?node=node-1$/)
+  await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
+  await page.goto('/admin/infrastructure?section=inventory&node=node-1')
+  await expect(page).toHaveURL(/\/admin\/infrastructure\?section=hardware&node=node-1$/)
+  await expect(page.getByRole('tab', { name: /Hardware & agent/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('link', { name: /Manage models on this server/ })).toHaveAttribute('href', '/admin/models?node=node-1')
 })
 
 
@@ -404,14 +422,14 @@ test('selected hardware is a stable deep link across F5 and browser back', async
   await page.route('**/api/admin/model-management/nodes/*/install-jobs',
     route => json(route, []))
 
-  await page.goto('/admin/infrastructure?section=inventory&tab=deploy')
+  await page.goto('/admin/models')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
   await expect(page).toHaveURL(/node=node-1/)
   await page.getByLabel('Managed hardware node').selectOption('node-2')
-  await expect(page).toHaveURL(/section=inventory&tab=deploy&node=node-2$/)
+  await expect(page).toHaveURL(/\/admin\/models\?node=node-2$/)
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-2')
   await page.reload()
-  await expect(page.getByRole('tab', { name: /Deploy models/ }))
+  await expect(page.getByRole('tab', { name: /Installed/ }))
     .toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-2')
 
@@ -520,16 +538,17 @@ test('AirLLM installation advertises real runtime capabilities and client limits
       }]
     }))
   await page.route('**/api/admin/model-management/nodes/*/install-jobs', route => json(route, []))
-  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
-  await page.getByRole('tab', { name: /Installed/ }).click()
+  await page.goto('/admin/models?node=node-1')
+  await expect(page.getByRole('tab', { name: /Installed/ })).toHaveAttribute('aria-selected', 'true')
 
-  await expect(page.getByRole('columnheader', { name: 'Capabilities' })).toBeVisible()
-  await expect(page.locator('.managedInstalledTable .capabilitySummary')).toContainText('Chat')
-  await expect(page.locator('.managedInstalledTable .capabilitySummary')).toContainText('Tools')
-  await expect(page.locator('.managedInstalledTable').getByLabel('Tool calling: Not supported')).toBeVisible()
-  await expect(page.locator('.managedInstalledTable').getByLabel('Thinking / reasoning: Partial')).toBeVisible()
-  await expect(page.locator('.managedInstalledTable td').filter({ has: page.locator('.capabilitySummary') })).toHaveCount(1)
-  await page.getByRole('button', { name: 'Capabilities · qwen3-8b-airllm' }).click()
+  const card = page.locator('.installedModelCard', { hasText: 'qwen3-8b-airllm' })
+  await expect(card.getByText('Capabilities', { exact: true })).toBeVisible()
+  await expect(card.locator('.capabilitySummary')).toContainText('Chat')
+  await expect(card.locator('.capabilitySummary')).toContainText('Tools')
+  await expect(card.getByLabel('Tool calling: Not supported')).toBeVisible()
+  await expect(card.getByLabel('Thinking / reasoning: Partial')).toBeVisible()
+  await expect(card.locator('.capabilitySummary')).toHaveCount(1)
+  await card.getByRole('button', { name: 'Details · Capabilities · qwen3-8b-airllm' }).click()
   const dialog = page.getByRole('dialog', { name: /Capabilities · qwen3-8b-airllm/ })
   await expect(dialog.getByText('Tool calling')).toBeVisible()
   await expect(dialog.getByText('AirLLM does not parse tools')).toBeVisible()
@@ -633,7 +652,7 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await page.route('**/api/admin/model-management/capabilities?*', route => json(route, {
     providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm', maximumOutputTokens: 1024
   }))
-  await page.goto('/admin/infrastructure?section=inventory&tab=deploy&node=node-1')
+  await page.goto('/admin/catalog?node=node-1')
   await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
   await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
@@ -668,12 +687,13 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Install & manage models', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Models', exact: true, level: 1 })).toBeVisible()
   await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
-  await page.getByRole('button', { name: 'System One', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'System One', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  const modelType = page.getByRole('main').getByRole('button', { name: 'System One', exact: true })
+  await modelType.click()
+  await expect(modelType).toHaveAttribute('aria-pressed', 'true')
   // Managed classifiers are installed from this catalog, not through an external-runtime detour.
   await expect(page.getByRole('link', { name: /Connect an existing external System One service/ })).toHaveCount(0)
   await page.goto('/admin/system-one')
@@ -740,7 +760,7 @@ test('guided System One connection creates only a classifier alias and a specifi
 test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
   await installAdminApi(page)
   await page.goto('/admin/models')
-  await page.getByRole('tab', { name: /Advanced routing/ }).click()
+  await page.getByRole('tab', { name: /Publishing/ }).click()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
   await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
@@ -802,7 +822,7 @@ test('compact model-management and Admin tables do not force whole-page horizont
   await installAdminApi(page)
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/admin/models')
-  await expect(page.getByRole('heading', { name: 'Models & deployments', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Models', exact: true, level: 1 })).toBeVisible()
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.goto('/admin/infrastructure?section=capacity')
@@ -831,10 +851,10 @@ test('Italian model discovery, deployment lifecycle and fleet pages use one pers
   await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
   await page.goto('/admin/infrastructure?section=fleet')
-  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Server, Agent e hardware' })).toBeVisible()
   await expect(page.getByRole('tab', { name: /Server e accesso/ })).toHaveAttribute('aria-selected', 'true')
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Server, Agent e hardware' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Server, Agent e hardware' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Persone e accessi' })).toHaveCount(0)
   await expect(page.getByText('Concorrenza fisica')).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('it')
@@ -851,7 +871,7 @@ test('image and audio models are published as isolated API surfaces, never as Ch
     return json(route, { id: 'multimodal-created-' + created.length, ...body, enabled: true }, 201)
   })
   await page.goto('/admin/models')
-  await page.getByRole('tab', { name: /Advanced routing/ }).click()
+  await page.getByRole('tab', { name: /Publishing/ }).click()
   for (const [surface, model] of [
     ['ImageGeneration', 'image-demo'],
     ['SpeechSynthesis', 'voice-demo'],
@@ -1134,7 +1154,7 @@ test('system-one, images and text-to-speech show real release status instead of 
     ['Images', 'segmind/SSD-1B'],
     ['Text to speech', 'Kokoro-82M / af_heart']
   ]) {
-    await page.getByRole('button', { name: kind, exact: true }).click()
+    await page.getByRole('main').getByRole('button', { name: kind, exact: true }).click()
     await expect(page.getByText(checkpoint)).toBeVisible()
     await expect(page.getByText('Managed runtime in development')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Install', exact: true })).toHaveCount(0)

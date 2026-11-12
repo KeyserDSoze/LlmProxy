@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import { urlForAdminView, viewFromAdminPath } from './adminNavigation'
+import { navigateAdmin, normalizeLegacyAdminUrl, urlForAdminView, viewFromAdminPath } from './adminNavigation'
 import type { AdminView } from './adminNavigation'
 import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
@@ -17,7 +17,8 @@ import HelpPage from './HelpPage'
 import PageDocumentation from './PageDocumentation'
 import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
-import type { ApiCredential, AuditEvent, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RequestMetric, RoutingSettings, RoutingTuningSettings } from './types'
+import { AdminLink } from './UiPrimitives'
+import type { ApiCredential, AuditEvent, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RoutingSettings, RoutingTuningSettings } from './types'
 
 export type View = AdminView
 
@@ -69,6 +70,13 @@ const emptyMetricsSummary: MetricsSummary = {
   byNode: []
 }
 
+// Old bookmarks into the former Servers → model inventory are rewritten in place.
+function currentView(): View {
+  const legacy = normalizeLegacyAdminUrl(window.location.pathname, window.location.search)
+  if (legacy) window.history.replaceState(null, '', legacy)
+  return viewFromAdminPath(window.location.pathname)
+}
+
 export default function App({ initialView = 'dashboard' }: { initialView?: View }) {
   const t = useT()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -88,10 +96,10 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
   }, [])
-  const [view, setView] = useState<View>(() => viewFromAdminPath(window.location.pathname) || initialView)
+  const [view, setView] = useState<View>(() => currentView() || initialView)
   useEffect(() => {
     const onHistoryChange = () => {
-      setView(viewFromAdminPath(window.location.pathname))
+      setView(currentView())
       setMobileNavOpen(false)
     }
     window.addEventListener('popstate', onHistoryChange)
@@ -115,7 +123,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
   const [models, setModels] = useState<Model[]>([])
   const [deployments, setDeployments] = useState<Deployment[]>([])
   const [credentials, setCredentials] = useState<ApiCredential[]>([])
-  const [metrics, setMetrics] = useState<RequestMetric[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -125,8 +132,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
   const refresh = useCallback(async () => {
     try {
       setError(null)
-      const [nextSession, nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetrics, nextMetricsSummary, nextAudit] = await Promise.all([
-        api.adminSession(), api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metrics(100), api.metricsSummary(24), api.audit(100)
+      const [nextSession, nextOverview, nextRouting, nextTuning, nextPerformance, nextRuntime, nextHardware, nextNodes, nextModels, nextDeployments, nextCredentials, nextMetricsSummary, nextAudit] = await Promise.all([
+        api.adminSession(), api.overview(), api.routing(), api.routingTuning(), api.routingPerformance(), api.routingRuntime(), api.hardware(), api.nodes(), api.models(), api.deployments(), api.apiCredentials(), api.metricsSummary(24), api.audit(100)
       ])
       setCanWrite(nextSession.canWrite)
       setOverview(nextOverview)
@@ -139,7 +146,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
       setModels(nextModels)
       setDeployments(nextDeployments)
       setCredentials(nextCredentials)
-      setMetrics(nextMetrics)
       setMetricsSummary(nextMetricsSummary)
       setAudit(nextAudit)
       setAuthRequired(false)
@@ -159,9 +165,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
     return () => window.clearInterval(timer)
   }, [refresh])
 
-  const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
-  const modelNames = useMemo(() => new Map(models.map(model => [model.id, model.publicName])), [models])
-  const credentialNames = useMemo(() => new Map(credentials.map(item => [item.id, item.name])), [credentials])
+  const attention = useMemo(() => attentionItems(nodes, models, deployments), [nodes, models, deployments])
+  const urgent = attention.filter(item => item.tone !== 'info').length
 
   return (
     <div className="shell">
@@ -178,14 +183,15 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <button type="button" className="sidebarClose" aria-label={t('nav.close')} onClick={() => setMobileNavOpen(false)}>×</button>
         </div>
         <nav aria-label="Admin navigation">
-          <NavItem icon="dashboard" active={view === 'dashboard'} onClick={() => navigate('dashboard')}>{t('nav.dashboard')}</NavItem>
+          <NavItem icon="dashboard" active={view === 'dashboard'} badge={urgent} onClick={() => navigate('dashboard')}>{t('nav.dashboard')}</NavItem>
 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
-          <NavItem icon="models" active={view === 'catalog'} onClick={() => navigate('catalog')}>{t('nav.catalog')}</NavItem>
+          <NavItem icon="models" active={view === 'models' || view === 'catalog'} onClick={() => navigate('models')}>{t('nav.modelsHome')}</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
+          <NavItem icon="classifier" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOneShort')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
-          <div className="navGroupLabel">{t('nav.infrastructure')}</div>
+          <div className="navGroupLabel">{t('nav.infrastructureGroup')}</div>
           <NavItem icon="nodes" active={view === 'infrastructure'} onClick={() => navigate('infrastructure')}>{t('nav.infrastructure')}</NavItem>
 
           <div className="navGroupLabel">{t('nav.accessGroup')}</div>
@@ -230,14 +236,18 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
-            {view === 'dashboard' && <><OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} onNavigate={navigate} /><Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} /></>}
+            {view === 'dashboard' && <>
+              <AttentionCenter items={attention} />
+              <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />
+              <OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} />
+            </>}
             {view === 'infrastructure' && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
             {view === 'catalog' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
-              canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
+              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="catalog" />}
+            {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
+              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="installed" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'settings' && <SettingsPage productVersion={productVersion} onOpenReleases={() => navigate('releases')} />}
-            {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
-              canWrite={canWrite} refresh={refresh} defaultTab="deploy" />}
             {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'users' && canWrite && <UsersAccessExperience />}
@@ -248,7 +258,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'help' && <HelpPage models={models} />}
             {view === 'governance' && <GovernanceExperience />}
             {view === 'releases' && <ReleaseNotesPage embedded canWrite={canWrite} />}
-            <PageDocumentation page={view} />
+            {view !== 'releases' && <PageDocumentation page={view} />}
           </>
         )}
       </main>
@@ -256,20 +266,92 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
   )
 }
 
-function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
-  nodes: Node[]; models: Model[]; deployments: Deployment[]; canWrite: boolean;
-  onNavigate: (view: View) => void
+type AttentionItem = {
+  key: string
+  tone: 'danger' | 'warning' | 'info'
+  title: string
+  detail: string
+  action: TranslationKey
+  href: string
+  titleKey?: TranslationKey
+  detailKey?: TranslationKey
+}
+
+const usableNodeStatuses = new Set(['Healthy', 'Degraded', 'Unknown'])
+
+/** Derived only from data the dashboard already loads; no extra Agent round-trips. */
+export function attentionItems(nodes: Node[], models: Model[], deployments: Deployment[]): AttentionItem[] {
+  const items: AttentionItem[] = []
+  if (nodes.length === 0)
+    items.push({ key: 'no-servers', tone: 'info', title: '', detail: '', titleKey: 'dashboard.attention.noServers',
+      detailKey: 'dashboard.attention.noServersDesc', action: 'dashboard.attention.pair', href: '/admin/infrastructure?section=fleet' })
+  for (const node of nodes) {
+    const href = '/admin/infrastructure?section=fleet'
+    if (!node.enabled)
+      items.push({ key: 'node-disabled-' + node.id, tone: 'warning', title: node.name, titleKey: 'dashboard.attention.disabled',
+        detail: node.lastHealthError ?? '', action: 'dashboard.attention.openServers', href })
+    else if (node.status === 'Unhealthy')
+      items.push({ key: 'node-unhealthy-' + node.id, tone: 'danger', title: node.name, titleKey: 'dashboard.attention.unhealthy',
+        detail: node.lastHealthError ?? '', action: 'dashboard.attention.openServers', href })
+    else if (node.status === 'Degraded')
+      items.push({ key: 'node-degraded-' + node.id, tone: 'warning', title: node.name, titleKey: 'dashboard.attention.degraded',
+        detail: node.lastHealthError ?? '', action: 'dashboard.attention.openServers', href })
+    else if (node.status === 'Draining')
+      items.push({ key: 'node-draining-' + node.id, tone: 'info', title: node.name, titleKey: 'dashboard.attention.draining',
+        detail: '', action: 'dashboard.attention.openServers', href })
+  }
+  const usableNodes = new Set(nodes.filter(node => node.enabled && usableNodeStatuses.has(node.status)).map(node => node.id))
+  for (const model of models) {
+    if (model.enabled === false) continue
+    const routed = deployments.some(item => item.modelId === model.id && item.enabled && usableNodes.has(item.nodeId))
+    if (!routed)
+      items.push({ key: 'model-' + model.id, tone: 'warning', title: model.publicName, titleKey: 'dashboard.attention.noRoute',
+        detail: '', detailKey: 'dashboard.attention.noRouteDesc', action: 'dashboard.attention.openModels',
+        href: '/admin/models?panel=advanced' })
+  }
+  const disabled = deployments.filter(item => !item.enabled).length
+  if (disabled > 0)
+    items.push({ key: 'disabled-deployments', tone: 'info', title: String(disabled), titleKey: 'dashboard.attention.disabledRoutes',
+      detail: '', detailKey: 'dashboard.attention.disabledRoutesDesc', action: 'dashboard.attention.openModels',
+      href: '/admin/models?panel=installed' })
+  return items
+}
+
+function AttentionCenter({ items }: { items: AttentionItem[] }) {
+  const t = useT()
+  if (items.length === 0) return <section className="panel attentionPanel attentionPanel--ok" aria-label={t('dashboard.attention.title')}>
+    <div className="attentionOk"><span className="attentionOkIcon" aria-hidden="true">✓</span>
+      <div><strong>{t('dashboard.attention.ok')}</strong><p>{t('dashboard.attention.okDesc')}</p></div></div>
+  </section>
+  return <section className="panel attentionPanel" aria-label={t('dashboard.attention.title')}>
+    <div className="panelTitle"><div><h2>{t('dashboard.attention.title')}</h2><span>{t('dashboard.attention.desc')}</span></div>
+      <span className="pill pill-warning">{items.length}</span></div>
+    <ul className="attentionList">
+      {items.map(item => <li key={item.key} className={'attentionItem attentionItem--' + item.tone}>
+        <span className="attentionDot" aria-hidden="true" />
+        <div className="attentionText">
+          <strong>{item.titleKey ? t(item.titleKey) : item.title}{item.titleKey && item.title ? ' · ' + item.title : ''}</strong>
+          {(item.detailKey || item.detail) && <span>{item.detailKey ? t(item.detailKey) : item.detail}</span>}
+        </div>
+        <AdminLink className="buttonLink secondary" href={item.href}>{t(item.action)} →</AdminLink>
+      </li>)}
+    </ul>
+  </section>
+}
+
+function OperatorStart({ nodes, models, deployments, canWrite }: {
+  nodes: Node[]; models: Model[]; deployments: Deployment[]; canWrite: boolean
 }) {
   const t = useT()
   const systemOne = models.filter(model => model.surface === 'SystemOne')
   const readyRoutes = deployments.filter(item => item.enabled).length
   const healthyNodes = nodes.filter(node => node.status === 'Healthy').length
-  const tasks: Array<{ title: string; summary: string; view: View; action: string }> = [
-    { title: t('dashboard.tasks.install.title'), summary: t('dashboard.tasks.install.desc'), view: 'catalog', action: t('dashboard.tasks.install.action') },
-    { title: t('dashboard.tasks.classifier.title'), summary: t('dashboard.tasks.classifier.desc'), view: 'system-one', action: t('dashboard.tasks.classifier.action') },
-    { title: t('dashboard.tasks.server.title'), summary: t('dashboard.tasks.server.desc'), view: 'infrastructure', action: t('dashboard.tasks.server.action') },
-    { title: t('dashboard.tasks.publish.title'), summary: t('dashboard.tasks.publish.desc'), view: 'models', action: t('dashboard.tasks.publish.action') },
-    { title: t('dashboard.tasks.test.title'), summary: t('dashboard.tasks.test.desc'), view: 'playground', action: t('dashboard.tasks.test.action') }
+  const tasks: Array<{ title: string; summary: string; href: string; action: string; write?: boolean }> = [
+    { title: t('dashboard.tasks.install.title'), summary: t('dashboard.tasks.install.desc'), href: '/admin/catalog', action: t('dashboard.tasks.install.action') },
+    { title: t('dashboard.tasks.classifier.title'), summary: t('dashboard.tasks.classifier.desc'), href: '/admin/system-one', action: t('dashboard.tasks.classifier.action') },
+    { title: t('dashboard.tasks.server.title'), summary: t('dashboard.tasks.server.desc'), href: '/admin/infrastructure', action: t('dashboard.tasks.server.action') },
+    { title: t('dashboard.tasks.publish.title'), summary: t('dashboard.tasks.publish.desc'), href: '/admin/models?panel=advanced', action: t('dashboard.tasks.publish.action') },
+    { title: t('dashboard.tasks.test.title'), summary: t('dashboard.tasks.test.desc'), href: '/admin/playground', action: t('dashboard.tasks.test.action'), write: true }
   ]
   return <section className="panel uxStartPanel">
     <div className="panelTitle"><div><h2>{t('dashboard.tasks.title')}</h2>
@@ -277,10 +359,10 @@ function OperatorStart({ nodes, models, deployments, canWrite, onNavigate }: {
       <div className="uxSummary">{healthyNodes}/{nodes.length} {t('dashboard.summary.nodes')} · {readyRoutes} {t('dashboard.summary.deployments')} · {systemOne.length} {t('dashboard.summary.classifiers')}</div>
     </div>
     <div className="uxPathGrid">
-      {tasks.filter(task => canWrite || task.view !== 'playground').map(task => <div key={task.title} className="uxTask">
+      {tasks.filter(task => canWrite || !task.write).map(task => <div key={task.title} className="uxTask">
         <strong>{task.title}</strong>
         <p>{task.summary}</p>
-        <button className="secondary" onClick={() => onNavigate(task.view)}>{task.action} →</button>
+        <button className="secondary" onClick={() => navigateAdmin(task.href)}>{task.action} →</button>
       </div>)}
     </div>
   </section>
@@ -290,7 +372,7 @@ function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Ove
   const t = useT()
   return <>
     <section className="cards cardsFive">
-      <Metric label={t('dashboard.kpi.fleet')} value={`${overview.nodes.healthy} H / ${overview.nodes.degraded} D`} />
+      <Metric label={t('dashboard.kpi.fleet')} value={`${overview.nodes.healthy}/${overview.nodes.total}`} />
       <Metric label={t('dashboard.kpi.models')} value={overview.models} />
       <Metric label={t('dashboard.kpi.deployments')} value={overview.deployments} />
       <Metric label={t('dashboard.kpi.active')} value={overview.activeRequests} />
@@ -305,96 +387,14 @@ function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Ove
     </section>
     <section className="panel">
       <div className="panelTitle"><h2>{t('dashboard.fleet.title')}</h2><span>Routing: {friendlyStrategy(routing.strategy)}</span></div>
-      <table><thead><tr><th>{t('dashboard.fleet.node')}</th><th>{t('dashboard.fleet.status')}</th><th>{t('dashboard.fleet.root')}</th><th>{t('dashboard.fleet.latency')}</th><th>{t('dashboard.fleet.streak')}</th><th>{t('dashboard.fleet.last')}</th></tr></thead>
+      <div className="tableScroll"><table><thead><tr><th>{t('dashboard.fleet.node')}</th><th>{t('dashboard.fleet.status')}</th><th>{t('dashboard.fleet.root')}</th><th>{t('dashboard.fleet.latency')}</th><th>{t('dashboard.fleet.streak')}</th><th>{t('dashboard.fleet.last')}</th></tr></thead>
         <tbody>{nodes.map(node => <tr key={node.id}>
           <td><strong>{node.name}</strong></td><td><Status value={node.status} /></td><td className="mono">{node.baseAddress}</td>
           <td>{formatLatency(node.lastHealthLatencyMilliseconds)}</td><td>{healthStreak(node)}</td><td>{formatDate(node.lastHealthCheckUtc)}</td>
         </tr>)}</tbody>
-      </table>
+      </table></div>
     </section>
   </>
-}
-
-function Nodes({ nodes, refresh }: { nodes: Node[]; refresh: () => Promise<void> }) {
-  const [name, setName] = useState('')
-  const [baseAddress, setBaseAddress] = useState('http://')
-  const [weight, setWeight] = useState(1)
-  const [maxConcurrency, setMaxConcurrency] = useState(4)
-  const [upstreamBearerToken, setUpstreamBearerToken] = useState('')
-  const [credentialNodeId, setCredentialNodeId] = useState('')
-  const [credentialSecret, setCredentialSecret] = useState('')
-  const [connectionTests, setConnectionTests] = useState<Record<string, NodeConnectionTest>>({})
-  const [testingNode, setTestingNode] = useState<string | null>(null)
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    await api.createNode({ name, baseAddress, weight, maxConcurrency, upstreamBearerToken: upstreamBearerToken || null })
-    setName(''); setBaseAddress('http://'); setWeight(1); setUpstreamBearerToken(''); await refresh()
-  }
-
-  async function setCredential(event: FormEvent) {
-    event.preventDefault()
-    if (!credentialNodeId || !credentialSecret) return
-    await api.setNodeUpstreamCredential(credentialNodeId, credentialSecret)
-    setCredentialSecret('')
-    await refresh()
-  }
-
-  async function clearCredential() {
-    if (!credentialNodeId) return
-    await api.clearNodeUpstreamCredential(credentialNodeId)
-    setCredentialSecret('')
-    await refresh()
-  }
-
-  async function testConnection(node: Node) {
-    setTestingNode(node.id)
-    try {
-      const result = await api.testNodeConnection(node.id)
-      setConnectionTests(current => ({ ...current, [node.id]: result }))
-      await refresh()
-    } finally {
-      setTestingNode(null)
-    }
-  }
-
-  return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Nodes</h2><span>{nodes.length} registered</span></div>
-      <table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Action</th></tr></thead><tbody>
-        {nodes.map(node => <tr key={node.id}>
-          <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
-          <td><Status value={node.status} /></td>
-          <td className="mono">{node.baseAddress}</td>
-          <td><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div><div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div></td>
-          <td>{node.maxConcurrency}</td>
-          <td className="actions"><button onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button><button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button><button onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button><button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button></td>
-        </tr>)}
-      </tbody></table>
-      {Object.values(connectionTests).map(result => <div className="secretBox" key={result.nodeId}>
-        <strong>{result.success ? '✓' : '✕'} Connection test: {result.nodeName}</strong>
-        <p className="mono">Root: {result.serviceRoot}</p>
-        <p>Health: {probeSummary(result.health)}</p>
-        <p>OpenAI models: {probeSummary(result.openAi)}</p>
-        <p className="mono">Chat: {result.chatCompletionsUrl}</p>
-        <p className="mono">Responses: {result.responsesUrl}</p>
-      </div>)}
-    </section>
-    <section className="panel formPanel"><h2>Add inference node</h2><form onSubmit={submit}>
-      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="inference-02" /></label>
-      <label>Base address / service root<input value={baseAddress} onChange={e => setBaseAddress(e.target.value)} required placeholder="http://10.0.0.12:8000/vllm" /></label>
-      <label>Weight<input type="number" min="1" value={weight} onChange={e => setWeight(Number(e.target.value))} /></label>
-      <label>Max concurrency<input type="number" min="1" value={maxConcurrency} onChange={e => setMaxConcurrency(Number(e.target.value))} /></label>
-      <label>Upstream bearer token (optional)<input type="password" autoComplete="new-password" value={upstreamBearerToken} onChange={e => setUpstreamBearerToken(e.target.value)} placeholder="llama-local" /></label>
-      <p className="muted">The token is write-only: LlmProxy encrypts it and never returns it from the API.</p>
-      <button className="primary">Add node</button>
-    </form>
-    <h2>Upstream authentication</h2>
-    <form onSubmit={setCredential}>
-      <label>Node<select value={credentialNodeId} onChange={e => setCredentialNodeId(e.target.value)} required><option value="">Select node</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name} · {node.hasUpstreamCredential ? 'configured' : 'none'}</option>)}</select></label>
-      <label>New bearer token<input type="password" autoComplete="new-password" value={credentialSecret} onChange={e => setCredentialSecret(e.target.value)} placeholder="write-only secret" /></label>
-      <div className="actions"><button className="primary" disabled={!credentialNodeId || !credentialSecret}>Set / rotate bearer</button><button type="button" className="secondary" disabled={!credentialNodeId} onClick={() => void clearCredential()}>Clear bearer</button></div>
-    </form></section>
-  </div>
 }
 
 function Routing({ routing, tuning, performance, runtime, deployments, nodes, models, refresh }: { routing: RoutingSettings; tuning: RoutingTuningSettings; performance: DeploymentPerformanceSnapshot[]; runtime: NodeRuntimeMetricsSnapshot[]; deployments: Deployment[]; nodes: Node[]; models: Model[]; refresh: () => Promise<void> }) {
@@ -447,6 +447,7 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
         <p>{strategyDescription(routing.strategy)}</p>
         <p>The effective backend weight is node weight × deployment weight. Capacity limits are always respected before a route is selected.</p>
         <p>Weighted least loaded also uses recent TTFT/failure EWMA plus live vLLM queue and KV-cache pressure. PostgreSQL is not queried on the inference hot path.</p>
+        <p className="muted">Published model names and their server placements are managed in <AdminLink href="/admin/models?panel=advanced">Models → Publishing</AdminLink>.</p>
       </section>
       <section className="panel formPanel"><h2>Change strategy</h2><form onSubmit={submit}>
         <label>Routing strategy<select value={strategy} onChange={e => { setStrategy(e.target.value as RoutingSettings['strategy']); setSaved(false) }}>
@@ -475,9 +476,9 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
       </form>
     </section>
 
-    <div className="gridTwo">
+    <div className="gridEqual">
       <section className="panel"><div className="panelTitle"><h2>Performance feedback</h2><span>In-memory EWMA used by Weighted least loaded</span></div>
-        <table><thead><tr><th>Deployment</th><th>Node / model</th><th>Samples</th><th>EWMA TTFT</th><th>EWMA duration</th><th>Failure score</th><th>Last sample</th></tr></thead><tbody>
+        <div className="tableScroll"><table><thead><tr><th>Deployment</th><th>Node / model</th><th>Samples</th><th>EWMA TTFT</th><th>EWMA duration</th><th>Failure score</th><th>Last sample</th></tr></thead><tbody>
           {performance.map(item => {
             const deployment = deploymentMap.get(item.deploymentId)
             return <tr key={item.deploymentId}>
@@ -491,11 +492,11 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
             </tr>
           })}
           {performance.length === 0 && <tr><td colSpan={7} className="muted">No inference samples yet. Signals appear after requests are completed.</td></tr>}
-        </tbody></table>
+        </tbody></table></div>
       </section>
 
       <section className="panel"><div className="panelTitle"><h2>Live vLLM capacity</h2><span>Polled from each service root /metrics</span></div>
-        <table><thead><tr><th>Node</th><th>Runtime</th><th>Running</th><th>Waiting</th><th>KV cache</th><th>Generated tokens</th><th>Last sample</th></tr></thead><tbody>
+        <div className="tableScroll"><table><thead><tr><th>Node</th><th>Runtime</th><th>Running</th><th>Waiting</th><th>KV cache</th><th>Generated tokens</th><th>Last sample</th></tr></thead><tbody>
           {runtime.map(item => <tr key={item.nodeId}>
             <td><strong>{nodeNames.get(item.nodeId) ?? short(item.nodeId)}</strong><div className="muted">{item.modelName ?? 'model not reported'}</div></td>
             <td>{item.available ? 'Available' : 'Unavailable'}{item.error && <div className="muted">{item.error}</div>}</td>
@@ -506,162 +507,38 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
             <td>{formatDate(item.collectedAtUtc ?? item.lastAttemptAtUtc)}</td>
           </tr>)}
           {runtime.length === 0 && <tr><td colSpan={7} className="muted">No vLLM runtime metrics collected yet. The gateway will continue routing without this optional signal.</td></tr>}
-        </tbody></table>
+        </tbody></table></div>
       </section>
     </div>
-  </div>
-}
-
-function Models({ models, refresh }: { models: Model[]; refresh: () => Promise<void> }) {
-  const [publicName, setPublicName] = useState('')
-  const [providerModelName, setProviderModelName] = useState('')
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    await api.createModel({ publicName, providerModelName, supportsStreaming: true, supportsTools: true })
-    setPublicName(''); setProviderModelName(''); await refresh()
-  }
-  return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Logical models</h2><span>Client-facing aliases</span></div>
-      <table><thead><tr><th>Public name</th><th>Provider model</th><th>Capabilities</th></tr></thead><tbody>
-        {models.map(model => <tr key={model.id}><td><strong>{model.publicName}</strong></td><td className="mono">{model.providerModelName}</td><td>{model.supportsStreaming ? 'stream ' : ''}{model.supportsTools ? 'tools' : ''}</td></tr>)}
-      </tbody></table>
-    </section>
-    <section className="panel formPanel"><h2>Publish model</h2><form onSubmit={submit}>
-      <label>Logical name<input value={publicName} onChange={e => setPublicName(e.target.value)} required placeholder="agic-code-fast" /></label>
-      <label>vLLM model name<input value={providerModelName} onChange={e => setProviderModelName(e.target.value)} required placeholder="Qwen/..." /></label>
-      <button className="primary">Publish model</button>
-    </form></section>
-  </div>
-}
-
-function Deployments({ deployments, nodes, models, nodeNames, modelNames, refresh }: { deployments: Deployment[]; nodes: Node[]; models: Model[]; nodeNames: Map<string,string>; modelNames: Map<string,string>; refresh: () => Promise<void> }) {
-  const [nodeId, setNodeId] = useState('')
-  const [modelId, setModelId] = useState('')
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    await api.createDeployment({ nodeId, modelId, weight: 1 })
-    await refresh()
-  }
-  return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Deployments</h2><span>Logical model → hardware</span></div>
-      <table><thead><tr><th>Model</th><th>Node</th><th>Weight</th><th>Concurrency</th><th>State</th></tr></thead><tbody>
-        {deployments.map(deployment => <tr key={deployment.id}><td><strong>{modelNames.get(deployment.modelId) ?? deployment.modelId}</strong></td><td>{nodeNames.get(deployment.nodeId) ?? deployment.nodeId}</td><td>{deployment.weight}</td><td>{deployment.maxConcurrency ?? 'node default'}</td><td>{deployment.enabled ? 'Enabled' : 'Disabled'}</td></tr>)}
-      </tbody></table>
-    </section>
-    <section className="panel formPanel"><h2>Create deployment</h2><form onSubmit={submit}>
-      <label>Model<select value={modelId} onChange={e => setModelId(e.target.value)} required><option value="">Select model</option>{models.map(model => <option key={model.id} value={model.id}>{model.publicName}</option>)}</select></label>
-      <label>Node<select value={nodeId} onChange={e => setNodeId(e.target.value)} required><option value="">Select node</option>{nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
-      <button className="primary">Create deployment</button>
-    </form></section>
-  </div>
-}
-
-function Credentials({ credentials, canWrite, refresh }: { credentials: ApiCredential[]; canWrite: boolean; refresh: () => Promise<void> }) {
-  const [name, setName] = useState('GitHub Copilot')
-  const [created, setCreated] = useState<CreatedApiCredential | null>(null)
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    const result = await api.createApiCredential({ name })
-    setCreated(result)
-    await refresh()
-  }
-  async function reveal(id: string) {
-    const result = await api.revealApiCredential(id)
-    setCreated({ id: result.id, name: result.name, keyPrefix: result.keyPrefix, secret: result.secret, enabled: true, createdAtUtc: '', secretAvailable: true })
-  }
-  async function rotate(id: string) {
-    const result = await api.rotateApiCredential(id)
-    setCreated(result)
-    await refresh()
-  }
-  return <div className="gridTwo">
-    <section className="panel"><div className="panelTitle"><h2>Organization API credentials</h2><span>Admin-created shared/workload keys · caller quotas off by default</span></div>
-      <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Secret</th><th>Action</th></tr></thead><tbody>
-        {credentials.map(item => <tr key={item.id}><td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable' : 'Rotate once'}</td><td className="actions">
-          {canWrite && item.secretAvailable && <button onClick={() => void reveal(item.id)}>Reveal / copy</button>}
-          {canWrite && item.enabled && <button onClick={() => void rotate(item.id)}>Rotate</button>}
-          {canWrite && item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}
-        </td></tr>)}
-      </tbody></table>
-    </section>
-    <section className="panel formPanel"><h2>Create organization credential</h2><p className="muted">Use this for shared integrations such as GitHub Copilot. Admins who need a personal key use <a href="/admin/me">My dashboard</a>; normal users can create only their own personal keys.</p><form onSubmit={submit}>
-      <label>Name<input value={name} onChange={e => setName(e.target.value)} required placeholder="GitHub Copilot Production" /></label>
-      <button className="primary">Generate organization API key</button>
-    </form>
-      {created && <div className="secretBox"><strong>API key available to administrators</strong><p>The authentication hash is one-way; this recoverable copy is stored application-encrypted at rest. Reveals are audited.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
-    </section>
-  </div>
-}
-
-function Metrics({ metrics, summary, nodeNames, credentialNames }: { metrics: RequestMetric[]; summary: MetricsSummary; nodeNames: Map<string,string>; credentialNames: Map<string,string> }) {
-  const t = useT()
-  return <div className="stack">
-    <section className="cards cardsFive">
-      <Metric label={`${summary.windowHours}h requests`} value={formatNumber(summary.requestCount)} />
-      <Metric label={t('dashboard.kpi.success')} value={formatPercent(summary.successRatePercent)} />
-      <Metric label="P50 TTFT" value={formatMetricLatency(summary.p50TimeToFirstByteMilliseconds)} />
-      <Metric label="P95 TTFT" value={formatMetricLatency(summary.p95TimeToFirstByteMilliseconds)} />
-      <Metric label="Failover requests" value={formatNumber(summary.failoverRequests)} />
-    </section>
-
-    <div className="gridTwo">
-      <section className="panel"><div className="panelTitle"><h2>By logical model</h2><span>{formatNumber(summary.totalTokens)} observed tokens</span></div>
-        <table><thead><tr><th>Model</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>Avg TTFT</th><th>Output tokens</th></tr></thead><tbody>
-          {summary.byModel.map(item => <tr key={item.logicalModel}><td><strong>{item.logicalModel}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.averageTimeToFirstByteMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
-        </tbody></table>
-      </section>
-      <section className="panel"><div className="panelTitle"><h2>By inference node</h2><span>{formatNumber(summary.streamingRequests)} streaming requests</span></div>
-        <table><thead><tr><th>Node</th><th>Requests</th><th>Errors</th><th>Avg duration</th><th>P95 duration</th><th>Output tokens</th></tr></thead><tbody>
-          {summary.byNode.map(item => <tr key={item.nodeId}><td><strong>{nodeNames.get(item.nodeId) ?? short(item.nodeId)}</strong></td><td>{formatNumber(item.requestCount)}</td><td>{formatNumber(item.errorCount)}</td><td>{formatMetricLatency(item.averageDurationMilliseconds)}</td><td>{formatMetricLatency(item.p95DurationMilliseconds)}</td><td>{formatNumber(item.outputTokens)}</td></tr>)}
-        </tbody></table>
-      </section>
-    </div>
-
-    <section className="panel"><div className="panelTitle"><h2>Latest inference requests</h2><span>No prompt or generated content is stored</span></div>
-      <table><thead><tr><th>Time</th><th>Model</th><th>Node</th><th>Credential</th><th>Surface</th><th>Status</th><th>TTFT</th><th>Duration</th><th>Tokens</th><th>Attempts</th><th>Error</th></tr></thead><tbody>
-        {metrics.map(metric => <tr key={metric.requestId}>
-          <td>{formatDate(metric.startedAtUtc)}</td>
-          <td><strong>{metric.logicalModel}</strong></td>
-          <td>{metric.nodeId ? nodeNames.get(metric.nodeId) ?? short(metric.nodeId) : '—'}</td>
-          <td>{metric.apiCredentialId ? credentialNames.get(metric.apiCredentialId) ?? short(metric.apiCredentialId) : '—'}</td>
-          <td>{friendlySurface(metric.surface)}{metric.isStreaming ? ' · SSE' : ''}</td>
-          <td>{metric.statusCode}</td>
-          <td>{formatMetricLatency(metric.timeToFirstByteMilliseconds)}</td>
-          <td>{metric.durationMilliseconds} ms</td>
-          <td>{metric.totalTokens ?? '—'}</td>
-          <td>{metric.attemptCount}{metric.attemptCount > 1 ? ' · failover' : ''}</td>
-          <td className="mono">{metric.errorCode ?? '—'}</td>
-        </tr>)}
-      </tbody></table>
-    </section>
   </div>
 }
 
 function Audit({ events }: { events: AuditEvent[] }) {
   return <section className="panel"><div className="panelTitle"><h2>Administrative audit trail</h2><span>Configuration changes only; secrets and prompts are excluded</span></div>
-    <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Source</th><th>Details</th></tr></thead><tbody>
+    <div className="tableScroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Source</th><th>Details</th></tr></thead><tbody>
       {events.map(event => <tr key={event.id}><td>{formatDate(event.occurredAtUtc)}</td><td><strong>{event.actor}</strong></td><td className="mono">{event.action}</td><td>{event.entityType} · {short(event.entityId)}</td><td className="mono">{event.sourceIp ?? '—'}</td><td className="mono">{formatAuditDetails(event.detailsJson)}</td></tr>)}
-    </tbody></table>
+    </tbody></table></div>
   </section>
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
-type NavIconName = 'dashboard' | 'nodes' | 'hardware' | 'control' | 'models' | 'deployments' | 'routing' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
+type NavIconName = 'dashboard' | 'nodes' | 'models' | 'routing' | 'classifier' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
 
-function NavItem({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: NavIconName; children: React.ReactNode }) {
-  return <button className={active ? 'active' : ''} onClick={onClick}><NavIcon name={icon} /><span>{children}</span></button>
+function NavItem({ active, onClick, icon, badge, children }: { active: boolean; onClick: () => void; icon: NavIconName; badge?: number; children: React.ReactNode }) {
+  return <button className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={onClick}>
+    <NavIcon name={icon} /><span>{children}</span>
+    {badge ? <span className="navBadge"><span aria-hidden="true">{badge}</span><span className="srOnly">{badge} items need attention</span></span> : null}
+  </button>
 }
 
 function NavIcon({ name }: { name: NavIconName }) {
   const paths: Record<NavIconName, React.ReactNode> = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
-    nodes: <><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.3 10.8 15.6 7.2M8.3 13.2l7.3 3.6" /></>,
-    hardware: <><rect x="5" y="5" width="14" height="14" rx="2" /><rect x="9" y="9" width="6" height="6" rx="1" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></>,
-    control: <><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></>,
+    nodes: <><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5" /></>,
     models: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></>,
-    deployments: <><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5" /></>,
     routing: <><path d="M5 5v4a3 3 0 0 0 3 3h8" /><path d="m13 9 3 3-3 3" /><path d="M5 19v-3a4 4 0 0 1 4-4" /></>,
+    classifier: <><path d="M4 6h16M4 12h10M4 18h6" /><path d="m15 16 2 2 4-4" /></>,
     key: <><circle cx="8" cy="12" r="4" /><path d="M12 12h9M17 12v3M20 12v2" /></>,
     metrics: <><path d="M4 20V10M10 20V4M16 20v-7M22 20V7" /></>,
     play: <path d="m8 5 11 7-11 7V5Z" />,
@@ -725,6 +602,4 @@ function healthStreak(node: Node) { return node.consecutiveHealthFailures > 0 ? 
 function short(value: string) { return value.length > 12 ? `${value.slice(0, 8)}…` : value }
 function friendlyStrategy(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Weighted least loaded', RoundRobin: 'Round robin', WeightedRoundRobin: 'Weighted round robin' } as const)[value] }
 function strategyDescription(value: RoutingSettings['strategy']) { return ({ WeightedLeastLoaded: 'Routes to the least-loaded eligible deployment while accounting for configured capacity, health, recent inference performance and live vLLM pressure.', RoundRobin: 'Cycles evenly through eligible deployments. Useful for deterministic local tests and homogeneous runtimes.', WeightedRoundRobin: 'Cycles through eligible deployments proportionally to their effective weights.' } as const)[value] }
-function friendlySurface(value: string) { return value === 'chat_completions' ? 'Chat Completions' : value === 'responses' ? 'Responses' : value }
-function probeSummary(probe: NodeConnectionTest['health']) { return probe.success ? `✓ HTTP ${probe.statusCode} in ${probe.latencyMilliseconds} ms` : `✕ ${probe.error ?? `HTTP ${probe.statusCode}`} (${probe.latencyMilliseconds} ms)` }
 function formatAuditDetails(value?: string | null) { if (!value) return '—'; return value.length > 160 ? `${value.slice(0, 157)}…` : value }

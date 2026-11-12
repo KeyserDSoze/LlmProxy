@@ -10,9 +10,37 @@ public sealed class DockerModelRuntimeManager(
     ProcessRunner runner,
     ManagedModelRegistry registry,
     IHttpClientFactory httpClientFactory,
-    GpuRuntimeSafety gpuSafety)
+    GpuRuntimeSafety gpuSafety,
+    GgufModelStore gguf)
 {
+    // Short critical sections only (registry reservation, container create/remove).
+    // Long downloads, image builds and health waits hold a per-installation guard instead,
+    // so one slow model never blocks Stop of another.
     private readonly SemaphoreSlim _operations = new(1, 1);
+    private readonly HashSet<string> _busy = new(StringComparer.Ordinal);
+
+    private IDisposable AcquireInstallation(string installationId)
+    {
+        lock (_busy)
+        {
+            if (!_busy.Add(installationId))
+                throw new InvalidOperationException(
+                    "Another install, start, stop or edit operation is already running for this model. " +
+                    "Wait for it to finish or cancel its job first.");
+        }
+        return new InstallationLease(() => { lock (_busy) _busy.Remove(installationId); });
+    }
+
+    private bool IsBusy(string installationId)
+    {
+        lock (_busy) return _busy.Contains(installationId);
+    }
+
+    private sealed class InstallationLease(Action release) : IDisposable
+    {
+        private Action? _release = release;
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
 
     private async Task<bool> HasGpuRuntimeAsync(CancellationToken token)
     {
@@ -45,6 +73,7 @@ public sealed class DockerModelRuntimeManager(
     public async Task<ManagedModelState> InstallAsync(InstallRequest request, CancellationToken cancellationToken, Action<TransferProgress>? report = null)
     {
         ManagedRuntimeProfiles.Validate(request);
+        ManagedModelRecord record;
         await _operations.WaitAsync(cancellationToken);
         try
         {
@@ -52,6 +81,9 @@ public sealed class DockerModelRuntimeManager(
             var existing = ManagedRuntimeProfiles.FindMatchingInstallation(rows, request);
             if (existing is not null)
             {
+                if (IsBusy(existing.InstallationId))
+                    throw new InvalidOperationException(
+                        "This model profile is already being installed or started on the Agent.");
                 var running = await IsRunningAsync(existing, cancellationToken);
                 if (running || existing.Status == "stopped")
                     return ToState(existing, running ? "running" : existing.Status,
@@ -68,7 +100,7 @@ public sealed class DockerModelRuntimeManager(
             if (rows.Any(item => item.Port == port))
                 throw new InvalidOperationException($"Port {port} is already assigned to another managed model.");
 
-            var record = new ManagedModelRecord
+            record = new ManagedModelRecord
             {
                 InstallationId = BuildInstallationId(request.CatalogModelId),
                 CatalogModelId = request.CatalogModelId.Trim(),
@@ -87,7 +119,14 @@ public sealed class DockerModelRuntimeManager(
                 Status = "installing"
             };
             await registry.UpsertAsync(record, cancellationToken);
+        }
+        finally
+        {
+            _operations.Release();
+        }
 
+        using var lease = AcquireInstallation(record.InstallationId);
+        {
             try
             {
                 report?.Invoke(new TransferProgress("container-image", null, "Fetching runtime image", null, null));
@@ -154,24 +193,35 @@ for index, entry in enumerate(files):
                     if (cachedSourceRevision is not null)
                         record = record with { SourceRevision = cachedSourceRevision };
                 }
+                if (record.Runtime == "llama.cpp")
+                {
+                    // Resolve repo[:quant] to an exact GGUF at a pinned commit and download it now,
+                    // with progress and actionable errors, instead of a lazy -hf download at start.
+                    var prepared = await gguf.PrepareAsync(record.ProviderModelName, null, report, cancellationToken);
+                    record = record with
+                    {
+                        SourceRevision = prepared.Revision,
+                        ModelFile = prepared.ModelFile,
+                        MmprojFile = prepared.MmprojFile
+                    };
+                }
 
                 report?.Invoke(new TransferProgress("ready", 100, "Runtime and model files prepared", null, null));
-                record.Status = "stopped";
-                record.Error = null;
+                if (await registry.FindAsync(record.InstallationId, CancellationToken.None) is null)
+                    throw new InvalidOperationException("The installation was removed while its files were being prepared.");
+                record = record with { Status = "stopped", Error = null };
                 await registry.UpsertAsync(record, cancellationToken);
                 return ToState(record, "stopped", null);
             }
             catch (Exception exception)
             {
-                record.Status = "error";
-                record.Error = exception.Message;
-                await registry.UpsertAsync(record, cancellationToken);
+                if (await registry.FindAsync(record.InstallationId, CancellationToken.None) is not null)
+                {
+                    record = record with { Status = "error", Error = exception.Message };
+                    await registry.UpsertAsync(record, CancellationToken.None);
+                }
                 throw;
             }
-        }
-        finally
-        {
-            _operations.Release();
         }
     }
 
@@ -239,119 +289,155 @@ for index, entry in enumerate(files):
             token, line => ParseTransferLine(line, "container-image", report));
     }
 
-    public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken)
+    public async Task<ManagedModelState> StartAsync(string installationId, CancellationToken cancellationToken,
+        Action<string>? progress = null)
     {
-        await _operations.WaitAsync(cancellationToken);
+        using var lease = AcquireInstallation(installationId);
+        var record = await RequireRecordAsync(installationId, cancellationToken);
+        if (record.Status == "installing")
+            throw new InvalidOperationException(
+                "Model files are still being prepared for this installation. Wait for its download job to finish.");
         try
         {
-            var record = await RequireRecordAsync(installationId, cancellationToken);
             if (record.Runtime == "airllm")
                 await EnsureAirLlmImageAsync(record, cancellationToken);
             else if (record.Runtime == "faster-whisper")
                 await EnsureWhisperImageAsync(record, cancellationToken);
             else if (record.Runtime is "laya" or "kokoro" or "diffusers")
                 await EnsureMediaImageAsync(record, cancellationToken);
-            var name = ContainerName(record);
-            var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
-            if (record.Runtime == "diffusers" && !gpuReady)
-                throw new InvalidOperationException("Image generation requires a working NVIDIA driver and Docker GPU runtime.");
-            if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
-                throw new InvalidOperationException(
-                    "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
-            var gpuRuntime = ManagedRuntimeRestartGuard.RequiresManualGpuRestart(
-                record.Runtime, options.UseNvidiaGpus) && gpuReady;
-            if (gpuRuntime) await gpuSafety.EnsureAllowedAsync(cancellationToken);
-            // Do not remove any previous container before thermal admission check.
-            await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
-            var args = new List<string> { "run", "-d", "--name", name,
-                "--restart", gpuRuntime ? "no" : "unless-stopped", "--ipc=host" };
-            if (gpuReady && record.Runtime is not ("faster-whisper" or "laya" or "kokoro"))
+            else if (record.Runtime == "llama.cpp" && !gguf.IsPrepared(record))
             {
-                args.Add("--gpus");
-                args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
-            }
-            args.Add("-v");
-            args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{(record.Runtime == "llama.cpp" ? "/root/.cache/llama.cpp" : "/root/.cache/huggingface")}");
-            if (record.Runtime == "faster-whisper")
-            {
-                args.AddRange(["-e", "WHISPER_MODEL_ID=" + record.ProviderModelName,
-                    "-e", "WHISPER_CPU_THREADS=4"]);
-                if (record.SourceRevision is { Length: 40 } sha)
-                    args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
-            }
-            if (record.Runtime is "laya" or "kokoro" or "diffusers")
-            {
-                if (record.SourceRevision is not { Length: 40 } sha ||
-                    !Regex.IsMatch(sha, "^[a-f0-9]{40}$"))
-                    throw new InvalidOperationException("Managed media runtime requires a pinned downloaded checkpoint.");
-                if (record.Runtime == "laya")
+                // Installations made before pinned GGUF downloads (or whose cache was cleaned)
+                // are prepared here, so llama-server never starts without a resolved model file.
+                progress?.Invoke("Preparing GGUF weights in the persistent model cache before start.");
+                var prepared = await gguf.PrepareAsync(record.ProviderModelName,
+                    record.ModelFile is null ? null : record.SourceRevision,
+                    step => progress?.Invoke(step.Percent is double percent
+                        ? $"{step.Detail} · {percent:0.#}%" : step.Detail),
+                    cancellationToken);
+                record = record with
                 {
-                    var snapshot = "/root/.cache/huggingface/hub/models--convaiinnovations--laya/snapshots/" + sha;
-                    args.AddRange(["-e", "LAYA_MODELS=english", "-e", "LAYA_DEFAULT_MODEL=english",
-                        "-e", "LAYA_EXTRA_MODELS=" + JsonSerializer.Serialize(
-                            new Dictionary<string, string> { ["english"] = snapshot }),
-                        "-e", "LAYA_MAX_CONCURRENT=1", "-e", "HF_HUB_OFFLINE=1"]);
-                }
-                if (record.Runtime == "kokoro")
-                    args.AddRange(["-e", "KOKORO_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
-                if (record.Runtime == "diffusers")
-                    args.AddRange(["-e", "DIFFUSERS_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
-            }
-            if (record.Runtime == "airllm")
-            {
-                args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
-                    "-e", "AIRLLM_MAX_QUEUED=" + (record.MaxNumSeqs ?? 1),
-                    "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192),
-                    "-e", "AIRLLM_MAX_OUTPUT_TOKENS=" + (record.MaxOutputTokens ?? 256)]);
-            }
-            args.Add("-p");
-            var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
-            var bindHost = options.ConnectionMode == "outbound" &&
-                !string.IsNullOrWhiteSpace(options.GatewayBaseAddress) ? "127.0.0.1:" : "";
-            args.Add($"{bindHost}{record.Port}:{containerPort}");
-            args.Add(ManagedRuntimeProfiles.Image(record, options));
-            args.AddRange(ManagedRuntimeProfiles.Arguments(record, options));
-
-            try
-            {
-                await RequireDockerAsync(args, cancellationToken);
-                await WaitForHealthyAsync(record, cancellationToken);
-                if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
-                record.Status = "running";
-                record.RuntimeBaseAddress = RuntimeAddress(record.Port);
-                record.Error = null;
+                    SourceRevision = prepared.Revision,
+                    ModelFile = prepared.ModelFile,
+                    MmprojFile = prepared.MmprojFile
+                };
                 await registry.UpsertAsync(record, cancellationToken);
-                return ToState(record, "running", record.RuntimeBaseAddress);
-            }
-            catch (Exception exception)
-            {
-                var diagnostics = await ReadFailedDockerLogsAsync(name, record.InstallationId);
-                // Failed startup must release GPU allocation and cannot leave a
-                // crashing inference container behind.
-                try
-                {
-                    await runner.RunAsync(options.DockerExecutable, ["update", "--restart=no", name],
-                        TimeSpan.FromSeconds(10), CancellationToken.None);
-                    await runner.RunAsync(options.DockerExecutable, ["rm", "-f", name],
-                        TimeSpan.FromSeconds(20), CancellationToken.None);
-                }
-                catch (Exception) { /* Preserve the original startup failure. */ }
-                record.Status = "error";
-                var cause = exception is OperationCanceledException
-                    ? cancellationToken.IsCancellationRequested
-                        ? "Startup cancelled by Agent stop/operator request; GPU container cleanup requested."
-                        : $"Runtime did not become healthy within {options.StartupTimeoutMinutes} minutes."
-                    : exception.Message;
-                var combined = cause + diagnostics;
-                record.Error = combined.Length > 3000 ? combined[..3000] : combined;
-                record.RuntimeBaseAddress = null;
-                await registry.UpsertAsync(record, CancellationToken.None);
-                throw;
             }
         }
-        finally
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _operations.Release();
+            record = record with { Status = "error", RuntimeBaseAddress = null,
+                Error = "Preparation before Docker start failed: " + exception.Message };
+            await registry.UpsertAsync(record, CancellationToken.None);
+            throw;
+        }
+
+        var name = ContainerName(record);
+        var gpuReady = await HasGpuRuntimeAsync(cancellationToken);
+        if (record.Runtime == "diffusers" && !gpuReady)
+            throw new InvalidOperationException("Image generation requires a working NVIDIA driver and Docker GPU runtime.");
+        if (options.UseNvidiaGpus && !gpuReady && record.Runtime is "vllm" or "sglang" or "airllm")
+            throw new InvalidOperationException(
+                "The NVIDIA GPU runtime is unavailable. Repair Docker/NVIDIA Toolkit from LLMProxy Admin before starting this model.");
+        var gpuRuntime = ManagedRuntimeRestartGuard.RequiresManualGpuRestart(
+            record.Runtime, options.UseNvidiaGpus) && gpuReady;
+        if (gpuRuntime) await gpuSafety.EnsureAllowedAsync(cancellationToken);
+        var args = new List<string> { "run", "-d", "--name", name,
+            "--restart", gpuRuntime ? "no" : "unless-stopped", "--ipc=host" };
+        if (gpuReady && record.Runtime is not ("faster-whisper" or "laya" or "kokoro"))
+        {
+            args.Add("--gpus");
+            args.Add(string.IsNullOrWhiteSpace(record.GpuDevices) ? "all" : "device=" + record.GpuDevices);
+        }
+        // One shared Hugging Face cache layout for every runtime, llama.cpp included.
+        args.Add("-v");
+        args.Add($"{Path.GetFullPath(options.ModelCacheDirectory)}:{GgufModelStore.ContainerCacheRoot}");
+        if (record.Runtime == "llama.cpp")
+            args.AddRange(["-e", "LLAMA_CACHE=" + GgufModelStore.ContainerCacheRoot + "/hub"]);
+        if (record.Runtime == "faster-whisper")
+        {
+            args.AddRange(["-e", "WHISPER_MODEL_ID=" + record.ProviderModelName,
+                "-e", "WHISPER_CPU_THREADS=4"]);
+            if (record.SourceRevision is { Length: 40 } sha)
+                args.AddRange(["-e", "WHISPER_MODEL_REVISION=" + sha]);
+        }
+        if (record.Runtime is "laya" or "kokoro" or "diffusers")
+        {
+            if (record.SourceRevision is not { Length: 40 } sha ||
+                !Regex.IsMatch(sha, "^[a-f0-9]{40}$"))
+                throw new InvalidOperationException("Managed media runtime requires a pinned downloaded checkpoint.");
+            if (record.Runtime == "laya")
+            {
+                var snapshot = "/root/.cache/huggingface/hub/models--convaiinnovations--laya/snapshots/" + sha;
+                args.AddRange(["-e", "LAYA_MODELS=english", "-e", "LAYA_DEFAULT_MODEL=english",
+                    "-e", "LAYA_EXTRA_MODELS=" + JsonSerializer.Serialize(
+                        new Dictionary<string, string> { ["english"] = snapshot }),
+                    "-e", "LAYA_MAX_CONCURRENT=1", "-e", "HF_HUB_OFFLINE=1"]);
+            }
+            if (record.Runtime == "kokoro")
+                args.AddRange(["-e", "KOKORO_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
+            if (record.Runtime == "diffusers")
+                args.AddRange(["-e", "DIFFUSERS_MODEL_REVISION=" + sha, "-e", "HF_HUB_OFFLINE=1"]);
+        }
+        if (record.Runtime == "airllm")
+        {
+            args.AddRange(["-e", "AIRLLM_MODEL_ID=" + record.ProviderModelName,
+                "-e", "AIRLLM_MAX_QUEUED=" + (record.MaxNumSeqs ?? 1),
+                "-e", "AIRLLM_MAX_CONTEXT=" + (record.MaxModelLen ?? 8192),
+                "-e", "AIRLLM_MAX_OUTPUT_TOKENS=" + (record.MaxOutputTokens ?? 256)]);
+        }
+        args.Add("-p");
+        var containerPort = record.Runtime == "llama.cpp" ? 8080 : record.Runtime == "sglang" ? 30000 : 8000;
+        var bindHost = options.ConnectionMode == "outbound" &&
+            !string.IsNullOrWhiteSpace(options.GatewayBaseAddress) ? "127.0.0.1:" : "";
+        args.Add($"{bindHost}{record.Port}:{containerPort}");
+        args.Add(ManagedRuntimeProfiles.Image(record, options));
+        args.AddRange(ManagedRuntimeProfiles.Arguments(record, options, gpuReady));
+
+        try
+        {
+            progress?.Invoke("Starting Docker runtime; waiting for model /health. No automatic crash restarts.");
+            await _operations.WaitAsync(cancellationToken);
+            try
+            {
+                // Do not remove any previous container before thermal admission check.
+                await RunDockerIgnoringFailureAsync(["rm", "-f", name], cancellationToken);
+                await RequireDockerAsync(args, cancellationToken);
+            }
+            finally { _operations.Release(); }
+            await WaitForHealthyAsync(record, cancellationToken);
+            if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
+            record = record with { Status = "running", RuntimeBaseAddress = RuntimeAddress(record.Port), Error = null };
+            await registry.UpsertAsync(record, cancellationToken);
+            return ToState(record, "running", record.RuntimeBaseAddress);
+        }
+        catch (Exception exception)
+        {
+            var diagnostics = await ReadFailedDockerLogsAsync(name, record.InstallationId);
+            // Failed startup must release GPU allocation and cannot leave a
+            // crashing inference container behind.
+            try
+            {
+                await runner.RunAsync(options.DockerExecutable, ["update", "--restart=no", name],
+                    TimeSpan.FromSeconds(10), CancellationToken.None);
+                await runner.RunAsync(options.DockerExecutable, ["rm", "-f", name],
+                    TimeSpan.FromSeconds(20), CancellationToken.None);
+            }
+            catch (Exception) { /* Preserve the original startup failure. */ }
+            var cause = exception is OperationCanceledException
+                ? cancellationToken.IsCancellationRequested
+                    ? "Startup cancelled by Agent stop/operator request; GPU container cleanup requested."
+                    : $"Runtime did not become healthy within {options.StartupTimeoutMinutes} minutes."
+                : exception.Message;
+            var combined = cause + diagnostics;
+            record = record with
+            {
+                Status = "error",
+                Error = combined.Length > 3000 ? combined[..3000] : combined,
+                RuntimeBaseAddress = null
+            };
+            await registry.UpsertAsync(record, CancellationToken.None);
+            throw;
         }
     }
 
@@ -400,8 +486,8 @@ for index, entry in enumerate(files):
     public async Task<ManagedModelState> StopAsync(string installationId,
         CancellationToken cancellationToken, bool force = false)
     {
-        await _operations.WaitAsync(cancellationToken);
-        try
+        // Force stop is the emergency path and must work even while a start is hanging.
+        using var lease = force ? null : AcquireInstallation(installationId);
         {
             var record = await RequireRecordAsync(installationId, cancellationToken);
             var name = ContainerName(record);
@@ -444,13 +530,10 @@ for index, entry in enumerate(files):
                         "Docker still reports the managed runtime as running. Memory is not confirmed released.");
                 if (attempt == 0) await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
-            record.Status = "stopped";
-            record.RuntimeBaseAddress = null;
-            record.Error = null;
+            record = record with { Status = "stopped", RuntimeBaseAddress = null, Error = null };
             await registry.UpsertAsync(record, cancellationToken);
             return ToState(record, "stopped", null);
         }
-        finally { _operations.Release(); }
     }
 
     private static bool DockerContainerMissing(string message) =>
@@ -460,8 +543,7 @@ for index, entry in enumerate(files):
     public async Task<ManagedModelState> ConfigureAsync(string installationId,
         ManagedProfileUpdate update, CancellationToken cancellationToken)
     {
-        await _operations.WaitAsync(cancellationToken);
-        try
+        using var lease = AcquireInstallation(installationId);
         {
             var record = await RequireRecordAsync(installationId, cancellationToken);
             if (await IsRunningAsync(record, cancellationToken))
@@ -485,22 +567,25 @@ for index, entry in enumerate(files):
             await registry.UpsertAsync(changed, cancellationToken);
             return ToState(changed, "stopped", null);
         }
-        finally { _operations.Release(); }
     }
 
     public async Task RemoveAsync(string installationId, CancellationToken cancellationToken)
     {
-        await _operations.WaitAsync(cancellationToken);
-        try
-        {
-            var record = await RequireRecordAsync(installationId, cancellationToken);
-            await RunDockerIgnoringFailureAsync(["rm", "-f", ContainerName(record)], cancellationToken);
-            await registry.RemoveAsync(installationId, cancellationToken);
-        }
-        finally
-        {
-            _operations.Release();
-        }
+        using var lease = AcquireInstallation(installationId);
+        var record = await RequireRecordAsync(installationId, cancellationToken);
+        var name = ContainerName(record);
+        var removed = await runner.RunAsync(options.DockerExecutable, ["rm", "-f", name],
+            TimeSpan.FromMinutes(2), cancellationToken);
+        if (!removed.Success && !DockerContainerMissing(removed.StandardError))
+            throw new InvalidOperationException(
+                "Docker could not remove the managed container, so the installation is kept and still manageable: " +
+                Trim(removed.StandardError));
+        var verify = await runner.RunAsync(options.DockerExecutable, ["inspect", "-f", "{{.State.Running}}", name],
+            TimeSpan.FromSeconds(10), cancellationToken);
+        if (verify.Success)
+            throw new InvalidOperationException(
+                "Docker still reports the managed container after removal; the installation is kept and still manageable.");
+        await registry.RemoveAsync(installationId, cancellationToken);
     }
 
     private async Task<ManagedModelRecord> RequireRecordAsync(string installationId, CancellationToken cancellationToken) =>
@@ -681,8 +766,8 @@ for index, entry in enumerate(files):
                 TimeSpan.FromSeconds(8), timeoutCts.Token);
             if (state.Success && state.StandardOutput.Trim().StartsWith("false ", StringComparison.Ordinal))
                 throw new InvalidOperationException(
-                    "Model process exited during startup (" + state.StandardOutput.Trim() +
-                    "). Automatic GPU restart is disabled; inspect container logs before retrying.");
+                    "Model container exited during startup with exit code " + state.StandardOutput.Trim()["false ".Length..] +
+                    ". Automatic GPU restart is disabled; review the diagnosis below before retrying.");
             await Task.Delay(TimeSpan.FromSeconds(2), timeoutCts.Token);
         }
     }
@@ -700,17 +785,19 @@ for index, entry in enumerate(files):
 
     private static string BuildInstallationId(string catalogModelId)
     {
+        // Docker container names accept ASCII only; never derive them from Unicode letters.
         var slug = new string(catalogModelId.Trim().ToLowerInvariant().Select(character =>
-            char.IsLetterOrDigit(character) ? character : '-').ToArray()).Trim('-');
-        if (slug.Length > 32) slug = slug[..32];
-        return $"{slug}-{Guid.NewGuid():N}"[..Math.Min(slug.Length + 9, slug.Length + 33)];
+            char.IsAsciiLetterOrDigit(character) ? character : '-').ToArray()).Trim('-');
+        if (slug.Length > 32) slug = slug[..32].TrimEnd('-');
+        if (slug.Length == 0) slug = "model";
+        return $"{slug}-{Guid.NewGuid():N}"[..(slug.Length + 9)];
     }
 
     private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
             record.GpuDevices, record.MaxOutputTokens, record.SourceRevision,
-            record.GpuMemoryUtilization);
+            record.GpuMemoryUtilization, record.ModelFile);
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 

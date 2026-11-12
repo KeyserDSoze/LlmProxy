@@ -37,6 +37,12 @@ if [[ -z "$VERSION" ]]; then
   echo "Release bundle VERSION is empty." >&2
   exit 3
 fi
+# VERSION becomes part of root-owned paths that are deleted/replaced below.
+semver_re='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+if [[ ! "$VERSION" =~ $semver_re ]]; then
+  echo "Release bundle VERSION '$VERSION' is not a valid SemVer version." >&2
+  exit 3
+fi
 
 RELEASE_DIR="$INSTALL_DIR/releases/$VERSION"
 release_log "Installing immutable operator bundle $VERSION"

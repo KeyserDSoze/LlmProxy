@@ -32,6 +32,16 @@ Vitest and Testing Library validate React behavior and the browser API client. `
 
 Playwright runs Chromium against the real Vite-served React application. Admin API calls are intercepted at the browser network layer so flows such as navigation, inference node creation, hardware telemetry administration, routing tuning and authentication errors can be exercised deterministically.
 
+### Visual, layout and accessibility regression
+
+The Playwright `visual` project (`tests/frontend/e2e/visual.spec.ts`) renders every Admin and user-portal screen against the shared deterministic mock in `e2e/support/mockAdmin.ts` with a frozen clock. Each screen fails on uncaught page errors, console errors, failed API calls, page-level or unintended inner horizontal overflow (desktop and 390 px phone) and serious/critical axe-core WCAG 2.1 A/AA violations. A dedicated test covers the failed llama.cpp start card and the phone navigation drawer.
+
+Pixel comparison runs only with `LLMPROXY_VISUAL_COMPARE=1`, which `npm run test:visual:docker` sets inside `mcr.microsoft.com/playwright:v<@playwright/test version>-noble`. Baselines live in `tests/frontend/e2e/__screenshots__/` without an OS suffix because they are never rendered on the host. Budget: 100 differing pixels per screenshot. After an intentional UI change run `npm run test:visual:update`, review the changed PNGs and commit them. `npm run test:visual` on the host still runs the overflow, console and axe checks and attaches screenshots without comparing them.
+
+### Live Admin smoke
+
+`tests/backend/integration/admin_ui_live_smoke.sh` starts the Compose stack (LlmProxy + PostgreSQL, Entra disabled) and runs `npm run test:live` (`tests/frontend/live`, no API mocks): every workspace must render without page errors or 404/405/5xx API responses, an organization key created in the UI must authenticate and then be rejected after revocation, and a routing strategy chosen in the UI must be persisted by the API. CI runs it at the end of the Docker/PostgreSQL integration job and uploads the Playwright report on failure.
+
 ### Performance tooling
 
 `tests/performance/` contains a .NET 10 benchmark console and its unit tests. CI compiles and tests the harness itself but deliberately does **not** run load against an inference endpoint.
@@ -67,9 +77,11 @@ A change is considered CI-valid only when all of the following succeed:
 - benchmark-harness unit tests;
 - React production build;
 - Vitest frontend tests;
-- Playwright Chromium E2E tests;
+- Playwright Chromium E2E tests (`--project=chromium`);
+- Playwright visual regression, layout and accessibility job (`visual`);
 - production Docker image build;
 - Docker/PostgreSQL backend smoke tests;
+- live Admin UI smoke against the real gateway (`admin_ui_live_smoke.sh`);
 - dedicated DCGM hardware smoke tests.
 
 Playwright traces/reports are retained when browser tests fail so a UI failure can be reproduced without guessing.

@@ -264,7 +264,7 @@ export default function UserPortal() {
     <main>
       <header>
         <div><h1>My dashboard</h1><p>Your API keys, usage, limits and recent LlmProxy calls.</p></div>
-        <div className="shellHeaderControls"><AppearanceControls /><div className="actions"><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button><a href="/auth/logout">Sign out</a></div></div>
+        <div className="shellHeaderControls"><AppearanceControls /><div className="actions"><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button><a className="buttonLink secondary" href="/auth/logout">Sign out</a></div></div>
       </header>
 
       <PageDocumentation page="me" />

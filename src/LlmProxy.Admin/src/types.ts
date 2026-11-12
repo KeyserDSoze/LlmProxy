@@ -676,6 +676,7 @@ export type ManagedModelState = {
   maxModelLen?: number | null
   maxOutputTokens?: number | null
   sourceRevision?: string | null
+  modelFile?: string | null
   kvCacheDtype?: string | null
   cpuOffloadGiB?: number | null
   gpuMemoryUtilization?: number | null
@@ -765,6 +766,12 @@ export type ModelInstallJob = {
   error?: string | null
   createdAtUtc: string
   completedAtUtc?: string | null
+}
+export type GgufVariant = {
+  quantization: string
+  fileName: string
+  parts?: number
+  sizeBytes?: number | null
 }
 export type HuggingFaceModel = {
   id: string

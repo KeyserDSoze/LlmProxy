@@ -66,6 +66,50 @@ public sealed class ManagedRuntimeProfilesTests
     }
 
     [Fact]
+    public void Prepared_llama_profile_starts_from_the_pinned_local_gguf_and_projector()
+    {
+        const string revision = "0123456789abcdef0123456789abcdef01234567";
+        var request = new InstallRequest("custom", "unsloth/gemma-3-4b-it-GGUF:Q4_K_M", null, 1, [], "llama.cpp", 2, 8192);
+        var record = ToRecord(request) with
+        {
+            SourceRevision = revision, ModelFile = "gemma-3-4b-it-Q4_K_M.gguf", MmprojFile = "mmproj-F16.gguf"
+        };
+        var args = ManagedRuntimeProfiles.Arguments(record, Options(), gpuAvailable: true).ToArray();
+        Assert.DoesNotContain("--hf-repo", args);
+        Assert.Equal("/root/.cache/huggingface/hub/models--unsloth--gemma-3-4b-it-GGUF/snapshots/" + revision +
+            "/gemma-3-4b-it-Q4_K_M.gguf", args[Array.IndexOf(args, "--model") + 1]);
+        Assert.EndsWith("/snapshots/" + revision + "/mmproj-F16.gguf", args[Array.IndexOf(args, "--mmproj") + 1]);
+        Assert.Equal("unsloth/gemma-3-4b-it-GGUF:Q4_K_M", args[Array.IndexOf(args, "--alias") + 1]);
+        Assert.Contains("--n-gpu-layers", args);
+    }
+
+    [Fact]
+    public void Llama_gpu_offload_follows_the_detected_gpu_runtime_not_only_configuration()
+    {
+        var request = new InstallRequest("qwen3-4b-gguf-q4", "ggml-org/Qwen3-4B-GGUF:Q4_K_M", null, 1, [], "llama.cpp", 1, 8192);
+        Assert.DoesNotContain("--n-gpu-layers",
+            ManagedRuntimeProfiles.Arguments(ToRecord(request), Options(), gpuAvailable: false));
+        Assert.Contains("--n-gpu-layers",
+            ManagedRuntimeProfiles.Arguments(ToRecord(request), Options(), gpuAvailable: true));
+    }
+
+    [Theory]
+    [InlineData("--model")]
+    [InlineData("-m")]
+    [InlineData("--hf-repo")]
+    [InlineData("--port=9000")]
+    [InlineData("--host")]
+    [InlineData("--mmproj")]
+    public void Extra_arguments_cannot_override_managed_model_source_or_listener(string argument)
+    {
+        var request = new InstallRequest("qwen3-4b-gguf-q4", "ggml-org/Qwen3-4B-GGUF:Q4_K_M", null, 1,
+            [argument, "value"], "llama.cpp", 1, 8192);
+        var error = Assert.Throws<ArgumentException>(() => ManagedRuntimeProfiles.Validate(request));
+        Assert.Contains("managed by LlmProxy", error.Message);
+        ManagedRuntimeProfiles.Validate(request with { ExtraArguments = ["--flash-attn", "on"] });
+    }
+
+    [Fact]
     public void Sglang_profile_uses_server_compatible_flags()
     {
         var request = new InstallRequest("awq-sglang", "Qwen/Qwen3-4B-AWQ", null, 1, [], "sglang", 12, 8192);

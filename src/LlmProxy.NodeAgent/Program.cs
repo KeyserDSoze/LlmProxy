@@ -18,6 +18,7 @@ builder.Services.AddSingleton<NodeResourceDiagnostics>();
 builder.Services.AddSingleton<GpuRuntimeSafety>();
 builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
+builder.Services.AddSingleton<GgufModelStore>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddSingleton<ModelInstallJobManager>();
 builder.Services.AddSingleton<ModelStartJobManager>();
@@ -28,6 +29,12 @@ builder.Services.AddHostedService<OutboundAgentRelayWorker>();
 builder.Services.AddHttpClient("relay-local", client => client.Timeout = Timeout.InfiniteTimeSpan)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("runtime-health", client => client.Timeout = TimeSpan.FromSeconds(5));
+// Multi-GB GGUF transfers: GgufModelStore applies its own request and stall timeouts.
+builder.Services.AddHttpClient("huggingface", client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+    client.DefaultRequestHeaders.UserAgent.TryParseAdd("llmproxy-node-agent/" + NodeAgentVersion.Current);
+});
 
 var app = builder.Build();
 app.UseMiddleware<BearerTokenMiddleware>();
@@ -101,6 +108,8 @@ app.MapDelete("/v1/models/{installationId}", async (string installationId, Docke
 {
     try { await manager.RemoveAsync(installationId, cancellationToken); return Results.NoContent(); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+    { return Results.Conflict(new { error = error.Message }); }
 });
 
 app.Run();

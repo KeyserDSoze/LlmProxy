@@ -1,18 +1,25 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import { useRouteHardware, useRouteTab } from './adminNavigation'
+import { urlForAdminView, useRouteHardware, useRouteTab } from './adminNavigation'
 import { useT } from './uiPreferences'
-import { Modal, Tabs } from './UiPrimitives'
+import { AdminLink, InfoIcon, Modal, Tabs } from './UiPrimitives'
 import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
-import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment } from './types'
+import InstalledModelCards from './InstalledModelCards'
+import StartupDiagnosis from './StartupDiagnosis'
+import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
-export default function ModelHardwareExperience({ nodes, canWrite, refresh, embedded = false, defaultTab = 'inventory', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; defaultTab?: 'inventory' | 'deploy'; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
+type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
+
+/**
+ * mode="models": install, run, troubleshoot and publish models on the selected server.
+ * mode="hardware": the server's hardware, host readiness and Agent configuration.
+ */
+export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
   const t = useT()
-  const [tab, setTab] = useRouteTab<'inventory' | 'deploy'>('tab', ['inventory', 'deploy'], defaultTab)
-  const [panel, setPanel] = useRouteTab<'catalog' | 'installed' | 'activity' | 'advanced'>('panel',
-    ['catalog', 'installed', 'activity', 'advanced'], 'catalog')
+  const [panel, setPanel] = useRouteTab<WorkspacePanel>('panel',
+    ['catalog', 'installed', 'activity', 'advanced'], defaultPanel)
   const [modelKind, setModelKind] = useRouteTab<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>(
     'kind', ['all', 'OpenAi', 'SystemOne', 'ImageGeneration', 'SpeechSynthesis', 'AudioTranscription'], 'all')
   const [showJobHistory, setShowJobHistory] = useState(false)
@@ -40,7 +47,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   const [extraArgumentsText, setExtraArgumentsText] = useState('')
   const [customRepository, setCustomRepository] = useState('')
   const [customConfirmed, setCustomConfirmed] = useState(false)
-  const [ggufVariants, setGgufVariants] = useState<{ quantization: string; fileName: string }[]>([])
+  const [ggufVariants, setGgufVariants] = useState<GgufVariant[]>([])
   const [ggufVariantMessage, setGgufVariantMessage] = useState<string | null>(null)
   const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
   const [startJobs, setStartJobs] = useState<ModelStartJob[]>([])
@@ -138,19 +145,19 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
   useEffect(() => { void load() }, [load])
   // Fresh host telemetry without requiring the operator to repeatedly press Refresh.
   useEffect(() => {
-    if (!nodeId || tab !== 'inventory') return
+    if (!nodeId || mode !== 'hardware') return
     const timer = window.setInterval(() => {
       void api.modelManagementOverview(nodeId).then(next => {
         if (currentNodeId.current === nodeId) setOverview(next)
       }).catch(() => {})
     }, 15000)
     return () => window.clearInterval(timer)
-  }, [nodeId, tab])
+  }, [nodeId, mode])
   // A WebSocket or Cloudflare interruption is transient. Keep cached
   // installations visible and retry the read-only management overview in
-  // Deploy models too, without requiring the operator to repeatedly click.
+  // the model workspace too, without requiring the operator to repeatedly click.
   useEffect(() => {
-    if (!nodeId || overview?.agentAvailable || tab === 'inventory') return
+    if (!nodeId || overview?.agentAvailable || mode === 'hardware') return
     const timer = window.setInterval(() => {
       void api.modelManagementOverview(nodeId).then(next => {
         if (currentNodeId.current !== nodeId) return
@@ -159,7 +166,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
       }).catch(() => { /* Keep the last useful cached inventory while offline. */ })
     }, 12000)
     return () => window.clearInterval(timer)
-  }, [nodeId, overview?.agentAvailable, tab])
+  }, [nodeId, overview?.agentAvailable, mode])
 
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
@@ -435,6 +442,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
     setTensorParallelSize(1); setGpuDevices('')
   }
 
+  const agentLabel = overview?.agentAvailable ? t('model.agentLive') :
+    overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')
   return <div className="stack compactPage modelHardware">
     <section className="modelWorkspaceToolbar">
       <div className="modelWorkspaceNode">
@@ -444,11 +453,15 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           <option value="">{t('model.selectHardware')}</option>
           {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}
         </select>
-        <span className={overview?.agentAvailable ? 'modelAgentConnected' : 'muted'}>
-          {overview?.agentAvailable ? t('model.agentLive') :
-            overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}
-        </span>
+        {nodeId && <span className={'pill ' + (overview?.agentAvailable ? 'pill-success modelAgentConnected' : 'pill-warning')}>
+          <i aria-hidden="true" />{agentLabel}
+        </span>}
       </div>
+      {mode === 'models' && hardware && <div className="serverSummary" role="group" aria-label={t('model.serverStatus')}>
+        <span><strong>{gpus.length}</strong> {t('model.gpus')}</span>
+        <span><strong>{formatGiB(hardware.systemMemoryAvailableGiB)}</strong> {t('model.freeMemory')}</span>
+        <span><strong>{formatGiB(hardware.diskAvailableGiB)}</strong> {t('model.freeDisk')}</span>
+      </div>}
       <div className="modelWorkspaceToolbarActions">
         <button className="secondary" disabled={!nodeId || !overview?.agentAvailable}
           onClick={() => { setResourcesOpen(true); void loadResources() }}>{t('model.memoryDiagnostics')}</button>
@@ -456,17 +469,19 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
           {loading ? t('model.reading') : t('model.refresh')}</button>
         <button className="secondary" disabled={!canWrite || !nodeId} onClick={() => setAgentOpen(true)}>
           {t('model.configureAgent')}</button>
+        {mode === 'models' && nodeId && <AdminLink className="buttonLink secondary"
+          href={urlForAdminView('infrastructure') + '?section=hardware&node=' + encodeURIComponent(nodeId)}>
+          {t('model.hardwareDetails')} →</AdminLink>}
+        {mode === 'hardware' && nodeId && <AdminLink className="buttonLink primary"
+          href={urlForAdminView('models') + '?node=' + encodeURIComponent(nodeId)}>
+          {t('model.manageModels')} →</AdminLink>}
       </div>
     </section>
     {!nodeId && nodes.length > 0 && <div className="notice" role="alert">{t('model.invalidNode')}</div>}
     {error && <div className="error">{error}</div>}{message && <div className="notice">{message}</div>}{overview?.agentError && <div className="notice">Management agent: {overview.agentError}</div>}
-    {embedded && <Tabs value={tab} onChange={setTab} items={[
-      { value: 'inventory', label: t('model.inventoryTab'), count: gpus.length },
-      { value: 'deploy', label: t('model.deployTab'), count: overview?.installations.length ?? 0 }
-    ]} />}
 
-    {tab === 'inventory' && <section className="panel"><div className="panelTitle"><h2>{t('model.inventoryTab')}</h2><span>{overview?.agentAvailable ? t('model.agentLive') : overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads' + (hardware.cpuUtilizationPercent == null ? '' : ' · ' + hardware.cpuUtilizationPercent.toFixed(0) + '% busy')} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label={unifiedMemory ? "Shared CPU/GPU RAM" : "GPU memory"} value={unifiedMemory ? formatGiB(hardware.systemMemoryAvailableGiB) + " available total" : formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div>{unifiedMemory && <p className="notice">NVIDIA unified memory: CPU and GPU share the same system RAM. Available RAM is not additional dedicated GPU VRAM; model fit reserves host memory and combines CPU/GPU estimates.</p>}<div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''} · {gpus.length} GPU(s) detected</span></div>
-      {hardware.readiness && <section className="stack">
+    {mode === 'hardware' && <section className="panel"><div className="panelTitle"><h2>{t('model.inventoryTab')}</h2><span>{overview?.agentAvailable ? t('model.agentLive') : overview?.inventoryStale ? t('model.agentStale') : t('model.agentUnavailable')}</span></div>{hardware ? <><div className="cards cardsFive compactCards"><Metric label="CPU" value={hardware.cpuLogicalCores + ' threads' + (hardware.cpuUtilizationPercent == null ? '' : ' · ' + hardware.cpuUtilizationPercent.toFixed(0) + '% busy')} /><Metric label="System RAM" value={formatGiB(hardware.systemMemoryAvailableGiB) + ' free'} /><Metric label="GPU" value={gpus.length} /><Metric label={unifiedMemory ? "Shared CPU/GPU RAM" : "GPU memory"} value={unifiedMemory ? formatGiB(hardware.systemMemoryAvailableGiB) + " available total" : formatGiB(totals.gpuFree) + ' free'} /><Metric label="Disk" value={formatGiB(hardware.diskAvailableGiB) + ' free'} /></div>{unifiedMemory && <p className="notice">NVIDIA unified memory: CPU and GPU share the same system RAM. Available RAM is not additional dedicated GPU VRAM; model fit reserves host memory and combines CPU/GPU estimates.</p>}<div className="inventoryMeta"><strong>{hardware.hostname}</strong><span>{hardware.operatingSystem ?? 'OS unknown'} · {hardware.architecture ?? 'arch unknown'} · {hardware.runtime ?? 'runtime unknown'} {hardware.runtimeVersion ?? ''} · {gpus.length} GPU(s) detected</span></div>
+      {hardware.readiness && <section className="stack hardwareReadiness">
         <div className="actions"><strong>Host prerequisites</strong><button className="secondary"
           disabled={!canWrite || !overview?.agentAvailable || busy !== null}
           onClick={() => { if (window.confirm('Host preparation may update packages or restart Docker. Stop all models on this node first. Continue?')) void prepareHost() }}>
@@ -474,9 +489,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         </button></div>
         <div>Docker engine: {hardware.readiness.dockerDaemonReady ? 'ready' : 'not ready'} · NVIDIA driver: {hardware.readiness.nvidiaDriverDetected ? 'detected' : 'not detected'} · NVIDIA toolkit: {hardware.readiness.nvidiaToolkitReady ? 'ready or not needed' : 'missing'}</div>
         {hardware.readiness.issues.map(issue => <p className="notice" key={issue}>{issue}</p>)}
-      </section>}<table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th><th>GPU load</th><th>Temp.</th><th>Power</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>#{index} · {gpu.name}</strong></td><td>{gpu.memoryType === 'unified' ? 'Shared RAM' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryTotalGiB)}</td><td>{gpu.memoryType === 'unified' ? 'Shared with CPU' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td><td>{gpu.utilizationPercent == null ? '—' : gpu.utilizationPercent.toFixed(0) + '%'}</td><td>{gpu.temperatureCelsius == null ? '—' : gpu.temperatureCelsius.toFixed(0) + ' °C'}</td><td>{gpu.powerWatts == null ? '—' : gpu.powerWatts.toFixed(1) + ' W'}</td></tr>)}</tbody></table></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Infrastructure → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}
+      </section>}<div className="tableScroll"><table><thead><tr><th>GPU</th><th>Total VRAM</th><th>Free VRAM</th><th>Driver</th><th>Compute</th><th>GPU load</th><th>Temp.</th><th>Power</th></tr></thead><tbody>{gpus.map((gpu,index) => <tr key={index}><td><strong>#{index} · {gpu.name}</strong></td><td>{gpu.memoryType === 'unified' ? 'Shared RAM' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryTotalGiB)}</td><td>{gpu.memoryType === 'unified' ? 'Shared with CPU' : gpu.memoryType === 'unknown' ? 'Unknown' : formatGiB(gpu.memoryFreeGiB)}</td><td>{gpu.driverVersion ?? '—'}</td><td>{gpu.computeCapability ?? '—'}</td><td>{gpu.utilizationPercent == null ? '—' : gpu.utilizationPercent.toFixed(0) + '%'}</td><td>{gpu.temperatureCelsius == null ? '—' : gpu.temperatureCelsius.toFixed(0) + ' °C'}</td><td>{gpu.powerWatts == null ? '—' : gpu.powerWatts.toFixed(1) + ' W'}</td></tr>)}</tbody></table></div></> : <div className="emptyState"><strong>No inventory yet</strong><p>Install and configure the management agent on this node to collect RAM, CPU, disk and accelerator inventory.</p><p>Use Servers & hardware → Fleet & access → Pair Linux agent to download the release and generate a pairing code.</p></div>}</section>}
 
-    {tab === 'deploy' && <>
+    {mode === 'models' && <>
       {overview && !overview.agentAvailable && <section className="notice" role="alert">
         <strong>{t('catalog.offlineTitle')}</strong>
         <p>{t('catalog.offlineHelp')}</p>
@@ -489,9 +504,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         { value: 'installed' as const, label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
         { value: 'activity' as const, label: t('model.workspaceActivity'),
           count: downloadJobs.filter(job => job.status === 'queued' || job.status === 'running' || job.status === 'interrupted' || job.status === 'failed').length },
-        ...(!embedded ? [{ value: 'advanced' as const, label: t('model.workspaceAdvanced') }] : [])
+        { value: 'advanced' as const, label: t('model.workspaceAdvanced') }
       ]} />
-      <p className="muted">{t('model.lifecycleHint')}</p>
+      <p className="workspaceHint">{t('model.lifecycleHint')}</p>
       {panel === 'activity' && <section className="panel">
         <div className="panelTitle"><h2>{t('catalog.downloads')}</h2>
           <div className="actions"><span>{t('catalog.jobs')}</span>
@@ -531,7 +546,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
               {job.request.startAfterInstall && job.result?.status === 'running'
                 ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
             </p>}
-            {job.error && <p className="error">{job.error}</p>}
+            {job.error && <StartupDiagnosis title={t('model.installFailedTitle')} text={job.error} />}
           </div>)}</div>}
       </section>}
 
@@ -632,11 +647,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                   }}>{item.compatibility.status === 'insufficient' ?
                     t('catalog.inspectFit') : t('catalog.install')}</button>
                 {item.capabilities && <button type="button" className="secondary capabilityActionButton"
-                  aria-label={`${t('catalog.capabilities')} · ${item.model.displayName}`}
+                  aria-label={`${t('cap.details')} · ${t('catalog.capabilities')} · ${item.model.displayName}`}
                   title={t('cap.inspectDetails')}
                   onClick={() => setCapabilityDetails({ title: item.model.displayName,
                     profile: item.capabilities!, logicalModel: item.model.id })}>
-                  <span aria-hidden="true">ⓘ</span> {t('cap.details')}
+                  <InfoIcon /> {t('cap.details')}
                 </button>}
               </td>
             </tr>)}</tbody>
@@ -677,81 +692,27 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
         <p className="muted modelCatalogFootnote">{t('catalog.fitCaution')}</p>
       </section>}
       {panel === 'catalog' && modelKind === 'OpenAi' && <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />}
-      {panel === 'installed' && <section className="panel"><div className="panelTitle"><h2>{t('catalog.installed')}</h2>
-        <div className="actions"><span>{t('catalog.editTip')}</span>
-          <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
-            onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
-        </div></div><div className="tableScroll installedTableScroll"><table className="managedInstalledTable"><thead><tr><th>{t('catalog.logical')}</th><th>{t('catalog.provider')}</th><th>{t('catalog.capabilities')}</th><th>{t('catalog.agentState')}</th><th>{t('catalog.load')}</th><th>{t('catalog.endpoint')}</th><th>{t('catalog.routing')}</th><th>{t('catalog.actions')}</th></tr></thead><tbody>{(overview?.installations ?? []).map(item => <tr key={item.id}><td><strong>{item.logicalModel ?? item.catalogModelId ?? item.modelId}</strong><div className="muted mono">{item.managedInstallationId}</div></td><td className="mono">{item.providerModelName ?? '—'}<div className="muted">{item.runtime ?? 'vllm'} · seq {item.agentState?.maxNumSeqs ?? 'default'}</div>
-              {['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') ? <div className="muted">
-                {item.runtime === 'faster-whisper' ? 'Audio input ≤25 MiB' :
-                  item.runtime === 'laya' ? 'Typed English classifier' :
-                  item.runtime === 'kokoro' ? 'English voice af_heart · WAV' :
-                  'NVIDIA PNG · 512–1024'}
-              </div> : <div className="muted">{t('catalog.tokenContext')}: {item.agentState?.maxModelLen ?? (item.runtime === 'airllm' ? 8192 : 'default')} tokens · {t('catalog.output')}: {item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : t('catalog.perRequest')}</div>}
-              <div className="muted">{t('catalog.revision')}: {item.agentState?.sourceRevision?.slice(0,12) ?? t('catalog.unknownRevision')}</div>
-              {upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId) &&
-                <div className="notice">{upstreamRevisions.find(rev => rev.installationId === item.managedInstallationId)?.update.message}</div>}
-          </td><td className="installedCapabilities">
-            <ModelCapabilitySummary profile={item.capabilities}/>
-          </td><td><Status value={item.agentStatus} />{item.agentState?.error && <div className="muted">{item.agentState.error}</div>}
-            {startJobs.filter(job => job.installationId === item.managedInstallationId).slice(0, 1).map(job =>
-              <div className={job.status === 'failed' || job.status === 'interrupted' ? 'error' : 'notice'}
-                key={job.id} role="status">
-                <strong>Startup: {job.status}</strong>
-                <div>{job.detail}</div>
-                {job.error && <div className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{job.error}</div>}
-                {job.status === 'queued' || job.status === 'starting' ?
-                  <button className="secondary" type="button" onClick={() => void cancelStartJob(job.id)}>Cancel startup</button> : null}
-                {job.status === 'completed' && !item.enabled &&
-                  <div className="muted">Runtime started; verifying health and routing activation.</div>}
-              </div>)}
-          </td><td>{item.runtimeMetrics?.available
-          ? <><strong>{item.runtimeMetrics.runningRequests} running · {item.runtimeMetrics.waitingRequests} queued</strong><div className="muted">{item.runtimeMetrics.runtime} · cache {item.runtimeMetrics.cacheUsageRatio == null ? '—' : (item.runtimeMetrics.cacheUsageRatio * 100).toFixed(0) + '%'}</div></>
-          : <span className="muted">{item.runtimeMetrics?.error ?? t('catalog.emptyMetrics')}</span>}</td><td className="mono">
-          <strong>POST {managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? '')}</strong>
-          {item.runtime !== 'laya' && <div className="muted">model: {item.logicalModel ?? item.catalogModelId ?? item.modelId}</div>}
-          <div><button className="secondary" type="button"
-            onClick={() => void navigator.clipboard.writeText(window.location.origin +
-              managedPublicEndpoint(item.runtime, item.logicalModel ?? item.catalogModelId ?? ''))}>
-            {t('catalog.copyEndpoint')}</button>
-            <button className="secondary" type="button"
-              title={t('catalog.copyCurlHelp')}
-              onClick={() => void navigator.clipboard.writeText(
-                managedCurlExample(item.runtime, item.logicalModel ?? item.catalogModelId ?? '', window.location.origin))}>
-              {t('catalog.copyCurl')}</button>
-            </div>
-          <div className="muted">{t('catalog.enabled')}: {item.enabled ? 'yes' : 'no'}</div>
-          <div className="muted">{item.runtimeBaseAddress ?? item.agentState?.runtimeBaseAddress ?? t('catalog.notRunning')}</div>
-        </td><td>{item.enabled ? t('catalog.enabled') :
-          item.agentStatus.toLowerCase() === 'running'
-            ? <><strong>{t('catalog.disabled')}</strong><div className="muted">{t('catalog.unrouted')}</div></>
-            : t('catalog.disabled')}</td><td className="actions">
-          {item.capabilities && <button type="button" className="secondary capabilityActionButton"
-            aria-label={`${t('catalog.capabilities')} · ${item.logicalModel ?? item.providerModelName ?? 'Model'}`}
-            title={t('cap.inspectDetails')}
-            onClick={() => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model',
-              profile: item.capabilities!, logicalModel: item.logicalModel ?? item.catalogModelId ?? item.modelId })}>
-            <span aria-hidden="true">ⓘ</span> {t('cap.details')}
-          </button>}
-          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() === 'running' ||
-              startJobs.some(job => job.installationId === item.managedInstallationId &&
-                (job.status === 'queued' || job.status === 'starting'))}
-            onClick={() => void action('start', item.id)}>{t('catalog.start')}</button>
-          {item.agentStatus.toLowerCase() === 'running' && !item.enabled &&
-            <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
-              title={t('catalog.healthTip')}
-              onClick={() => void action('activate', item.id)}>{t('catalog.activate')}</button>}
-          <button disabled={!canWrite || busy !== null || item.agentStatus.toLowerCase() !== 'running'} onClick={() => void action('stop', item.id)}>{t('catalog.stop')}</button>
-          <button disabled={!canWrite || busy !== null || !overview?.agentAvailable || ['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') || item.agentStatus.toLowerCase() === 'running'}
-            title={['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') ? 'This typed media runtime has fixed concurrency and no Chat-token parameters.' : item.agentStatus.toLowerCase() === 'running' ? t('catalog.startStopped') : t('catalog.editStopped')}
-            onClick={() => openProfileEdit(item)}>{t('catalog.edit')}</button>
-          <button disabled={!canWrite || busy !== null} onClick={() => void action('remove', item.id)}>{t('catalog.uninstall')}</button>{!['faster-whisper', 'laya', 'kokoro', 'diffusers'].includes(item.runtime ?? '') && <button disabled={item.agentStatus.toLowerCase() !== 'running'} onClick={() => setBenchmarkDeploymentId(item.id)}>{t('catalog.benchmark')}</button>}</td></tr>)}</tbody></table></div>
+      {panel === 'installed' && <section className="panel installedPanel">
+        <div className="panelTitle"><div><h2>{t('catalog.installed')}</h2><span>{t('catalog.editTip')}</span></div>
+          <div className="actions">
+            <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
+              onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
+          </div></div>
+        <InstalledModelCards installations={overview?.installations ?? []} startJobs={startJobs}
+          upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy}
+          agentAvailable={Boolean(overview?.agentAvailable)}
+          onAction={(kind, id) => void action(kind, id)}
+          onCancelStart={jobId => void cancelStartJob(jobId)}
+          onEdit={openProfileEdit}
+          onCapabilities={item => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model',
+            profile: item.capabilities!, logicalModel: item.logicalModel ?? item.catalogModelId ?? item.modelId })}
+          onBenchmark={id => setBenchmarkDeploymentId(id)} />
         {(overview?.installations.length ?? 0) === 0 && <div className="emptyState">
           <strong>{t('model.noInstalled')}</strong><p>{t('model.installFirst')}</p>
           <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>
         </div>}
       </section>}
-      {panel === 'advanced' && !embedded &&
+      {panel === 'advanced' &&
         <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
           canWrite={canWrite} refresh={refresh} embedded />}
     </>}
@@ -935,7 +896,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, embe
                   (event.target.value ? ':' + event.target.value : ''))}>
                 <option value="">Automatic llama.cpp selection</option>
                 {ggufVariants.map(variant => <option key={variant.quantization} value={variant.quantization}>
-                  {variant.quantization} · {variant.fileName}
+                  {variant.quantization}{variant.sizeBytes ? ' · ' + formatBytes(variant.sizeBytes) : ''}
+                  {(variant.parts ?? 1) > 1 ? ' · ' + variant.parts + ' parts' : ''} · {variant.fileName}
                 </option>)}
               </select>
             </label>}
@@ -1040,41 +1002,5 @@ function Metric({ label, value }: { label: string; value: string | number }) { r
 function Fit({ status }: { status: string }) { return <span className={'fit fit-' + status}>{status}</span> }
 function Status({ value }: { value: string }) { return <span className={'status status-' + value.toLowerCase()}><i />{value}</span> }
 function formatGiB(value: number) { return Number.isFinite(value) ? value.toFixed(value >= 100 ? 0 : 1) + ' GiB' : '—' }
+function formatBytes(value: number) { return value >= 1024 ** 3 ? (value / 1024 ** 3).toFixed(1) + ' GiB' : (value / 1024 ** 2).toFixed(0) + ' MiB' }
 function formatTokens(value: number) { return value >= 1000 ? Math.round(value / 1024) + 'K' : String(value) }
-function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
-
-function managedPublicEndpoint(runtime: string | undefined, model: string): string {
-  switch (runtime) {
-    case 'laya': return '/v1/systemone/' + encodeURIComponent(model)
-    case 'kokoro': return '/v1/audio/speech'
-    case 'diffusers': return '/v1/images/generations'
-    case 'faster-whisper': return '/v1/audio/transcriptions'
-    default: return '/v1/chat/completions'
-  }
-}
-
-/** Ready-to-copy public API examples. Use the logical alias, never upstream HF name. */
-function managedCurlExample(runtime: string | undefined, model: string, origin: string): string {
-  const endpoint = managedPublicEndpoint(runtime, model)
-  const base = `curl --fail-with-body -sS -X POST ${shellQuote(origin + endpoint)} -H "Authorization: Bearer $LLMPROXY_API_KEY"`
-  const json = (body: object) =>
-    `${base} -H 'Content-Type: application/json' -d ${shellQuote(JSON.stringify(body))}`
-  switch (runtime) {
-    case 'laya':
-      return json({
-        state: 'The customer was charged twice.',
-        questions: { team: { type: 'choice', instructions: 'Which team should help?',
-          criteria: { billing: 'payments and refunds', general: 'general assistance' } } }
-      })
-    case 'kokoro':
-      return json({ model, input: 'Hello from LLMProxy.', voice: 'af_heart',
-        response_format: 'wav' }) + ' --output speech.wav'
-    case 'diffusers':
-      return json({ model, prompt: 'A lighthouse on a hill at sunset',
-        size: '512x512', n: 1, response_format: 'b64_json' })
-    case 'faster-whisper':
-      return `${base} -F ${shellQuote('model=' + model)} -F 'file=@./audio.wav'`
-    default:
-      return json({ model, messages: [{ role: 'user', content: 'Hello!' }], max_tokens: 64 })
-  }
-}

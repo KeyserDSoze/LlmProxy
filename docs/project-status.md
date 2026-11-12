@@ -1,3 +1,16 @@
+## 2026-11-12 — llama.cpp empty model path, pinned GGUF downloads, Admin consolidation and Playwright visual suite (source; CI pending)
+
+Incident: installing a custom GGUF model produced `llama_model_load_from_file_impl: exactly one out metadata, path_model, and file must be defined` / `failed to load model ''`, with no identifiable root exception.
+
+Verified against llama.cpp master: `--hf-repo` resolution returns an empty plan (no exception) when the Hub listing fails with no cache or no GGUF matches the tag; the server then loads `''`. Recent llama.cpp also uses the HF hub cache layout, so the previous `/root/.cache/llama.cpp` mount did not persist downloads.
+
+Changes: `GgufFileSelector` + `GgufModelStore` (install-time selection, hub-layout cache, resume, SHA-256, `--model <local path>`, lazy preparation for legacy installs), llama.cpp patterns and hints in `DockerStartupDiagnostics`, gateway-side repository pre-check and richer GGUF variant parsing, Admin model cards with a structured startup diagnosis, one *Models* workspace, `theme.css` design layer, EN/IT strings, Playwright `visual` project + CI job, live Admin smoke in the CI integration job.
+
+Validation (local): backend unit tests 368/368 in the `mcr.microsoft.com/dotnet/sdk:10.0` container (`-p:NuGetAudit=false` because `NU1900` fails the build when `api.nuget.org` is unreachable; CI keeps the audit), benchmark-harness tests pass, Vitest 39/39, Playwright functional suite plus 49 visual tests (31 pixel baselines, stable across repeated runs in `mcr.microsoft.com/playwright:v1.65.0-noble`), `tsc -b` clean, live Admin smoke 22/22 twice against a local Compose stack (real gateway + PostgreSQL, no mocks).
+
+Not verified: GitHub Actions for this source, a real gated-repository download, a real llama.cpp container on DGX Spark/ARM64, real browser rendering on other platforms (baselines are container-rendered only).
+
+Next: push, obtain green CI + the new `visual` job, then install the resulting release on the Spark and retry the failing GGUF; set `NodeAgent__HuggingFaceToken` if the repository is gated.
 ## 2026-10-25 — Surface stalled Agent upgrade with missing heartbeat (source; CI pending)
 
 Real Spark fleet screenshot: Node remains `Draining`, Agent reported offline and old installed v0.2.57, requested v0.2.59, stage `updating`, tunnel has no owner. Verified that release 0.2.59 and ARM64 Agent asset are actually published. Updater status/heartbeat cannot be determined from the screenshot alone: inspect systemd `llmproxy-node-agent-update`, Node Agent service and `/var/lib/llmproxy-node-agent/update-status.json` locally on Spark. A successful 101 WebSocket from earlier is not proof of current connectivity.

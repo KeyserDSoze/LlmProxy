@@ -1,5 +1,13 @@
 # Roadmap
 
+## 2026-11-12 — Model startup reliability and Admin UX
+- [x] llama.cpp GGUF is selected, downloaded and pinned at install time; `--model` receives a local file.
+- [x] Startup failures show root cause, next step and the on-host log path on the model card.
+- [x] Models workspace consolidated; Servers & hardware limited to fleet, hardware and capacity.
+- [x] Playwright visual regression (mock API, axe, overflow, pixels) in CI; live Admin smoke script.
+- [ ] Green CI (including the `visual` job) for this source, then validate on the real Spark with the failing GGUF.
+- [x] Live Admin UI smoke (`admin_ui_live_smoke.sh`) runs in the CI integration job.
+- [ ] Surface `modelFile` and download progress per file for split GGUF in the install job card.
 ## 2026-10-23 — GPU safety after Spark shutdown
 - [x] No automatic restart for managed GPU inference; reconcile legacy Docker policies; explicit restart after host reboot.
 - [x] Remove failed runtime containers to release device allocations; do not touch external Docker.

@@ -571,19 +571,19 @@ public static class OpenAiEndpoints
             "text/event-stream",
             StringComparison.OrdinalIgnoreCase);
 
-    private static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)
+    // Caller credentials (API key, browser session cookies, proxy credentials) and
+    // hop-by-hop headers must never reach an inference node.
+    private static readonly HashSet<string> NonForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization", "Proxy-Authorization", "Cookie", "Host", "Content-Length", "Transfer-Encoding",
+        "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Trailer", "Upgrade", "Expect", "Content-Type"
+    };
+
+    public static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)
     {
         foreach (var header in source.Headers)
         {
-            if (header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
-                header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase) ||
-                header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) ||
-                header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) ||
-                header.Key.Equals("Connection", StringComparison.OrdinalIgnoreCase) ||
-                header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            if (NonForwardedRequestHeaders.Contains(header.Key)) continue;
 
             if (!destination.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()))
             {

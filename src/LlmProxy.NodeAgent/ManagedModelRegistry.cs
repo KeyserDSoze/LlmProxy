@@ -82,5 +82,8 @@ public sealed class ManagedModelRegistry
             await stream.FlushAsync(cancellationToken);
         }
         File.Move(temp, _path, overwrite: true);
+        // ExtraArguments may carry runtime secrets; keep the registry owner-only.
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 }

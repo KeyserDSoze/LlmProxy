@@ -280,6 +280,12 @@ case "$cmd" in
   rollback)
     require_root
     version="${1:?Usage: sudo llmproxyctl rollback VERSION}"
+    # The version selects a root-executed deploy.sh: never allow path components.
+    semver_re='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+    if [[ ! "$version" =~ $semver_re ]]; then
+      echo "Rollback VERSION must be an installed release version such as 0.2.63." >&2
+      exit 2
+    fi
     release_dir="$INSTALL_DIR/releases/$version"
     if [[ ! -f "$release_dir/docker/scripts/deploy.sh" ]]; then
       echo "Release $version is not installed locally under $INSTALL_DIR/releases." >&2
