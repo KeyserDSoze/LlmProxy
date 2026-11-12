@@ -191,7 +191,7 @@ public sealed class GgufModelStoreTests : IDisposable
         var hub = new FakeHub(Revision, gated: true).AddLfs("model-Q4_K_M.gguf", [1]);
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Store(hub).PrepareAsync("org/repo", null, null, TestContext.Current.CancellationToken));
-        Assert.Contains("HF_TOKEN", error.Message);
+        Assert.Contains("access token", error.Message);
         Assert.DoesNotContain(hub.Requests, url => url.Contains("/resolve/"));
     }
 
@@ -206,10 +206,14 @@ public sealed class GgufModelStoreTests : IDisposable
         Assert.Contains(expected, error.Message);
     }
 
-    private GgufModelStore Store(FakeHub hub) =>
-        new(new NodeAgentOptions(null, "docker", "vllm", _root, _root, "localhost", 18000, true, true, 60, 20,
-                "llama", "sglang"),
-            new SingleClientFactory(new HttpClient(hub)), NullLogger<GgufModelStore>.Instance);
+    private GgufModelStore Store(FakeHub hub)
+    {
+        var options = new NodeAgentOptions(null, "docker", "vllm", _root, _root, "localhost", 18000, true, true, 60, 20,
+            "llama", "sglang");
+        var clients = new SingleClientFactory(new HttpClient(hub));
+        return new(options, new HuggingFaceCredentialStore(options, clients, NullLogger<HuggingFaceCredentialStore>.Instance),
+            clients, NullLogger<GgufModelStore>.Instance);
+    }
 
     private static ManagedModelRecord Record(string provider, GgufPreparation prepared) => new()
     {

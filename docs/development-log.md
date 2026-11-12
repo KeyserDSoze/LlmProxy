@@ -1,3 +1,13 @@
+## 2026-11-12 — Guided Hugging Face access for gated models (source; CI pending)
+
+Trigger: with the pinned GGUF download the real Spark showed `Hugging Face requires authentication for 'meta/muse-glimmer' (HTTP 401)`. The error was correct but fixing it needed SSH and `/etc/llmproxy/node-agent.env`.
+
+Decision: the token is a per-server Agent credential, not gateway state. Admin -> gateway (`AdminWrite`) -> Agent over the authenticated management channel; the Agent verifies it (`whoami-v2`), stores it owner-only and never returns it. The gateway keeps nothing, so there is no new key to recover. Env `HF_TOKEN` remains a fallback.
+
+Scope: GGUF downloader and the model-prefetch container of every other runtime; never runtime containers (model code could read it). The relay allowlist needed `GET|PUT|DELETE /v1/settings/huggingface`; without it outbound-paired servers (the Spark) would have failed with `Management path not allowed`.
+
+Validation (local): backend 386/386 (new `HuggingFaceCredentialStoreTests`), Vitest 44/44, Playwright functional 40/40 and visual 50/50 (new baseline `gated-hugging-face-card.png`). Not verified: a real gated download on the Spark, `whoami-v2` against huggingface.co, relay allowlist on a real outbound tunnel. Local runs under memory pressure showed load-related Playwright flakiness; `--workers=2` was stable.
+
 ## 2026-11-12 — llama.cpp empty model path, pinned GGUF downloads, Admin consolidation and Playwright visual suite (source; CI pending)
 
 Incident: installing a custom GGUF model produced `llama_model_load_from_file_impl: exactly one out metadata, path_model, and file must be defined` / `failed to load model ''`, with no identifiable root exception.

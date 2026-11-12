@@ -18,6 +18,7 @@ builder.Services.AddSingleton<NodeResourceDiagnostics>();
 builder.Services.AddSingleton<GpuRuntimeSafety>();
 builder.Services.AddSingleton<NodeHostPreparer>();
 builder.Services.AddSingleton<ManagedModelRegistry>();
+builder.Services.AddSingleton<HuggingFaceCredentialStore>();
 builder.Services.AddSingleton<GgufModelStore>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddSingleton<ModelInstallJobManager>();
@@ -48,6 +49,16 @@ app.MapGet("/v1/system/resources", async (NodeResourceDiagnostics diagnostics, C
     Results.Ok(await diagnostics.ReadAsync(token)));
 app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
     Results.Ok(await manager.ListAsync(cancellationToken)));
+// Write-only: the token is never returned, only whether and for which account it is configured.
+app.MapGet("/v1/settings/huggingface", (HuggingFaceCredentialStore store) => Results.Ok(store.Status()));
+app.MapPut("/v1/settings/huggingface", async (HuggingFaceTokenRequest request, HuggingFaceCredentialStore store,
+    CancellationToken cancellationToken) =>
+{
+    try { return Results.Ok(await store.SetAsync(request.Token, cancellationToken)); }
+    catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
+});
+app.MapDelete("/v1/settings/huggingface", async (HuggingFaceCredentialStore store, CancellationToken cancellationToken) =>
+    Results.Ok(await store.ClearAsync(cancellationToken)));
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
 app.MapGet("/v1/models/start-jobs", (ModelStartJobManager jobs) => Results.Ok(jobs.List()));
 app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs) =>

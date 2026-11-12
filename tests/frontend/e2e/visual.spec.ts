@@ -156,6 +156,16 @@ test('phone navigation drawer opens with every workspace grouped', async ({ page
   expect(problems).toEqual([])
 })
 
+test('gated Hugging Face install failure offers the guided token form', async ({ page }, testInfo) => {
+  const problems = await open(page, screens[3], 'light')
+  const card = page.locator('.modelJobCard', { hasText: "requires authentication for 'meta/muse-glimmer'" })
+  await expect(card.getByRole('form', { name: 'Hugging Face access needed' })).toBeVisible()
+  await page.addStyleTag({ content: '.tabs{position:static!important}' })
+  if (compareScreenshots) await expect(card).toHaveScreenshot('gated-hugging-face-card.png')
+  else await testInfo.attach('gated-hugging-face-card', { body: await card.screenshot(), contentType: 'image/png' })
+  expect(problems).toEqual([])
+})
+
 test('failed llama.cpp start explains the root cause and next step on the model card', async ({ page }, testInfo) => {
   const problems = await open(page, screens[1], 'light')
   const card = page.locator('.installedModelCard', { hasText: 'gemma-vision-gguf' })

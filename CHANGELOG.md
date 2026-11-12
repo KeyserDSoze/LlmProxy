@@ -1,3 +1,10 @@
+## Unreleased — Guided Hugging Face access for gated models
+
+- When an install or start fails because a Hugging Face repository is gated/private (HTTP 401/403, rejected token), the Admin shows a guided form on the failed card: open the repository to accept its license, create a read token, paste it, **Save token and retry**. No SSH or environment editing on the inference host.
+- New per-server endpoints `GET|PUT|DELETE /api/admin/model-management/nodes/{id}/huggingface-access` (writes need `AdminWrite`) relay to the Node Agent (`/v1/settings/huggingface`, also allowed through the outbound relay). The Agent verifies the token with Hugging Face, stores it owner-only on the inference host and never returns it; `GET` reports only configured/source/account/verified. The gateway does not persist the token; audit records only the account name.
+- The token is used for llama.cpp GGUF downloads and for the vLLM/SGLang/AirLLM/media model prefetch container (passed through the process environment, never on a command line). Runtime containers do not receive it. `NodeAgent__HuggingFaceToken` / `HF_TOKEN` remain as an environment fallback that an Admin-supplied token overrides.
+- Error messages now point to the Admin flow instead of the environment variable. Tests: 386 backend unit tests, Vitest, Playwright functional + visual baseline for the guide.
+
 ## Unreleased — llama.cpp GGUF pinning, startup diagnosis and consolidated Admin workspaces
 
 - **Root cause of `exactly one out metadata, path_model, and file must be defined`.** The Agent started `llama-server --hf-repo repo[:quant]` and let llama.cpp resolve the file at first start. When the Hugging Face listing fails (gated/private 401/403, 404, 429, network) with no cache, or the repository has no matching GGUF, llama.cpp returns an *empty* download plan instead of an error and tries to load the model `''`. The Agent cache was also mounted where recent llama.cpp builds no longer persist downloads.

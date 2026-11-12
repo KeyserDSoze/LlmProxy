@@ -37,7 +37,7 @@ public static class DockerStartupDiagnostics
         new(new(@"no GGUF files found in repository", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
             "The repository or the :QUANT suffix does not match a GGUF file. Pick an available quantization or a -GGUF repository and reinstall."),
         new(new(@"GET failed \((401|403)\)|failed to resolve commit for|invalid token, authentication disabled", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
-            "Hugging Face refused access or the repository could not be resolved: check the repository ID, gated/private access and HF_TOKEN."),
+            "Hugging Face refused access or the repository could not be resolved: check the repository ID, gated/private access and the Hugging Face access token configured in LlmProxy Admin."),
         new(new(@"GET failed \((404)\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
             "The Hugging Face repository was not found. Check the org/model ID."),
         new(new(@"GET failed \((429|5\d\d)\)|HTTPLIB failed|Download '.*' failed with status code|download failed after \d+ attempts|cannot make GET request", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),

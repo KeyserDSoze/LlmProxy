@@ -11,7 +11,8 @@ public sealed class DockerModelRuntimeManager(
     ManagedModelRegistry registry,
     IHttpClientFactory httpClientFactory,
     GpuRuntimeSafety gpuSafety,
-    GgufModelStore gguf)
+    GgufModelStore gguf,
+    HuggingFaceCredentialStore huggingFace)
 {
     // Short critical sections only (registry reservation, container create/remove).
     // Long downloads, image builds and health waits hold a per-installation guard instead,
@@ -172,10 +173,13 @@ for index, entry in enumerate(files):
     print('LLMPROXY_PROGRESS:' + json.dumps({'percent': round(100*done/total, 2) if known and total else round(100*(index+1)/len(files), 2), 'completedBytes': done if known else None, 'totalBytes': total if known else None, 'label': (entry.rfilename[:100] + (' (files)' if not known else ''))}), flush=True)
 """.Replace("MODEL_ID", JsonSerializer.Serialize(record.ProviderModelName));
                     string? cachedSourceRevision = null;
+                    try
+                    {
                     await PullCommandAsync(
                     [
                         "run", "--rm",
                         "--entrypoint", "python3",
+                        ..(huggingFace.Token is null ? Array.Empty<string>() : new[] { "-e", "HF_TOKEN" }),
                         ..(record.Runtime is "laya" or "kokoro" or "diffusers" ? new[] { "-e", "HF_HUB_OFFLINE=0" } : Array.Empty<string>()),
                         "-v", $"{Path.GetFullPath(options.ModelCacheDirectory)}:/root/.cache/huggingface",
                         record.Runtime is "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers"
@@ -189,7 +193,14 @@ for index, entry in enumerate(files):
                             if (Regex.IsMatch(revision, "^[a-fA-F0-9]{40}$")) cachedSourceRevision = revision.ToLowerInvariant();
                         }
                         ParseTransferLine(line, "model-weights", report);
-                    });
+                    }, huggingFace.ProcessEnvironment());
+                    }
+                    catch (InvalidOperationException error) when (
+                        HuggingFaceCredentialStore.ExplainAccessFailure(record.ProviderModelName, error.Message,
+                            huggingFace.Token is not null) is { } explained)
+                    {
+                        throw new InvalidOperationException(explained, error);
+                    }
                     if (cachedSourceRevision is not null)
                         record = record with { SourceRevision = cachedSourceRevision };
                 }
@@ -605,10 +616,11 @@ for index, entry in enumerate(files):
     private async Task PullWithProgressAsync(string image, CancellationToken token, Action<TransferProgress>? report) =>
         await PullCommandAsync(["pull", image], token, line => ParseTransferLine(line, "container-image", report));
 
-    private async Task PullCommandAsync(IReadOnlyList<string> args, CancellationToken token, Action<string> progress)
+    private async Task PullCommandAsync(IReadOnlyList<string> args, CancellationToken token, Action<string> progress,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var result = await runner.RunStreamingAsync(options.DockerExecutable, args,
-            TimeSpan.FromMinutes(options.CommandTimeoutMinutes), token, progress);
+            TimeSpan.FromMinutes(options.CommandTimeoutMinutes), token, progress, environment);
         if (!result.Success)
             throw new InvalidOperationException($"Docker download failed ({result.ExitCode}): {Trim(result.StandardError)}");
     }

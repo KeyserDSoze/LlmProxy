@@ -1,3 +1,12 @@
+/** Never contains the token itself, only where it comes from and the verified account. */
+export type HuggingFaceAccessStatus = {
+  configured: boolean
+  source: 'none' | 'environment' | 'admin'
+  account?: string | null
+  verified: boolean
+  updatedAtUtc?: string | null
+}
+
 export type Overview = {
   nodes: { total: number; healthy: number; degraded: number; unhealthy: number; draining: number }
   models: number

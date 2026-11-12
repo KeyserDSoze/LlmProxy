@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
@@ -250,6 +250,13 @@ export const api = {
   cancelBenchmark: (jobId: string) => request<void>(`/api/admin/benchmarks/jobs/${jobId}`, { method: 'DELETE' }),
   startBenchmark: (deploymentId: string, body: { maxP95TtftMilliseconds: number; minSuccessRatePercent: number }) =>
     request<ManagedBenchmarkJob>(`/api/admin/benchmarks/deployments/${deploymentId}`, { method: 'POST', body: JSON.stringify(body) }),
+  huggingFaceAccess: (nodeId: string) =>
+    request<HuggingFaceAccessStatus>(`/api/admin/model-management/nodes/${nodeId}/huggingface-access`),
+  setHuggingFaceAccess: (nodeId: string, token: string) =>
+    request<HuggingFaceAccessStatus>(`/api/admin/model-management/nodes/${nodeId}/huggingface-access`,
+      { method: 'PUT', body: JSON.stringify({ token }) }),
+  clearHuggingFaceAccess: (nodeId: string) =>
+    request<HuggingFaceAccessStatus>(`/api/admin/model-management/nodes/${nodeId}/huggingface-access`, { method: 'DELETE' }),
   prepareNodeHost: (nodeId: string) =>
     request<{ success: boolean; code: string }>(`/api/admin/model-management/nodes/${nodeId}/prepare`, { method: 'POST' }),
   discoverHuggingFaceModels: (search: string, sort: 'trending' | 'downloads' | 'recent', limit = 20) =>

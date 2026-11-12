@@ -1,3 +1,7 @@
+## 2026-11-12 — Guided Hugging Face access for gated models (source; CI pending)
+
+Admin can store a Hugging Face read token per server from the failed install/start card and retry; the Agent keeps it owner-only on the inference host, the gateway stores nothing. Details and validation: `docs/development-log.md`, `docs/security.md`. External validation still required: real gated repository on the Spark through the outbound tunnel.
+
 ## 2026-11-12 — llama.cpp empty model path, pinned GGUF downloads, Admin consolidation and Playwright visual suite (source; CI pending)
 
 Incident: installing a custom GGUF model produced `llama_model_load_from_file_impl: exactly one out metadata, path_model, and file must be defined` / `failed to load model ''`, with no identifiable root exception.

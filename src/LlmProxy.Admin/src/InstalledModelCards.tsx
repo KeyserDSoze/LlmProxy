@@ -1,4 +1,5 @@
 import { ModelCapabilitySummary } from './ModelCapabilityPanel'
+import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import StartupDiagnosis from './StartupDiagnosis'
 import { InfoIcon } from './UiPrimitives'
 import { useT } from './uiPreferences'
@@ -21,8 +22,9 @@ function cardState(item: ManagedInstallation, job?: ModelStartJob): CardState {
   return { tone: 'neutral', label: 'model.state.stopped' }
 }
 
-export default function InstalledModelCards({ installations, startJobs, upstreamRevisions, canWrite, busy,
+export default function InstalledModelCards({ nodeId, installations, startJobs, upstreamRevisions, canWrite, busy,
   agentAvailable, onAction, onCancelStart, onEdit, onCapabilities, onBenchmark }: {
+  nodeId?: string
   installations: ManagedInstallation[]
   startJobs: ModelStartJob[]
   upstreamRevisions: ModelRevisionStatus[]
@@ -114,7 +116,9 @@ export default function InstalledModelCards({ installations, startJobs, upstream
         {failure && !starting && <StartupDiagnosis
           title={job && (job.status === 'failed' || job.status === 'interrupted')
             ? t('model.startupFailedTitle') : t('model.lastError')}
-          text={failure} />}
+          text={failure}
+          guide={nodeId && <HuggingFaceAccessGuide nodeId={nodeId} failure={failure} canWrite={canWrite}
+            onConfigured={() => onAction('start', item.id)} />} />}
 
         <footer className="installedModelActions">
           <button className={running ? 'secondary' : 'primary'}

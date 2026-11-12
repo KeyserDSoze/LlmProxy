@@ -8,6 +8,7 @@ import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
 import StartupDiagnosis from './StartupDiagnosis'
+import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
 type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
@@ -546,7 +547,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
               {job.request.startAfterInstall && job.result?.status === 'running'
                 ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
             </p>}
-            {job.error && <StartupDiagnosis title={t('model.installFailedTitle')} text={job.error} />}
+            {job.error && <StartupDiagnosis title={t('model.installFailedTitle')} text={job.error}
+              guide={<HuggingFaceAccessGuide nodeId={nodeId} failure={job.error} canWrite={canWrite}
+                onConfigured={() => retryInstall(job)} />} />}
           </div>)}</div>}
       </section>}
 
@@ -698,7 +701,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
               onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
           </div></div>
-        <InstalledModelCards installations={overview?.installations ?? []} startJobs={startJobs}
+        <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs}
           upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy}
           agentAvailable={Boolean(overview?.agentAvailable)}
           onAction={(kind, id) => void action(kind, id)}

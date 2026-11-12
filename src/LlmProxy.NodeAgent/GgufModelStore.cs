@@ -16,7 +16,8 @@ public sealed record GgufPreparation(string Repository, string Revision, string 
 /// into the shared Hugging Face cache layout (blobs + snapshot links), resumable and checksum-verified.
 /// llama-server then starts from a local --model path: no Hub access or lazy download at start time.
 /// </summary>
-public sealed class GgufModelStore(NodeAgentOptions options, IHttpClientFactory clients, ILogger<GgufModelStore> logger)
+public sealed class GgufModelStore(NodeAgentOptions options, HuggingFaceCredentialStore credentials,
+    IHttpClientFactory clients, ILogger<GgufModelStore> logger)
 {
     public const string ContainerCacheRoot = "/root/.cache/huggingface";
     private const long DiskReserveBytes = 2L * 1024 * 1024 * 1024;
@@ -65,10 +66,10 @@ public sealed class GgufModelStore(NodeAgentOptions options, IHttpClientFactory 
             "Resolving GGUF files on Hugging Face", null, null));
         var client = clients.CreateClient("huggingface");
         var (revision, files, gated) = await ReadRepositoryAsync(client, repository, pinnedRevision ?? "main", token);
-        if (gated && options.HuggingFaceToken is null)
+        if (gated && credentials.Token is null)
             throw new InvalidOperationException(
                 $"'{repository}' is a gated Hugging Face repository. Accept its license on huggingface.co, " +
-                "set HF_TOKEN (or NodeAgent__HuggingFaceToken) in the Node Agent environment and retry.");
+                "add a Hugging Face access token for this server in LlmProxy Admin and retry.");
 
         var primary = GgufFileSelector.FindBestModel(files, tag) ?? throw new InvalidOperationException(
             NoMatchExplanation(repository, tag, files));
@@ -425,7 +426,7 @@ public sealed class GgufModelStore(NodeAgentOptions options, IHttpClientFactory 
 
     private void Authorize(HttpRequestMessage request)
     {
-        if (options.HuggingFaceToken is { } secret &&
+        if (credentials.Token is { } secret &&
             Uri.TryCreate(options.HuggingFaceEndpoint, UriKind.Absolute, out var endpoint) &&
             request.RequestUri is { } target && string.Equals(target.Host, endpoint.Host, StringComparison.OrdinalIgnoreCase))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secret);
@@ -437,18 +438,18 @@ public sealed class GgufModelStore(NodeAgentOptions options, IHttpClientFactory 
         var code = (int)status;
         return status switch
         {
-            HttpStatusCode.Unauthorized when options.HuggingFaceToken is null => new InvalidOperationException(
+            HttpStatusCode.Unauthorized when credentials.Token is null => new InvalidOperationException(
                 $"Hugging Face requires authentication for {target} (HTTP 401): the repository is private or gated. " +
-                "Accept its license on huggingface.co, set HF_TOKEN for the Node Agent and retry."),
+                "Accept its license on huggingface.co, add a Hugging Face access token for this server in LlmProxy Admin and retry."),
             HttpStatusCode.Unauthorized => new InvalidOperationException(
-                $"Hugging Face rejected the configured HF_TOKEN for {target} (HTTP 401)."),
+                $"Hugging Face rejected the configured access token for {target} (HTTP 401). Replace it in LlmProxy Admin."),
             HttpStatusCode.Forbidden => new InvalidOperationException(
-                $"Access to {target} is restricted (HTTP 403). Request access on huggingface.co with the account that owns HF_TOKEN."),
+                $"Access to {target} is restricted (HTTP 403). Request access on huggingface.co with the account that owns the access token."),
             HttpStatusCode.NotFound => new InvalidOperationException(file is null
                 ? $"Hugging Face repository '{repository}' was not found (HTTP 404). Check the org/model ID; llama.cpp needs a GGUF repository."
                 : $"{target} was not found (HTTP 404); the repository changed after it was resolved. Retry the installation."),
             HttpStatusCode.TooManyRequests => new TransientHubException(
-                $"Hugging Face rate limit for {target} (HTTP 429). Retry later or configure HF_TOKEN.",
+                $"Hugging Face rate limit for {target} (HTTP 429). Retry later or add a Hugging Face access token in LlmProxy Admin.",
                 response?.Headers.RetryAfter?.Delta),
             _ when code >= 500 => new TransientHubException(
                 $"Hugging Face is temporarily unavailable for {target} (HTTP {code}).", null),

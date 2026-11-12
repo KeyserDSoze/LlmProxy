@@ -126,6 +126,11 @@ const installJobs = [
     id: 'job-failed', request: { catalogModelId: 'custom', providerModelName: 'bartowski/Some-Model-GGUF:Q4_K_M', runtime: 'llama.cpp', startAfterInstall: false },
     status: 'failed', stage: 'failed', percent: null, detail: 'Installation failed', createdAtUtc: '2026-11-12T09:12:00Z', completedAtUtc: '2026-11-12T09:12:04Z',
     error: "No GGUF file in 'bartowski/Some-Model-GGUF' matches quantization 'Q4_K_M'. Available quantizations: IQ4_XS, Q5_K_M, Q8_0. Choose one of them (repository:QUANT) and retry."
+  },
+  {
+    id: 'job-gated', request: { catalogModelId: 'custom', providerModelName: 'meta/muse-glimmer', runtime: 'llama.cpp', startAfterInstall: false },
+    status: 'failed', stage: 'failed', percent: null, detail: 'Installation failed', createdAtUtc: '2026-11-12T09:50:00Z', completedAtUtc: '2026-11-12T09:50:02Z',
+    error: "Preparation before Docker start failed: Hugging Face requires authentication for 'meta/muse-glimmer' (HTTP 401): the repository is private or gated. Accept its license on huggingface.co, add a Hugging Face access token for this server in LlmProxy Admin and retry."
   }
 ]
 
@@ -186,6 +191,8 @@ export async function installMockAdmin(page: Page) {
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+    if (/\/model-management\/nodes\/[^/]+\/huggingface-access$/.test(path) && method === 'GET')
+      return json(route, { configured: false, source: 'none', account: null, verified: false, updatedAtUtc: null })
     if (method !== 'GET') return json(route, { ok: true })
 
     switch (path) {

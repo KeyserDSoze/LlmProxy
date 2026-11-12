@@ -1,6 +1,9 @@
 # Roadmap
 
 ## 2026-11-12 — Model startup reliability and Admin UX
+- [x] Guided Hugging Face token flow on failed install/start cards (Admin -> Agent, owner-only storage).
+- [ ] Validate the gated-model flow on the Spark (outbound tunnel + `meta/muse-glimmer`-style repository).
+- [ ] Show the configured Hugging Face account per server in *Servers & hardware* and allow removal there.
 - [x] llama.cpp GGUF is selected, downloaded and pinned at install time; `--model` receives a local file.
 - [x] Startup failures show root cause, next step and the on-host log path on the model card.
 - [x] Models workspace consolidated; Servers & hardware limited to fleet, hardware and capacity.

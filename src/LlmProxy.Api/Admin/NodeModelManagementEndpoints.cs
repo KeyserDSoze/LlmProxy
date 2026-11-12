@@ -195,6 +195,75 @@ public static class NodeModelManagementEndpoints
             { return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway); }
         });
 
+        // Hugging Face access token for gated/private repositories. Write-only: the Agent stores it
+        // owner-only on the inference host and never returns it; neither audit nor logs contain it.
+        group.MapGet("/nodes/{id:guid}/huggingface-access", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                return Results.Ok(await SendAgentAsync<JsonElement>(factory.CreateClient("node-management"), node,
+                    protector, HttpMethod.Get, "/v1/settings/huggingface", null, token));
+            }
+            catch (AgentException error)
+            { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
+        });
+
+        var setHuggingFace = group.MapPut("/nodes/{id:guid}/huggingface-access", async (
+            Guid id, HuggingFaceAccessRequest request, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            if (string.IsNullOrWhiteSpace(request.Token) || request.Token.Length > 256)
+                return Results.BadRequest(new { error = "invalid_huggingface_token",
+                    message = "Paste a Hugging Face access token (it normally starts with 'hf_')." });
+            try
+            {
+                var status = await SendAgentAsync<JsonElement>(factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Put, "/v1/settings/huggingface", new { token = request.Token.Trim() }, token);
+                AddAudit(db, context, "node.huggingface_token.set", "node", id.ToString(), new
+                {
+                    node.Name,
+                    account = status.TryGetProperty("account", out var account) ? account.GetString() : null,
+                    verified = status.TryGetProperty("verified", out var verified) && verified.ValueKind == JsonValueKind.True
+                });
+                await db.SaveChangesAsync(token);
+                return Results.Ok(status);
+            }
+            catch (AgentException error) when (AgentRejection(error.Message) is { } rejection)
+            { return Results.BadRequest(new { error = "huggingface_token_rejected", message = rejection }); }
+            catch (AgentException error)
+            { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
+        });
+
+        var clearHuggingFace = group.MapDelete("/nodes/{id:guid}/huggingface-access", async (
+            Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            try
+            {
+                var status = await SendAgentAsync<JsonElement>(factory.CreateClient("node-management"), node, protector,
+                    HttpMethod.Delete, "/v1/settings/huggingface", null, token);
+                AddAudit(db, context, "node.huggingface_token.clear", "node", id.ToString(), new { node.Name });
+                await db.SaveChangesAsync(token);
+                return Results.Ok(status);
+            }
+            catch (AgentException error)
+            { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
+        });
+
         var configure = group.MapPut("/nodes/{id:guid}/configuration", async (
             Guid id,
             ConfigureManagementRequest request,
@@ -902,6 +971,8 @@ public static class NodeModelManagementEndpoints
         {
             configure.RequireAuthorization("AdminWrite");
             prepare.RequireAuthorization("AdminWrite");
+            setHuggingFace.RequireAuthorization("AdminWrite");
+            clearHuggingFace.RequireAuthorization("AdminWrite");
             install.RequireAuthorization("AdminWrite");
             startJob.RequireAuthorization("AdminWrite");
             finalizeJob.RequireAuthorization("AdminWrite");
@@ -1401,6 +1472,19 @@ public static class NodeModelManagementEndpoints
             : new("tight", "Minimum requirements fit, but recommended headroom is not fully available.", ["Benchmark context length and concurrency before production use."], suggestedTp);
     }
 
+    // Agent 400 bodies are {"error": "..."}; relay them as a user-facing validation message.
+    private static string? AgentRejection(string agentMessage)
+    {
+        const string prefix = "Management agent returned HTTP 400: ";
+        if (!agentMessage.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(agentMessage[prefix.Length..]);
+            return document.RootElement.TryGetProperty("error", out var value) ? value.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
     private static async Task<T> SendAgentAsync<T>(
         HttpClient client,
         InferenceNode node,
@@ -1471,6 +1555,7 @@ public static class NodeModelManagementEndpoints
     public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
         double? GpuMemoryUtilization = null);
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
+    public sealed record HuggingFaceAccessRequest(string? Token);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
         IReadOnlyList<string>? ExtraArguments = null, int? MaxNumSeqs = null, int? MaxModelLen = null,
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,

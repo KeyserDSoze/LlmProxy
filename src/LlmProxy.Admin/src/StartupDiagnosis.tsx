@@ -30,8 +30,8 @@ export function parseDiagnosis(text: string): ParsedDiagnosis {
   return result
 }
 
-export default function StartupDiagnosis({ title, text, tone = 'error', children }: {
-  title: string; text: string; tone?: 'error' | 'warning'; children?: ReactNode
+export default function StartupDiagnosis({ title, text, tone = 'error', guide, children }: {
+  title: string; text: string; tone?: 'error' | 'warning'; guide?: ReactNode; children?: ReactNode
 }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
@@ -66,6 +66,7 @@ export default function StartupDiagnosis({ title, text, tone = 'error', children
       <summary>{t('diag.lastLines')} ({parsed.tail.length})</summary>
       <pre>{parsed.tail.join('\n')}</pre>
     </details>}
+    {guide}
     <div className="diagnosisActions">
       <button type="button" className="secondary" onClick={() => void copy()}>
         {copied ? t('diag.copied') : t('diag.copy')}</button>

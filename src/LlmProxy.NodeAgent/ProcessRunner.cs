@@ -65,7 +65,8 @@ public sealed class ProcessRunner
     }
     // Streams carriage-return progress (docker, huggingface tqdm) without buffering multi-GB downloads.
     public async Task<CommandResult> RunStreamingAsync(string executable, IEnumerable<string> arguments,
-        TimeSpan timeout, CancellationToken cancellationToken, Action<string> onLine)
+        TimeSpan timeout, CancellationToken cancellationToken, Action<string> onLine,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         using var process = new Process
         {
@@ -74,6 +75,8 @@ public sealed class ProcessRunner
                 RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
             }
         };
+        if (environment is not null)
+            foreach (var (key, value) in environment) process.StartInfo.Environment[key] = value;
         foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
         if (!process.Start()) throw new InvalidOperationException("Failed to start download operation.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
