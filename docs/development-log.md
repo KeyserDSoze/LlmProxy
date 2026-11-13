@@ -1,3 +1,17 @@
+## 2026-11-13 — Paste-a-link install, published model properties, `/v1/models/details` (source; CI pending)
+
+Request: pasting `https://huggingface.co/meta-models/Muse-Glimmer-30B` showed "Base model: Unknown", tool calling "Not verified" and a form of free-text strings to compose; clients need to know each model's limits and features, settable per model.
+
+Measured on the Hub (public API for the repository): `pipeline_tag image-text-to-text`, `config.text_config.max_position_embeddings 131072`, a `chat_template` that renders tool definitions and a reasoning channel, 29.8B BF16 parameters, `generation_config` sampling defaults. All of that was available but unused; custom installs were registered with `SupportsStreaming/SupportsTools = false` (descriptor default), which is why Muse showed no tools.
+
+Changes: `HuggingFaceRepositoryReference` (link parsing), `ModelFeatureHints` (template/pipeline/config/mmproj detection) wired into the inspector, `ModelPropertyResolver` (curated catalog + hints + runtime: AirLLM never claims streaming/tools; llama.cpp context divided among slots), `ModelDefinition` properties + migration + `managed_install_declarations` (the Agent job cannot carry gateway-side declarations), registration applies declared values, `PUT /api/admin/models/{id}/properties`, `GET /v1/models/details` (`/v1/models` untouched). Admin: paste-aware field with auto-fill, `InstallPropertiesEditor`, advanced settings collapsed, installed card shows and edits published properties.
+
+Decisions: values are declarations, never enforcement; Hub metadata only upgrades "unknown" for checkpoints the curated catalog does not know; no new `/v1/models` fields (OpenAI clients stay untouched).
+
+Validation (local): backend 664/664, Vitest 112/112, Playwright functional 60/60, visual 51/51 (4 baselines changed, 1 added).
+
+Not verified: GitHub Actions; installing Muse Glimmer against the real Spark; existing production models still carry the old flags (custom ones have streaming/tools false) until their properties are edited once.
+
 ## 2026-11-13 — Background operations; why uninstall failed (source; CI pending)
 
 Report: uninstalling `meta-muse-glimmer` kept failing with "HTTP 502: the server or reverse proxy returned an HTML error page". Production gateway logs showed `DELETE /api/admin/model-management/deployments/6eb3...` answered `502 application/problem+json` in 200-400 ms, repeatedly: the gateway did produce a useful message, but Cloudflare replaced the `502` with an HTML page, so the Agent's reason was never visible. The Agent (Spark) is not reachable from this host, so the exact Agent answer could not be read; the fix therefore makes it readable (status `424`, audit event `model.remove.failed` with the message) and removes the known dead end (Agent `404` means the installation is already gone, so the stale deployment is deleted).

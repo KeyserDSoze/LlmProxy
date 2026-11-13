@@ -185,6 +185,10 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("Surface").HasColumnType("integer");
             b.Property<bool>("SupportsStreaming").HasColumnType("boolean");
             b.Property<bool>("SupportsTools").HasColumnType("boolean");
+            b.Property<bool>("SupportsVision").HasColumnType("boolean");
+            b.Property<bool>("SupportsReasoning").HasColumnType("boolean");
+            b.Property<int?>("ContextWindowTokens").HasColumnType("integer");
+            b.Property<int?>("MaxOutputTokens").HasColumnType("integer");
             b.HasKey("Id");
             b.HasIndex("PublicName").IsUnique();
             b.ToTable("models");
@@ -364,6 +368,17 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
             b.HasKey("Id");
             b.ToTable("cors_settings");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.ManagedInstallDeclarationRecord", b =>
+        {
+            b.Property<Guid>("JobId").HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("DeclaredJson").IsRequired().HasColumnType("text");
+            b.Property<Guid>("NodeId").HasColumnType("uuid");
+            b.HasKey("JobId");
+            b.HasIndex("CreatedAtUtc");
+            b.ToTable("managed_install_declarations");
         });
 
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DailyUsageRollupRecord", b =>

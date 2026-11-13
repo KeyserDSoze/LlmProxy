@@ -412,3 +412,20 @@ tbody tr:hover td{background:var(--row-hover)}
 }
 
 .installedModelWorking{display:flex;align-items:center;gap:8px;flex-basis:100%;margin:0 0 4px;color:var(--info-text);font-size:13px}
+
+.installProperties{border:1px solid var(--border-soft);border-radius:14px;padding:14px;display:grid;gap:10px;min-width:0}
+.installProperties legend{padding:0 6px;font-weight:650}
+.installPropertiesEvidence{margin:6px 0 0;padding-left:18px;font-size:13px}
+.installPropertiesToggles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.installPropertyToggle{display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--border-soft);border-radius:10px;cursor:pointer}
+.installPropertyToggle input{margin-top:3px}
+.installPropertyToggle span{display:grid;gap:2px}
+.installPropertyToggle small{color:var(--text-muted)}
+.installAdvanced{border:1px dashed var(--border-soft);border-radius:12px;padding:10px 12px}
+.installAdvanced[open]{display:grid;gap:10px}
+.installAdvanced>summary{cursor:pointer}
+.modalBody .formPanel .installProperties label.installPropertyToggle{display:flex;flex-direction:row;align-items:flex-start;gap:10px;text-align:left}
+.modalBody .formPanel .installProperties label.installPropertyToggle input{width:auto;margin:3px 0 0;flex:0 0 auto}
+.modalBody .formPanel .installProperties p{max-width:none}
+.publishedProperties{display:grid;gap:8px;justify-items:start}
+.publishedChips{display:flex;flex-wrap:wrap;gap:6px}

@@ -1,3 +1,12 @@
+## Unreleased — Paste a Hugging Face link, published model properties and `/v1/models/details`
+
+- **Custom install is mostly automatic.** Paste a Hugging Face link (page URL, `hf.co`, `hf://` or `org/model[:quant]`); the form fills in the engine, GGUF quantization (Q4_K_M preselected), context and public name from the repository's public metadata. GPU split, launch arguments, port and sequences moved under *Advanced runtime settings*.
+- **Tool calling, image input and reasoning are detected** from the repository (chat template, pipeline tag, vision config, `mmproj` file) instead of showing "Unknown/Not verified" for every custom model. Curated models keep their catalog declarations.
+- **Per-model published properties.** Streaming, tools, vision, reasoning, context window and maximum output are stored on each model (new columns, migration `AddModelCapabilities`), pre-filled and editable at install and afterwards from the installed card (`PUT /api/admin/models/{id}/properties`). Custom models used to be registered with streaming and tools switched off; now the detected values are used.
+- **New `GET /v1/models/details`** lists every model with context window, maximum output, input/output modalities, endpoints and capabilities, with `ETag` caching. `/v1/models` is unchanged.
+- New admin endpoints: `GET /api/admin/model-management/suggested-properties`; `capabilities` and `hugging-face/inspect` accept a pasted link.
+- Tests: link parsing, feature detection (Muse Glimmer metadata), property resolver, details payload, install flow and property editing in Playwright.
+
 ## Unreleased — Background operations and visible Agent errors
 
 - **Why uninstall "did nothing":** the gateway answered an Agent failure with `502`, and Cloudflare replaces an origin `502`/`504` with its own HTML page, so Admin only ever said "HTTP 502: the server or reverse proxy returned an HTML error page". The real reason was never shown. Admin and self-service routes now report such failures as `424 Failed Dependency` (original status in `X-LlmProxy-Original-Status`); public `/v1` statuses are unchanged.

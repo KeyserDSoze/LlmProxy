@@ -33,7 +33,11 @@ public sealed record RouteModelSnapshot(
     bool Enabled,
     bool SupportsStreaming,
     bool SupportsTools,
-    ModelSurface Surface = ModelSurface.OpenAi)
+    ModelSurface Surface = ModelSurface.OpenAi,
+    bool SupportsVision = false,
+    bool SupportsReasoning = false,
+    int? ContextWindowTokens = null,
+    int? MaxOutputTokens = null)
 {
     public static RouteModelSnapshot From(ModelDefinition model)
         => new(
@@ -43,7 +47,11 @@ public sealed record RouteModelSnapshot(
             model.Enabled,
             model.SupportsStreaming,
             model.SupportsTools,
-            model.Surface);
+            model.Surface,
+            model.SupportsVision,
+            model.SupportsReasoning,
+            model.ContextWindowTokens,
+            model.MaxOutputTokens);
 }
 
 public sealed record RouteDeploymentSnapshot(

@@ -671,7 +671,6 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
   await page.getByRole('tab', { name: /Discover/ }).click()
   await page.getByRole('button', { name: 'Install', exact: true }).click()
   const install = page.getByRole('dialog', { name: 'Install inference profile' })
-  await expect(install.getByText(/Selected defaults:/)).toBeVisible()
   await expect(install.getByLabel('Runtime maximum context')).toHaveValue('8192')
   await expect(install.getByLabel('Install maximum output tokens')).toHaveValue('256')
 })

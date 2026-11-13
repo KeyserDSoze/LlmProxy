@@ -363,6 +363,31 @@ public static class AdminEndpoints
             return Results.Created($"/api/admin/models/{model.Id}", model);
         });
 
+        // What clients may expect from a model (tools, vision, reasoning, streaming) and its limits. Declarations only:
+        // they are published on /v1/models/details and never block or rewrite a request.
+        var updateModelProperties = group.MapPut("/models/{id:guid}/properties", async (
+            Guid id,
+            ModelPropertiesRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var model = await dbContext.Models.FindAsync([id], cancellationToken);
+            if (model is null) return Results.NotFound();
+            try
+            {
+                model.UpdateCapabilities(request.SupportsStreaming, request.SupportsTools, request.SupportsVision,
+                    request.SupportsReasoning, request.ContextWindowTokens, request.MaxOutputTokens);
+            }
+            catch (ArgumentOutOfRangeException error)
+            {
+                return Results.BadRequest(new { error = "invalid_model_properties", message = error.Message });
+            }
+            AddAudit(dbContext, httpContext, "model.properties", "model", model.Id.ToString(), request);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(model);
+        });
+
         group.MapGet("/deployments", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
             Results.Ok(await dbContext.Deployments.AsNoTracking().ToListAsync(cancellationToken)));
 
@@ -745,6 +770,7 @@ public static class AdminEndpoints
                 disableNode,
                 deleteNode,
                 createModel,
+                updateModelProperties,
                 createDeployment,
                 updateDeployment,
                 setDeploymentUpstreamCredential,
@@ -838,6 +864,7 @@ public static class AdminEndpoints
     public sealed record UpdateNodeRequest(string Name, string BaseAddress, int Weight = 1, int MaxConcurrency = 4);
     public sealed record UpdateRoutingRequest(RoutingStrategy Strategy);
     public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true, ModelSurface Surface = ModelSurface.OpenAi);
+    public sealed record ModelPropertiesRequest(bool SupportsStreaming, bool SupportsTools, bool SupportsVision, bool SupportsReasoning, int? ContextWindowTokens, int? MaxOutputTokens);
     public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null, string? RuntimeBaseAddress = null);
     public sealed record UpdateDeploymentRequest(int Weight = 1, int? MaxConcurrency = null, bool Enabled = true);
     public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null, IReadOnlyList<string>? AllowedOrigins = null);

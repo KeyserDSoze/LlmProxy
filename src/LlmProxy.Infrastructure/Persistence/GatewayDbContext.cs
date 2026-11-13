@@ -30,6 +30,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
     public DbSet<CorsSettingsRecord> CorsSettings => Set<CorsSettingsRecord>();
+    public DbSet<ManagedInstallDeclarationRecord> ManagedInstallDeclarations => Set<ManagedInstallDeclarationRecord>();
     public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
     public DbSet<SystemOneDefaultRecord> SystemOneDefaults => Set<SystemOneDefaultRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
@@ -269,6 +270,15 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.AllowedOriginsText).HasColumnName("AllowedOrigins").HasColumnType("text");
+        });
+
+        modelBuilder.Entity<ManagedInstallDeclarationRecord>(entity =>
+        {
+            entity.ToTable("managed_install_declarations");
+            entity.HasKey(x => x.JobId);
+            entity.Property(x => x.JobId).ValueGeneratedNever();
+            entity.Property(x => x.DeclaredJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(x => x.CreatedAtUtc);
         });
 
         modelBuilder.Entity<SystemOneDefaultRecord>(entity =>

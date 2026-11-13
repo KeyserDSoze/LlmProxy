@@ -23,7 +23,11 @@ public sealed record PublicModel(
     string PublicName,
     bool SupportsStreaming,
     bool SupportsTools,
-    ModelSurface Surface = ModelSurface.OpenAi);
+    ModelSurface Surface = ModelSurface.OpenAi,
+    bool SupportsVision = false,
+    bool SupportsReasoning = false,
+    int? ContextWindowTokens = null,
+    int? MaxOutputTokens = null);
 
 public sealed record RouteSelection(
     Guid DeploymentId,

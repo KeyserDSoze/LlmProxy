@@ -1,3 +1,7 @@
+## 2026-11-13 — Paste-a-link install and published model properties (source; CI pending)
+
+Pasting a Hugging Face link fills the install form from the repository metadata; tools, vision, reasoning, streaming, context window and maximum output are detected, reviewable at install, stored per model and published on the new `GET /v1/models/details`. Details: `docs/api-contract.md`, `docs/model-hardware-management.md`. Action needed after deploy: edit the published properties of existing custom models once (they were registered with streaming/tools off).
+
 ## 2026-11-13 — Background operations and visible Agent errors (source; CI pending)
 
 Stop, force stop, uninstall, verification and host preparation run as background operations with a readable outcome; admin failures are no longer masked by Cloudflare's HTML 502 page (`424`); an uninstall for an installation the Agent no longer has now removes the stale deployment. Details: `docs/api-contract.md`, `docs/development-log.md`. External validation required: uninstall `meta-muse-glimmer` on the real Spark.

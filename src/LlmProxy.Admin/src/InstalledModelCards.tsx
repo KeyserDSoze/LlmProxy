@@ -25,7 +25,7 @@ function cardState(item: ManagedInstallation, job?: ModelStartJob): CardState {
 export type VerificationState = ModelVerification | 'loading' | { error: string }
 
 export default function InstalledModelCards({ nodeId, installations, startJobs, operations = [], upstreamRevisions, canWrite, busy,
-  agentAvailable, verifications, onVerify, onAction, onCancelStart, onEdit, onCapabilities, onBenchmark }: {
+  agentAvailable, verifications, onVerify, onAction, onCancelStart, onEdit, onEditProperties, onCapabilities, onBenchmark }: {
   nodeId?: string
   installations: ManagedInstallation[]
   startJobs: ModelStartJob[]
@@ -39,6 +39,7 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
   onAction: (kind: InstalledAction, deploymentId: string) => void
   onCancelStart: (jobId: string) => void
   onEdit: (item: ManagedInstallation) => void
+  onEditProperties?: (item: ManagedInstallation) => void
   onCapabilities: (item: ManagedInstallation) => void
   onBenchmark: (deploymentId: string) => void
 }) {
@@ -91,6 +92,20 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <span className="installedModelLabel">{t('catalog.capabilities')}</span>
           <ModelCapabilitySummary profile={item.capabilities} />
         </div>
+        {!typed && item.properties && <div className="installedModelRow">
+          <span className="installedModelLabel">{t('props.published')}</span>
+          <span className="publishedProperties">
+            <span className="publishedChips">
+              <PropertyChip on={item.properties.tools} label={t('props.tools')} />
+              <PropertyChip on={item.properties.vision} label={t('props.vision')} />
+              <PropertyChip on={item.properties.reasoning} label={t('props.reasoning')} />
+              <PropertyChip on={item.properties.streaming} label={t('props.streaming')} />
+              <span className="pill pill-neutral">{t('props.contextShort')} {item.properties.contextWindow ? item.properties.contextWindow.toLocaleString() : '—'}</span>
+              <span className="pill pill-neutral">{t('props.outputShort')} {item.properties.maxOutputTokens ? item.properties.maxOutputTokens.toLocaleString() : '—'}</span>
+            </span>
+            {canWrite && onEditProperties && <button type="button" className="secondary compact" onClick={() => onEditProperties(item)}>{t('props.edit')}</button>}
+          </span>
+        </div>}
         {!typed && <div className="installedModelRow">
           <span className="installedModelLabel">{t('profile.title')}</span>
           <ModelProfile profile={item.agentState?.familyProfile} />
@@ -164,6 +179,10 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
       </article>
     })}
   </div>
+}
+
+function PropertyChip({ on, label }: { on: boolean; label: string }) {
+  return <span className={'pill ' + (on ? 'pill-success' : 'pill-neutral')}>{on ? '✓' : '—'} {label}</span>
 }
 
 function typedRuntimeSummary(runtime?: string) {

@@ -30,6 +30,14 @@ public sealed class ModelDefinition
     public string ProviderModelName { get; private set; } = string.Empty;
     public bool SupportsStreaming { get; private set; } = true;
     public bool SupportsTools { get; private set; } = true;
+    public bool SupportsVision { get; private set; }
+    public bool SupportsReasoning { get; private set; }
+
+    /// <summary>Largest prompt plus completion the operator declares for this model; null when not declared.</summary>
+    public int? ContextWindowTokens { get; private set; }
+
+    /// <summary>Largest completion a client may ask for; null when not declared.</summary>
+    public int? MaxOutputTokens { get; private set; }
     public ModelSurface Surface { get; private set; } = ModelSurface.OpenAi;
     public bool Enabled { get; private set; } = true;
 
@@ -55,6 +63,29 @@ public sealed class ModelDefinition
         SupportsStreaming = supportsStreaming;
         SupportsTools = supportsTools;
         Surface = surface;
+    }
+
+    /// <summary>
+    /// Declared properties clients can read from the model details endpoint. They describe what the operator expects
+    /// the model to do; they never block or rewrite a request.
+    /// </summary>
+    public void UpdateCapabilities(
+        bool supportsStreaming, bool supportsTools, bool supportsVision, bool supportsReasoning,
+        int? contextWindowTokens, int? maxOutputTokens)
+    {
+        if (contextWindowTokens is < 1 or > 10_000_000)
+            throw new ArgumentOutOfRangeException(nameof(contextWindowTokens), "Context window must be between 1 and 10,000,000 tokens.");
+        if (maxOutputTokens is < 1 or > 10_000_000)
+            throw new ArgumentOutOfRangeException(nameof(maxOutputTokens), "Maximum output must be between 1 and 10,000,000 tokens.");
+        if (contextWindowTokens is { } window && maxOutputTokens is { } output && output > window)
+            throw new ArgumentOutOfRangeException(nameof(maxOutputTokens), "Maximum output cannot exceed the context window.");
+
+        SupportsStreaming = supportsStreaming;
+        SupportsTools = supportsTools;
+        SupportsVision = supportsVision;
+        SupportsReasoning = supportsReasoning;
+        ContextWindowTokens = contextWindowTokens;
+        MaxOutputTokens = maxOutputTokens;
     }
 
     public void Enable() => Enabled = true;

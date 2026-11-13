@@ -14,6 +14,9 @@
 - [ ] Agent: runtime secrets given as `ExtraArguments` (for example `--api-key`) stay visible in `docker inspect` and the host process list; move them to an environment file if that exposure matters. Documented in `docs/security.md`.
 - [ ] Sign release assets (cosign) and refuse Agent downgrades.
 - [x] Route-level authorization test (`EndpointAuthorizationContractTests`: every `/api/admin` route has a policy, changes need `AdminWrite`, `/api/me` needs `SelfService`, anything else must be in a reviewed allow-list).
+- [x] Per-model published properties and `GET /v1/models/details`; install form filled from a pasted Hugging Face link.
+- [ ] Backfill published properties for models installed before this release automatically (today: edit once per model).
+- [ ] Read `generation_config.json` sampling defaults and show them as suggested client settings.
 - [x] Long Agent actions (stop, force stop, uninstall, verify, host prepare) are background operations; admin failures are readable behind Cloudflare.
 - [ ] Persist operations in PostgreSQL if a multi-replica gateway needs to show them from any replica.
 - [x] Copy buttons work over plain HTTP and say when the browser blocks the copy.

@@ -88,6 +88,7 @@ const installations = [
     id: 'deployment-1', modelId: 'model-1', logicalModel: 'agic-code-fast', providerModelName: 'Qwen/Qwen3-8B',
     catalogModelId: 'qwen3-8b', managedInstallationId: 'qwen3-8b-1a2b3c4d', runtime: 'vllm', enabled: true,
     agentStatus: 'running', runtimeBaseAddress: 'http://agent-node-1.llmproxy.invalid/runtime/18000',
+    properties: { streaming: true, tools: true, vision: false, reasoning: true, contextWindow: 16384, maxOutputTokens: 4096 },
     runtimeMetrics: { deploymentId: 'deployment-1', nodeId: 'node-1', available: true, runtime: 'vllm', modelName: 'Qwen/Qwen3-8B', runningRequests: 2, waitingRequests: 1, cacheUsageRatio: 0.42, collectedAtUtc: FIXED_NOW },
     agentState: { installationId: 'qwen3-8b-1a2b3c4d', status: 'running', runtime: 'vllm', port: 18000, maxNumSeqs: 4, maxModelLen: 16384, sourceRevision: 'b968826d9c46dd6066d109eabc6255188de91218', gpuMemoryUtilization: 0.7 },
     capabilities: chatCapabilities('Qwen/Qwen3-8B', 'vllm')
@@ -96,6 +97,7 @@ const installations = [
     id: 'deployment-2', modelId: 'model-2', logicalModel: 'gemma-vision-gguf', providerModelName: 'unsloth/gemma-3-4b-it-GGUF:Q4_K_M',
     catalogModelId: 'custom', managedInstallationId: 'custom-01ea8a84', runtime: 'llama.cpp', enabled: false,
     agentStatus: 'error', runtimeBaseAddress: null, runtimeMetrics: null,
+    properties: { streaming: true, tools: false, vision: true, reasoning: false, contextWindow: 8192, maxOutputTokens: 2048 },
     agentState: { installationId: 'custom-01ea8a84', status: 'error', runtime: 'llama.cpp', port: 18001, maxNumSeqs: 2, maxModelLen: 8192, sourceRevision: null, error: ggufFailure },
     capabilities: chatCapabilities('unsloth/gemma-3-4b-it-GGUF', 'llama.cpp')
   },
@@ -143,9 +145,10 @@ const startJobs = [{
 export const museGlimmerInspection = {
   inspection: {
     id: 'meta-models/Muse-Glimmer-30B', found: true, gated: false, private: false, license: 'apache-2.0',
-    pipelineTag: 'text-generation', libraryName: 'transformers', architecture: 'GlimmerForCausalLM',
+    pipelineTag: 'image-text-to-text', libraryName: 'transformers', architecture: 'MuseGlimmerForConditionalGeneration',
     parameterCount: 30_532_000_000, precision: 'BF16', weightsBytes: 61_064_000_000, contextLength: 131072,
-    quantization: null, multimodal: false, hasGguf: false, hasSafetensors: true, ggufVariants: [],
+    quantization: null, multimodal: true, hasGguf: false, hasSafetensors: true, ggufVariants: [],
+    detected: { tools: true, vision: true, reasoning: true, contextWindow: 131072, evidence: ['The chat template renders tool definitions and tool calls.', 'The repository\'s pipeline is image-text-to-text.'] },
     suggestion: { runtime: 'vllm', reason: 'Safetensors weights; vLLM serves them directly. Smaller GGUF or quantized builds from other publishers are listed below when they exist.', contextTokens: 32768 },
     url: 'https://huggingface.co/meta-models/Muse-Glimmer-30B'
   },
@@ -286,6 +289,12 @@ export async function installMockAdmin(page: Page) {
     if (path.startsWith('/api/admin/benchmarks/deployments/')) return json(route, [])
     if (path.startsWith('/api/admin/model-management/capabilities')) return json(route, chatCapabilities('Qwen/Qwen3-8B', 'vllm'))
     if (path === '/api/admin/model-management/hugging-face/inspect') return json(route, museGlimmerInspection)
+    if (path === '/api/admin/model-management/suggested-properties') return json(route, {
+      repository: 'meta-models/Muse-Glimmer-30B', quantization: null, source: 'Hugging Face repository metadata',
+      evidence: ['The chat template renders tool definitions and tool calls.', 'The repository declares image input (pipeline, config or projector file).', 'The model has a reasoning mode (curated catalog or chat template).'],
+      hubContextTokens: 131072,
+      properties: { streaming: true, tools: true, vision: true, reasoning: true, contextWindow: 32768, maxOutputTokens: 8192 }
+    })
     if (path === '/api/admin/model-management/hugging-face/gguf-variants') return json(route, {
       repository: url.searchParams.get('repository'),
       variants: [{ quantization: 'Q4_K_M', fileName: 'Muse-Glimmer-30B-Q4_K_M.gguf', parts: 1, sizeBytes: 18_600_000_000 }, { quantization: 'Q8_0', fileName: 'Muse-Glimmer-30B-Q8_0.gguf', parts: 2, sizeBytes: 32_500_000_000 }]

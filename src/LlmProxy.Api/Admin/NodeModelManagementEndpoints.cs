@@ -44,6 +44,7 @@ public static class NodeModelManagementEndpoints
         group.MapGet("/hugging-face/inspect", async (
             string repository, HuggingFaceRepositoryInspector inspector, CancellationToken token) =>
         {
+            repository = HuggingFaceRepositoryReference.Parse(repository)?.Repository ?? repository;
             try
             {
                 var buildsTask = inspector.QuantizedBuildsAsync(repository, token);
@@ -124,13 +125,32 @@ public static class NodeModelManagementEndpoints
 
         // Model facts and runtime API support must be presented separately.
         // No network fetch or unverified capability inference for custom IDs.
-        group.MapGet("/capabilities", (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens) =>
+        group.MapGet("/capabilities", async (string providerModelName, string runtime, int? maxModelLen, int? maxOutputTokens,
+            HuggingFaceRepositoryInspector inspector, CancellationToken token) =>
         {
-            if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 220 ||
+            if (string.IsNullOrWhiteSpace(providerModelName) || providerModelName.Length > 400 ||
                 runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers") ||
-                maxModelLen is < 256 or > 262144 || maxOutputTokens is < 1 or > 4096)
+                maxModelLen is < 256 or > 10_000_000 || maxOutputTokens is < 1 or > 4096)
                 return Results.BadRequest(new { error = "invalid_capability_lookup" });
-            return Results.Ok(ModelCapabilitiesCatalog.Resolve(providerModelName, runtime, maxModelLen, maxOutputTokens));
+            var reference = HuggingFaceRepositoryReference.Parse(providerModelName);
+            var profile = ModelCapabilitiesCatalog.Resolve(reference?.ProviderModelName ?? providerModelName, runtime, maxModelLen, maxOutputTokens);
+            var hints = await ReadHintsAsync(inspector, reference, profile.Source, token);
+            return Results.Ok(ModelCapabilitiesCatalog.WithHubHints(profile, hints));
+        });
+
+        // One call that returns every property a model is published with, suggested from the curated catalog and the
+        // repository's own metadata, so the install form can be filled in and the operator only reviews it.
+        group.MapGet("/suggested-properties", async (string providerModelName, string runtime, int? maxModelLen, int? maxNumSeqs,
+            int? maxOutputTokens, HuggingFaceRepositoryInspector inspector, CancellationToken token) =>
+        {
+            var reference = HuggingFaceRepositoryReference.Parse(providerModelName);
+            if (reference is null || runtime is not ("vllm" or "sglang" or "llama.cpp" or "airllm") ||
+                maxModelLen is < 256 or > 10_000_000 || maxNumSeqs is < 1 or > 128 || maxOutputTokens is < 1 or > 4096)
+                return Results.BadRequest(new { error = "invalid_property_lookup" });
+            var profile = ModelCapabilitiesCatalog.Resolve(reference.ProviderModelName, runtime, maxModelLen, maxOutputTokens);
+            var hints = await ReadHintsAsync(inspector, reference, profile.Source, token);
+            var suggestion = ModelPropertyResolver.Suggest(reference.ProviderModelName, runtime, hints, maxModelLen, maxNumSeqs, maxOutputTokens);
+            return Results.Ok(new { repository = reference.Repository, quantization = reference.Quantization, suggestion.Properties, suggestion.Source, suggestion.Evidence, hubContextTokens = hints?.ContextWindow });
         });
 
         group.MapGet("/nodes/{id:guid}/overview", async (
@@ -534,6 +554,15 @@ public static class NodeModelManagementEndpoints
                     request.StartAfterInstall && descriptor.Id != "custom");
                 var job = await SendAgentAsync<ModelInstallJob>(client, node, protector, HttpMethod.Post,
                     "/v1/models/install-jobs", payload, token);
+                if (request.Declared is not null)
+                {
+                    // The Agent job does not carry what the operator declared; keep it until the download is registered.
+                    db.ManagedInstallDeclarations.Add(new ManagedInstallDeclarationRecord
+                    {
+                        JobId = job.Id, NodeId = id, DeclaredJson = JsonSerializer.Serialize(request.Declared, DeclarationJson)
+                    });
+                    await db.SaveChangesAsync(token);
+                }
                 return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{job.Id}", job);
             }
             catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
@@ -596,6 +625,12 @@ public static class NodeModelManagementEndpoints
                 var next = await SendAgentAsync<ModelInstallJob>(
                     client, node, protector, HttpMethod.Post, "/v1/models/install-jobs",
                     oldJob.Request, token);
+                var earlier = await db.ManagedInstallDeclarations.AsNoTracking().SingleOrDefaultAsync(x => x.JobId == jobId, token);
+                if (earlier is not null)
+                {
+                    db.ManagedInstallDeclarations.Add(new ManagedInstallDeclarationRecord { JobId = next.Id, NodeId = id, DeclaredJson = earlier.DeclaredJson });
+                    await db.SaveChangesAsync(token);
+                }
                 return Results.Accepted($"/api/admin/model-management/nodes/{id}/install-jobs/{next.Id}", next);
             }
             catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
@@ -630,6 +665,9 @@ public static class NodeModelManagementEndpoints
                     job.Request.Port, false, job.Request.ExtraArguments, job.Request.MaxNumSeqs,
                     job.Request.MaxModelLen, job.Request.KvCacheDtype, job.Request.CpuOffloadGiB,
                     job.Request.Runtime, MaxOutputTokens: job.Request.MaxOutputTokens);
+                var declaration = await db.ManagedInstallDeclarations.SingleOrDefaultAsync(x => x.JobId == jobId, token);
+                if (declaration is not null)
+                    request = request with { Declared = JsonSerializer.Deserialize<ModelPropertyResolver.DeclaredProperties>(declaration.DeclaredJson, DeclarationJson) };
                 // Trust a running job only when it is still listed as running
                 // by the Agent. Never republish a stale completed-job snapshot.
                 var current = await SendAgentAsync<ManagedModelsResponse>(client, node, protector,
@@ -643,9 +681,15 @@ public static class NodeModelManagementEndpoints
                         message = "This installation no longer exists on the Agent (it was uninstalled), so it was not registered again."
                     });
                 var live = ResolveVerifiedCompletedState(job, current.Models ?? []);
-                return await RegisterManagedInstallationAsync(live, request, descriptor,
+                var registered = await RegisterManagedInstallationAsync(live, request, descriptor,
                     new ModelCompatibility("unknown", "Installed by the remote Agent", [], job.Request.TensorParallelSize),
                     node, db, context, token);
+                if (declaration is not null && registered is IStatusCodeHttpResult { StatusCode: 200 })
+                {
+                    db.ManagedInstallDeclarations.Remove(declaration);
+                    await db.SaveChangesAsync(token);
+                }
+                return registered;
             }
             catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
         });
@@ -1191,6 +1235,11 @@ public static class NodeModelManagementEndpoints
         {
             model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools, descriptor.Surface);
             dbContext.Models.Add(model);
+            await ApplyModelPropertiesAsync(model, descriptor, state, request, httpContext, cancellationToken);
+        }
+        else if (request.Declared is not null)
+        {
+            await ApplyModelPropertiesAsync(model, descriptor, state, request, httpContext, cancellationToken);
         }
         else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal) || model.Surface != descriptor.Surface)
         {
@@ -1283,6 +1332,45 @@ public static class NodeModelManagementEndpoints
         if (request.Runtime != "llama.cpp" && request.ProviderModelName?.Contains(':') == true)
             return "A GGUF :quant tag requires llama.cpp. Choose llama.cpp instead of vLLM, SGLang or AirLLM.";
         return null;
+    }
+
+    internal static readonly JsonSerializerOptions DeclarationJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Publishes what the model can do. What the operator declared at install wins; the rest is suggested from the curated
+    /// catalog and the repository's own metadata (a slow Hub never blocks registration). Only Chat models carry these.
+    /// </summary>
+    private static async Task ApplyModelPropertiesAsync(
+        ModelDefinition model, DeployableModelDescriptor descriptor, ManagedModelState state,
+        InstallManagedModelRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        if (descriptor.Surface != LlmProxy.Domain.Models.ModelSurface.OpenAi) return;
+        var runtime = string.IsNullOrWhiteSpace(state.Runtime) ? request.Runtime ?? descriptor.Runtime : state.Runtime;
+        var inspector = httpContext.RequestServices?.GetService<HuggingFaceRepositoryInspector>();
+        ModelFeatureHints.Detected? hints = null;
+        if (inspector is not null && descriptor.Id == "custom")
+        {
+            var reference = HuggingFaceRepositoryReference.Parse(descriptor.ProviderModelName);
+            hints = await ReadHintsAsync(inspector, reference, "Unknown", cancellationToken);
+        }
+
+        var suggestion = ModelPropertyResolver.Suggest(descriptor.ProviderModelName, runtime, hints,
+            request.MaxModelLen ?? state.MaxModelLen, request.MaxNumSeqs ?? state.MaxNumSeqs, request.MaxOutputTokens ?? state.MaxOutputTokens);
+        var suggested = suggestion.Properties;
+        if (descriptor.Id != "custom")
+            suggested = suggested with { Streaming = descriptor.SupportsStreaming && runtime != "airllm", Tools = descriptor.SupportsTools || suggested.Tools };
+        var final = ModelPropertyResolver.Apply(suggested, request.Declared);
+        model.UpdateCapabilities(final.Streaming, final.Tools, final.Vision, final.Reasoning, final.ContextWindow, final.MaxOutputTokens);
+    }
+
+    // The Hub lookup is a convenience: a slow or unreachable Hub must never block the form.
+    private static async Task<ModelFeatureHints.Detected?> ReadHintsAsync(
+        HuggingFaceRepositoryInspector inspector, HuggingFaceRepositoryReference.Reference? reference, string curatedSource, CancellationToken token)
+    {
+        if (reference is null || !curatedSource.StartsWith("Unknown", StringComparison.Ordinal)) return null;
+        try { return (await inspector.InspectAsync(reference.Repository, token)).Detected; }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or ArgumentException)
+        { return null; }
     }
 
     private static DeployableModelDescriptor? ResolveDescriptor(string catalogId, InstallManagedModelRequest request)
@@ -1403,6 +1491,13 @@ public static class NodeModelManagementEndpoints
                     agentState,
                     runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
                     runtime = installedRuntime,
+                    // What /v1/models/details publishes for this model (declared by the operator).
+                    properties = logicalModel is null ? null : new
+                    {
+                        streaming = logicalModel.SupportsStreaming, tools = logicalModel.SupportsTools,
+                        vision = logicalModel.SupportsVision, reasoning = logicalModel.SupportsReasoning,
+                        contextWindow = logicalModel.ContextWindowTokens, maxOutputTokens = logicalModel.MaxOutputTokens
+                    },
                     capabilities = ModelCapabilitiesCatalog.Resolve(providerName, installedRuntime,
                         agentState?.MaxModelLen, agentState?.MaxOutputTokens)
                 };
@@ -1555,7 +1650,8 @@ public static class NodeModelManagementEndpoints
         string? KvCacheDtype = null, double? CpuOffloadGiB = null, string? Runtime = null,
         int? TensorParallelSize = null, string? ProviderModelName = null,
         string? GpuDevices = null, int? MaxOutputTokens = null,
-        bool StartAfterInstall = false);
+        bool StartAfterInstall = false,
+        ModelPropertyResolver.DeclaredProperties? Declared = null);
     public sealed record AgentInstallRequest(string CatalogModelId, string ProviderModelName, int? Port, int TensorParallelSize,
         IReadOnlyList<string> ExtraArguments, string Runtime, int? MaxNumSeqs, int? MaxModelLen,
         string? KvCacheDtype, double? CpuOffloadGiB, string? PublicName = null,

@@ -25,6 +25,30 @@ public static class ModelCapabilitiesCatalog
         string Notes,
         Feature? AudioTranscription = null);
 
+    /// <summary>
+    /// For a checkpoint the curated catalog does not know, use what its Hugging Face repository declares. A publisher's
+    /// declaration upgrades "unknown" to "supported" for the model; serving stays "unverified" until a live check passes.
+    /// </summary>
+    public static Profile WithHubHints(Profile profile, ModelFeatureHints.Detected? hints)
+    {
+        if (hints is null || hints.Evidence.Count == 0 || !profile.Source.StartsWith("Unknown", StringComparison.Ordinal))
+            return profile;
+        var servesChat = profile.Runtime is "vllm" or "sglang" or "llama.cpp";
+        Feature upgrade(Feature current, bool detected, string text) =>
+            detected && current.Model == "unknown"
+                ? new Feature("supported", servesChat ? "unverified" : current.Serving, text + " Run Verify capabilities after the model is started to confirm it.")
+                : current;
+        return profile with
+        {
+            Source = "Hugging Face repository metadata (declared by the publisher)",
+            ToolCalling = upgrade(profile.ToolCalling, hints.Tools, "The chat template of this checkpoint renders tool definitions and tool calls."),
+            Vision = upgrade(profile.Vision, hints.Vision, "The repository declares image input (pipeline, config or projector file)."),
+            Thinking = upgrade(profile.Thinking, hints.Reasoning, "The chat template has a reasoning channel."),
+            NativeContextTokens = profile.NativeContextTokens ?? hints.ContextWindow,
+            Notes = "Capabilities come from the publisher's repository metadata, not from a feature probe on this host."
+        };
+    }
+
     public static Profile Resolve(string providerModelName, string runtime, int? maxModelLen = null, int? maxOutputTokens = null)
     {
         var name = providerModelName?.Trim() ?? "";

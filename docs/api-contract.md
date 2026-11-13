@@ -24,6 +24,36 @@ Example:
 }
 ```
 
+## `GET /v1/models/details`
+
+Same catalog as `/v1/models`, with what an application needs to use each model well. `/v1/models` is unchanged so OpenAI clients keep working; this is the richer companion.
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "muse",
+      "object": "model",
+      "created": 0,
+      "owned_by": "llmproxy",
+      "llmproxy_surface": "OpenAi",
+      "context_window": 131072,
+      "max_output_tokens": 8192,
+      "input_modalities": ["text", "image"],
+      "output_modalities": ["text"],
+      "endpoints": ["/v1/chat/completions", "/v1/responses"],
+      "capabilities": { "streaming": true, "tools": true, "vision": true, "reasoning": true }
+    }
+  ]
+}
+```
+
+- `context_window` is the longest prompt plus answer one request can use on this deployment (for llama.cpp, the shared pool divided by the parallel slots). `max_output_tokens` is the largest completion to ask for. Both are `null` when not declared.
+- Values are **declared by the administrator** (suggested from the curated catalog and the model's Hugging Face metadata, then reviewed). They describe the model; the gateway never blocks or rewrites a request because of them. Capabilities are `false` for non-chat surfaces.
+- Authentication is the same API key as the rest of `/v1`. The response carries an `ETag` and `Cache-Control: private, max-age=30`; send `If-None-Match` to get `304`.
+- Administrators edit the values at install (Models → Install) or later with `PUT /api/admin/models/{id}/properties` (`AdminWrite`; body `supportsStreaming`, `supportsTools`, `supportsVision`, `supportsReasoning`, `contextWindowTokens`, `maxOutputTokens`; output may not exceed context).
+
 ## `POST /v1/chat/completions`
 
 The gateway accepts an OpenAI-style Chat Completions request. The incoming logical `model` value is rewritten to the provider model configured on the selected deployment before forwarding the request to the selected inference runtime.

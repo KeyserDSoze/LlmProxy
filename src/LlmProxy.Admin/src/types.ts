@@ -758,6 +758,8 @@ export type ManagedInstallation = {
   runtimeMetrics?: DeploymentRuntimeMetricsSnapshot | null
   agentState?: ManagedModelState | null
   capabilities?: ModelCapabilityProfile | null
+  /** What /v1/models/details publishes for this model. */
+  properties?: ModelProperties | null
 }
 
 export type ModelRouteDiagnosis = {
@@ -976,4 +978,23 @@ export type AdminOperation = {
   finishedAtUtc?: string | null
   /** Result payload of an operation that produces one (capability checks). */
   data?: unknown
+}
+
+/** What API clients are told about a model: capabilities and limits, declared by the operator. */
+export type ModelProperties = {
+  streaming: boolean
+  tools: boolean
+  vision: boolean
+  reasoning: boolean
+  contextWindow?: number | null
+  maxOutputTokens?: number | null
+}
+
+export type SuggestedModelProperties = {
+  repository: string
+  quantization?: string | null
+  properties: ModelProperties
+  source: string
+  evidence: string[]
+  hubContextTokens?: number | null
 }

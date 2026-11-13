@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
@@ -38,6 +39,27 @@ public static class OpenAiEndpoints
                     llmproxy_surface = model.Surface.ToString()
                 })
             });
+        });
+
+        // Same catalog as /v1/models, with what a client needs to use each model well: limits, input/output modalities,
+        // endpoints and declared capabilities. Kept separate so /v1/models stays exactly what OpenAI clients expect.
+        endpoints.MapGet("/v1/models/details", async (HttpContext context, IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
+        {
+            var models = (await catalog.GetPublicModelsAsync(cancellationToken))
+                .Where(model => model.Surface != ModelSurface.SystemOne);
+            var body = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                @object = "list",
+                data = models.Select(ModelDetails.From)
+            }, ModelDetails.Json);
+
+            // The list is identical for every caller and changes rarely: let clients revalidate instead of re-downloading.
+            var etag = "\"" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(body))[..32] + "\"";
+            context.Response.Headers.ETag = etag;
+            context.Response.Headers.CacheControl = "private, max-age=30";
+            if (context.Request.Headers.IfNoneMatch.Any(value => value == etag))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            return Results.Bytes(body, "application/json");
         });
 
         endpoints.MapPost("/v1/chat/completions", ForwardChatCompletionsAsync);

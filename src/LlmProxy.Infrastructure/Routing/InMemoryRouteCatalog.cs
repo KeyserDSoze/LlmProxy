@@ -81,7 +81,11 @@ public sealed class InMemoryRouteCatalog : IRouteCatalog
                 model.PublicName,
                 model.SupportsStreaming,
                 model.SupportsTools,
-                model.Surface))
+                model.Surface,
+                model.SupportsVision,
+                model.SupportsReasoning,
+                model.ContextWindowTokens,
+                model.MaxOutputTokens))
             .ToArray();
         return Task.FromResult(models);
     }

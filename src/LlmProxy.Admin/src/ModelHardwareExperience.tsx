@@ -7,11 +7,14 @@ import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityP
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
+import InstallPropertiesEditor, { emptyDeclared, fromSuggestion, validateDeclared } from './InstallPropertiesEditor'
+import type { DeclaredProperties } from './InstallPropertiesEditor'
+import { looksLikeHuggingFaceLink, parseHuggingFaceReference } from './huggingFaceReference'
 import type { VerificationState } from './InstalledModelCards'
 import StartupDiagnosis from './StartupDiagnosis'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import HuggingFaceRepositoryInspector from './HuggingFaceRepositoryInspector'
-import type { AdminOperation, ModelVerification, ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
+import type { SuggestedModelProperties, AdminOperation, ModelVerification, ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
 type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
 
@@ -55,6 +58,14 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
   const [startJobs, setStartJobs] = useState<ModelStartJob[]>([])
   const [operations, setOperations] = useState<AdminOperation[]>([])
+  const [declared, setDeclared] = useState<DeclaredProperties>(emptyDeclared)
+  const [suggestedProps, setSuggestedProps] = useState<SuggestedModelProperties | null>(null)
+  const touchedProperties = useRef(new Set<keyof DeclaredProperties>())
+  const autoFilledRepository = useRef('')
+  const [autoFilled, setAutoFilled] = useState(false)
+  const [propertiesFor, setPropertiesFor] = useState<ManagedInstallation | null>(null)
+  const [propertiesDraft, setPropertiesDraft] = useState<DeclaredProperties>(emptyDeclared)
+  const [propertiesSuggestion, setPropertiesSuggestion] = useState<SuggestedModelProperties | null>(null)
   const knownOperations = useRef(new Map<string, AdminOperation['status']>())
   const activatingStarts = useRef(new Set<string>())
   const finalizing = useRef(new Set<string>())
@@ -110,6 +121,62 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
       .catch(() => { if (live) setGgufVariantMessage('Could not inspect GGUF files. You may enter a verified quantization manually.') })
     return () => { live = false }
   }, [installCatalogId, runtimeChoice, customBaseRepository])
+  function editDeclared<K extends keyof DeclaredProperties>(key: K, next: DeclaredProperties[K]) {
+    touchedProperties.current.add(key)
+    setDeclared(current => ({ ...current, [key]: next }))
+  }
+  // A new install starts from a clean slate: nothing the operator typed for the previous model carries over.
+  useEffect(() => {
+    touchedProperties.current.clear(); autoFilledRepository.current = ''
+    setDeclared(emptyDeclared); setSuggestedProps(null); setAutoFilled(false)
+  }, [installCatalogId])
+  // What clients will be told is suggested from the catalog and the repository's own metadata; values the operator
+  // already edited are kept when the suggestion refreshes (for example after changing the engine).
+  useEffect(() => {
+    if (!installCatalogId || fixedMediaRuntime || !installProviderName.includes('/')) { setSuggestedProps(null); return }
+    let active = true
+    const timer = window.setTimeout(() => {
+      void api.suggestedModelProperties(installProviderName, runtimeChoice, maxModelLen, maxNumSeqs, runtimeChoice === 'airllm' ? maxOutputTokens : null)
+        .then(result => {
+          if (!active) return
+          setSuggestedProps(result)
+          const next = fromSuggestion(result.properties)
+          setDeclared(current => {
+            const merged = { ...next }
+            for (const key of touchedProperties.current) (merged as Record<string, unknown>)[key] = current[key]
+            return merged
+          })
+        })
+        .catch(() => { if (active) setSuggestedProps(null) })
+    }, 450)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [installCatalogId, installProviderName, runtimeChoice, maxModelLen, maxNumSeqs, maxOutputTokens, fixedMediaRuntime])
+  // Pasting a repository fills the form: engine, context, quantization and name come from what the Hub publishes.
+  useEffect(() => {
+    if (installCatalogId !== 'custom' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(customBaseRepository) ||
+        autoFilledRepository.current === customBaseRepository) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void api.inspectHuggingFaceRepository(customBaseRepository).then(result => {
+        if (!active || !result.inspection.found) return
+        autoFilledRepository.current = customBaseRepository
+        const { inspection } = result
+        const suggestion = inspection.suggestion
+        const engine = suggestion?.runtime ?? (inspection.hasGguf ? 'llama.cpp' : 'vllm')
+        setRuntimeChoice(engine)
+        const native = inspection.contextLength ?? suggestion?.contextTokens
+        if (native) setMaxModelLen(Math.min(native, 32768, installContextCeiling))
+        if (engine === 'llama.cpp' && !customRepository.includes(':') && inspection.ggufVariants.length > 0) {
+          const preferred = inspection.ggufVariants.find(variant => variant.quantization === 'Q4_K_M') ?? inspection.ggufVariants[0]
+          setCustomRepository(customBaseRepository + ':' + preferred.quantization)
+        }
+        setLogicalAlias(current => current || customBaseRepository.split('/')[1].toLowerCase().replace(/[^a-z0-9_-]/g, '-'))
+        setAutoFilled(true)
+      }).catch(() => { /* The form still works by hand. */ })
+    }, 600)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [installCatalogId, customBaseRepository, customRepository, installContextCeiling])
+
   useEffect(() => {
     if (!installCatalogId || !installProviderName || !installProviderName.includes('/')) {
       setInstallCapabilities(null)
@@ -386,7 +453,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         maxModelLen: fixedMediaRuntime ? null : maxModelLen,
         maxOutputTokens: runtimeChoice === 'airllm' ? maxOutputTokens : null,
         kvCacheDtype: runtimeChoice === 'vllm' ? kvCacheDtype : null,
-        cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null
+        cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null,
+        declared: fixedMediaRuntime ? undefined : declared
       })
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
@@ -472,6 +540,33 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         ? 'Model startup queued on the Agent. It continues through browser and tunnel disconnects; follow the job status below.' :
         'Runtime /health verified; existing model enabled for routing.')
       await Promise.all([load(), refresh(), ...(resourcesOpen ? [loadResources()] : [])])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(null) }
+  }
+
+  function openPropertiesEdit(item: ManagedInstallation) {
+    setPropertiesFor(item)
+    setPropertiesDraft(item.properties ? { ...item.properties, contextWindow: item.properties.contextWindow ?? null, maxOutputTokens: item.properties.maxOutputTokens ?? null } : emptyDeclared)
+    setPropertiesSuggestion(null); setMessage(null); setError(null)
+    const runtime = item.runtime ?? 'vllm'
+    if (item.providerModelName && ['vllm', 'sglang', 'llama.cpp', 'airllm'].includes(runtime)) {
+      void api.suggestedModelProperties(item.providerModelName, runtime, item.agentState?.maxModelLen ?? 8192, item.agentState?.maxNumSeqs ?? 1,
+        runtime === 'airllm' ? item.agentState?.maxOutputTokens ?? 256 : null)
+        .then(setPropertiesSuggestion).catch(() => { /* Resetting to detected values is optional. */ })
+    }
+  }
+  async function saveProperties(event: FormEvent) {
+    event.preventDefault()
+    if (!propertiesFor || validateDeclared(propertiesDraft)) return
+    setBusy('properties:' + propertiesFor.id); setError(null)
+    try {
+      await api.updateModelProperties(propertiesFor.modelId, {
+        supportsStreaming: propertiesDraft.streaming, supportsTools: propertiesDraft.tools, supportsVision: propertiesDraft.vision,
+        supportsReasoning: propertiesDraft.reasoning, contextWindowTokens: propertiesDraft.contextWindow, maxOutputTokens: propertiesDraft.maxOutputTokens
+      })
+      setPropertiesFor(null)
+      await Promise.all([load(), refresh()])
+      setMessage(t('props.saved'))
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -781,7 +876,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
               onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
           </div></div>
         <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs} operations={operations}
-          upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy}
+          upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy} onEditProperties={openPropertiesEdit}
           agentAvailable={Boolean(overview?.agentAvailable)}
           verifications={verifications} onVerify={id => void verifyCapabilities(id)}
           onAction={(kind, id) => void action(kind, id)}
@@ -912,6 +1007,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
       </form>
     </Modal>
 
+    <Modal open={propertiesFor !== null} title={t('props.edit')} description={propertiesFor?.logicalModel ?? ''} onClose={() => setPropertiesFor(null)}>
+      <form className="formPanel" onSubmit={event => void saveProperties(event)}>
+        <InstallPropertiesEditor value={propertiesDraft}
+          onChange={(key, next) => setPropertiesDraft(current => ({ ...current, [key]: next }))}
+          onReset={() => { if (propertiesSuggestion) setPropertiesDraft(fromSuggestion(propertiesSuggestion.properties)) }}
+          suggestion={propertiesSuggestion} runtime={propertiesFor?.runtime ?? 'vllm'} contextWindowCeiling={262144} />
+        <div className="modalActions"><button className="secondary" type="button" onClick={() => setPropertiesFor(null)}>Cancel</button>
+          <button className="primary" disabled={!canWrite || busy !== null || validateDeclared(propertiesDraft) !== null}>{t('props.save')}</button></div>
+      </form>
+    </Modal>
+
     <Modal open={installCatalogId !== null} title={t('catalog.installTitle')} description={t('catalog.installDescription')} onClose={() => setInstallCatalogId(null)}>
       <form className="formPanel" onSubmit={event => { event.preventDefault(); if (installCatalogId) void install(installCatalogId) }}>
         <div className="notice">{installDescriptor?.displayName ?? (installCatalogId === 'custom' ? 'Custom Hugging Face model' : 'Model')} · {runtimeChoice}. Sequence count is a benchmark candidate, not guaranteed user capacity.</div>
@@ -962,10 +1068,15 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         </label>
         {installCatalogId === 'custom' && <>
           <label>{t('model.repository')} (org/model, org/model:quant GGUF)
-            <input aria-label={t('model.repository')} maxLength={220} value={customRepository}
-              onChange={event => setCustomRepository(event.target.value)}
-              placeholder="Qwen/Qwen3-8B" required />
+            <input aria-label={t('model.repository')} maxLength={400} value={customRepository}
+              onChange={event => {
+                const raw = event.target.value
+                const reference = looksLikeHuggingFaceLink(raw) ? parseHuggingFaceReference(raw) : null
+                setCustomRepository(reference ? reference.providerModelName : raw)
+              }}
+              placeholder={t('props.pasteHint')} required />
           </label>
+          {autoFilled && <p className="notice" role="status">{t('props.autoFilled')}</p>}
           <HuggingFaceRepositoryInspector repository={customBaseRepository}
             onChoose={choice => {
               setCustomRepository(choice.repository)
@@ -997,6 +1108,22 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
           <p className="notice">{t('model.licenseNotice')}</p>
         </>}
         {runtimeChoice === 'airllm' && <p className="notice">{t('model.airllmNotice')}</p>}
+        {!fixedMediaRuntime && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={installContextCeiling} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
+        {!fixedMediaRuntime && <ContextPresets value={maxModelLen} onChange={setMaxModelLen}
+          ceiling={installContextCeiling} curated={Boolean(installDescriptor)}
+          sharedPool={runtimeChoice === 'llama.cpp'} />}
+        {runtimeChoice === 'airllm' && <label>{t('model.maxOutput')}
+          <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
+            value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
+        </label>}
+        {!fixedMediaRuntime && <InstallPropertiesEditor value={declared} onChange={editDeclared} suggestion={suggestedProps}
+          onReset={() => { touchedProperties.current.clear(); if (suggestedProps) setDeclared(fromSuggestion(suggestedProps.properties)) }}
+          runtime={runtimeChoice} contextWindowCeiling={installContextCeiling} />}
+        <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
+        <p className="muted">{t('model.logicalHelp')}</p>
+        {!fixedMediaRuntime && <p className="muted">{t('model.profileInfo')}</p>}
+        <details className="installAdvanced">
+          <summary><strong>{t('model.advancedRuntime')}</strong> <span className="muted">— {t('model.advancedRuntimeHint')}</span></summary>
         {runtimeChoice !== 'llama.cpp' && runtimeChoice !== 'airllm' && !fixedMediaRuntime && <label>{t('model.tensorParallel')}
           <input aria-label="Tensor parallel size" type="number" min="1" max="64" value={tensorParallelSize}
             onChange={event => setTensorParallelSize(Number(event.target.value))} required />
@@ -1013,26 +1140,15 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             pattern={runtimeChoice === 'diffusers' ? '[0-9]{1,2}' : '[0-9]{1,2}(,[0-9]{1,2})*'} />
         </label>}
         {!cpuMediaRuntime && <p className="muted">{t('model.gpuHelp')}</p>}
-        <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>
-        <p className="muted">{t('model.logicalHelp')}</p>
         <label>{t('model.port')} (optional)<input aria-label={t('model.port')} type="number" min="1024" max="65535" value={installPort} onChange={event => setInstallPort(event.target.value)} placeholder="Auto" /></label>
-        {!fixedMediaRuntime && <p className="notice"><strong>{t('model.defaults')}:</strong> context {maxModelLen.toLocaleString()} tokens; {runtimeChoice === 'airllm' ? `maximum output ${maxOutputTokens.toLocaleString()} tokens` : 'output is controlled per inference request'}; {maxNumSeqs} queued/concurrent sequences. Context is the combined prompt + completion budget.</p>}
         {!fixedMediaRuntime && <label>{t('model.sequences')}<input aria-label={t('model.sequences')} type="number" min="1" max="128" value={maxNumSeqs} onChange={event => setMaxNumSeqs(Number(event.target.value))} required /></label>}
-        {!fixedMediaRuntime && <label>{runtimeChoice === 'llama.cpp' ? t('model.totalContext') : t('model.requestContext')}<input aria-label={t('model.maxContext')} type="number" min="256" max={installContextCeiling} value={maxModelLen} onChange={event => setMaxModelLen(Number(event.target.value))} required /></label>}
-        {!fixedMediaRuntime && <ContextPresets value={maxModelLen} onChange={setMaxModelLen}
-          ceiling={installContextCeiling} curated={Boolean(installDescriptor)}
-          sharedPool={runtimeChoice === 'llama.cpp'} />}
-        {runtimeChoice === 'airllm' && <label>{t('model.maxOutput')}
-          <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
-            value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
-        </label>}
         {runtimeChoice !== 'airllm' && !fixedMediaRuntime && <p className="muted">{t('model.perRequestOutput')}</p>}
         {runtimeChoice === 'vllm' && <>
           <label>KV cache precision<select aria-label="Runtime KV cache precision" value={kvCacheDtype} onChange={event => setKvCacheDtype(event.target.value as 'auto' | 'fp8')}><option value="auto">Auto (baseline)</option><option value="fp8">FP8 (requires runtime/model support)</option></select></label>
           <label>CPU weight offload (GiB, 0 disables)<input aria-label="Runtime CPU offload" type="number" min="0" max="1024" step="1" value={cpuOffloadGiB} onChange={event => setCpuOffloadGiB(Number(event.target.value))} required /></label>
         </>}
-        {!fixedMediaRuntime && <p className="muted">{t('model.profileInfo')}</p>}
-        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed ||
+        </details>
+        <div className="modalActions"><button type="button" className="secondary" onClick={() => setInstallCatalogId(null)}>Cancel</button><button className="primary" disabled={!canWrite || busy !== null || validateDeclared(declared) !== null || (requiresHardwareOverride && !forceHardwareAcknowledged) || (installCatalogId === 'custom' && (!customConfirmed ||
             !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$/.test(customRepository.trim()) ||
             (runtimeChoice !== 'llama.cpp' && customRepository.includes(':'))))}>{busy?.startsWith('install:') ? t('model.schedule') : requiresHardwareOverride ? t('catalog.forceAction') : t('model.downloadInstall')}</button></div>
       </form>

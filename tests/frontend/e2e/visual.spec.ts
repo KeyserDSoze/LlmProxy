@@ -167,6 +167,12 @@ test('custom install shows parameters, formats and quantized builds of the typed
   await expectAccessible(page)
   if (compareScreenshots) await expect(details).toHaveScreenshot('hf-repository-inspector.png')
   else await testInfo.attach('hf-repository-inspector', { body: await details.screenshot(), contentType: 'image/png' })
+  const properties = page.getByRole('group', { name: 'What clients are told about this model' })
+  await expect(properties.getByRole('checkbox', { name: /Tool calling/ })).toBeChecked()
+  await expect(properties.getByLabel('Maximum output (tokens)')).toHaveValue('8192')
+  await expectAccessible(page)
+  if (compareScreenshots) await expect(properties).toHaveScreenshot('published-properties-editor.png')
+  else await testInfo.attach('published-properties-editor', { body: await properties.screenshot(), contentType: 'image/png' })
   expect(problems).toEqual([])
 })
 

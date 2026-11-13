@@ -21,7 +21,8 @@ public sealed class HuggingFaceRepositoryInspector(IHttpClientFactory clients, I
         string Id, bool Found, bool Gated, bool Private, string? License, string? PipelineTag, string? LibraryName,
         string? Architecture, long? ParameterCount, string? Precision, long? WeightsBytes, int? ContextLength,
         string? Quantization, bool Multimodal, bool HasGguf, bool HasSafetensors,
-        IReadOnlyList<HuggingFaceDiscoveryService.GgufVariant> GgufVariants, EngineSuggestion? Suggestion, string Url);
+        IReadOnlyList<HuggingFaceDiscoveryService.GgufVariant> GgufVariants, EngineSuggestion? Suggestion, string Url,
+        ModelFeatureHints.Detected? Detected = null);
 
     public sealed record QuantizedDerivative(
         string Id, string Format, long Downloads, long Likes, long? ParameterCount, DateTimeOffset? LastModified);
@@ -121,12 +122,15 @@ public sealed class HuggingFaceRepositoryInspector(IHttpClientFactory clients, I
         long? weights = safetensorFiles.Length > 0 && safetensorFiles.All(file => file.Size is not null)
             ? safetensorFiles.Sum(file => file.Size!.Value) : null;
         var hasGguf = files.Variants.Count > 0 || tags.Contains("gguf", StringComparer.OrdinalIgnoreCase);
+        var hasMmproj = SiblingFiles(model).Any(file => file.Path.Contains("mmproj", StringComparison.OrdinalIgnoreCase));
+        var detected = ModelFeatureHints.FromHub(tags, pipeline, ModelFeatureHints.ChatTemplate(model),
+            ModelFeatureHints.HasVisionConfig(configJson), hasMmproj, context);
 
         var inspection = new RepositoryInspection(
             id, true, gated || isPrivate, isPrivate, license, pipeline, str(model, "library_name"),
             architecture, parameters, precision, weights, context, quantization,
             pipeline is not null && MultimodalPipelines.Contains(pipeline), hasGguf, hasSafetensors,
-            files.Variants, null, "https://huggingface.co/" + id);
+            files.Variants, null, "https://huggingface.co/" + id, detected);
         return inspection with { Suggestion = Suggest(hasGguf, files.Variants.Count, hasSafetensors, quantization, context) };
     }
 
