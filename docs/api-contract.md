@@ -166,6 +166,10 @@ Routing failures are told apart so a client can react correctly. Messages name o
 
 `Gateway:UpstreamResponseHeaderTimeoutSeconds` (default 900) and `Gateway:UpstreamIdleTimeoutSeconds` (default 300, silence between streamed chunks) bound a stalled node; values outside 5 to 86400 seconds fall back to the default. A timeout before the first byte fails over to another deployment; after the stream has started the connection is aborted, never retried. A request path with a trailing slash (`/v1/chat/completions/`) is treated exactly like the path without it by every governance layer.
 
+### Admin: verify a running model
+
+`POST /api/admin/model-management/deployments/{id}/verify` (`AdminWrite`) sends a few tiny requests directly to the runtime and returns `{ deploymentId, model, checkedAtUtc, durationMilliseconds, checks: [{ id, status, detail }] }` with `id` in `chat`, `reasoning`, `streaming`, `tools` and `status` in `ok`, `warning`, `failed`, `inconclusive`. A stopped model answers `409 runtime_not_running`; a model on another surface answers `400 probe_only_for_chat_models`. Details: `docs/model-profiles.md`.
+
 ## Authentication
 
 Inference endpoints require:

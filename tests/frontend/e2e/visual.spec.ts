@@ -37,7 +37,7 @@ const screens: Screen[] = [
   { name: 'admin-audit', url: '/admin/audit', ready: text('model.start.queued') },
   { name: 'help', url: '/admin/help', ready: page => expect(page.locator('main h1')).toBeVisible() },
   { name: 'settings', url: '/admin/settings', ready: page => expect(page.locator('main h1')).toBeVisible() },
-  { name: 'releases', url: '/admin/releases', ready: text('0.2.64') },
+  { name: 'releases', url: '/admin/releases', ready: text('Current version') },
   { name: 'user-portal', url: '/admin/me', ready: text('lp_usr_3e1f') }
 ]
 

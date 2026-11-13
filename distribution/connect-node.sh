@@ -38,7 +38,7 @@ mkdir -p dist unpacked
 curl --retry 3 -fLsS "$base" -o "dist/$archive"
 curl --retry 3 -fLsS "$base.sha256" -o "dist/$archive.sha256"
 sha256sum -c "dist/$archive.sha256"
-tar -xzf "dist/$archive" -C unpacked
+tar --no-same-owner -xzf "dist/$archive" -C unpacked
 cd unpacked
 bash install-node-agent.sh
 # A running systemd unit is not proof of enrollment: the Agent only persists

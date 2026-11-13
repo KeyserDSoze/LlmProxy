@@ -93,6 +93,16 @@ Summary API responses use `Cache-Control: no-store`. A summary row has a one-to-
 
 Ordinary request metrics remain metadata-only: timestamp, request identifier, logical model, deployment/node, API credential identifier, optional Usage Group, status, duration, TTFT and token counts where available. Full payload content and administrator summary plaintext must not be exported to OTEL spans, acceptance evidence or generic application logs.
 
+## Hardening notes (2026-11)
+
+- **Path canonicalisation.** A trailing slash on `/v1/...` is removed once, before authentication, the token budget and the content log, so no layer can be skipped by an equivalent path.
+- **Public errors** never name a server, address or provider identifier; transport errors go to the internal log only.
+- **Relay allow-list.** Agent relay paths are refused when they contain `..`, percent-encoded dots/slashes/backslashes, control characters or are longer than 8192 characters, on both the gateway bridge and the Node Agent, because `Uri` resolves encoded dot segments after the allow-list ran.
+- **Enrolment.** `/api/agent-connection/enroll` and `/recover` are rate-limited per address; a "direct" Agent address must be a plain `http` origin on port 9900 that is not loopback, link-local (including the cloud metadata address), multicast or unspecified; `/recover` disconnects any tunnel opened with the previous secret.
+- **Entra.** Startup refuses a multi-tenant authority (`common`, `organizations`, `consumers`) and warns when `EntraId:SuperAdmins` contains name or e-mail entries; prefer `oid:` entries.
+- **Release artifacts.** Archives are created with root ownership and extracted with `--no-same-owner`; npm dependencies are pinned by lockfile and installed with `npm ci`; the deploy workflow validates its `image_tag` input before it reaches the self-hosted runner.
+- **Model launch flags** come only from the curated profile table (`docs/model-profiles.md`), never from text fetched from Hugging Face.
+
 ## Network
 
 - DGX vLLM endpoints remain private.

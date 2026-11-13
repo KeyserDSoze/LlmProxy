@@ -1,3 +1,35 @@
+## Unreleased — Gateway hardening, model profiles and capability verification
+
+**Gateway (breaking error codes, see `docs/api-contract.md`)**
+- A model that does not exist or is disabled now answers `404 model_not_found`; a registered model with no routable deployment answers `503 model_not_running` (with `Retry-After`); `503 no_healthy_deployment` is kept for deployments that exist but are not operational. Public messages name only the logical model, never a server, address or provider id.
+- **Security fix:** `POST /v1/chat/completions/` (trailing slash) reached the endpoint but skipped the output-token budget and the encrypted content log. The path is now canonicalised once at the start of the pipeline, and `POST /v1/systemone/{model}` is content-logged.
+- Output-token budget: `n` greater than 1 is rejected (`unsupported_n`) because the reservation covers a single completion.
+- Model names longer than 160 characters are rejected (`model_name_too_long`) and truncated in the sinks, so one client value can no longer drop a whole metrics batch.
+- New `Gateway:UpstreamResponseHeaderTimeoutSeconds` (900) and `Gateway:UpstreamIdleTimeoutSeconds` (300): a node that goes silent no longer holds a capacity slot forever; failover happens only before the first byte (`504 upstream_timeout`).
+- Hop-by-hop headers and the upstream `Server` banner are no longer forwarded; a stale header cannot corrupt a 502 body; CORS exposes the real `X-LlmProxy-*` ids.
+- The local capacity slot is released even if the Redis renewal loop dies; unexpected renewal errors fail closed.
+
+**Hugging Face**
+- A 401 on a repository listing means *not found or private*, never *gated* (Hugging Face answers 401 for both; a gated repository is listed normally). The Inspector, the Agent message and the Admin guide no longer send operators to a token form for a mistyped id.
+
+**Model profiles and verification (`docs/model-profiles.md`)**
+- The Agent applies curated, sourced launch flags per model family (Muse Glimmer on vLLM/SGLang/llama.cpp, Qwen3 on vLLM): tool-call and reasoning parsers, recommended sampling. Operator arguments always win; `NodeAgent__ApplyModelFamilyProfiles=false` turns it off. Admin shows what was applied, what you overrode, the requirement and the source.
+- *Verify capabilities* on a running model sends four tiny requests (chat, reasoning split, streaming, tool call) to the runtime and reports ok / warning / failed / inconclusive per check.
+- Startup diagnosis recognises an image that does not know a parser, and tells how to refresh a mutable llama.cpp tag.
+
+**Agent, relay and enrolment**
+- Relay paths with percent-encoded dots or slashes (`%2e%2e`) are refused on the gateway and on the Agent.
+- `/recover` closes the tunnel that was open with the previous secret; enrolment and recovery are rate-limited per address (30/min); a "direct" Agent address may not be loopback, link-local (cloud metadata), multicast or unspecified.
+- Startup refuses a multi-tenant Entra authority and warns about name/e-mail entries in `EntraId:SuperAdmins`.
+
+**Supply chain**
+- `package-lock.json` for the Admin app and the frontend tests; CI and the image build use `npm ci`.
+- Release archives are built with root ownership and extracted with `--no-same-owner`.
+- The deploy workflow validates its `image_tag` input and no longer interpolates it into a root shell.
+
+**Admin**
+- Form drafts no longer reset every 10 s, and the browser-origins dialog is filled when it is created instead of one render later (a fast first edit could be overwritten); Routing and Governance respect read-only access; confirmations and visible errors for revoke/rotate/drain/disable/delete; request audit shows the list first; six unused components removed.
+
 ## Unreleased — Uninstalled models stay uninstalled, independent sidebar scroll and update notification
 
 - **Fix: uninstalled models came back after a refresh.** The Agent keeps completed install jobs as history, and `POST .../install-jobs/{jobId}/finalize` rebuilt the deployment from such a job without checking that the installation still existed on the Agent. The Models page re-finalized every completed job missing from the overview (every 2.5 s, and again after each page load), so custom models in particular reappeared. `finalize` now answers 409 `installation_removed` unless the installation is still in the Agent inventory; the Models page stops retrying silently.

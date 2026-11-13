@@ -216,7 +216,7 @@ bootstrap_stage "Verifying release checksum"
 bootstrap_log "SHA-256 verification: OK"
 
 bootstrap_stage "Extracting release bundle"
-tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
+tar --no-same-owner -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 BUNDLE_DIR="$TMP_DIR/llmproxy-$VERSION"
 if [[ ! -x "$BUNDLE_DIR/distribution/install.sh" ]]; then
   chmod +x "$BUNDLE_DIR/distribution/install.sh" 2>/dev/null || true

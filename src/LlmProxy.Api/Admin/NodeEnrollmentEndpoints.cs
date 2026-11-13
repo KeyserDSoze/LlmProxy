@@ -13,6 +13,9 @@ namespace LlmProxy.Api.Admin;
 
 public static class NodeEnrollmentEndpoints
 {
+    /// <summary>Per-address limit for the anonymous enrolment and recovery calls (each one hashes a secret and touches the database).</summary>
+    public const string BootstrapRateLimitPolicy = "agent-bootstrap";
+
     public static IEndpointRouteBuilder MapNodeEnrollmentEndpoints(this IEndpointRouteBuilder app, bool entraEnabled)
     {
         // Public distribution: no Admin login and no pairing secret is required to download.
@@ -312,8 +315,7 @@ public static class NodeEnrollmentEndpoints
             {
                 if (!protector.IsConfigured) return Results.Problem(
                     "Management credential encryption is not configured.", statusCode: 503);
-                if (!Uri.TryCreate(request.ManagementBaseAddress, UriKind.Absolute, out var managementUri) ||
-                    managementUri.Scheme != Uri.UriSchemeHttp || managementUri.Port != 9900 ||
+                if (!DirectManagementAddress.IsAcceptable(request.ManagementBaseAddress, out _) ||
                     string.IsNullOrWhiteSpace(request.AgentBearer) || request.AgentBearer.Length > 2048)
                     return Results.BadRequest(new { error = "invalid_direct_management_address_or_bearer" });
             }
@@ -357,13 +359,13 @@ public static class NodeEnrollmentEndpoints
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);
             return Results.Ok(new { nodeId = node.Id, agentSecret });
-        });
+        }).RequireRateLimiting(BootstrapRateLimitPolicy);
 
         // Restore a previously registered node without creating a duplicate physical node.
         // Recovery rotates the active Agent secret (revoking lost local identity) but
         // deliberately does not reset deployments, routing, model caches or node ID.
         agents.MapPost("/recover", async (AgentRecoveryRequest request,
-            GatewayDbContext db, ApiKeyHasher hasher,
+            GatewayDbContext db, ApiKeyHasher hasher, AgentRelayHub relay,
             UpstreamCredentialProtector protector, CancellationToken token) =>
         {
             if (request.NodeId == Guid.Empty || string.IsNullOrWhiteSpace(request.RecoveryToken) ||
@@ -381,8 +383,7 @@ public static class NodeEnrollmentEndpoints
             {
                 if (!protector.IsConfigured) return Results.Problem(
                     "Credential encryption is not configured.", statusCode: 503);
-                if (!Uri.TryCreate(request.ManagementBaseAddress, UriKind.Absolute, out var uri) ||
-                    uri.Scheme != Uri.UriSchemeHttp || uri.Port != 9900 ||
+                if (!DirectManagementAddress.IsAcceptable(request.ManagementBaseAddress, out _) ||
                     string.IsNullOrWhiteSpace(request.AgentBearer) || request.AgentBearer.Length > 2048)
                     return Results.BadRequest(new { error = "invalid_direct_management_address_or_bearer" });
             }
@@ -403,8 +404,10 @@ public static class NodeEnrollmentEndpoints
             db.AuditEvents.Add(new AuditEvent("node-agent", "agent.recovery.accept", "node",
                 request.NodeId.ToString(), null, JsonSerializer.Serialize(new { request.Mode })));
             await db.SaveChangesAsync(token);
+            // The secret just rotated: a tunnel still open with the previous one must not outlive it.
+            relay.Disconnect(request.NodeId);
             return Results.Ok(new { nodeId = request.NodeId, agentSecret });
-        });
+        }).RequireRateLimiting(BootstrapRateLimitPolicy);
 
         agents.MapPost("/{nodeId:guid}/heartbeat", async (Guid nodeId,
             AgentHeartbeatRequest request, GatewayDbContext db, ApiKeyHasher hasher,

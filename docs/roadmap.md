@@ -1,5 +1,19 @@
 # Roadmap
 
+## 2026-11-13 — Review follow-up
+- [x] Specific routing errors on the public API; trailing-slash governance bypass closed.
+- [x] Upstream response-header and stream-idle timeouts.
+- [x] Hugging Face 401 = not found or private (Inspector, Agent, Admin guide).
+- [x] Curated model-family profiles (Muse Glimmer, Qwen3/vLLM) and on-demand capability verification.
+- [x] Relay `%2e` guard, `/recover` closes the old tunnel, enrolment rate limit, direct-address validation.
+- [x] Lockfiles and `npm ci`; archive ownership; deploy workflow input validation.
+- [ ] Green CI (including the visual job) for this source; then reinstall Muse Glimmer with `meta-models/Muse-Glimmer-30B-GGUF` and run *Verify capabilities* on the Spark.
+- [ ] Request-body size limit and single read of the body in the governance middlewares.
+- [ ] Agent: tolerate a corrupt job/registry file, cap Docker log size and download size, avoid secrets in `ExtraArguments` argv.
+- [ ] Sign release assets (cosign) and refuse Agent downgrades.
+- [ ] Route-level authorization test (every `/api/admin` route has a policy; mutations need `AdminWrite`).
+- [ ] Extend profiles only with a cited source (LFM2.5, gpt-oss, Gemma 4, Llama 3.x); persist verification results if operators want history.
+
 ## 2026-11-13 — Admin polish
 - [x] Uninstalled models are not re-registered from old Agent install jobs.
 - [x] Sidebar scrolls independently of the page.

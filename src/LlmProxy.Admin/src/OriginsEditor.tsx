@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Modal } from './UiPrimitives'
 
@@ -26,27 +26,38 @@ export function OriginsModal({ open, title, description, initial, busy, error, o
   onSave: (origins: string[]) => void | Promise<void>
   onClose: () => void
 }) {
-  const [text, setText] = useState('')
-  useEffect(() => { if (open) setText(initial.join('\n')) }, [open, initial.join('|')])
+  // Modal unmounts its children while closed, so the form below is created with the right text at every open
+  // instead of being filled by an effect one render later (which could overwrite the first thing typed).
+  return <Modal open={open} title={title} description={description} onClose={onClose}>
+    <OriginsForm initial={initial} busy={busy} error={error} onSave={onSave} onClose={onClose} />
+  </Modal>
+}
+
+function OriginsForm({ initial, busy, error, onSave, onClose }: {
+  initial: string[]
+  busy: boolean
+  error: string | null
+  onSave: (origins: string[]) => void | Promise<void>
+  onClose: () => void
+}) {
+  const [text, setText] = useState(() => initial.join('\n'))
 
   function submit(event: FormEvent) {
     event.preventDefault()
     void onSave(parseOrigins(text))
   }
 
-  return <Modal open={open} title={title} description={description} onClose={onClose}>
-    <form className="formPanel" onSubmit={submit}>
-      <label>Allowed browser origins (one per line)
-        <textarea aria-label="Allowed browser origins" rows={5} value={text} spellCheck={false}
-          placeholder={'https://app.example.com\nhttp://localhost:5173'}
-          onChange={event => setText(event.target.value)} />
-      </label>
-      <p className="muted">{originsHelp}</p>
-      {error && <div className="error" role="alert">{error}</div>}
-      <div className="modalActions">
-        <button type="button" className="secondary" onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={busy}>Save origins</button>
-      </div>
-    </form>
-  </Modal>
+  return <form className="formPanel" onSubmit={submit}>
+    <label>Allowed browser origins (one per line)
+      <textarea aria-label="Allowed browser origins" rows={5} value={text} spellCheck={false}
+        placeholder={'https://app.example.com\nhttp://localhost:5173'}
+        onChange={event => setText(event.target.value)} />
+    </label>
+    <p className="muted">{originsHelp}</p>
+    {error && <div className="error" role="alert">{error}</div>}
+    <div className="modalActions">
+      <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+      <button className="primary" disabled={busy}>Save origins</button>
+    </div>
+  </form>
 }

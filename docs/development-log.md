@@ -1,3 +1,24 @@
+## 2026-11-13 — Review follow-up: gateway hardening, model profiles, verification (source; CI pending)
+
+Context: a full review of the repository (gateway, Agents, relay, workflows, Admin) plus a production incident: `POST /v1/chat/completions` for `meta-muse-glimmer` answered `503 no_healthy_deployment` and the operator expected a more specific error. The deployment was simply disabled (`Enabled=false`, startup had failed), and the failure was caused by a mistyped Hugging Face id (`meta/muse-glimmer`; the real repository is `meta-models/Muse-Glimmer-30B-GGUF`).
+
+Findings verified on code before changing it:
+- the public path collapsed every routing failure into one status; an existing admin diagnosis (`ModelRouteReadiness`) was used only by the Playground;
+- governance middlewares compared the raw path, so a trailing slash bypassed the token budget and the content log (ASP.NET routing ignores the slash); `/v1/systemone/{model}` was never content-logged;
+- Hugging Face answers an anonymous 401 identically for a missing and a private repository (measured: `meta/muse-glimmer` and an invented repository both 401, a real gated repository 200 with `gated: manual`), so "401 = gated" in three places was wrong;
+- vLLM/SGLang launches never carried `--tool-call-parser`/`--reasoning-parser`/`--generation-config`, although Admin showed Tools/Reasoning capabilities; llama.cpp ignores the sampling a model card recommends;
+- `Uri` resolves `%2e%2e`, so the relay's `..` string check was bypassable (proved by a test);
+- `docker/scripts` and workflows: `inputs.image_tag` reached a root shell; archives were created with the runner's uid; no lockfiles.
+
+Decisions:
+- Profiles are a curated table with source and date, not scraped from Hugging Face: flags end on a Docker command line, and the Hub does not publish them in a machine-readable form. Unknown models and runtimes get nothing. SGLang's Qwen tool-parser name changed between versions, so it is deliberately absent.
+- Verification is on demand and not persisted (no migration); it reports `inconclusive` when a request works but proves nothing, instead of guessing.
+- Error code changes are visible to clients (`404 model_not_found`, `503 model_not_running`).
+
+Validation (local): backend 593/593, Vitest 68/68, Playwright functional 54/54 and visual 51/51 (9 baselines regenerated in the Playwright container, reviewed by eye; the dev server cannot start here because the host exhausted inotify watchers, so a static build was served), `npm ci` verified on both projects, release bundle built and its ownership inspected (0/0).
+
+Not verified: GitHub Actions for this source, the streaming/idle-timeout paths under a real stalled node (unit-tested configuration only), a real Muse Glimmer start on the Spark with the profile, and that a vLLM image on the target accepts the Qwen3 parsers (a startup failure now explains itself).
+
 ## 2026-11-13 — Uninstalled models returning, sidebar scroll, update notification (source; CI pending)
 
 Trigger (real Admin screenshot, v0.2.66): uninstalling models, then refreshing, brought them back; the left navigation did not scroll until the right side had been scrolled to the end; updating the gateway still required an SSH session.

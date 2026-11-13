@@ -47,7 +47,7 @@ chmod 0755 "$BUNDLE/distribution/"*.sh "$BUNDLE/distribution/llmproxyctl"
 
 mkdir -p "$OUT_DIR"
 ARCHIVE="$OUT_DIR/llmproxy-$VERSION-linux.tar.gz"
-tar -C "$STAGE" -czf "$ARCHIVE" "llmproxy-$VERSION"
+tar --owner=0 --group=0 --numeric-owner -C "$STAGE" -czf "$ARCHIVE" "llmproxy-$VERSION"
 # Read the entire archive before checking its contents. Under pipefail,
 # grep -q exits as soon as it finds a match and can SIGPIPE tar; a correct
 # archive would then be incorrectly rejected. Keep both corruption and

@@ -99,7 +99,7 @@ cp "$tmp/archive/$asset" "$tmp/dist/$asset"
 cp "$tmp/archive/$asset.sha256" "$tmp/dist/$asset.sha256"
 (cd "$tmp" && sha256sum -c "dist/$asset.sha256")
 advance extracting archive_invalid
-tar -xzf "$tmp/archive/$asset" -C "$tmp/new"
+tar --no-same-owner -xzf "$tmp/archive/$asset" -C "$tmp/new"
 test -x "$tmp/new/LlmProxy.NodeAgent"
 test -f "$tmp/new/update-node-agent.sh"
 install -m 0755 "$tmp/new/update-node-agent.sh" "$tmp/new/update-node-agent.sh.tmp"

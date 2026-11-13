@@ -109,7 +109,7 @@ public sealed class OutboundAgentRelayWorker(
     private async Task ExecuteAsync(Frame frame, ClientWebSocket socket, SemaphoreSlim sender, CancellationToken token)
     {
         var path = frame.Path ?? throw new InvalidDataException("Missing path.");
-        if (!path.StartsWith("/", StringComparison.Ordinal) || path.Contains("..", StringComparison.Ordinal))
+        if (!RelayPathGuard.IsSafe(path))
             throw new InvalidDataException("Invalid remote path.");
         int port;
         string localPath;

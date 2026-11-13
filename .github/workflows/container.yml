@@ -348,7 +348,7 @@ jobs:
               rm -rf "$TEST_ROOT"
             fi
             ARCHIVE="dist/llmproxy-node-agent-$VERSION-$RID.tar.gz"
-            tar -C "$STAGE" -czf "$ARCHIVE" .
+            tar --owner=0 --group=0 --numeric-owner -C "$STAGE" -czf "$ARCHIVE" .
             sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
             rm -rf "$STAGE"
           done

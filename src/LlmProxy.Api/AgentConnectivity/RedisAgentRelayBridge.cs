@@ -217,8 +217,7 @@ public sealed class RedisAgentRelayBridge(
         try
         {
             var path = frame.Path ?? throw new InvalidDataException("Missing path.");
-            if (path.Length > 8192 || !path.StartsWith("/", StringComparison.Ordinal) ||
-                path.Contains("..", StringComparison.Ordinal) ||
+            if (!RelayPathGuard.IsSafe(path) ||
                 (!path.StartsWith("/management/", StringComparison.Ordinal) &&
                  !path.StartsWith("/runtime/", StringComparison.Ordinal)))
                 throw new InvalidDataException("Remote path not allowed.");

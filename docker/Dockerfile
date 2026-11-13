@@ -3,8 +3,8 @@
 ARG ADMIN_NODE_IMAGE=node:22-alpine
 FROM ${ADMIN_NODE_IMAGE} AS admin-build
 WORKDIR /admin
-COPY src/LlmProxy.Admin/package.json ./
-RUN npm install --no-audit --no-fund
+COPY src/LlmProxy.Admin/package.json src/LlmProxy.Admin/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY src/LlmProxy.Admin/ ./
 RUN npm run build
 
