@@ -24,6 +24,32 @@ public sealed class OutputTokenRequestPolicyTests
         Assert.Equal(256, payload["max_tokens"]!.GetValue<int>());
     }
 
+    [Theory]
+    [InlineData("2")]
+    [InlineData("8")]
+    [InlineData("\"2\"")]
+    [InlineData("0.5")]
+    public void Chat_rejects_multiple_choices_because_the_reservation_covers_a_single_completion(string n)
+    {
+        var payload = JsonNode.Parse($"{{\"model\":\"agic-code\",\"n\":{n},\"messages\":[]}}")!.AsObject();
+
+        var ok = OutputTokenRequestPolicy.TryApply(payload, new PathString("/v1/chat/completions"), 256, out _, out var code, out _);
+
+        Assert.False(ok);
+        Assert.Equal("unsupported_n", code);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("1.0")]
+    [InlineData("null")]
+    public void Chat_accepts_a_single_choice(string n)
+    {
+        var payload = JsonNode.Parse($"{{\"model\":\"agic-code\",\"n\":{n},\"messages\":[]}}")!.AsObject();
+
+        Assert.True(OutputTokenRequestPolicy.TryApply(payload, new PathString("/v1/chat/completions"), 256, out _, out _, out _));
+    }
+
     [Fact]
     public void Chat_caps_both_supported_limit_fields_and_reserves_the_larger_effective_value()
     {

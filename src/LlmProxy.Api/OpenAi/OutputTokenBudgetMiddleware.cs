@@ -175,7 +175,7 @@ public sealed class OutputTokenBudgetMiddleware(RequestDelegate next)
         }
     }
 
-    private static bool IsInferencePost(HttpRequest request) =>
+    internal static bool IsInferencePost(HttpRequest request) =>
         HttpMethods.IsPost(request.Method) &&
         (request.Path.Equals("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) ||
          request.Path.Equals("/v1/responses", StringComparison.OrdinalIgnoreCase));
@@ -358,6 +358,16 @@ internal static class OutputTokenRequestPolicy
         if (!TryReadAndCap(requestObject, "max_tokens", maxPerRequest, out var legacyTokens, out var legacyPresent))
         {
             return Invalid(out reservationTokens, out errorCode, out errorMessage, "max_tokens");
+        }
+
+        // The reservation covers one completion; n > 1 would generate n times more than is accounted for.
+        if (requestObject.TryGetPropertyValue("n", out var choices) && choices is not null &&
+            (choices is not JsonValue choiceValue || !choiceValue.TryGetValue<double>(out var choiceCount) || choiceCount != 1))
+        {
+            reservationTokens = 0;
+            errorCode = "unsupported_n";
+            errorMessage = "'n' greater than 1 is not supported when an output-token budget applies.";
+            return false;
         }
 
         if (!completionPresent && !legacyPresent)

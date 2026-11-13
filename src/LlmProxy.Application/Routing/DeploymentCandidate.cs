@@ -41,7 +41,11 @@ public enum RoutingSelectionFailure
 {
     None = 0,
     Unavailable = 1,
-    CapacityExhausted = 2
+    CapacityExhausted = 2,
+    /// <summary>No enabled logical model with this name exists for the requested surface.</summary>
+    ModelNotFound = 3,
+    /// <summary>The logical model exists but has no enabled deployment on an enabled server (stopped or not yet activated).</summary>
+    NotRunning = 4
 }
 
 public sealed record RoutingSelectionResult(RouteSelection? Route, RoutingSelectionFailure Failure)

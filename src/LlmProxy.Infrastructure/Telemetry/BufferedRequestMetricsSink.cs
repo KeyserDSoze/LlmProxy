@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Domain.Models;
 using LlmProxy.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,7 +52,7 @@ public sealed class BufferedRequestMetricsSink(
                 {
                     RequestId = metric.RequestId,
                     StartedAtUtc = metric.StartedAtUtc,
-                    LogicalModel = metric.LogicalModel,
+                    LogicalModel = LogicalModelName.Truncate(metric.LogicalModel),
                     Surface = metric.Surface,
                     DeploymentId = metric.DeploymentId,
                     NodeId = metric.NodeId,

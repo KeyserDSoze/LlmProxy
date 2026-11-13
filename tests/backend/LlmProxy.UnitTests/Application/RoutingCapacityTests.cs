@@ -40,6 +40,39 @@ public sealed class RoutingCapacityTests
     }
 
     [Fact]
+    public async Task SelectDetailedAsync_reports_model_not_found_for_an_unknown_name()
+    {
+        var service = new RoutingService(new FakeCatalog([]), new WeightedLeastLoadedRouteSelector(), new InMemoryRequestLoadTracker());
+
+        var result = await service.SelectDetailedAsync("typo-model", null, CancellationToken.None);
+
+        Assert.Equal(RoutingSelectionFailure.ModelNotFound, result.Failure);
+    }
+
+    [Fact]
+    public async Task SelectDetailedAsync_reports_not_running_for_a_registered_model_without_a_routable_deployment()
+    {
+        var published = new PublicModel(Guid.NewGuid(), "agic-code", true, true, ModelSurface.OpenAi);
+        var service = new RoutingService(new FakeCatalog([], [published]), new WeightedLeastLoadedRouteSelector(), new InMemoryRequestLoadTracker());
+
+        var result = await service.SelectDetailedAsync("agic-code", null, CancellationToken.None);
+
+        Assert.Equal(RoutingSelectionFailure.NotRunning, result.Failure);
+    }
+
+    [Fact]
+    public async Task SelectDetailedAsync_keeps_unavailable_when_every_candidate_was_excluded_after_a_failed_attempt()
+    {
+        var candidate = Candidate(Guid.NewGuid(), Guid.NewGuid(), NodeStatus.Healthy, 8, 8);
+        var published = new PublicModel(candidate.ModelId, "agic-code", true, true, ModelSurface.OpenAi);
+        var service = new RoutingService(new FakeCatalog([candidate], [published]), new WeightedLeastLoadedRouteSelector(), new InMemoryRequestLoadTracker());
+
+        var result = await service.SelectDetailedAsync("agic-code", new HashSet<Guid> { candidate.DeploymentId }, CancellationToken.None);
+
+        Assert.Equal(RoutingSelectionFailure.Unavailable, result.Failure);
+    }
+
+    [Fact]
     public void Selector_excludes_node_when_another_deployment_consumes_physical_capacity()
     {
         var nodeId = Guid.NewGuid();
@@ -75,12 +108,12 @@ public sealed class RoutingCapacityTests
             status,
             nodeMaxConcurrency);
 
-    private sealed class FakeCatalog(IReadOnlyList<DeploymentCandidate> candidates) : IDeploymentCatalog
+    private sealed class FakeCatalog(IReadOnlyList<DeploymentCandidate> candidates, IReadOnlyList<PublicModel>? published = null) : IDeploymentCatalog
     {
         public Task<IReadOnlyList<DeploymentCandidate>> GetCandidatesAsync(string publicModelName, CancellationToken cancellationToken)
             => Task.FromResult(candidates);
 
         public Task<IReadOnlyList<PublicModel>> GetPublicModelsAsync(CancellationToken cancellationToken, ModelSurface? surface = null)
-            => Task.FromResult<IReadOnlyList<PublicModel>>([]);
+            => Task.FromResult(published ?? []);
     }
 }

@@ -10,20 +10,9 @@ namespace LlmProxy.Api.Observability;
 public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
 {
     public const string StreamFailureItem = "llmproxy.inference.stream.failure";
-    private static readonly HashSet<string> LoggedPaths = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/v1/chat/completions",
-        "/v1/responses",
-        "/v1/systemone",
-        "/v1/images/generations",
-        "/v1/audio/speech",
-        "/v1/audio/transcriptions",
-        "/v1/audio/translations"
-    };
-
     public async Task InvokeAsync(HttpContext context, IInferenceContentLogSink sink)
     {
-        if (!HttpMethods.IsPost(context.Request.Method) || !LoggedPaths.Contains(context.Request.Path.Value ?? string.Empty))
+        if (!HttpMethods.IsPost(context.Request.Method) || SurfaceFor(context.Request.Path) == "unknown")
         {
             await next(context);
             return;
@@ -133,12 +122,12 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
     private static Guid? TryGetRequestId(string value)
         => Guid.TryParse(value, out var parsed) ? parsed : null;
 
-    private static string SurfaceFor(PathString path)
-        => path.Value?.ToLowerInvariant() switch
+    // Also covers POST /v1/systemone/{modelId}, which reaches the same endpoint as /v1/systemone.
+    internal static string SurfaceFor(PathString path)
+        => path.StartsWithSegments("/v1/systemone", StringComparison.OrdinalIgnoreCase) ? "systemone" : path.Value?.ToLowerInvariant() switch
         {
             "/v1/chat/completions" => "chat_completions",
             "/v1/responses" => "responses",
-            "/v1/systemone" => "systemone",
             "/v1/images/generations" => "image_generation",
             "/v1/audio/speech" => "audio_speech",
             "/v1/audio/transcriptions" => "audio_transcription",

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
@@ -163,13 +164,15 @@ public static class SystemOneEndpoints
                 var route = selection.Route;
                 if (route is null)
                 {
-                    finalStatusCode = selection.Failure == RoutingSelectionFailure.CapacityExhausted
-                        ? StatusCodes.Status429TooManyRequests
-                        : StatusCodes.Status503ServiceUnavailable;
-                    finalErrorCode = selection.Failure == RoutingSelectionFailure.CapacityExhausted
-                        ? "capacity_exhausted"
-                        : "no_healthy_deployment";
-                    await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode, $"No available System One deployment exists for '{logicalModel}'.");
+                    var routingError = GatewayRoutingError.For(selection.Failure, logicalModel);
+                    finalStatusCode = routingError.StatusCode;
+                    finalErrorCode = routingError.Code;
+                    if (routingError.RetryAfterSeconds is int retryAfter)
+                    {
+                        context.Response.Headers.RetryAfter = retryAfter.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    }
+
+                    await WriteGatewayErrorAsync(context, finalStatusCode, finalErrorCode, routingError.Message);
                     return;
                 }
 

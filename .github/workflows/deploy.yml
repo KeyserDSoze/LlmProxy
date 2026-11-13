@@ -29,18 +29,30 @@ jobs:
 
       - name: Resolve deployment variables
         shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
+          set -euo pipefail
+          # The input reaches a root-capable self-hosted runner: accept only a plain Docker tag so a value
+          # with a newline or shell syntax can neither add variables to $GITHUB_ENV nor inject commands.
+          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || {
+            echo "image_tag must be a Docker tag (letters, digits, '_', '.', '-')." >&2
+            exit 1
+          }
           echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
-          echo "LLMPROXY_IMAGE_TAG=${{ inputs.image_tag }}" >> "$GITHUB_ENV"
+          echo "LLMPROXY_IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
           echo "LLMPROXY_DEPLOY_DIR=/opt/llmproxy" >> "$GITHUB_ENV"
           echo "LLMPROXY_ENV_FILE=/opt/llmproxy/.env" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
         shell: bash
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
       - name: Deploy validated full stack
         shell: bash
         run: |
           chmod +x docker/scripts/deploy.sh
-          docker/scripts/deploy.sh "${{ inputs.image_tag }}"
+          docker/scripts/deploy.sh "$LLMPROXY_IMAGE_TAG"

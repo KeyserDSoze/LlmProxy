@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LlmProxy.Api.OpenAi;
 using LlmProxy.Api.Security;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
@@ -179,9 +180,15 @@ public static class MultimodalEndpoints
                 excludedDeploymentIds: null, context.RequestAborted);
             if (selection.Route is not { } route)
             {
-                status = selection.Failure == RoutingSelectionFailure.CapacityExhausted ? 429 : 503;
-                error = status == 429 ? "capacity_exhausted" : "no_healthy_deployment";
-                await FailAsync(context, status, error, $"No healthy {endpoint.Metric} deployment is available for '{model}'.");
+                var routingError = GatewayRoutingError.For(selection.Failure, model);
+                status = routingError.StatusCode;
+                error = routingError.Code;
+                if (routingError.RetryAfterSeconds is int retryAfter)
+                {
+                    context.Response.Headers.RetryAfter = retryAfter.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                await FailAsync(context, status, error, routingError.Message);
                 return;
             }
             deploymentId = route.DeploymentId;

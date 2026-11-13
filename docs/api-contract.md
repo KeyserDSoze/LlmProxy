@@ -152,6 +152,20 @@ Gateway-generated errors use an OpenAI-like envelope:
 }
 ```
 
+Routing failures are told apart so a client can react correctly. Messages name only the logical model the caller asked for; servers, addresses and provider identifiers never appear in a public response (they are in the internal log and in the Admin request metrics).
+
+| Situation | Status | `code` |
+| --- | --- | --- |
+| No enabled logical model with that name for this endpoint (typo, disabled or wrong surface) | `404` | `model_not_found` |
+| The model exists but no deployment is routable (stopped, starting, not yet activated) | `503` + `Retry-After: 30` | `model_not_running` |
+| Deployments exist but none is operational (unhealthy or draining server) | `503` | `no_healthy_deployment` |
+| Physical capacity saturated | `429` + `Retry-After: 1` | `capacity_exhausted` |
+| Model name longer than 160 characters | `400` | `model_name_too_long` |
+| `n` greater than 1 while an output-token budget applies | `400` | `unsupported_n` |
+| Inference node sent no response headers within the limit | `504` | `upstream_timeout` |
+
+`Gateway:UpstreamResponseHeaderTimeoutSeconds` (default 900) and `Gateway:UpstreamIdleTimeoutSeconds` (default 300, silence between streamed chunks) bound a stalled node; values outside 5 to 86400 seconds fall back to the default. A timeout before the first byte fails over to another deployment; after the stream has started the connection is aborted, never retried. A request path with a trailing slash (`/v1/chat/completions/`) is treated exactly like the path without it by every governance layer.
+
 ## Authentication
 
 Inference endpoints require:
@@ -174,7 +188,7 @@ Web apps may call the `/v1` endpoints directly from the browser when their origi
 An origin is `scheme://host[:port]` without a path (`https://app.example.com`, `http://localhost:5173`); `*` allows any origin. Entries are normalized (lower case, default ports removed) and validated; at most 50 per list.
 
 - **Preflight** (`OPTIONS` with `Access-Control-Request-Method`) carries no API key, so it is answered when the origin is in the site-wide list or in the list of any *enabled* key. Allowed answers are `204` with `Access-Control-Allow-Origin` (the origin is echoed), `Allow-Methods: GET, POST, OPTIONS`, the requested headers (only well-formed names, else `authorization, content-type`) and `Max-Age`. Anything else is `403 origin_not_allowed` without CORS headers.
-- **Actual requests** with an `Origin` header receive `Access-Control-Allow-Origin` when the origin is allowed site-wide or by the authenticated key (or, for an invalid key, by any key, so a browser can read the `401`). `X-Request-Id` and `Retry-After` are exposed. SSE streams carry the headers too.
+- **Actual requests** with an `Origin` header receive `Access-Control-Allow-Origin` when the origin is allowed site-wide or by the authenticated key (or, for an invalid key, by any key, so a browser can read the `401`). `X-LlmProxy-Request-Id`, `X-LlmProxy-Trace-Id` and `Retry-After` are exposed. SSE streams carry the headers too.
 - **Enforcement.** A key that lists origins is rejected with `403 origin_not_allowed` when it is used from a browser origin that is neither in its own list nor site-wide. A key with no list is not restricted (CORS headers only follow the site-wide list).
 - **Scope.** Requests without an `Origin` header (servers, curl) are never affected. CORS limits which web pages can *use* a key in a browser; it does not make a key safe to publish.
 

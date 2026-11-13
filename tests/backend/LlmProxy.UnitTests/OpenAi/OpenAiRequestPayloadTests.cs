@@ -20,6 +20,20 @@ public sealed class OpenAiRequestPayloadTests
     }
 
     [Fact]
+    public void Rejects_a_model_name_longer_than_the_persisted_column()
+    {
+        var result = OpenAiRequestPayload.TryParse(
+            $"{{\"model\":\"{new string('m', 161)}\",\"messages\":[]}}",
+            out _,
+            out _,
+            out var errorCode,
+            out _);
+
+        Assert.False(result);
+        Assert.Equal("model_name_too_long", errorCode);
+    }
+
+    [Fact]
     public void Rejects_payload_without_a_string_model()
     {
         var result = OpenAiRequestPayload.TryParse(

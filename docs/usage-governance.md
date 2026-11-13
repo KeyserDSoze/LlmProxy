@@ -28,7 +28,10 @@ output-budget coordinator unsafe   -> 503 token_budget_coordination_unavailable
 physical DGX saturated             -> 429 capacity_exhausted
 capacity coordinator unavailable   -> 503 capacity_coordination_unavailable
 active capacity lease unsafe       -> 503/abort capacity_lease_lost
+unknown / disabled logical model   -> 404 model_not_found
+model registered but not running   -> 503 model_not_running
 no operational backend             -> 503 no_healthy_deployment
+upstream silent past the limit     -> 504 upstream_timeout (fails over before the first byte)
 ```
 
 ## Inference identity and credential lifecycle

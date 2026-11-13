@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Domain.Models;
 using LlmProxy.Infrastructure.Persistence;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,7 +47,7 @@ public sealed class BufferedInferenceContentLogSink(
                         Surface = log.Surface,
                         Method = log.Method,
                         Path = log.Path,
-                        LogicalModel = log.LogicalModel,
+                        LogicalModel = log.LogicalModel is { } model ? LogicalModelName.Truncate(model) : null,
                         ApiCredentialId = log.ApiCredentialId,
                         StatusCode = log.StatusCode,
                         RequestContentType = log.RequestContentType,

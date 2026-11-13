@@ -230,6 +230,7 @@ if (reverseProxyEnabled)
 }
 
 app.UseStaticFiles();
+app.UseMiddleware<InferencePathNormalizationMiddleware>();
 app.UseMiddleware<TraceCorrelationMiddleware>();
 app.UseMiddleware<InferenceCorsMiddleware>();
 

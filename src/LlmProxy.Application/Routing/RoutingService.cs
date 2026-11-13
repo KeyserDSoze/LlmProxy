@@ -42,6 +42,7 @@ public sealed class RoutingService(
             candidates = candidates.Where(candidate => candidate.Surface == surface).ToArray();
         }
 
+        var hadRoutableCandidates = candidates.Count > 0;
         if (excludedDeploymentIds is { Count: > 0 })
         {
             candidates = candidates.Where(candidate => !excludedDeploymentIds.Contains(candidate.DeploymentId)).ToArray();
@@ -66,6 +67,18 @@ public sealed class RoutingService(
             activity?.SetTag("llmproxy.routing.result", "capacity_exhausted");
             LlmProxyActivity.MarkError(activity, "capacity_exhausted");
             return RoutingSelectionResult.Failed(RoutingSelectionFailure.CapacityExhausted);
+        }
+
+        if (!hadRoutableCandidates)
+        {
+            // Nothing is routable at all (as opposed to candidates that were excluded after a failed attempt):
+            // tell a model that does not exist from one that is registered but not running.
+            var published = await catalog.GetPublicModelsAsync(cancellationToken, requiredSurface);
+            var known = published.Any(model => string.Equals(model.PublicName, publicModelName, StringComparison.Ordinal));
+            var failure = known ? RoutingSelectionFailure.NotRunning : RoutingSelectionFailure.ModelNotFound;
+            activity?.SetTag("llmproxy.routing.result", known ? "not_running" : "model_not_found");
+            LlmProxyActivity.MarkError(activity, known ? "model_not_running" : "model_not_found");
+            return RoutingSelectionResult.Failed(failure);
         }
 
         activity?.SetTag("llmproxy.routing.result", "unavailable");

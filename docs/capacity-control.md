@@ -83,7 +83,7 @@ with:
 }
 ```
 
-`503 no_healthy_deployment` remains reserved for the different case where no operational backend is available.
+`503 no_healthy_deployment` remains reserved for the different case where deployments exist but none is operational. A model that does not exist is `404 model_not_found` and a registered model with no routable deployment is `503 model_not_running` (see `docs/api-contract.md`).
 
 If Redis is configured as the distributed provider but admission cannot safely consult it, LlmProxy fails closed instead of falling back to an unsafe local guess:
 

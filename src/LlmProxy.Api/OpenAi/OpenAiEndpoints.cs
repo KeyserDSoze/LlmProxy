@@ -10,6 +10,9 @@ using LlmProxy.Domain.Models;
 using LlmProxy.Domain.Nodes;
 using LlmProxy.Infrastructure.Security;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace LlmProxy.Api.OpenAi;
 
@@ -94,6 +97,7 @@ public static class OpenAiEndpoints
         string upstreamPath)
     {
         var requestId = Guid.NewGuid();
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("LlmProxy.Api.OpenAi.Inference");
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var surface = upstreamPath.EndsWith("/responses", StringComparison.Ordinal)
@@ -232,9 +236,13 @@ public static class OpenAiEndpoints
                 var attemptStartedMilliseconds = stopwatch.ElapsedMilliseconds;
                 var upstreamStopwatch = Stopwatch.StartNew();
 
+                var upstreamTimeouts = UpstreamTimeouts.From(context.RequestServices.GetRequiredService<IConfiguration>());
+                using var headerTimeout = CancellationTokenSource.CreateLinkedTokenSource(inferenceCancellationToken);
+                headerTimeout.CancelAfter(upstreamTimeouts.ResponseHeaders);
+
                 try
                 {
-                    upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, inferenceCancellationToken);
+                    upstream = await client.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, headerTimeout.Token);
                     upstreamHeaderMilliseconds = upstreamStopwatch.ElapsedMilliseconds;
                 }
                 catch (OperationCanceledException) when (
@@ -258,6 +266,34 @@ public static class OpenAiEndpoints
                     finalErrorCode = "client_cancelled";
                     return;
                 }
+                catch (OperationCanceledException) when (headerTimeout.IsCancellationRequested)
+                {
+                    // Neither the client nor the capacity lease cancelled: the node never answered in time.
+                    finalStatusCode = StatusCodes.Status504GatewayTimeout;
+                    finalErrorCode = "upstream_timeout";
+                    performanceTracker.Observe(
+                        route.DeploymentId,
+                        infrastructureHealthy: false,
+                        upstreamStopwatch.ElapsedMilliseconds,
+                        timeToFirstByteMilliseconds: null,
+                        DateTimeOffset.UtcNow);
+                    logger.LogWarning("Inference runtime on node {NodeName} sent no response headers within {Seconds}s for request {RequestId}.",
+                        route.NodeName, (int)upstreamTimeouts.ResponseHeaders.TotalSeconds, requestId);
+
+                    if (attempt < MaxUpstreamAttempts)
+                    {
+                        excluded.Add(route.DeploymentId);
+                        continue;
+                    }
+
+                    await WriteGatewayErrorAsync(
+                        context,
+                        finalStatusCode,
+                        "gateway_error",
+                        finalErrorCode,
+                        $"The inference runtime for model '{publicModelName}' did not answer in time. Retry shortly.");
+                    return;
+                }
                 catch (HttpRequestException exception)
                 {
                     finalStatusCode = StatusCodes.Status502BadGateway;
@@ -275,12 +311,15 @@ public static class OpenAiEndpoints
                         continue;
                     }
 
+                    // Server names, addresses and transport errors stay in the internal log, not in the client response.
+                    logger.LogWarning("Inference runtime on node {NodeName} could not be reached for request {RequestId}: {Error}",
+                        route.NodeName, requestId, exception.Message);
                     await WriteGatewayErrorAsync(
                         context,
                         finalStatusCode,
                         "gateway_error",
                         finalErrorCode,
-                        $"Inference runtime '{route.NodeName}' could not be reached: {exception.Message}");
+                        $"The inference runtime for model '{publicModelName}' could not be reached. Retry shortly.");
                     return;
                 }
 
@@ -309,7 +348,7 @@ public static class OpenAiEndpoints
 
                     try
                     {
-                        await CopyUpstreamBodyAsync(upstream, context, observer, inferenceCancellationToken);
+                        await CopyUpstreamBodyAsync(upstream, context, observer, upstreamTimeouts.StreamIdle, inferenceCancellationToken);
                         finalErrorCode = upstream.IsSuccessStatusCode ? null : "upstream_error";
                         ObserveCompletedAttempt(
                             performanceTracker,
@@ -361,12 +400,18 @@ public static class OpenAiEndpoints
                         }
 
                         finalStatusCode = StatusCodes.Status502BadGateway;
+                        logger.LogWarning("Inference response from node {NodeName} was interrupted before the first byte for request {RequestId}: {Error}",
+                            route.NodeName, requestId, exception.Message);
+                        // Headers were copied from the upstream response: drop them so a stale Content-Length or
+                        // Content-Encoding cannot corrupt the gateway's own error body.
+                        context.Response.Clear();
+                        context.Response.Headers["X-LlmProxy-Request-Id"] = requestId.ToString();
                         await WriteGatewayErrorAsync(
                             context,
                             finalStatusCode,
                             "gateway_error",
                             finalErrorCode,
-                            $"Inference stream from '{route.NodeName}' was interrupted: {exception.Message}");
+                            $"The inference response for model '{publicModelName}' was interrupted. Retry shortly.");
                         return;
                     }
                     finally
@@ -392,28 +437,17 @@ public static class OpenAiEndpoints
                 return;
             }
 
-            if (routingFailure == RoutingSelectionFailure.CapacityExhausted || capacityRaceObserved)
+            var routingError = GatewayRoutingError.For(
+                capacityRaceObserved ? RoutingSelectionFailure.CapacityExhausted : routingFailure,
+                publicModelName ?? string.Empty);
+            finalStatusCode = routingError.StatusCode;
+            finalErrorCode = routingError.Code;
+            if (routingError.RetryAfterSeconds is int retryAfter)
             {
-                finalStatusCode = StatusCodes.Status429TooManyRequests;
-                finalErrorCode = "capacity_exhausted";
-                context.Response.Headers.RetryAfter = "1";
-                await WriteGatewayErrorAsync(
-                    context,
-                    finalStatusCode,
-                    "rate_limit_error",
-                    finalErrorCode,
-                    $"Inference capacity is temporarily exhausted for model '{publicModelName}'. Retry shortly.");
-                return;
+                context.Response.Headers.RetryAfter = retryAfter.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            finalStatusCode = StatusCodes.Status503ServiceUnavailable;
-            finalErrorCode = "no_healthy_deployment";
-            await WriteGatewayErrorAsync(
-                context,
-                finalStatusCode,
-                "gateway_unavailable",
-                finalErrorCode,
-                $"No healthy deployment is available for model '{publicModelName}'.");
+            await WriteGatewayErrorAsync(context, routingError.StatusCode, routingError.Type, routingError.Code, routingError.Message);
         }
         finally
         {
@@ -529,6 +563,7 @@ public static class OpenAiEndpoints
         HttpResponseMessage upstream,
         HttpContext context,
         OpenAiResponseObserver observer,
+        TimeSpan idleTimeout,
         CancellationToken cancellationToken)
     {
         if (observer.IsStreaming)
@@ -541,11 +576,24 @@ public static class OpenAiEndpoints
 
         await using var source = await upstream.Content.ReadAsStreamAsync(cancellationToken);
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
             while (true)
             {
-                var read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                int read;
+                idle.CancelAfter(idleTimeout);
+                try
+                {
+                    read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), idle.Token);
+                }
+                catch (OperationCanceledException) when (idle.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    // Reported as a transport failure so the caller aborts the stream or answers 502 before the first byte.
+                    throw new IOException("The inference runtime stopped sending data.");
+                }
+
+                idle.CancelAfter(Timeout.InfiniteTimeSpan);
                 if (read == 0)
                 {
                     break;
@@ -576,7 +624,14 @@ public static class OpenAiEndpoints
     private static readonly HashSet<string> NonForwardedRequestHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Authorization", "Proxy-Authorization", "Cookie", "Host", "Content-Length", "Transfer-Encoding",
-        "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Trailer", "Upgrade", "Expect", "Content-Type"
+        "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Trailer", "Upgrade", "Expect", "Content-Type",
+        "Content-Encoding", "Content-MD5"
+    };
+
+    // Hop-by-hop headers and the upstream server banner are not part of the gateway's response.
+    private static readonly HashSet<string> NonForwardedResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Transfer-Encoding", "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Trailer", "Upgrade", "Server"
     };
 
     public static void CopyRequestHeaders(HttpRequest source, HttpRequestMessage destination)
@@ -596,7 +651,7 @@ public static class OpenAiEndpoints
     {
         foreach (var header in source.Headers)
         {
-            if (!header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+            if (!NonForwardedResponseHeaders.Contains(header.Key))
             {
                 destination.Headers[header.Key] = header.Value.ToArray();
             }
@@ -604,7 +659,7 @@ public static class OpenAiEndpoints
 
         foreach (var header in source.Content.Headers)
         {
-            if (!header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+            if (!NonForwardedResponseHeaders.Contains(header.Key))
             {
                 destination.Headers[header.Key] = header.Value.ToArray();
             }
@@ -667,6 +722,13 @@ internal static class OpenAiRequestPayload
         {
             errorCode = "model_required";
             errorMessage = "A logical model name is required.";
+            return false;
+        }
+
+        if (!LogicalModelName.IsAcceptable(parsedModelName))
+        {
+            errorCode = "model_name_too_long";
+            errorMessage = $"The model name must be at most {LogicalModelName.MaxLength} characters.";
             return false;
         }
 

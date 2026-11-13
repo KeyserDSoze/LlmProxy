@@ -239,23 +239,32 @@ public sealed class RedisRequestCapacityGate(
                 return;
             }
 
-            _lifetimeCancellation.Cancel();
+            // The local slot must be freed on every path, including a background loop that died with an
+            // unexpected exception: otherwise it stays occupied for the life of the process.
             try
             {
-                await Task.WhenAll(_renewTask, _safetyTask);
-            }
-            catch (OperationCanceledException)
-            {
-            }
+                _lifetimeCancellation.Cancel();
+                try
+                {
+                    await Task.WhenAll(_renewTask, _safetyTask);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(exception, "A capacity lease background loop for {LeaseId} ended with an error.", _leaseId);
+                }
 
-            try
-            {
-                var database = await _connection.GetDatabaseAsync();
-                await ReleaseAsync(database, _deploymentKey, _nodeKey, _leaseId);
-            }
-            catch (Exception exception) when (exception is RedisException or TimeoutException)
-            {
-                _logger.LogWarning(exception, "Could not release Redis capacity lease {LeaseId}; expiry will recover it.", _leaseId);
+                try
+                {
+                    var database = await _connection.GetDatabaseAsync();
+                    await ReleaseAsync(database, _deploymentKey, _nodeKey, _leaseId);
+                }
+                catch (Exception exception) when (exception is RedisException or TimeoutException)
+                {
+                    _logger.LogWarning(exception, "Could not release Redis capacity lease {LeaseId}; expiry will recover it.", _leaseId);
+                }
             }
             finally
             {
@@ -297,6 +306,13 @@ public sealed class RedisRequestCapacityGate(
                 catch (Exception exception) when (exception is RedisException or TimeoutException)
                 {
                     _logger.LogWarning(exception, "Redis capacity lease {LeaseId} renewal failed; safety watchdog remains armed.", _leaseId);
+                }
+                catch (Exception exception)
+                {
+                    // Renewal can no longer be trusted: fail closed instead of letting the loop die silently.
+                    _logger.LogError(exception, "Redis capacity lease {LeaseId} renewal failed unexpectedly.", _leaseId);
+                    SignalCoordinationLost("the renewal loop failed unexpectedly");
+                    return;
                 }
             }
         }

@@ -13,7 +13,7 @@ public sealed class InferenceCorsMiddleware(RequestDelegate next)
 {
     public const string CredentialOriginsItem = "LlmProxy.CredentialAllowedOrigins";
     private const string AllowedMethods = "GET, POST, OPTIONS";
-    private const string ExposedHeaders = "X-Request-Id, Retry-After";
+    private const string ExposedHeaders = "X-LlmProxy-Request-Id, X-LlmProxy-Trace-Id, Retry-After";
     private const string DefaultAllowedHeaders = "authorization, content-type";
 
     public async Task InvokeAsync(HttpContext context, CorsPolicyState policy, IApiCredentialCache credentials)

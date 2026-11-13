@@ -177,7 +177,10 @@ public sealed class CorsMiddlewareTests
         await feature.FireStartingAsync();
 
         Assert.Equal(Site, context.Response.Headers["Access-Control-Allow-Origin"]);
-        Assert.Contains("Retry-After", context.Response.Headers["Access-Control-Expose-Headers"].ToString());
+        var exposed = context.Response.Headers["Access-Control-Expose-Headers"].ToString();
+        Assert.Contains("Retry-After", exposed);
+        Assert.Contains("X-LlmProxy-Request-Id", exposed);
+        Assert.Contains("X-LlmProxy-Trace-Id", exposed);
     }
 
     [Fact]
