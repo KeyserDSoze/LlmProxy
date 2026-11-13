@@ -35,6 +35,20 @@ public sealed class ManagedInstallJobReconciliationTests
     }
 
     [Fact]
+    public void Finalize_is_refused_for_an_installation_that_was_uninstalled_from_the_agent()
+    {
+        var job = Job();
+        Assert.True(NodeModelManagementEndpoints.IsInstallationOnAgent(job, [State]));
+        Assert.False(NodeModelManagementEndpoints.IsInstallationOnAgent(job, []));
+        Assert.False(NodeModelManagementEndpoints.IsInstallationOnAgent(job, [State with { InstallationId = "other" }]));
+        Assert.False(NodeModelManagementEndpoints.IsInstallationOnAgent(job with { Result = null }, [State]));
+
+        var custom = job with { Request = Request with { CatalogModelId = "custom" } };
+        Assert.False(NodeModelManagementEndpoints.IsInstallationOnAgent(custom, []));
+        Assert.True(NodeModelManagementEndpoints.IsInstallationOnAgent(custom, [State]));
+    }
+
+    [Fact]
     public void Opted_in_autostart_requires_a_matching_live_runtime_address()
     {
         var job = Job() with {

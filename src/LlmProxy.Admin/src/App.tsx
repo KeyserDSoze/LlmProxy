@@ -17,6 +17,7 @@ import HelpPage from './HelpPage'
 import PageDocumentation from './PageDocumentation'
 import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
+import UpdateBanner, { availableUpdateCount, useProductUpdates } from './UpdateBanner'
 import { AdminLink } from './UiPrimitives'
 import type { ApiCredential, AuditEvent, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RoutingSettings, RoutingTuningSettings } from './types'
 
@@ -167,6 +168,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
 
   const attention = useMemo(() => attentionItems(nodes, models, deployments), [nodes, models, deployments])
   const urgent = attention.filter(item => item.tone !== 'info').length
+  const { overview: productUpdates, refresh: refreshProductUpdates } = useProductUpdates()
+  const pendingUpdates = availableUpdateCount(productUpdates)
 
   return (
     <div className="shell">
@@ -208,7 +211,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             <div className="navGroupLabel">{t('nav.platformGroup')}</div>
             <NavItem icon="help" active={view === 'help'} onClick={() => navigate('help')}>{t('nav.help')}</NavItem>
             <NavItem icon="settings" active={view === 'settings'} onClick={() => navigate('settings')}>{t('nav.settings')}</NavItem>
-            <NavItem icon="releases" active={view === 'releases'} onClick={() => navigate('releases')}>{t('nav.releases')}</NavItem>
+            <NavItem icon="releases" active={view === 'releases'} badge={pendingUpdates} badgeLabel={t('nav.releasesBadge')} badgeTone="info"
+              onClick={() => navigate('releases')}>{t('nav.releases')}</NavItem>
           </div>
         </nav>
         <div className="sidebarFooter">
@@ -233,6 +237,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         </header>
 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
+        {view !== 'releases' && <UpdateBanner overview={productUpdates} loadedVersion={productVersion} canWrite={canWrite}
+          onOpenReleases={() => navigate('releases')} onRefresh={refreshProductUpdates} />}
         {error && <div className="error">{error}</div>}
         {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
@@ -525,10 +531,10 @@ function Metric({ label, value }: { label: string; value: string | number }) { r
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
 type NavIconName = 'dashboard' | 'nodes' | 'models' | 'routing' | 'classifier' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
 
-function NavItem({ active, onClick, icon, badge, children }: { active: boolean; onClick: () => void; icon: NavIconName; badge?: number; children: React.ReactNode }) {
+function NavItem({ active, onClick, icon, badge, badgeLabel, badgeTone, children }: { active: boolean; onClick: () => void; icon: NavIconName; badge?: number; badgeLabel?: string; badgeTone?: 'info'; children: React.ReactNode }) {
   return <button className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={onClick}>
     <NavIcon name={icon} /><span>{children}</span>
-    {badge ? <span className="navBadge"><span aria-hidden="true">{badge}</span><span className="srOnly">{badge} items need attention</span></span> : null}
+    {badge ? <span className={badgeTone === 'info' ? 'navBadge navBadge--info' : 'navBadge'}><span aria-hidden="true">{badge}</span><span className="srOnly">{badge} {badgeLabel ?? 'items need attention'}</span></span> : null}
   </button>
 }
 

@@ -1,5 +1,12 @@
 # Roadmap
 
+## 2026-11-13 — Admin polish
+- [x] Uninstalled models are not re-registered from old Agent install jobs.
+- [x] Sidebar scrolls independently of the page.
+- [x] Update banner/badge and `Update now` from any Admin page.
+- [ ] Green CI (including visual baselines) for this source; then verify uninstall on the real Spark and the update from the web app on the production host.
+- [ ] Optional: purge completed install jobs on the Agent when their installation is uninstalled.
+
 ## 2026-11-12 — Model startup reliability and Admin UX
 - [x] Browser access (CORS): site-wide origins, per-key origins, preflight, enforcement, audit.
 - [ ] Validate CORS from a real browser through the public hostname/Cloudflare and with two replicas.

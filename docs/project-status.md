@@ -1,3 +1,7 @@
+## 2026-11-13 — Uninstall fix, independent sidebar scroll and update notification (source; CI pending)
+
+Uninstalled models no longer reappear (`finalize` verifies the installation still exists on the Agent), the sidebar scrolls independently, and admins get a banner + nav badge when a newer release exists with `Update now` through the existing Update Agent. Details and validation: `docs/development-log.md`, `docs/update-management.md`. External validation still required: real Spark uninstall, and the Update Agent actually running on the production host.
+
 ## 2026-11-13 — Browser access (CORS) per API key and site-wide (source; CI pending)
 
 Admin-managed site-wide origins plus per-key origins (admin and personal keys), preflight/response headers and enforcement on `/v1`. Details: `docs/api-contract.md` (Browser access), `docs/security.md`, `docs/development-log.md`. External validation still required: a real browser through the public hostname and multi-replica convergence.

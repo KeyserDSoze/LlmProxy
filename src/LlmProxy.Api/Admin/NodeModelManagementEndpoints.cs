@@ -599,6 +599,14 @@ public static class NodeModelManagementEndpoints
                 // by the Agent. Never republish a stale completed-job snapshot.
                 var current = await SendAgentAsync<ManagedModelsResponse>(client, node, protector,
                     HttpMethod.Get, "/v1/models", null, token);
+                // The Agent keeps completed jobs as history. A job whose installation was
+                // uninstalled must never recreate the deployment (custom models included).
+                if (!IsInstallationOnAgent(job, current.Models ?? []))
+                    return Results.Conflict(new
+                    {
+                        error = "installation_removed",
+                        message = "This installation no longer exists on the Agent (it was uninstalled), so it was not registered again."
+                    });
                 var live = ResolveVerifiedCompletedState(job, current.Models ?? []);
                 return await RegisterManagedInstallationAsync(live, request, descriptor,
                     new ModelCompatibility("unknown", "Installed by the remote Agent", [], job.Request.TensorParallelSize),
@@ -1033,6 +1041,10 @@ public static class NodeModelManagementEndpoints
             item.Runtime == job.Request.Runtime &&
             item.Status is "stopped" or "running");
     }
+
+    public static bool IsInstallationOnAgent(ModelInstallJob job, IReadOnlyList<ManagedModelState> currentModels) =>
+        job.Result is not null && currentModels.Any(item =>
+            string.Equals(item.InstallationId, job.Result.InstallationId, StringComparison.Ordinal));
 
     // An opt-in install may become routable without an Admin browser. Only
     // trust current Agent inventory, a matching installation and a healthy

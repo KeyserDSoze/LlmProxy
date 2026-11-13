@@ -178,7 +178,7 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
       <div className="panelTitle"><div><h2>Host updates</h2><div className="muted">A target release is expanded into every intermediate stable version, so custom migrations cannot be skipped.</div></div><span>{updates?.agentAvailable ? 'Agent online' : 'Agent unavailable'}</span></div>
       {updateError && <div className="error updateMessage">{friendlyError(updateError)}</div>}
       {!updates && !updateError && <div className="loading updateMessage">Checking published releases and host update agent…</div>}
-      {updates && !updates.agentAvailable && <div className="notice updateMessage">The host update agent is not reachable. Release information remains visible, but automatic, immediate and scheduled updates are disabled until the agent is available.</div>}
+      {updates && !updates.agentAvailable && <div className="notice updateMessage">The host update agent is not reachable, so updates cannot be launched from this page. Release information stays visible. One-time fix on the host: run <code>sudo llmproxyctl update</code> (the release installer deploys the update agent), then <code>sudo llmproxyctl doctor</code> and <code>systemctl status llmproxy-update-agent</code> to check it. After that, updates are started from the web app.</div>}
 
       {updates?.policy && <div className="panel formPanel">
         <div className="panelTitle"><div><h3>Automatic update policy</h3><span>Always targets the latest published stable release and applies intermediate versions in ascending order.</span></div><span>{policyLabel(updates.policy.mode)}</span></div>

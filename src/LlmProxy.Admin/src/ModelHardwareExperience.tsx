@@ -212,8 +212,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
               ? t('catalog.autoStartCompleted') : t('catalog.readyToStart'))
             await Promise.all([load(), refresh()])
           } catch (reason) {
+            const text = reason instanceof Error ? reason.message : String(reason)
+            // Uninstalled models stay in the Agent job history; keep the key so they are not retried.
+            if (text.includes('no longer exists on the Agent')) continue
             finalizing.current.delete(key)
-            if (active) setError('Deployment registration: ' + (reason instanceof Error ? reason.message : String(reason)))
+            if (active) setError('Deployment registration: ' + text)
           }
         }
       } catch { /* Agent offline; retain last known job list. */ }

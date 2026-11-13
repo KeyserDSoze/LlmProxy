@@ -43,7 +43,7 @@ a{color:var(--link)}
 
 /* 3. Shell ---------------------------------------------------------------- */
 @media(min-width:821px){
-  /* The sidebar scrolls with the document; paint its column down to the last pixel of the page. */
+  /* The sidebar is sticky at viewport height and scrolls on its own; the shell paints its column. */
   .shell{background:linear-gradient(to right,var(--surface-secondary) 0 263px,var(--border) 263px 264px,var(--bg) 264px)}
   .sidebar{padding:18px 12px 22px;background:transparent;border-right:0}
   .sidebar nav{gap:2px}
@@ -59,6 +59,14 @@ a{color:var(--link)}
 .navBadge{margin-left:auto;display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
   font-size:11px;font-weight:700;line-height:1;background:var(--error-bg);color:var(--error-text);border:1px solid var(--error-border)}
 .sidebarFooter{color:var(--text-subtle)}
+.navBadge--info{background:var(--info-bg);color:var(--info-text);border-color:var(--info-border)}
+.updateBanner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 18px;
+  padding:14px 18px;border-radius:12px;border:1px solid var(--info-border);background:var(--info-bg);color:var(--text)}
+.updateBanner--done{border-color:var(--success-border);background:var(--success-bg)}
+.updateBannerText{display:grid;gap:3px;min-width:0}
+.updateBannerText span{color:var(--text-muted);font-size:13px}
+.updateBannerText .updateBannerWarn{color:var(--warning-text)}
+.updateBannerActions{display:flex;gap:8px;align-items:center}
 .shell>main header{margin-bottom:22px;align-items:flex-end}
 .shell>main header p{color:var(--text-muted);font-size:13.5px;max-width:78ch}
 .uxBreadcrumb{font-size:12px;margin-bottom:6px;color:var(--text-muted)}

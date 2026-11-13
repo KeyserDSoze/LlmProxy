@@ -1,3 +1,10 @@
+## Unreleased — Uninstalled models stay uninstalled, independent sidebar scroll and update notification
+
+- **Fix: uninstalled models came back after a refresh.** The Agent keeps completed install jobs as history, and `POST .../install-jobs/{jobId}/finalize` rebuilt the deployment from such a job without checking that the installation still existed on the Agent. The Models page re-finalized every completed job missing from the overview (every 2.5 s, and again after each page load), so custom models in particular reappeared. `finalize` now answers 409 `installation_removed` unless the installation is still in the Agent inventory; the Models page stops retrying silently.
+- **Fix: long navigation could not be scrolled** until the page content had been scrolled to the end. The sidebar is now sticky at window height and scrolls on its own.
+- **Update notification.** Admins now see a banner on every page when a newer stable release exists (`Update now`, `Details`, dismiss until the next version), plus a badge on *Release notes*. `Update now` uses the existing Update Agent path (every intermediate release applied in order). The banner shows progress while an update runs, asks for a reload when the gateway comes back on a new version, and explains when the host Update Agent is unreachable (the Release notes page now lists the one-time fix). Read-only administrators see the notice without the button.
+- Tests: backend `IsInstallationOnAgent`, Vitest `UpdateBanner`, Playwright `shell-layout.spec.ts`.
+
 ## Unreleased — Browser access (CORS) per API key and site-wide
 
 - Web apps can now call `/v1` directly from a browser. Administrators set **site-wide allowed origins** (Credentials -> Browser access (CORS), `GET/PUT /api/admin/cors-settings`, optional preflight cache time) and each API key can list **its own origins** (Credentials -> Origins, at creation or later; users manage their personal keys in My dashboard). `*` allows any origin.

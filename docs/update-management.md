@@ -23,6 +23,10 @@ The Update Agent is a systemd service on the Linux control-plane host. It is del
 
 The release installer generates a random Update Agent bearer, stores the agent copy in `/etc/llmproxy/update-agent.env`, and writes the gateway-side copy into protected `/opt/llmproxy/.env`. The agent listens on the Docker bridge address rather than all LAN interfaces.
 
+## Update notification
+
+Every Admin page polls `GET /api/admin/updates` (60 s, 5 s while a job runs; GitHub responses are cached by the gateway). When a newer stable release exists, administrators see a banner (`Update now`, `Details`, dismiss until the next version) and a badge on *Release notes*. `Update now` calls the same schedule endpoint as the Release notes page, so every intermediate release is applied in order. While a job runs the banner shows its progress; when the gateway returns on a new version it asks for a page reload. If the host Update Agent is unreachable the button is disabled and the Release notes page explains the one-time fix (`sudo llmproxyctl update`, then `llmproxyctl doctor`). Read-only administrators see the notice without the button.
+
 ## Administrator workflow
 
 The Release Notes page shows:

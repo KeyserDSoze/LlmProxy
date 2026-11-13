@@ -1,3 +1,16 @@
+## 2026-11-13 — Uninstalled models returning, sidebar scroll, update notification (source; CI pending)
+
+Trigger (real Admin screenshot, v0.2.66): uninstalling models, then refreshing, brought them back; the left navigation did not scroll until the right side had been scrolled to the end; updating the gateway still required an SSH session.
+
+Root causes found by reading the code, not by guessing:
+- `finalize` (`NodeModelManagementEndpoints`) trusted a completed Agent install job. `ResolveVerifiedCompletedState` falls back to a `stopped` state built from `job.Result`, so a job whose installation was already uninstalled still registered a deployment. The background worker already guarded this with `CanReconcileJob`, but skips `custom` models; the browser effect in `ModelHardwareExperience` does not, and it re-finalizes every completed job missing from the overview each 2.5 s (the in-memory dedupe set resets on every page load, hence "when I refresh"). Fix: refuse with 409 when the installation is no longer in the Agent inventory (`IsInstallationOnAgent`), and keep the dedupe key on that specific error.
+- `styles.css` ("October workspace refresh") made the sidebar `position:sticky; height:auto; overflow:visible`, so a menu taller than the window could only be reached at the end of the page. Now `height:100dvh; overflow-y:auto`.
+- The self-update feature already existed (Release notes page, Update Agent, ASAP/nightly policies) but nothing announced a new version. Added `UpdateBanner` (polls `/api/admin/updates` every 60 s, 5 s while a job runs; the backend caches GitHub), a nav badge, post-update reload prompt and an actionable message when the host Update Agent is down.
+
+Validation (local): backend 453/453, Vitest 59/59, Playwright functional 48/48 plus the new `shell-layout` spec (run against a static build because the host hit the inotify watcher limit; the visual project could not be run locally for the same reason), `tsc -b` clean. Sidebar/banner checked in a real Chromium screenshot at 560 px height.
+
+Not verified: GitHub Actions for this source (incl. the visual baselines), the uninstall fix against the real Spark, and that the production host actually runs the Update Agent. If the banner shows "update agent not reachable", run `sudo llmproxyctl update` once on the host. The Agent still keeps completed install jobs after uninstall (harmless now, but they clutter the Jobs tab); purging them on uninstall is a possible follow-up.
+
 ## 2026-11-13 — Browser access (CORS) per API key and site-wide (source; CI pending)
 
 Trigger: a web app (`https://ghostwriting.ws`) calling `/v1/models` with its key was blocked by the browser: no `Access-Control-Allow-Origin`, and the preflight (`OPTIONS`, no key) had no answer.
