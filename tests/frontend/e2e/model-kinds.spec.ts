@@ -91,3 +91,38 @@ test('the jobs of another kind of model do not clutter this workspace', async ({
   await expect(page.getByRole('row').filter({ hasText: 'Qwen/Qwen3-8B' })).toHaveCount(1)
   await expect(page.getByRole('row').filter({ hasText: 'Qwen3-Embedding-0.6B' })).toHaveCount(0)
 })
+
+test('a model shows up in exactly one workspace, by its kind', async ({ page }) => {
+  await installMockAdmin(page)
+  const kinds = [
+    { kind: 'SystemOne', name: 'laya-english-cpu', runtime: 'laya', provider: 'convaiinnovations/laya' },
+    { kind: 'ImageGeneration', name: 'ssd-demo', runtime: 'diffusers', provider: 'segmind/SSD-1B' },
+    { kind: 'SpeechSynthesis', name: 'kokoro-demo', runtime: 'kokoro', provider: 'hexgrad/Kokoro-82M' },
+    { kind: 'AudioTranscription', name: 'whisper-demo', runtime: 'faster-whisper', provider: 'Systran/faster-whisper-tiny' },
+    { kind: 'Embedding', name: 'bge-embed', runtime: 'llama.cpp', provider: 'gpustack/bge-m3-GGUF:Q8_0' },
+    { kind: 'Realtime', name: 'voice-demo', runtime: 'vllm', provider: 'org/voice' }
+  ]
+  const extraModels = kinds.map(item => ({ id: 'model-' + item.name, publicName: item.name, providerModelName: item.provider, supportsStreaming: false, supportsTools: false, surface: item.kind, enabled: true }))
+  await page.route('**/api/admin/models', route => route.request().method() === 'GET'
+    ? route.fulfill({ contentType: 'application/json', body: JSON.stringify([...models, ...extraModels]) }) : route.fallback())
+  await page.route('**/api/admin/model-management/nodes/node-1/overview', route => {
+    const body = node1Overview() as Record<string, unknown[]>
+    body.installations = [...body.installations, ...kinds.map(item => ({
+      id: 'deployment-' + item.name, modelId: 'model-' + item.name, logicalModel: item.name, providerModelName: item.provider, catalogModelId: item.name,
+      managedInstallationId: item.name + '-1a2b3c', runtime: item.runtime, surface: item.kind, enabled: true, agentStatus: 'running',
+      agentState: { installationId: item.name + '-1a2b3c', status: 'running', runtime: item.runtime, port: 18020, maxNumSeqs: 1, maxModelLen: 8192 }
+    }))]
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+  })
+
+  const everyone = ['agic-code-fast', ...kinds.map(item => item.name)]
+  const expectOnly = async (kind: string, name: string) => {
+    await page.goto(`/admin/models?kind=${kind}&node=node-1&panel=installed`)
+    await expect(page.getByRole('article', { name })).toBeVisible()
+    for (const other of everyone.filter(candidate => candidate !== name))
+      await expect(page.getByRole('article', { name: other })).toHaveCount(0)
+  }
+
+  await expectOnly('OpenAi', 'agic-code-fast')
+  for (const item of kinds) await expectOnly(item.kind, item.name)
+})

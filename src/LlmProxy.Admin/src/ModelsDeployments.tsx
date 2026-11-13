@@ -137,7 +137,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar modelExplainer">
-      <div><h2>Published models & routing</h2><p>These are the names your clients call. A logical model alone does not install weights or start a runtime; each model needs a healthy deployment on a server. OpenAI Chat and System One classifiers are different API protocols.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/system-one">Connect a System One classifier →</a></div></div>
+      <div><h2>Published models & routing</h2><p>These are the names your clients call. A logical model alone does not install weights or start a runtime; each model needs a healthy deployment on a server. OpenAI Chat and System One classifiers are different API protocols.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/models?kind=SystemOne&panel=setup">Connect a System One classifier →</a></div></div>
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
@@ -158,7 +158,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
             <td>{kind === 'OpenAi' ? [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic' : surfaceFlow[kind]}</td>
             <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
             <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind === 'OpenAi' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
-              {canWrite && kind === 'SystemOne' && <a href="/admin/system-one">Connect classifier →</a>}</td>
+              {canWrite && kind === 'SystemOne' && <a href="/admin/models?kind=SystemOne&panel=setup">Connect classifier →</a>}</td>
           </tr>
         })}
         {models.length === 0 && <tr><td colSpan={6} className="muted">No logical models published yet.</td></tr>}
@@ -183,7 +183,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
         <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option><option value="Embedding">Embeddings · /v1/embeddings</option><option value="Realtime">Voice (streaming) · /v1/realtime</option></select></label>
         <label>Logical name<input value={publicName} onChange={event => setPublicName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'systemone-laya' : 'agic-code-fast'} /></label>
         <label>Provider / runtime model name<input value={providerModelName} onChange={event => setProviderModelName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'convaiinnovations/laya' : 'Qwen/...'} /></label>
-        {surface === 'SystemOne' && <p><a href="/admin/system-one">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}
+        {surface === 'SystemOne' && <p><a href="/admin/models?kind=SystemOne&panel=setup">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}
         {surface !== 'OpenAi' && surface !== 'SystemOne' && <p className="notice">This publishes an API model alias. It does not download or launch an image/audio runtime. Connect an existing runtime that implements the selected OpenAI endpoint and has a healthy /health endpoint. Hardware-specific auto-installation is not available yet.</p>}
         <div className="notice">{surface === 'SystemOne' ? 'System One requests keep their typed payload unchanged. The logical model selects eligible deployments; the provider name is inventory metadata.' : 'Image/audio and Chat requests rewrite the logical model to the provider model name before forwarding; the server must implement that specific API.'}</div>
         <div className="modalActions"><button type="button" className="secondary" onClick={() => setPublishOpen(false)}>Cancel</button><button className="primary" disabled={busy === 'publish'}>Publish model</button></div>

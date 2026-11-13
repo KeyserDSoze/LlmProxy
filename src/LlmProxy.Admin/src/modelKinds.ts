@@ -5,7 +5,7 @@ import type { TranslationKey } from './uiPreferences'
  * The kinds of model the gateway serves. Each has its own workspace in Admin and its own OpenAI-style endpoint;
  * all of them use the same pages (install, installed, jobs, publishing).
  */
-export type ModelKind = 'OpenAi' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Realtime' | 'Embedding'
+export type ModelKind = 'OpenAi' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Realtime' | 'Embedding' | 'SystemOne'
 
 export type ModelKindInfo = {
   kind: ModelKind
@@ -15,7 +15,7 @@ export type ModelKindInfo = {
   endpoint: string
   /** Value of `type` on GET /v1/models/details. */
   apiType: string
-  icon: 'models' | 'image' | 'speaker' | 'mic' | 'voice' | 'vectors'
+  icon: 'models' | 'image' | 'speaker' | 'mic' | 'voice' | 'vectors' | 'classifier'
 }
 
 export const modelKinds: readonly ModelKindInfo[] = [
@@ -24,7 +24,8 @@ export const modelKinds: readonly ModelKindInfo[] = [
   { kind: 'SpeechSynthesis', label: 'kind.tts', description: 'kind.ttsDesc', endpoint: 'POST /v1/audio/speech', apiType: 'speech', icon: 'speaker' },
   { kind: 'AudioTranscription', label: 'kind.stt', description: 'kind.sttDesc', endpoint: 'POST /v1/audio/transcriptions · POST /v1/audio/translations', apiType: 'transcription', icon: 'mic' },
   { kind: 'Realtime', label: 'kind.voice', description: 'kind.voiceDesc', endpoint: 'GET /v1/realtime (WebSocket)', apiType: 'realtime', icon: 'voice' },
-  { kind: 'Embedding', label: 'kind.embedding', description: 'kind.embeddingDesc', endpoint: 'POST /v1/embeddings', apiType: 'embedding', icon: 'vectors' }
+  { kind: 'Embedding', label: 'kind.embedding', description: 'kind.embeddingDesc', endpoint: 'POST /v1/embeddings', apiType: 'embedding', icon: 'vectors' },
+  { kind: 'SystemOne', label: 'kind.systemOne', description: 'kind.systemOneDesc', endpoint: 'POST /v1/systemone[/{model}]', apiType: 'classifier', icon: 'classifier' }
 ]
 
 export const modelKindOrder = modelKinds.map(item => item.kind)
@@ -60,6 +61,6 @@ export function useModelKind(): ModelKind {
 }
 
 /** Surface of a catalog entry or logical model; models without one are text models. */
-export function surfaceOf(surface: string | null | undefined): ModelKind | 'SystemOne' {
-  return surface === 'SystemOne' ? 'SystemOne' : parseModelKind(surface ?? null)
+export function surfaceOf(surface: string | null | undefined): ModelKind {
+  return parseModelKind(surface ?? null)
 }

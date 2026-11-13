@@ -694,7 +694,9 @@ test('task-based navigation exposes direct model installation and System One dee
   for (const name of ['Images', 'Text to speech', 'Speech to text', 'Voice (streaming)', 'Embeddings', 'System One'])
     await expect(page.getByRole('navigation', { name: 'Admin navigation' }).getByRole('button', { name, exact: true })).toBeVisible()
   await page.goto('/admin/system-one')
-  await expect(page).toHaveURL(/\/admin\/system-one$/)
+  // The old address opens the System One workspace on its Setup tab.
+  await expect(page).toHaveURL(/\/admin\/models\?kind=SystemOne&panel=setup/)
+  await expect(page.getByRole('heading', { name: 'System One', exact: true, level: 1 })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
   await expect(page.getByText(/Install Laya from the managed model catalog/)).toBeVisible()
   await page.reload()
@@ -756,12 +758,11 @@ test('guided System One connection creates only a classifier alias and a specifi
 
 test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
   await installAdminApi(page)
-  await page.goto('/admin/models')
+  await page.goto('/admin/models?kind=SystemOne')
   await page.getByRole('tab', { name: /Publishing/ }).click()
-  await page.getByLabel(/Show models of every type/).check()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
-  await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
+  await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/models?kind=SystemOne&panel=setup')
   await classifier.getByRole('button', { name: 'Deploy…' }).click()
   const form = page.getByRole('dialog', { name: /Deploy · systemone-laya/ })
   await form.getByRole('combobox').selectOption('node-1')

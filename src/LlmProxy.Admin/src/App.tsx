@@ -5,7 +5,6 @@ import type { AdminView } from './adminNavigation'
 import GovernanceExperience from './GovernanceExperience'
 import InfrastructureExperience from './InfrastructureExperience'
 import ModelHardwareExperience from './ModelHardwareExperience'
-import SystemOneExperience from './SystemOneExperience'
 import SettingsPage from './SettingsPage'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
@@ -199,7 +198,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
           {modelKinds.map(item => <NavItem key={item.kind} icon={item.icon} active={onModelsView && modelKind === item.kind}
             onClick={() => { navigateAdmin(urlForModelKind(item.kind)); setMobileNavOpen(false) }}>{t(item.label)}</NavItem>)}
-          <NavItem icon="classifier" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOneShort')}</NavItem>
           <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
@@ -261,7 +259,6 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
               canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="catalog" kind={modelKind} />}
             {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
               canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="installed" kind={modelKind} />}
-            {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'settings' && <SettingsPage productVersion={productVersion} onOpenReleases={() => navigate('releases')} />}
             {view === 'routing' && <Routing canWrite={canWrite} routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}

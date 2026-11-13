@@ -37,6 +37,8 @@ export function navigateAdmin(url: string) {
  */
 export function normalizeLegacyAdminUrl(pathname: string, search: string): string | null {
   const path = pathname.replace(/\/+$/, '').toLowerCase()
+  // System One is a workspace like the others; its guided setup is the Setup tab.
+  if (path === '/admin/system-one') return '/admin/models?kind=SystemOne&panel=setup'
   if (path !== '/admin/infrastructure') return null
   const params = new URLSearchParams(search)
   if (params.get('section') !== 'inventory') return null

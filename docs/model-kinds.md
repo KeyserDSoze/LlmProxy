@@ -10,7 +10,9 @@ Admin → *Models & inference* has a workspace for every kind of model. They all
 | Speech to text | `AudioTranscription` | `/v1/audio/transcriptions`, `/v1/audio/translations` | faster-whisper (CPU) | n/a |
 | Voice (streaming) | `Realtime` | `GET /v1/realtime` (WebSocket) | none bundled; any runtime the gateway reaches directly | n/a |
 | Embeddings | `Embedding` | `/v1/embeddings` | llama.cpp `--embedding` (GGUF) | context window |
-| System One | `SystemOne` | `/v1/systemone` | Laya (CPU) | its own guided page |
+| System One | `SystemOne` | `/v1/systemone` | Laya (CPU) | n/a; its guided setup is the *Setup* tab |
+
+A model appears in exactly one workspace, by its kind: installed cards, install jobs, the catalog and Publishing are all filtered, so a System One classifier (Laya) never shows up among the text models and an embedding model never among the voice models. System One's own workspace has the same four tabs plus **Setup** (default classifier and connection of an external service); the old address `/admin/system-one` opens it.
 
 The workspace is selected by `?kind=` in the URL (`/admin/models?kind=Embedding`); a missing or unknown value means Text. *Publishing* lists only the models of the workspace; a checkbox shows every type.
 

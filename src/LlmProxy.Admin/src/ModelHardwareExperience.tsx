@@ -8,6 +8,7 @@ import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
 import ModelJobsTable from './ModelJobsTable'
+import SystemOneExperience from './SystemOneExperience'
 import { kindInfo, surfaceOf } from './modelKinds'
 import type { ModelKind } from './modelKinds'
 import type { JobRow } from './ModelJobsTable'
@@ -20,7 +21,7 @@ import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import HuggingFaceRepositoryInspector from './HuggingFaceRepositoryInspector'
 import type { SuggestedModelProperties, AdminOperation, ModelVerification, ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
-type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
+type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced' | 'setup'
 
 /**
  * mode="models": install, run, troubleshoot and publish models on the selected server.
@@ -29,7 +30,7 @@ type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [], kind: modelKind = 'OpenAi' }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[]; kind?: ModelKind }) {
   const t = useT()
   const [panel, setPanel] = useRouteTab<WorkspacePanel>('panel',
-    ['catalog', 'installed', 'activity', 'advanced'], defaultPanel)
+    ['catalog', 'installed', 'activity', 'advanced', 'setup'], defaultPanel)
   const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [resourcesOpen, setResourcesOpen] = useState(false)
@@ -97,7 +98,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const installCatalogEntry = overview?.catalog.find(item => item.model.id === installCatalogId)
   const installDescriptor = installCatalogEntry?.model
   // What is being installed decides which properties make sense: chat models publish tools/vision/reasoning, embedding models only a context.
-  const installKind: ModelKind = installCatalogId === 'custom' ? customSurface : surfaceOf(installDescriptor?.surface) === 'SystemOne' ? 'OpenAi' : surfaceOf(installDescriptor?.surface) as ModelKind
+  const installKind: ModelKind = installCatalogId === 'custom' ? customSurface : surfaceOf(installDescriptor?.surface)
   const installContextCeiling = Math.min(262144, installDescriptor?.contextTokens ?? 262144)
   const editCatalogMax = overview?.catalog.find(item => item.model.id === editingInstall?.catalogModelId)?.model.contextTokens
   const editContextCeiling = Math.min(262144, editCatalogMax ?? 262144)
@@ -746,7 +747,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         { value: 'installed' as const, label: t('model.workspaceInstalled'), count: kindInstallations.length },
         { value: 'activity' as const, label: t('model.workspaceActivity'),
           count: jobsAttention },
-        { value: 'advanced' as const, label: t('model.workspaceAdvanced') }
+        { value: 'advanced' as const, label: t('model.workspaceAdvanced') },
+        ...(modelKind === 'SystemOne' ? [{ value: 'setup' as const, label: t('model.workspaceSetup') }] : [])
       ]} />
       <p className="workspaceHint">{t('model.lifecycleHint')}</p>
       {panel === 'activity' && <section className="panel">
@@ -882,6 +884,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
           <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>
         </div>}
       </section>}
+      {panel === 'setup' && modelKind === 'SystemOne' &&
+        <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
       {panel === 'advanced' &&
         <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
           canWrite={canWrite} refresh={refresh} embedded kind={modelKind} />}
