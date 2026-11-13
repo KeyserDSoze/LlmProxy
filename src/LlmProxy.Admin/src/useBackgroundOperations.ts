@@ -23,6 +23,9 @@ function store(key: string, value: unknown) {
   try { window.sessionStorage.setItem(key, JSON.stringify(value)) } catch { /* private mode or quota: the list just resets on reload */ }
 }
 
+/** A source that throws synchronously (or is missing) must count as a failed source, not break the whole poll. */
+const settleOne = <T,>(read: () => Promise<T>) => Promise.allSettled([(async () => read())()]).then(results => results[0])
+
 const empty: OperationSnapshot = { active: [], terminal: [] }
 
 /**
@@ -73,10 +76,10 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
         const managed = nodes.filter(node => node.managementBaseAddress)
         const names = new Map(nodes.map(node => [node.id, node.name]))
         const [pairs, installResults, startResults, adminOps] = await Promise.all([
-          Promise.allSettled([api.pairedAgentNodes()]).then(results => results[0]),
-          Promise.allSettled(managed.map(node => api.installJobs(node.id))),
-          Promise.allSettled(managed.map(node => api.modelStartJobs(node.id))),
-          Promise.allSettled([api.adminOperations()]).then(results => results[0])
+          settleOne(() => api.pairedAgentNodes()),
+          Promise.allSettled(managed.map(node => (async () => api.installJobs(node.id))())),
+          Promise.allSettled(managed.map(node => (async () => api.modelStartJobs(node.id))())),
+          settleOne(() => api.adminOperations())
         ])
 
         if (adminOps.status === 'fulfilled') {
