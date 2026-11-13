@@ -1,3 +1,13 @@
+## 2026-11-13 — Security follow-up: request limit, Agent state, authorization test, copy buttons, phone cards (source; CI pending)
+
+Chosen with the operator from the remaining review items. Changes: `RequestBodyLimitMiddleware` (after API-key authentication, before the content log; `Content-Length` check plus Kestrel's per-request limit, chunked overflow mapped to 413); `AgentStateFile` (quarantine of unreadable state files, used by the install-job, start-job and model registries) and a bounded `ProcessRunner` capture; bounded Hub `config.json` read; all endpoint registrations moved into `GatewayEndpointMap` so `EndpointAuthorizationContractTests` can build the real route table (parameter inference needs the container, so every product interface and non-record class is declared as a never-resolved service); `CopyButton`/`copyText` with a selection-copy fallback; fleet table card layout at <= 820 px.
+
+Decisions: the body is still materialised by three stages (read-once refactor is open in the roadmap); runtime secrets in `ExtraArguments` are documented as a known exposure rather than redesigned, because `--api-key` is a supported way to protect a runtime (`docs/release-installation.md`).
+
+Validation (local): backend 618/618 (593 + 25), Vitest 87/87, Playwright functional 56/56, visual 51/51 twice; the authorization test was mutation-checked (removing `RequireAuthorization` from one PUT fails it).
+
+Not verified: GitHub Actions for this source.
+
 ## 2026-11-13 — Background activity dock and fleet table notice (source; CI pending)
 
 Request: while an Agent update runs the operator is stuck on the Servers page, and the upgrade notice became a tall column in the narrow *Status* cell on a phone.

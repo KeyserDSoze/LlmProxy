@@ -387,3 +387,26 @@ tbody tr:hover td{background:var(--row-hover)}
   /* The table scrolls sideways on a phone; keep the notice as wide as the screen and pinned to the left edge. */
   .agentDetails{position:sticky;left:0;width:min(100%,calc(100vw - 80px));box-sizing:border-box}
 }
+
+.copyStatus{font-size:12px;color:var(--text-muted);margin-left:8px;overflow-wrap:anywhere}
+.copyStatusFailed{color:var(--warning-text)}
+
+@media(max-width:820px){
+  /* Fleet table: one card per server instead of six squeezed columns. */
+  .fleetTable thead{display:none}
+  .fleetTable,.fleetTable tbody,.fleetTable tr,.fleetTable td{display:block;width:100%;box-sizing:border-box}
+  .fleetTable tr{margin:0 0 12px;padding:6px 12px;border:1px solid var(--border-soft);border-radius:14px;background:var(--surface)}
+  .fleetTable td{display:grid;grid-template-columns:92px minmax(0,1fr);gap:4px 12px;padding:8px 0;border:0;min-width:0;overflow-wrap:anywhere}
+  .fleetTable td+td{border-top:1px solid var(--border-soft)}
+  .fleetTable td::before{content:attr(data-label);font-size:11px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);padding-top:2px}
+  .fleetTable td[colspan]{display:block;padding:0}
+  .fleetTable td[colspan]::before{content:none}
+  .fleetTable tr:has(+ .agentDetailsRow){margin-bottom:0;border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
+  .fleetTable .agentDetailsRow{margin-top:0;border-top:0;border-top-left-radius:0;border-top-right-radius:0;padding-top:0}
+  .fleetTable .agentDetails{position:static;width:auto}
+  .fleetTable .actions{flex-wrap:wrap}
+}
+@media(max-width:820px){
+  .fleetTable td[data-label="Server"]{display:block}
+  .fleetTable td[data-label="Server"]::before{content:none}
+}

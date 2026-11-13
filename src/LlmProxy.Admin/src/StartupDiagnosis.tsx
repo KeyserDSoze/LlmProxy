@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useT } from './uiPreferences'
+import { copyText } from './UiPrimitives'
 
 export type ParsedDiagnosis = {
   summary: string
@@ -37,11 +38,10 @@ export default function StartupDiagnosis({ title, text, tone = 'error', guide, c
   const [copied, setCopied] = useState(false)
   const parsed = parseDiagnosis(text)
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(text)
+    if (await copyText(text)) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
-    } catch { /* Clipboard can be unavailable on plain HTTP. */ }
+    }
   }
   return <section className={'diagnosis diagnosis-' + tone} role="alert" aria-label={title}>
     <div className="diagnosisHeader">

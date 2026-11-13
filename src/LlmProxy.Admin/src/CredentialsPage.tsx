@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react'
 import { api } from './api'
 import CorsSettingsPanel from './CorsSettingsPanel'
 import { OriginsModal, OriginsSummary, originsHelp, parseOrigins } from './OriginsEditor'
-import { Modal } from './UiPrimitives'
+import { CopyButton, Modal } from './UiPrimitives'
 import type { ApiCredential, CreatedApiCredential } from './types'
 
 export default function CredentialsPage({ credentials, canWrite, refresh }: { credentials: ApiCredential[]; canWrite: boolean; refresh: () => Promise<void> }) {
@@ -57,7 +57,7 @@ export default function CredentialsPage({ credentials, canWrite, refresh }: { cr
       {credentials.length === 0 && <tr><td colSpan={9} className="muted">No credentials created yet.</td></tr>}
     </tbody></table></div></section>
     <CorsSettingsPanel canWrite={canWrite} />
-    {created && <section className="secretBox"><strong>{created.name} · secret available to administrators</strong><p>Reveal/rotation is audited. Copy this value only to the intended client.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button><button className="secondary" onClick={() => setCreated(null)}>Close</button></section>}
+    {created && <section className="secretBox"><strong>{created.name} · secret available to administrators</strong><p>Reveal/rotation is audited. Copy this value only to the intended client.</p><code>{created.secret}</code><CopyButton className="secondary" value={created.secret}>Copy</CopyButton><button className="secondary" onClick={() => setCreated(null)}>Close</button></section>}
     <Modal open={createOpen} title="Create organization credential" description="Shared/workload key. Caller governance is off by default unless an administrator opts it in under Usage & Governance." onClose={() => setCreateOpen(false)}><form className="formPanel" onSubmit={submit}><label>Name<input value={name} onChange={event => setName(event.target.value)} required placeholder="GitHub Copilot Production" /></label><label>Allowed browser origins (optional, one per line)<textarea aria-label="Allowed browser origins for the new key" rows={3} spellCheck={false} value={createOrigins} onChange={event => setCreateOrigins(event.target.value)} placeholder={'https://app.example.com'} /></label><p className="muted">{originsHelp}</p><div className="modalActions"><button type="button" className="secondary" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" disabled={busy === 'create'}>Generate organization API key</button></div></form></Modal>
     <OriginsModal open={editingOrigins !== null} title={`Browser origins · ${editingOrigins?.name ?? ''}`}
       description="Which web apps may use this key directly from a browser. Replaces the key's current list."

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import type { Model, SystemOneStatus } from './types'
+import { CopyButton } from './UiPrimitives'
 
 export default function HelpPage({ models }: { models: Model[] }) {
   const [classifier, setClassifier] = useState<SystemOneStatus | null>(null)
@@ -106,5 +107,5 @@ export default function HelpPage({ models }: { models: Model[] }) {
 }
 
 function Doc({ title, code }: { title: string; code: string }) {
-  return <div className="docCard"><h3>{title}</h3><pre className="payload">{code}</pre><button className="secondary" onClick={() => void navigator.clipboard.writeText(code)}>Copy</button></div>
+  return <div className="docCard"><h3>{title}</h3><pre className="payload">{code}</pre><CopyButton className="secondary" value={code}>Copy</CopyButton></div>
 }

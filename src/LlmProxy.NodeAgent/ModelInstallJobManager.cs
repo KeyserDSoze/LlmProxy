@@ -22,15 +22,14 @@ public sealed class ModelInstallJobManager
     private readonly DockerModelRuntimeManager _manager;
     private readonly IHostApplicationLifetime _host;
 
-    public ModelInstallJobManager(NodeAgentOptions options, DockerModelRuntimeManager manager, IHostApplicationLifetime host)
+    public ModelInstallJobManager(NodeAgentOptions options, DockerModelRuntimeManager manager, IHostApplicationLifetime host,
+        ILogger<ModelInstallJobManager>? logger = null)
     {
         _manager = manager;
         _host = host;
         Directory.CreateDirectory(options.DataDirectory);
         _file = Path.Combine(options.DataDirectory, "install-jobs.json");
-        var restored = File.Exists(_file)
-            ? JsonSerializer.Deserialize<List<ModelInstallJob>>(File.ReadAllText(_file), Json) ?? []
-            : [];
+        var restored = AgentStateFile.ReadList<ModelInstallJob>(_file, Json, logger);
         _jobs = restored.ToDictionary(x => x.Id, x => x.Status is "queued" or "running"
             ? x with { Status = "interrupted", Error = "Agent restarted; cached downloads are preserved. Retry installation.", CompletedAtUtc = DateTimeOffset.UtcNow }
             : x);

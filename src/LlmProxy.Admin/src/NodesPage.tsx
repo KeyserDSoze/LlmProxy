@@ -1,7 +1,7 @@
 import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
-import { BreakableUrl, Modal, Tabs } from './UiPrimitives'
+import { BreakableUrl, CopyButton, Modal, Tabs } from './UiPrimitives'
 import type { AgentDownloads, AgentPairingInvitation, AgentRecoverySecret, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
@@ -284,17 +284,17 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           </>}
         </div>
       </div> : <div className="panelTitle"><h2>{tab === 'active' ? 'Active nodes' : 'Disabled nodes'}</h2><span>{visible.length} shown</span></div>}
-      <div className="tableScroll"><table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
+      <div className="tableScroll"><table className="fleetTable"><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
         {visible.map(node => <Fragment key={node.id}><tr>
-          <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
-          <td><Status value={pairedNodes.some(pair => pair.nodeId === node.id) && node.baseAddress === 'http://127.0.0.1:1' ? 'No runtime' : node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
+          <td data-label="Server"><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
+          <td data-label="Status"><Status value={pairedNodes.some(pair => pair.nodeId === node.id) && node.baseAddress === 'http://127.0.0.1:1' ? 'No runtime' : node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
             const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
             return <div key={pair.nodeId} className="muted">
               Agent {fresh ? 'connected' : 'offline'} · {pair.mode}
               {pair.agentVersion ? ' · installed v' + pair.agentVersion : ''}
               {pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}</div>
-          })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : <BreakableUrl value={node.baseAddress} />}</td>
-          <td>{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
+          })}</td><td className="mono" data-label="Service root">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : <BreakableUrl value={node.baseAddress} />}</td>
+          <td data-label="Health">{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
             ? <div className="muted">Install and start an inference model to enable health checks.</div>
             : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div>
               <div className="muted">{node.lastHealthError ?? `last healthy ${formatDate(node.lastHealthyAtUtc)}`}</div>
@@ -303,8 +303,8 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
               </div>}
               <div className="muted">Node health is independent of Agent heartbeat and update verification.</div>
             </>}</td>
-          <td>{node.maxConcurrency}</td>
-          <td><div className="actions">
+          <td data-label="Capacity">{node.maxConcurrency}</td>
+          <td data-label="Actions"><div className="actions">
             <button disabled={node.baseAddress === 'http://127.0.0.1:1' && !node.managementBaseAddress}
               title="Checks Agent health if all deployments are stopped; otherwise checks the enabled inference runtime. Does not start any model."
               onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
@@ -382,7 +382,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           </p>
         </section>}
         <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{pairingCommand}</pre>
-        <button type="button" onClick={() => void navigator.clipboard.writeText(pairingCommand)}>Copy installation command</button>
+        <CopyButton value={pairingCommand}>Copy installation command</CopyButton>
         <p className="muted">Invitation expires {invitation ? new Date(invitation.expiresAtUtc).toLocaleString() : 'soon'} and is valid for one registration only.</p>
         <p className="muted">{pairMode === 'outbound' ? 'HTTPS/WSS egress only; reverse relay can carry inference SSE.' : 'The gateway must be able to reach the server on port 9900; use a private network or VPN.'}</p>
         <div className="modalActions"><button className="secondary" type="button" onClick={() => { setPairOpen(false); setInvitation(null) }}>Close</button></div>
@@ -413,12 +413,12 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
           </label>
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setRecoveryVisible(current => !current)}>{recoveryVisible ? 'Hide code' : 'Show code'}</button>
-            <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(recoverySecret.recoveryToken)}>Copy code</button>
+            <CopyButton className="secondary" value={recoverySecret.recoveryToken}>Copy code</CopyButton>
           </div>
           <strong>Repair or reinstall this Agent (existing node)</strong>
           <p className="muted">Run on the registered Linux machine. Downloads the latest checksummed public Agent, preserves its model data and restores this exact node ID. Re-running with the same recovery key does not create another node. Stop active inference deployments before a full reinstall.</p>
           <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{recoveryCommand}</pre>
-          <button type="button" onClick={() => void navigator.clipboard.writeText(recoveryCommand)}>Copy repair / reinstall command</button>
+          <CopyButton value={recoveryCommand}>Copy repair / reinstall command</CopyButton>
           <p className="muted">Keep this command private: it contains a persistent server recovery secret. It is not included in public downloads, and can be revoked by rotating the key here.</p>
         </>}
         <p className="muted">For normal updates while online, use “Update agent” on the hardware row. For offline or lost pairing, use the recovery command above; it does not rely on an expired 30-minute invitation.</p>

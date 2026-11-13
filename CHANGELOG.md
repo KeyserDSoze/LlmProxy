@@ -1,3 +1,12 @@
+## Unreleased — Security follow-up and phone fleet cards
+
+- **Gateway:** inference POST routes refuse a JSON body above `Gateway:MaxRequestBodyBytes` (default 16 MiB, range 64 KiB to 256 MiB) with `413 request_too_large`, after authentication and before any stage reads the body. Multimodal uploads keep their own limits.
+- **Agent:** a corrupt `install-jobs.json`, `start-jobs.json` or `models.json` is moved aside (`.corrupt-<time>`, latest five kept) instead of stopping the Agent; output captured from child processes is capped at 4 Mi characters per stream.
+- **Admin:** the Hugging Face `config.json` read is bounded even without `Content-Length`.
+- **Tests:** a route-level authorization contract test enumerates the real route table (admin policies, `AdminWrite` for changes, `SelfService` for `/api/me`, reviewed allow-list for the rest); verified by mutation that removing one policy fails it.
+- **Admin UI:** every Copy button now works over plain HTTP (selection-copy fallback) and says "Copied" or that the browser blocked it; on a phone the fleet table shows one card per server with labelled rows.
+- Documented the remaining exposure: runtime secrets in `ExtraArguments` are visible in `docker inspect` and the host process list (`docs/security.md`).
+
 ## Unreleased — Background activity dock and readable upgrade notices
 
 - **Background activity.** A dock at the bottom-right of every Admin page follows long operations while you work elsewhere: Agent updates (including draining/verifying/needs-attention and the real download percentage), model downloads, model starts and gateway updates. Open it to see each operation, jump to the page that handles it (`Open`) and `Dismiss`/`Clear finished` once done. It derives everything from the endpoints the pages already use, never invents a percentage, keeps the last known state when an Agent is unreachable, and survives a page reload (session storage).

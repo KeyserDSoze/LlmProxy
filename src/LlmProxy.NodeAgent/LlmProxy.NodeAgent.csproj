@@ -3,4 +3,7 @@
     <AssemblyName>LlmProxy.NodeAgent</AssemblyName>
     <RootNamespace>LlmProxy.NodeAgent</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="LlmProxy.UnitTests" />
+  </ItemGroup>
 </Project>

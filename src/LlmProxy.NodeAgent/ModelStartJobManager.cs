@@ -24,16 +24,14 @@ public sealed class ModelStartJobManager
     private readonly IHostApplicationLifetime _host;
 
     public ModelStartJobManager(NodeAgentOptions options, DockerModelRuntimeManager runtime,
-        ManagedModelRegistry registry, IHostApplicationLifetime host)
+        ManagedModelRegistry registry, IHostApplicationLifetime host, ILogger<ModelStartJobManager>? logger = null)
     {
         _runtime = runtime;
         _registry = registry;
         _host = host;
         Directory.CreateDirectory(options.DataDirectory);
         _file = Path.Combine(options.DataDirectory, "start-jobs.json");
-        var saved = File.Exists(_file)
-            ? JsonSerializer.Deserialize<List<ModelStartJob>>(File.ReadAllText(_file), Json) ?? []
-            : [];
+        var saved = AgentStateFile.ReadList<ModelStartJob>(_file, Json, logger);
         _jobs = saved.ToDictionary(j => j.Id, j => j.Status is "queued" or "starting"
             ? j with { Status = "interrupted", Detail = "Agent restarted during startup.",
                 Error = "No automatic GPU restart after an Agent reboot; check hardware before restarting.",

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { navigateAdmin } from './adminNavigation'
 import { useT } from './uiPreferences'
@@ -19,14 +19,48 @@ export function BreakableUrl({ value }: { value: string }) {
   return <>{parts.map((part, index) => <Fragment key={index}>{part}{index < parts.length - 1 && <>/<wbr /></>}</Fragment>)}</>
 }
 
-/** Copies text and reports whether the browser allowed it (clipboard is refused on plain HTTP). */
+/**
+ * Copies text and reports whether it worked. The async Clipboard API exists only in secure contexts (HTTPS or
+ * localhost) and is missing on a gateway opened over plain HTTP on the LAN, so fall back to a selection copy.
+ */
 export async function copyText(value: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(value)
-    return true
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+  } catch { /* fall through to the selection copy */ }
+  try {
+    const area = document.createElement('textarea')
+    area.value = value
+    area.setAttribute('readonly', '')
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+    document.body.appendChild(area)
+    area.select()
+    const copied = document.execCommand('copy')
+    area.remove()
+    return copied
   } catch {
     return false
   }
+}
+
+/** Copy button that says whether the browser allowed it, instead of failing silently. */
+export function CopyButton({ value, children, className, title }: { value: string; children: ReactNode; className?: string; title?: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  async function copy() {
+    setState(await copyText(value) ? 'copied' : 'failed')
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setState('idle'), 3000)
+  }
+  return <>
+    <button type="button" className={className} title={title} onClick={() => void copy()}>{children}</button>
+    <span className={'copyStatus' + (state === 'failed' ? ' copyStatusFailed' : '')} role="status" aria-live="polite">
+      {state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy is blocked here. Select the text and copy it manually.' : ''}
+    </span>
+  </>
 }
 
 /** Decorative "info" glyph as SVG, so it never becomes part of a button's visible text. */

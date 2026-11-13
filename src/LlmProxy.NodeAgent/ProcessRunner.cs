@@ -41,8 +41,8 @@ public sealed class ProcessRunner
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-        var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+        var stdoutTask = ReadBoundedAsync(process.StandardOutput, timeoutCts.Token);
+        var stderrTask = ReadBoundedAsync(process.StandardError, timeoutCts.Token);
         try
         {
             await process.WaitForExitAsync(timeoutCts.Token);
@@ -63,6 +63,26 @@ public sealed class ProcessRunner
             throw new TimeoutException($"'{executable}' exceeded the {timeout} timeout.");
         }
     }
+    /// <summary>Largest output kept per stream. `docker logs` of a crashing container can emit very long lines.</summary>
+    internal const int MaxCapturedCharacters = 4 * 1024 * 1024;
+
+    /// <summary>Keeps the first and discards the rest beyond the limit, but keeps draining so the child never blocks on a full pipe.</summary>
+    internal static async Task<string> ReadBoundedAsync(TextReader reader, CancellationToken cancellationToken, int limit = MaxCapturedCharacters)
+    {
+        var text = new System.Text.StringBuilder();
+        var buffer = new char[8192];
+        var truncated = false;
+        int read;
+        while ((read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
+        {
+            var room = limit - text.Length;
+            if (room > 0) text.Append(buffer, 0, Math.Min(read, room));
+            if (read > room) truncated = true;
+        }
+        if (truncated) text.Append("\n[output truncated by the Agent]");
+        return text.ToString();
+    }
+
     // Streams carriage-return progress (docker, huggingface tqdm) without buffering multi-GB downloads.
     public async Task<CommandResult> RunStreamingAsync(string executable, IEnumerable<string> arguments,
         TimeSpan timeout, CancellationToken cancellationToken, Action<string> onLine,

@@ -232,8 +232,14 @@ public sealed class HuggingFaceRepositoryInspector(IHttpClientFactory clients, I
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength is > MaxConfigBytes) return null;
             await using var stream = await response.Content.ReadAsStreamAsync(token);
             using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer, token);
-            if (buffer.Length > MaxConfigBytes) return null;
+            // No Content-Length (chunked) must not mean unbounded: stop one byte past the limit.
+            var chunk = new byte[16 * 1024];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, token)) > 0)
+            {
+                if (buffer.Length + read > MaxConfigBytes) return null;
+                buffer.Write(chunk, 0, read);
+            }
             buffer.Position = 0;
             return await JsonDocument.ParseAsync(buffer, cancellationToken: token);
         }

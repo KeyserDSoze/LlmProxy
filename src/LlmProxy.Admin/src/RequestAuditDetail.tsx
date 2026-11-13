@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Modal } from './UiPrimitives'
+import { CopyButton, Modal } from './UiPrimitives'
 
 export type RequestAuditDetailData = {
   id?: number
@@ -110,7 +110,7 @@ function Meta({ label, value, mono = false }: { label: string; value: string | n
 
 function PayloadBlock({ title, body, contentType }: { title: string; body: string; contentType?: string | null }) {
   return <div className="payloadBlock requestAuditPayloadBlock">
-    <div className="payloadHeader"><div><h3>{title}</h3>{contentType && <span className="muted">{contentType}</span>}</div><button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(body)}>Copy</button></div>
+    <div className="payloadHeader"><div><h3>{title}</h3>{contentType && <span className="muted">{contentType}</span>}</div><CopyButton className="secondary" value={body}>Copy</CopyButton></div>
     <pre className="payload">{pretty(body)}</pre>
   </div>
 }

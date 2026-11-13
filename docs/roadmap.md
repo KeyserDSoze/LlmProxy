@@ -8,10 +8,14 @@
 - [x] Relay `%2e` guard, `/recover` closes the old tunnel, enrolment rate limit, direct-address validation.
 - [x] Lockfiles and `npm ci`; archive ownership; deploy workflow input validation.
 - [ ] Green CI (including the visual job) for this source; then reinstall Muse Glimmer with `meta-models/Muse-Glimmer-30B-GGUF` and run *Verify capabilities* on the Spark.
-- [ ] Request-body size limit and single read of the body in the governance middlewares.
-- [ ] Agent: tolerate a corrupt job/registry file, cap Docker log size and download size, avoid secrets in `ExtraArguments` argv.
+- [x] Request-body size limit on inference routes (`Gateway:MaxRequestBodyBytes`, default 16 MiB, `413 request_too_large`).
+- [ ] Read the body once and share it across the content-log, token-budget and forwarding stages (they still each materialise it as text).
+- [x] Agent: corrupt job/registry file is quarantined instead of stopping the Agent; captured command output is capped at 4 Mi characters; the Hub `config.json` read is bounded without `Content-Length`.
+- [ ] Agent: runtime secrets given as `ExtraArguments` (for example `--api-key`) stay visible in `docker inspect` and the host process list; move them to an environment file if that exposure matters. Documented in `docs/security.md`.
 - [ ] Sign release assets (cosign) and refuse Agent downgrades.
-- [ ] Route-level authorization test (every `/api/admin` route has a policy; mutations need `AdminWrite`).
+- [x] Route-level authorization test (`EndpointAuthorizationContractTests`: every `/api/admin` route has a policy, changes need `AdminWrite`, `/api/me` needs `SelfService`, anything else must be in a reviewed allow-list).
+- [x] Copy buttons work over plain HTTP and say when the browser blocks the copy.
+- [x] Fleet table renders one card per server on a phone.
 - [ ] Extend profiles only with a cited source (LFM2.5, gpt-oss, Gemma 4, Llama 3.x); persist verification results if operators want history.
 
 ## 2026-11-13 — Admin polish

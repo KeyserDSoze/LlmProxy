@@ -8,8 +8,11 @@ public sealed class ManagedModelRegistry
     private readonly string _path;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public ManagedModelRegistry(NodeAgentOptions options)
+    private readonly ILogger<ManagedModelRegistry>? _logger;
+
+    public ManagedModelRegistry(NodeAgentOptions options, ILogger<ManagedModelRegistry>? logger = null)
     {
+        _logger = logger;
         Directory.CreateDirectory(options.DataDirectory);
         _path = Path.Combine(options.DataDirectory, "models.json");
     }
@@ -68,9 +71,7 @@ public sealed class ManagedModelRegistry
 
     private async Task<IReadOnlyList<ManagedModelRecord>> ReadUnsafeAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(_path)) return [];
-        await using var stream = File.OpenRead(_path);
-        return await JsonSerializer.DeserializeAsync<List<ManagedModelRecord>>(stream, JsonOptions, cancellationToken) ?? [];
+        return await AgentStateFile.ReadListAsync<ManagedModelRecord>(_path, JsonOptions, _logger, cancellationToken);
     }
 
     private async Task WriteUnsafeAsync(IReadOnlyList<ManagedModelRecord> rows, CancellationToken cancellationToken)

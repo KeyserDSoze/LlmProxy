@@ -163,6 +163,7 @@ Routing failures are told apart so a client can react correctly. Messages name o
 | Model name longer than 160 characters | `400` | `model_name_too_long` |
 | `n` greater than 1 while an output-token budget applies | `400` | `unsupported_n` |
 | Inference node sent no response headers within the limit | `504` | `upstream_timeout` |
+| JSON body larger than `Gateway:MaxRequestBodyBytes` (default 16 MiB) on chat, responses or System One | `413` | `request_too_large` |
 
 `Gateway:UpstreamResponseHeaderTimeoutSeconds` (default 900) and `Gateway:UpstreamIdleTimeoutSeconds` (default 300, silence between streamed chunks) bound a stalled node; values outside 5 to 86400 seconds fall back to the default. A timeout before the first byte fails over to another deployment; after the stream has started the connection is aborted, never retried. A request path with a trailing slash (`/v1/chat/completions/`) is treated exactly like the path without it by every governance layer.
 

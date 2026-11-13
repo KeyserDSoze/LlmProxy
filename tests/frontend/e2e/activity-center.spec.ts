@@ -36,4 +36,10 @@ test('the upgrade notice uses the full table width on a phone', async ({ page })
   const box = await notice.boundingBox()
   expect(box!.width).toBeGreaterThan(250)
   expect(box!.height).toBeLessThan(260)
+
+  // Each server is a card: no cell is squeezed into a narrow column and the table does not scroll sideways.
+  const status = await page.locator('.fleetTable td[data-label="Status"]').first().boundingBox()
+  expect(status!.width).toBeGreaterThan(250)
+  const scroll = await page.locator('.tableScroll').first().evaluate(element => [element.clientWidth, element.scrollWidth])
+  expect(scroll[1]).toBeLessThanOrEqual(scroll[0] + 1)
 })

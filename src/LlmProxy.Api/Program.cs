@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using LlmProxy.Api;
 using LlmProxy.Api.Admin;
 using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Api.Identity;
@@ -162,6 +163,7 @@ builder.Services.AddHttpClient("github-releases", client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LlmProxy-ReleaseDiscovery/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 });
+builder.Services.AddSingleton(RequestBodyLimit.From(builder.Configuration));
 builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHttpClient("multimodal", client => client.Timeout = Timeout.InfiniteTimeSpan).AddHttpMessageHandler<AgentRelayHttpHandler>();
@@ -276,6 +278,7 @@ if (entraEnabled)
 app.UseRateLimiter();
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
+app.UseMiddleware<RequestBodyLimitMiddleware>();
 app.UseMiddleware<InferenceContentLoggingMiddleware>();
 app.UseMiddleware<OutputTokenBudgetMiddleware>();
 
@@ -303,42 +306,7 @@ app.UseWebSockets(new WebSocketOptions
     KeepAliveInterval = TimeSpan.FromSeconds(5),
     KeepAliveTimeout = TimeSpan.FromSeconds(15)
 });
-app.MapOpenAiEndpoints();
-app.MapSystemOneEndpoints();
-app.MapSystemOneDefaultAdminEndpoints(entraEnabled);
-app.MapMultimodalEndpoints();
-app.MapIdentitySelfServiceEndpoints(entraEnabled);
-app.MapIdentityAdminEndpoints(entraEnabled);
-app.MapPlatformUserAdminEndpoints(entraEnabled);
-app.MapPlatformUserGroupEndpoints(entraEnabled);
-app.MapAdminEndpoints(entraEnabled);
-app.MapCorsAdminEndpoints(entraEnabled);
-app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
-app.MapCredentialRotationAdminEndpoints(entraEnabled);
-app.MapCredentialGovernanceAdminEndpoints(entraEnabled);
-app.MapApiCredentialSecretAdminEndpoints(entraEnabled);
-app.MapContentLogsAdminEndpoints(entraEnabled);
-app.MapTestingAdminEndpoints(entraEnabled);
-app.MapPlaygroundChatStreamEndpoints(entraEnabled);
-app.MapMetricsAdminEndpoints(entraEnabled);
-app.MapRoutingTuningEndpoints(entraEnabled);
-app.MapRouteCatalogAdminEndpoints(entraEnabled);
-app.MapRuntimeStateAdminEndpoints(entraEnabled);
-app.MapNodeHardwareMetricsEndpoints(entraEnabled);
-app.MapNodeModelManagementEndpoints(entraEnabled);
-app.MapModelCapabilityProbeEndpoints(entraEnabled);
-app.MapNodeEnrollmentEndpoints(entraEnabled);
-app.MapCapacityAdminEndpoints(entraEnabled);
-app.MapInferenceBenchmarkAdminEndpoints(entraEnabled);
-app.MapUsageGovernanceEndpoints(entraEnabled);
-app.MapUserRateLimitAdminEndpoints(entraEnabled);
-app.MapUserTokenBudgetAdminEndpoints(entraEnabled);
-app.MapUsageGroupRateLimitAdminEndpoints(entraEnabled);
-app.MapOutputTokenBudgetAdminEndpoints(entraEnabled);
-app.MapGovernanceCredentialEndpoints(entraEnabled);
-app.MapDataRetentionAdminEndpoints(entraEnabled);
-app.MapProductReleaseAdminEndpoints(entraEnabled);
-app.MapProductUpdateAdminEndpoints(entraEnabled);
+((IEndpointRouteBuilder)app).MapGatewayEndpoints(entraEnabled);
 
 if (entraEnabled)
 {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useT } from './uiPreferences'
+import { copyText } from './UiPrimitives'
 import type { ModelCapabilityProfile, ModelCapabilityFeature } from './types'
 
 type CapabilityKey = 'chat' | 'toolCalling' | 'streaming' | 'vision' | 'thinking'
@@ -140,8 +141,7 @@ export default function ModelCapabilityPanel({ profile, logicalModel }: {
         <small>{profile.source}</small>
       </div>
       <button type="button" className="secondary" onClick={() => {
-        void navigator.clipboard.writeText(settings)
-          .then(() => setCopied(true)).catch(() => setCopied(false))
+        void copyText(settings).then(setCopied)
       }}>{copied ? t('cap.copied') : t('cap.copySettings')}</button>
     </div>
     <details className="capabilityAdvanced">

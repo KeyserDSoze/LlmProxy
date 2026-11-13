@@ -5,6 +5,7 @@ import { useT } from './uiPreferences'
 import RequestAuditDetailModal from './RequestAuditDetail'
 import { OriginsModal, OriginsSummary, originsHelp, parseOrigins } from './OriginsEditor'
 import './requestAudit.css'
+import { CopyButton } from './UiPrimitives'
 
 type Identity = {
   tenantId: string
@@ -393,7 +394,7 @@ export default function UserPortal() {
               <p className="muted">{originsHelp}</p>
               <button className="primary">Generate API key</button>
             </form>
-            {created && <div className="secretBox"><strong>Copy this key now</strong><p>It will not be shown again. Store it in your application's secret manager.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
+            {created && <div className="secretBox"><strong>Copy this key now</strong><p>It will not be shown again. Store it in your application's secret manager.</p><code>{created.secret}</code><CopyButton className="secondary" value={created.secret}>Copy</CopyButton></div>}
           </section>
         </div>
 

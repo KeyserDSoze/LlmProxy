@@ -1,7 +1,7 @@
 import { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import StartupDiagnosis from './StartupDiagnosis'
-import { InfoIcon } from './UiPrimitives'
+import { CopyButton, InfoIcon } from './UiPrimitives'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
 import type { FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
@@ -105,12 +105,10 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <span className="installedModelLabel">{t('model.endpointLabel')}</span>
           <span className="installedModelEndpoint">
             <code>POST {endpoint}</code>
-            <button className="secondary compact" type="button"
-              onClick={() => void navigator.clipboard.writeText(window.location.origin + endpoint)}>
-              {t('catalog.copyEndpoint')}</button>
-            <button className="secondary compact" type="button" title={t('catalog.copyCurlHelp')}
-              onClick={() => void navigator.clipboard.writeText(managedCurlExample(item.runtime, name, window.location.origin))}>
-              {t('catalog.copyCurl')}</button>
+            <CopyButton className="secondary compact" value={window.location.origin + endpoint}>
+              {t('catalog.copyEndpoint')}</CopyButton>
+            <CopyButton className="secondary compact" title={t('catalog.copyCurlHelp')} value={managedCurlExample(item.runtime, name, window.location.origin)}>
+              {t('catalog.copyCurl')}</CopyButton>
           </span>
         </div>
 

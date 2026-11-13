@@ -1,3 +1,7 @@
+## 2026-11-13 — Security follow-up and phone fleet cards (source; CI pending)
+
+Inference request-body limit (`413 request_too_large`), Agent tolerance of corrupt state files and bounded command output, a route-level authorization contract test, working Copy buttons over plain HTTP, and one card per server on phones. Open: single read of the request body across stages; secrets in `ExtraArguments` remain visible in `docker inspect`. Details: `docs/security.md`, `docs/development-log.md`.
+
 ## 2026-11-13 — Background activity dock and fleet table notice (source; CI pending)
 
 A dock on every Admin page follows Agent updates, model downloads/starts and gateway updates while the operator works elsewhere, and links to the page that handles them; the Agent-upgrade notice moved into a full-width row under each server so it is readable on a phone. Details: `docs/admin-ux-navigation.md`, `docs/development-log.md`. External validation still required: a real Agent update on the Spark.
