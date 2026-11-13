@@ -26,6 +26,22 @@ public static class ModelCapabilitiesCatalog
         Feature? AudioTranscription = null);
 
     /// <summary>
+    /// Runtimes such as llama.cpp serve Chat by default, so a profile resolved from the runtime alone would claim Chat for an
+    /// embedding model. For those surfaces the model-level features are declared unsupported and the notes say what it serves.
+    /// </summary>
+    public static Profile ForSurface(Profile profile, LlmProxy.Domain.Models.ModelSurface surface)
+    {
+        if (surface != LlmProxy.Domain.Models.ModelSurface.Embedding) return profile;
+        var unsupported = new Feature("unsupported", "unsupported", "This model returns embedding vectors; it does not generate text.");
+        return profile with
+        {
+            Chat = unsupported, ToolCalling = unsupported, Streaming = unsupported, Vision = unsupported, Thinking = unsupported,
+            MaximumOutputTokens = null,
+            Notes = "Text embeddings only: POST /v1/embeddings (OpenAI-compatible). Inputs longer than the served context are rejected by the runtime."
+        };
+    }
+
+    /// <summary>
     /// For a checkpoint the curated catalog does not know, use what its Hugging Face repository declares. A publisher's
     /// declaration upgrades "unknown" to "supported" for the model; serving stays "unverified" until a live check passes.
     /// </summary>

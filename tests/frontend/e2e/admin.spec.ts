@@ -369,7 +369,7 @@ test('admin navigation preserves top-level pages and workspace tabs across refre
   await expect(page).toHaveURL(/\/admin\/infrastructure\?section=hardware&node=node-1$/)
   await page.reload()
   await expect(page.getByRole('tab', { name: /Hardware & agent/ })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('button', { name: 'Models', exact: true }).click()
+  await page.getByRole('button', { name: 'Text (chat)', exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/models/)
   await page.getByRole('tab', { name: /Publishing/ }).click()
   await expect(page).toHaveURL(/\/admin\/models\?.*panel=advanced/)
@@ -654,7 +654,6 @@ test('live HF discovery and saved AirLLM token limits preserve downloaded model 
     providerModelName: 'Qwen/Qwen3-8B', runtime: 'airllm', maximumOutputTokens: 1024
   }))
   await page.goto('/admin/catalog?node=node-1')
-  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('heading', { name: 'Hugging Face model discovery' })).toBeVisible()
   await expect(page.getByText('Qwen/Qwen3-8B', { exact: true }).first()).toBeVisible()
   await page.getByRole('tab', { name: /Installed/ }).click()
@@ -687,15 +686,13 @@ test('task-based navigation exposes direct model installation and System One dee
   await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Models', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Text (chat)', exact: true, level: 1 })).toBeVisible()
   await expect(page.getByRole('tab', { name: /Discover/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByLabel('Managed hardware node')).toHaveValue('node-1')
 
-  const modelType = page.getByRole('main').getByRole('button', { name: 'System One', exact: true })
-  await modelType.click()
-  await expect(modelType).toHaveAttribute('aria-pressed', 'true')
-  // Managed classifiers are installed from this catalog, not through an external-runtime detour.
-  await expect(page.getByRole('link', { name: /Connect an existing external System One service/ })).toHaveCount(0)
+  // Every kind of model has its own workspace in the navigation; System One keeps its guided setup.
+  for (const name of ['Images', 'Text to speech', 'Speech to text', 'Voice (streaming)', 'Embeddings', 'System One'])
+    await expect(page.getByRole('navigation', { name: 'Admin navigation' }).getByRole('button', { name, exact: true })).toBeVisible()
   await page.goto('/admin/system-one')
   await expect(page).toHaveURL(/\/admin\/system-one$/)
   await expect(page.getByRole('heading', { name: 'Connect a System One runtime' })).toBeVisible()
@@ -761,6 +758,7 @@ test('System One does not offer unverified deploy-to-all routing or missing serv
   await installAdminApi(page)
   await page.goto('/admin/models')
   await page.getByRole('tab', { name: /Publishing/ }).click()
+  await page.getByLabel(/Show models of every type/).check()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
   await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/system-one')
@@ -822,7 +820,7 @@ test('compact model-management and Admin tables do not force whole-page horizont
   await installAdminApi(page)
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/admin/models')
-  await expect(page.getByRole('heading', { name: 'Models', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Text (chat)', exact: true, level: 1 })).toBeVisible()
   await expect.poll(() => page.evaluate(() =>
     document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.goto('/admin/infrastructure?section=capacity')
@@ -842,13 +840,12 @@ test('Italian model discovery, deployment lifecycle and fleet pages use one pers
   await page.getByRole('combobox', { name: 'Language' }).selectOption('it')
   await page.goto('/admin/catalog?tab=deploy&node=node-1')
   await expect(page.getByRole('heading', { name: 'Catalogo modelli installabili' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Scopri modelli Hugging Face' })).toBeVisible()
   await page.getByRole('tab', { name: /Operazioni/ }).click()
   await expect(page.getByRole('heading', { name: 'Download e installazioni' })).toBeVisible()
   await page.getByRole('tab', { name: /Installati/ }).click()
   await expect(page.getByRole('heading', { name: 'Modelli installati su questo hardware' })).toBeVisible()
   await page.getByRole('tab', { name: /Scopri/ }).click()
-  await page.getByRole('button', { name: 'Chat / LLM' }).click()
   await expect(page.getByRole('textbox', { name: 'Cerca modelli Hugging Face' })).toBeVisible()
   await page.goto('/admin/infrastructure?section=fleet')
   await expect(page.getByRole('group', { name: 'Server, Agent e hardware' })).toBeVisible()
@@ -941,7 +938,7 @@ test('curated CPU Whisper uses audio-only runtime settings during installation',
       audioTranscription: { model: 'supported', serving: 'supported', explanation: 'STT' },
       notes: 'CPU only'
     }))
-  await page.goto('/admin/catalog?tab=deploy&node=node-1')
+  await page.goto('/admin/catalog?kind=AudioTranscription&node=node-1')
   const whisper = page.getByRole('row').filter({ hasText: 'Whisper Tiny — Speech-to-text (CPU)' })
   await expect(whisper.getByText('CPU · x64 / ARM64')).toBeVisible()
   await expect(whisper.getByText('Audio ≤25 MiB')).toBeVisible()
@@ -1146,17 +1143,22 @@ test('undersized curated model requires explicit admin consent and sends force o
   expect(queued).toMatchObject({ force: true, runtime: 'vllm' })
 })
 
-test('system-one, images and text-to-speech show real release status instead of empty installer tables', async ({ page }) => {
+test('each kind of model has its own workspace, API endpoint and honest empty state', async ({ page }) => {
   await installAdminApi(page)
-  await page.goto('/admin/catalog?tab=deploy&node=node-1')
-  for (const [kind, checkpoint] of [
-    ['System One', 'convaiinnovations/laya'],
-    ['Images', 'segmind/SSD-1B'],
-    ['Text to speech', 'Kokoro-82M / af_heart']
-  ]) {
-    await page.getByRole('main').getByRole('button', { name: kind, exact: true }).click()
-    await expect(page.getByText(checkpoint)).toBeVisible()
-    await expect(page.getByText('Managed runtime in development')).toBeVisible()
+  const kinds: Array<[string, string, string]> = [
+    ['ImageGeneration', 'Images', 'POST /v1/images/generations'],
+    ['SpeechSynthesis', 'Text to speech', 'POST /v1/audio/speech'],
+    ['AudioTranscription', 'Speech to text', 'POST /v1/audio/transcriptions'],
+    ['Realtime', 'Voice (streaming)', 'GET /v1/realtime'],
+    ['Embedding', 'Embeddings', 'POST /v1/embeddings']
+  ]
+  for (const [kind, title, endpoint] of kinds) {
+    await page.goto(`/admin/catalog?kind=${kind}&node=node-1`)
+    await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toBeVisible()
+    await expect(page.getByRole('main').getByText(endpoint)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Install', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('navigation', { name: 'Admin navigation' }).getByRole('button', { name: title, exact: true })).toHaveAttribute('aria-current', 'page')
   }
+  await page.goto('/admin/catalog?kind=Realtime&node=node-1')
+  await expect(page.getByText(/OpenAI Realtime protocol/)).toBeVisible()
 })

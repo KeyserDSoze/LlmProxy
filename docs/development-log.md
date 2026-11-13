@@ -1,3 +1,15 @@
+## 2026-11-13 — Workspaces per model kind, embeddings, realtime voice and the Jobs table (source; CI pending)
+
+Request: Jobs as a compact paginated table; split *Models & inference* into text, voice (streaming), text to speech, speech to text, embeddings and images (plus the existing System One), all with the same mode and graphics, and prepare OpenAI-style APIs for every kind. "Voice" was clarified as streaming voice, distinct from TTS and STT.
+
+Design: kinds are data (`modelKinds.ts`), not copies of a page. The existing `ModelHardwareExperience` takes `kind` and filters catalog, installations, jobs and publishing by model surface; the navigation sets `?kind=`. The surface chooser and the stale "available soon" previews were removed (those runtimes already ship). Backend: `ModelSurface.Embedding/Realtime`; embeddings reuse the multimodal forwarding path (validation in `EmbeddingInput`, per-endpoint body limit, metadata-only content log); catalog entries use llama.cpp `--embedding` plus `--batch-size/--ubatch-size` sized to the context (llama.cpp rejects inputs longer than the physical batch); custom embedding models carry their kind in the install declaration because the Agent job does not; install-job lists are annotated with `surface`; `/v1/realtime` is a frame relay (`RealtimeEndpoints.RelayAsync`) that passes a close as a close, because cancelling a receive aborts the peer's socket without a handshake (found by the loopback test).
+
+Honest limits: no realtime runtime is bundled and the Agent relay carries HTTP only, so streaming voice works only for directly reachable runtimes; the embedding models were not run on the Spark; the four GGUF repositories and file names were checked against the Hub API, not downloaded.
+
+Validation (local): backend 694/694, Vitest 117/117, Playwright functional 63/63, visual 51/51 (26 baselines changed because the sidebar changed, 1 replaced).
+
+Not verified: GitHub Actions; an embedding model on the real Spark; a real realtime runtime.
+
 ## 2026-11-13 — Paste-a-link install, published model properties, `/v1/models/details` (source; CI pending)
 
 Request: pasting `https://huggingface.co/meta-models/Muse-Glimmer-30B` showed "Base model: Unknown", tool calling "Not verified" and a form of free-text strings to compose; clients need to know each model's limits and features, settable per model.

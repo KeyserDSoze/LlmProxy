@@ -18,6 +18,7 @@ internal static class GatewayEndpointMap
         endpoints.MapSystemOneEndpoints();
         endpoints.MapSystemOneDefaultAdminEndpoints(entraEnabled);
         endpoints.MapMultimodalEndpoints();
+        endpoints.MapRealtimeEndpoints();
         endpoints.MapIdentitySelfServiceEndpoints(entraEnabled);
         endpoints.MapIdentityAdminEndpoints(entraEnabled);
         endpoints.MapPlatformUserAdminEndpoints(entraEnabled);

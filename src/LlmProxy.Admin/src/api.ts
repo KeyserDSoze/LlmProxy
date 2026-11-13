@@ -224,7 +224,7 @@ export const api = {
   },
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
   deleteNode: (id: string) => request<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' }),
-  createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean; surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' }) =>
+  createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean; surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime' }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
   createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number; runtimeBaseAddress?: string | null }) =>
     request<Deployment>('/api/admin/deployments', { method: 'POST', body: JSON.stringify(body) }),
@@ -295,7 +295,7 @@ export const api = {
     `/api/admin/model-management/deployments/${deploymentId}/start-jobs`, { method: 'POST' }),
   cancelManagedStartJob: (nodeId: string, jobId: string) => request<void>(
     `/api/admin/model-management/nodes/${nodeId}/start-jobs/${jobId}`, { method: 'DELETE' }),
-  queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null; startAfterInstall?: boolean; declared?: { streaming?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean; contextWindow?: number | null; maxOutputTokens?: number | null } }) =>
+  queueModelInstall: (nodeId: string, catalogId: string, body: { providerModelName?: string | null; publicName?: string | null; port?: number | null; force?: boolean; runtime?: string; extraArguments?: string[]; maxNumSeqs?: number; maxModelLen?: number | null; maxOutputTokens?: number | null; kvCacheDtype?: 'auto' | 'fp8' | null; cpuOffloadGiB?: number | null; tensorParallelSize?: number | null; gpuDevices?: string | null; startAfterInstall?: boolean; declared?: { streaming?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean; contextWindow?: number | null; maxOutputTokens?: number | null; surface?: string } }) =>
     request<ModelInstallJob>(`/api/admin/model-management/nodes/${nodeId}/models/${encodeURIComponent(catalogId)}/install-jobs`, { method: 'POST', body: JSON.stringify(body) }),
   retryModelInstall: (nodeId: string, jobId: string) => request<ModelInstallJob>(
     `/api/admin/model-management/nodes/${nodeId}/install-jobs/${jobId}/retry`, { method: 'POST' }),

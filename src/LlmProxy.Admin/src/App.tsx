@@ -19,6 +19,7 @@ import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
 import UpdateBanner, { availableUpdateCount, useProductUpdates } from './UpdateBanner'
 import ActivityCenter from './ActivityCenter'
+import { kindInfo, modelKinds, urlForModelKind, useModelKind } from './modelKinds'
 import { useBackgroundOperations } from './useBackgroundOperations'
 import { AdminLink } from './UiPrimitives'
 import type { ApiCredential, AuditEvent, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RoutingSettings, RoutingTuningSettings } from './types'
@@ -108,6 +109,10 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
     window.addEventListener('popstate', onHistoryChange)
     return () => window.removeEventListener('popstate', onHistoryChange)
   }, [])
+  const modelKind = useModelKind()
+  const onModelsView = view === 'models' || view === 'catalog'
+  const titleKey: TranslationKey = onModelsView ? kindInfo(modelKind).label : viewTitleKey(view)
+  const descriptionKey: TranslationKey = onModelsView ? kindInfo(modelKind).description : viewDescriptionKey(view)
   function navigate(view: View) {
     const url = urlForAdminView(view)
     if (window.location.pathname !== url || window.location.search)
@@ -192,9 +197,10 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           <NavItem icon="dashboard" active={view === 'dashboard'} badge={urgent} onClick={() => navigate('dashboard')}>{t('nav.dashboard')}</NavItem>
 
           <div className="navGroupLabel">{t('nav.modelsGroup')}</div>
-          <NavItem icon="models" active={view === 'models' || view === 'catalog'} onClick={() => navigate('models')}>{t('nav.modelsHome')}</NavItem>
-          <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
+          {modelKinds.map(item => <NavItem key={item.kind} icon={item.icon} active={onModelsView && modelKind === item.kind}
+            onClick={() => { navigateAdmin(urlForModelKind(item.kind)); setMobileNavOpen(false) }}>{t(item.label)}</NavItem>)}
           <NavItem icon="classifier" active={view === 'system-one'} onClick={() => navigate('system-one')}>{t('nav.systemOneShort')}</NavItem>
+          <NavItem icon="routing" active={view === 'routing'} onClick={() => navigate('routing')}>{t('nav.routing')}</NavItem>
           {canWrite && <NavItem icon="play" active={view === 'playground'} onClick={() => navigate('playground')}>{t('nav.playground')}</NavItem>}
 
           <div className="navGroupLabel">{t('nav.infrastructureGroup')}</div>
@@ -232,8 +238,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <div>
-              <div className="uxBreadcrumb"><button onClick={() => navigate('dashboard')}>{t('nav.overview')}</button><span aria-hidden="true">/</span><span>{t(viewTitleKey(view))}</span></div>
-              <h1>{t(viewTitleKey(view))}</h1><p>{t(viewDescriptionKey(view))}</p>
+              <div className="uxBreadcrumb"><button onClick={() => navigate('dashboard')}>{t('nav.overview')}</button><span aria-hidden="true">/</span><span>{t(titleKey)}</span></div>
+              <h1>{t(titleKey)}</h1><p>{t(descriptionKey)}</p>
             </div>
           </div>
           <div className="shellHeaderControls"><button className="secondary" onClick={() => void refresh()}>{t('common.refresh')}</button></div>
@@ -252,9 +258,9 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             </>}
             {view === 'infrastructure' && <InfrastructureExperience nodes={nodes} models={models} deployments={deployments} hardware={hardware} canWrite={canWrite} refresh={refresh} />}
             {view === 'catalog' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
-              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="catalog" />}
+              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="catalog" kind={modelKind} />}
             {view === 'models' && <ModelHardwareExperience nodes={nodes} models={models} deployments={deployments}
-              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="installed" />}
+              canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="installed" kind={modelKind} />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'settings' && <SettingsPage productVersion={productVersion} onOpenReleases={() => navigate('releases')} />}
             {view === 'routing' && <Routing canWrite={canWrite} routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
@@ -543,7 +549,7 @@ function Audit({ events }: { events: AuditEvent[] }) {
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric"><span>{label}</span><strong>{value}</strong></div> }
 function Status({ value }: { value: string }) { return <span className={`status status-${value.toLowerCase()}`}><i />{value}</span> }
-type NavIconName = 'dashboard' | 'nodes' | 'models' | 'routing' | 'classifier' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
+type NavIconName = 'image' | 'speaker' | 'mic' | 'voice' | 'vectors' | 'dashboard' | 'nodes' | 'models' | 'routing' | 'classifier' | 'key' | 'metrics' | 'play' | 'logs' | 'audit' | 'help' | 'governance' | 'users' | 'releases' | 'settings'
 
 function NavItem({ active, onClick, icon, badge, badgeLabel, badgeTone, children }: { active: boolean; onClick: () => void; icon: NavIconName; badge?: number; badgeLabel?: string; badgeTone?: 'info'; children: React.ReactNode }) {
   return <button className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={onClick}>
@@ -557,6 +563,11 @@ function NavIcon({ name }: { name: NavIconName }) {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
     nodes: <><rect x="4" y="4" width="16" height="6" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5" /></>,
     models: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" /></>,
+    image: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="m21 16-5-5-8 9" /></>,
+    speaker: <><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></>,
+    mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>,
+    voice: <><path d="M4 12h0M8 8v8M12 4v16M16 8v8M20 12h0" /></>,
+    vectors: <><path d="M5 19 19 5" /><path d="m13 5 6 0 0 6" /><circle cx="6" cy="18" r="1.5" /><circle cx="6" cy="9" r="1.5" /><circle cx="15" cy="18" r="1.5" /></>,
     routing: <><path d="M5 5v4a3 3 0 0 0 3 3h8" /><path d="m13 9 3 3-3 3" /><path d="M5 19v-3a4 4 0 0 1 4-4" /></>,
     classifier: <><path d="M4 6h16M4 12h10M4 18h6" /><path d="m15 16 2 2 4-4" /></>,
     key: <><circle cx="8" cy="12" r="4" /><path d="M12 12h9M17 12v3M20 12v2" /></>,

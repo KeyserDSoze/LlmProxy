@@ -4,9 +4,26 @@ import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
 import type { Deployment, Model, Node } from './types'
 
-type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
+type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
 
-export default function ModelsDeployments({ models, deployments, nodes, canWrite, refresh, embedded = false }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean }) {
+const surfaceBadge: Record<Surface, string> = {
+  OpenAi: 'CHAT', SystemOne: 'SYSTEM ONE', ImageGeneration: 'IMAGE', SpeechSynthesis: 'TTS', AudioTranscription: 'STT', Embedding: 'EMBEDDING', Realtime: 'VOICE'
+}
+const surfaceFlow: Record<Surface, string> = {
+  OpenAi: '', SystemOne: 'typed classifier', ImageGeneration: 'text → image', SpeechSynthesis: 'text → audio',
+  AudioTranscription: 'audio → text', Embedding: 'text → vectors', Realtime: 'audio ⇄ audio (WebSocket)'
+}
+const surfaceEndpoint: Record<Surface, string> = {
+  OpenAi: '/v1/chat/completions', SystemOne: '/v1/systemone', ImageGeneration: '/v1/images/generations', SpeechSynthesis: '/v1/audio/speech',
+  AudioTranscription: '/v1/audio/transcriptions', Embedding: '/v1/embeddings', Realtime: '/v1/realtime'
+}
+
+/** `kind` limits the page to one workspace (text, images, voice, embeddings...) and preselects it when publishing. */
+export default function ModelsDeployments({ models: allModels, deployments: allDeployments, nodes, canWrite, refresh, embedded = false, kind: scope }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; kind?: Surface }) {
+  const [showAllTypes, setShowAllTypes] = useState(false)
+  const effectiveScope = showAllTypes ? undefined : scope
+  const models = useMemo(() => effectiveScope ? allModels.filter(model => (model.surface ?? 'OpenAi') === effectiveScope) : allModels, [allModels, effectiveScope])
+  const deployments = useMemo(() => effectiveScope ? allDeployments.filter(item => models.some(model => model.id === item.modelId)) : allDeployments, [allDeployments, models, effectiveScope])
   const [tab, setTab] = useRouteTab<'models' | 'nodes'>(embedded ? 'advancedTab' : 'tab', ['models', 'nodes'], 'models')
   const [publishOpen, setPublishOpen] = useState(false)
   const [deployModel, setDeployModel] = useState<Model | null>(null)
@@ -16,7 +33,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
   const [settingsMaxConcurrency, setSettingsMaxConcurrency] = useState('')
   const [publicName, setPublicName] = useState('')
   const [providerModelName, setProviderModelName] = useState('')
-  const [surface, setSurface] = useState<Surface>('OpenAi')
+  const [surface, setSurface] = useState<Surface>(scope ?? 'OpenAi')
   const [nodeId, setNodeId] = useState('')
   const [runtimeBaseAddress, setRuntimeBaseAddress] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -124,6 +141,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
+    {scope && <label className="inlineCheck"><input type="checkbox" checked={showAllTypes} onChange={event => setShowAllTypes(event.target.checked)} /> Show models of every type (text, images, voice, embeddings, System One)</label>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'models', label: 'By model', count: models.length }, { value: 'nodes', label: 'By node', count: nodes.length }]} />
 
     {tab === 'models' && <section className="panel">
@@ -134,10 +152,10 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
           const enabledCount = modelDeployments.filter(item => item.enabled).length
           const kind = modelSurface(model)
           return <tr key={model.id}>
-            <td><strong>{model.publicName}</strong><div className="muted">{kind === 'SystemOne' ? 'Selected by X-LlmProxy-Model (or default).' : kind === 'OpenAi' ? 'Client-facing OpenAI Chat/Responses model name.' : 'Specify this public model name in the matching OpenAI Images/Audio API.'}</div></td>
-            <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{kind === 'SystemOne' ? 'SYSTEM ONE' : kind === 'ImageGeneration' ? 'IMAGE' : kind === 'SpeechSynthesis' ? 'TTS' : kind === 'AudioTranscription' ? 'STT' : 'CHAT'}</span></td>
+            <td><strong>{model.publicName}</strong><div className="muted">{kind === 'SystemOne' ? 'Selected by X-LlmProxy-Model (or default).' : kind === 'OpenAi' ? 'Client-facing OpenAI Chat/Responses model name.' : `Use this public model name on ${surfaceEndpoint[kind]}.`}</div></td>
+            <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{surfaceBadge[kind]}</span></td>
             <td className="mono">{model.providerModelName}</td>
-            <td>{kind === 'SystemOne' ? 'typed classifier' : kind === 'ImageGeneration' ? 'text → image' : kind === 'SpeechSynthesis' ? 'text → audio' : kind === 'AudioTranscription' ? 'audio → text' : [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic'}</td>
+            <td>{kind === 'OpenAi' ? [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic' : surfaceFlow[kind]}</td>
             <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
             <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind === 'OpenAi' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
               {canWrite && kind === 'SystemOne' && <a href="/admin/system-one">Connect classifier →</a>}</td>
@@ -162,7 +180,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
 
     <Modal open={publishOpen} title="Publish logical model" description="Choose the API surface first; routing and deployment controls are shared." onClose={() => setPublishOpen(false)}>
       <form className="formPanel" onSubmit={publish}>
-        <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option></select></label>
+        <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option><option value="Embedding">Embeddings · /v1/embeddings</option><option value="Realtime">Voice (streaming) · /v1/realtime</option></select></label>
         <label>Logical name<input value={publicName} onChange={event => setPublicName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'systemone-laya' : 'agic-code-fast'} /></label>
         <label>Provider / runtime model name<input value={providerModelName} onChange={event => setProviderModelName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'convaiinnovations/laya' : 'Qwen/...'} /></label>
         {surface === 'SystemOne' && <p><a href="/admin/system-one">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}

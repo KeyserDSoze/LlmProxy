@@ -151,7 +151,7 @@ test('phone navigation drawer opens with every workspace grouped', async ({ page
   await page.getByRole('button', { name: 'Open navigation' }).click()
   const navigation = page.getByRole('navigation', { name: 'Admin navigation' })
   await expect(navigation).toBeVisible()
-  for (const label of ['Models', 'Routing', 'Servers & hardware', 'Settings'])
+  for (const label of ['Text (chat)', 'Images', 'Embeddings', 'Routing', 'Servers & hardware', 'Settings'])
     await expect(navigation.getByRole('button', { name: label, exact: true })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   if (compareScreenshots) await expect(page).toHaveScreenshot('navigation-phone.png')
@@ -178,11 +178,11 @@ test('custom install shows parameters, formats and quantized builds of the typed
 
 test('gated Hugging Face install failure offers the guided token form', async ({ page }, testInfo) => {
   const problems = await open(page, screens[3], 'light')
-  const card = page.locator('.modelJobCard', { hasText: "requires authentication for 'meta/muse-glimmer'" })
-  await expect(card.getByRole('form', { name: 'Hugging Face access needed' })).toBeVisible()
+  await expect(page.getByRole('form', { name: 'Hugging Face access needed' })).toBeVisible()
+  const table = page.locator('.jobsTable')
   await page.addStyleTag({ content: '.tabs{position:static!important}' })
-  if (compareScreenshots) await expect(card).toHaveScreenshot('gated-hugging-face-card.png')
-  else await testInfo.attach('gated-hugging-face-card', { body: await card.screenshot(), contentType: 'image/png' })
+  if (compareScreenshots) await expect(table).toHaveScreenshot('jobs-table-gated-failure.png')
+  else await testInfo.attach('jobs-table-gated-failure', { body: await table.screenshot(), contentType: 'image/png' })
   expect(problems).toEqual([])
 })
 

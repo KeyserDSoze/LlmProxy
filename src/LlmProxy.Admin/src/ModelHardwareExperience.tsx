@@ -7,6 +7,10 @@ import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityP
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
+import ModelJobsTable from './ModelJobsTable'
+import { kindInfo, surfaceOf } from './modelKinds'
+import type { ModelKind } from './modelKinds'
+import type { JobRow } from './ModelJobsTable'
 import InstallPropertiesEditor, { emptyDeclared, fromSuggestion, validateDeclared } from './InstallPropertiesEditor'
 import type { DeclaredProperties } from './InstallPropertiesEditor'
 import { looksLikeHuggingFaceLink, parseHuggingFaceReference } from './huggingFaceReference'
@@ -22,12 +26,10 @@ type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
  * mode="models": install, run, troubleshoot and publish models on the selected server.
  * mode="hardware": the server's hardware, host readiness and Agent configuration.
  */
-export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [] }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[] }) {
+export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [], kind: modelKind = 'OpenAi' }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[]; kind?: ModelKind }) {
   const t = useT()
   const [panel, setPanel] = useRouteTab<WorkspacePanel>('panel',
     ['catalog', 'installed', 'activity', 'advanced'], defaultPanel)
-  const [modelKind, setModelKind] = useRouteTab<'all' | 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'>(
-    'kind', ['all', 'OpenAi', 'SystemOne', 'ImageGeneration', 'SpeechSynthesis', 'AudioTranscription'], 'all')
   const [showJobHistory, setShowJobHistory] = useState(false)
   const [agentOpen, setAgentOpen] = useState(false)
   const [resourcesOpen, setResourcesOpen] = useState(false)
@@ -63,6 +65,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const touchedProperties = useRef(new Set<keyof DeclaredProperties>())
   const autoFilledRepository = useRef('')
   const [autoFilled, setAutoFilled] = useState(false)
+  const [customSurface, setCustomSurface] = useState<'OpenAi' | 'Embedding'>('OpenAi')
   const [propertiesFor, setPropertiesFor] = useState<ManagedInstallation | null>(null)
   const [propertiesDraft, setPropertiesDraft] = useState<DeclaredProperties>(emptyDeclared)
   const [propertiesSuggestion, setPropertiesSuggestion] = useState<SuggestedModelProperties | null>(null)
@@ -93,6 +96,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
 
   const installCatalogEntry = overview?.catalog.find(item => item.model.id === installCatalogId)
   const installDescriptor = installCatalogEntry?.model
+  // What is being installed decides which properties make sense: chat models publish tools/vision/reasoning, embedding models only a context.
+  const installKind: ModelKind = installCatalogId === 'custom' ? customSurface : surfaceOf(installDescriptor?.surface) === 'SystemOne' ? 'OpenAi' : surfaceOf(installDescriptor?.surface) as ModelKind
   const installContextCeiling = Math.min(262144, installDescriptor?.contextTokens ?? 262144)
   const editCatalogMax = overview?.catalog.find(item => item.model.id === editingInstall?.catalogModelId)?.model.contextTokens
   const editContextCeiling = Math.min(262144, editCatalogMax ?? 262144)
@@ -133,7 +138,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   // What clients will be told is suggested from the catalog and the repository's own metadata; values the operator
   // already edited are kept when the suggestion refreshes (for example after changing the engine).
   useEffect(() => {
-    if (!installCatalogId || fixedMediaRuntime || !installProviderName.includes('/')) { setSuggestedProps(null); return }
+    if (!installCatalogId || fixedMediaRuntime || installKind !== 'OpenAi' || !installProviderName.includes('/')) { setSuggestedProps(null); return }
     let active = true
     const timer = window.setTimeout(() => {
       void api.suggestedModelProperties(installProviderName, runtimeChoice, maxModelLen, maxNumSeqs, runtimeChoice === 'airllm' ? maxOutputTokens : null)
@@ -150,7 +155,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         .catch(() => { if (active) setSuggestedProps(null) })
     }, 450)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [installCatalogId, installProviderName, runtimeChoice, maxModelLen, maxNumSeqs, maxOutputTokens, fixedMediaRuntime])
+  }, [installCatalogId, installKind, installProviderName, runtimeChoice, maxModelLen, maxNumSeqs, maxOutputTokens, fixedMediaRuntime])
   // Pasting a repository fills the form: engine, context, quantization and name come from what the Hub publishes.
   useEffect(() => {
     if (installCatalogId !== 'custom' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(customBaseRepository) ||
@@ -162,7 +167,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         autoFilledRepository.current = customBaseRepository
         const { inspection } = result
         const suggestion = inspection.suggestion
-        const engine = suggestion?.runtime ?? (inspection.hasGguf ? 'llama.cpp' : 'vllm')
+        const engine = customSurface === 'Embedding' ? 'llama.cpp' : suggestion?.runtime ?? (inspection.hasGguf ? 'llama.cpp' : 'vllm')
         setRuntimeChoice(engine)
         const native = inspection.contextLength ?? suggestion?.contextTokens
         if (native) setMaxModelLen(Math.min(native, 32768, installContextCeiling))
@@ -175,10 +180,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
       }).catch(() => { /* The form still works by hand. */ })
     }, 600)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [installCatalogId, customBaseRepository, customRepository, installContextCeiling])
+  }, [installCatalogId, customSurface, customBaseRepository, customRepository, installContextCeiling])
 
   useEffect(() => {
-    if (!installCatalogId || !installProviderName || !installProviderName.includes('/')) {
+    if (!installCatalogId || !installProviderName || !installProviderName.includes('/') || installKind !== 'OpenAi') {
       setInstallCapabilities(null)
       return
     }
@@ -189,7 +194,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         .catch(() => { if (active) setInstallCapabilities(null) })
     }, 350)
     return () => { active = false; window.clearTimeout(timeout) }
-  }, [installCatalogId, installProviderName, runtimeChoice, maxModelLen, maxOutputTokens, fixedMediaRuntime])
+  }, [installCatalogId, installKind, installProviderName, runtimeChoice, maxModelLen, maxOutputTokens, fixedMediaRuntime])
 
 
   useEffect(() => {
@@ -242,14 +247,80 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
 
   const hardware = overview?.hardware; const gpus = hardware?.gpus ?? []; const totals = useMemo(() => ({ gpuMemory: gpus.reduce((sum, gpu) => sum + gpu.memoryTotalGiB, 0), gpuFree: gpus.reduce((sum, gpu) => sum + gpu.memoryFreeGiB, 0) }), [gpus])
   const unifiedMemory = gpus.length > 0 && gpus.every(gpu => gpu.memoryType === 'unified')
-  const filteredCatalog = (overview?.catalog ?? []).filter(item => modelKind === 'all' ||
-    (item.model.surface ?? 'OpenAi') === modelKind)
+  const filteredCatalog = (overview?.catalog ?? []).filter(item => surfaceOf(item.model.surface) === modelKind)
+  const surfaceOfModel = (modelId: string) => surfaceOf(models.find(model => model.id === modelId)?.surface)
+  const kindInstallations = (overview?.installations ?? []).filter(item => surfaceOfModel(item.modelId) === modelKind)
+  const kindInstallationIds = new Set(kindInstallations.map(item => item.id))
+  const kindManagedIds = new Set(kindInstallations.map(item => item.managedInstallationId))
+  const kindMeta = kindInfo(modelKind)
   const installedForJob = (job: ModelInstallJob) => overview?.installations.find(item =>
     !!job.result?.installationId && item.managedInstallationId === job.result.installationId)
   const visibleJobs = showJobHistory ? downloadJobs : downloadJobs.filter(job =>
     job.status !== 'completed' || !overview?.installations.some(item =>
       item.managedInstallationId === job.result?.installationId && item.enabled))
   const benchmarkInstallation = overview?.installations.find(item => item.id === benchmarkDeploymentId) ?? null
+  const stageLabel = (stage: string) => stage === 'container-image' ? 'Container image' : stage === 'model-weights' ? 'Model weights' : stage
+  const jobRows: JobRow[] = [
+    ...downloadJobs.filter(job => surfaceOf(job.surface) === modelKind).map((job): JobRow => {
+      const installed = installedForJob(job)
+      const running = installed?.agentStatus.toLowerCase() === 'running'
+      const registered = overview?.installations.some(item => item.managedInstallationId === job.result?.installationId)
+      return {
+        id: 'download:' + job.id, type: 'download', status: job.status,
+        title: job.request.publicName ?? job.request.providerModelName ?? job.request.catalogModelId,
+        subtitle: job.request.runtime + ' · ' + job.request.catalogModelId,
+        detail: stageLabel(job.stage) + ' · ' + job.detail,
+        percent: job.percent, startedAtUtc: job.createdAtUtc,
+        size: job.completedBytes != null && job.totalBytes != null
+          ? (job.completedBytes / 1048576).toFixed(0) + ' / ' + (job.totalBytes / 1048576).toFixed(0) + ' MiB' : null,
+        actions: [
+          ...(job.status === 'queued' || job.status === 'running'
+            ? [{ key: 'cancel', label: t('catalog.cancelJob'), disabled: !canWrite || busy !== null, onClick: () => void cancelInstall(job.id) }] : []),
+          ...(job.status === 'interrupted' || job.status === 'failed' || job.status === 'cancelled'
+            ? [{ key: 'retry', label: t('catalog.retryJob'), primary: true, disabled: !canWrite || busy !== null || !overview?.agentAvailable, onClick: () => void retryInstall(job) }] : []),
+          ...(job.status === 'completed' && !registered
+            ? [{ key: 'finish', label: t('catalog.finishJob'), primary: true, disabled: !canWrite || busy !== null, onClick: () => void finishInstallation(job) }] : []),
+          ...(job.status === 'completed' && installed && !running
+            ? [{ key: 'start', label: t('catalog.start'), primary: true, disabled: !canWrite || busy !== null, onClick: () => void action('start', installed.id) }] : []),
+          ...(job.status === 'completed' && installed && running && !installed.enabled
+            ? [{ key: 'activate', label: t('catalog.activate'), primary: true, disabled: !canWrite || busy !== null, onClick: () => void action('activate', installed.id) }] : []),
+          ...(job.status === 'completed' && installed
+            ? [{ key: 'installed', label: t('catalog.goToInstalled'), onClick: () => setPanel('installed') }] : [])
+        ],
+        expanded: job.error || job.status === 'completed' ? <div className="stack">
+          {job.status === 'completed' && <p className="muted">{job.request.startAfterInstall && job.result?.status === 'running'
+            ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}</p>}
+          {job.error && <StartupDiagnosis title={t('model.installFailedTitle')} text={job.error}
+            guide={<HuggingFaceAccessGuide nodeId={nodeId} failure={job.error} canWrite={canWrite} onConfigured={() => retryInstall(job)} />} />}
+        </div> : undefined
+      }
+    }),
+    ...startJobs.filter(job => kindManagedIds.has(job.installationId)).map((job): JobRow => {
+      const installed = overview?.installations.find(item => item.managedInstallationId === job.installationId)
+      const starting = job.status === 'queued' || job.status === 'starting'
+      return {
+        id: 'start:' + job.id, type: 'start',
+        status: job.status === 'starting' ? 'running' : job.status,
+        title: installed?.logicalModel ?? job.installationId, subtitle: installed ? installed.runtime + ' · ' + job.installationId : undefined,
+        detail: job.detail, startedAtUtc: job.createdAtUtc,
+        actions: [
+          ...(starting ? [{ key: 'cancel', label: t('catalog.cancelJob'), disabled: !canWrite, onClick: () => void cancelStartJob(job.id) }] : []),
+          ...((job.status === 'failed' || job.status === 'interrupted') && installed
+            ? [{ key: 'retry', label: t('catalog.start'), primary: true, disabled: !canWrite || busy !== null, onClick: () => void action('start', installed.id) }] : []),
+          ...(installed ? [{ key: 'installed', label: t('catalog.goToInstalled'), onClick: () => setPanel('installed') }] : [])
+        ],
+        expanded: job.error ? <StartupDiagnosis title={t('model.startFailedTitle')} text={job.error} /> : undefined
+      }
+    }),
+    ...operations.filter(item => !item.deploymentId || kindInstallationIds.has(item.deploymentId)).map((item): JobRow => ({
+      id: 'operation:' + item.id, type: 'operation',
+      status: item.status === 'Running' ? 'running' : item.status === 'Succeeded' ? 'completed' : 'failed',
+      title: item.title, detail: item.status === 'Failed' ? item.error ?? item.detail : item.detail,
+      startedAtUtc: item.startedAtUtc, actions: [],
+      expanded: item.status === 'Failed' && item.error ? <p className="error">{item.error}</p> : undefined
+    }))
+  ]
+  const jobsAttention = jobRows.filter(row => row.status === 'queued' || row.status === 'running' || row.status === 'failed' || row.status === 'interrupted').length
   useEffect(() => {
     if (!benchmarkDeploymentId) return
     let active = true
@@ -454,7 +525,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         maxOutputTokens: runtimeChoice === 'airllm' ? maxOutputTokens : null,
         kvCacheDtype: runtimeChoice === 'vllm' ? kvCacheDtype : null,
         cpuOffloadGiB: runtimeChoice === 'vllm' && cpuOffloadGiB > 0 ? cpuOffloadGiB : null,
-        declared: fixedMediaRuntime ? undefined : declared
+        declared: fixedMediaRuntime ? undefined
+          : installKind === 'OpenAi' ? declared
+          : installKind === 'Embedding' ? { streaming: false, tools: false, vision: false, reasoning: false, maxOutputTokens: null,
+              contextWindow: declared.contextWindow ?? maxModelLen, ...(catalogId === 'custom' ? { surface: 'Embedding' } : {}) }
+          : undefined
       })
       setDownloadJobs(current => [job, ...current.filter(item => item.id !== job.id)])
       setInstallCatalogId(null)
@@ -667,64 +742,16 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         <button className="secondary" disabled={loading} onClick={() => void load()}>{loading ? t('catalog.checking') : t('catalog.retry')}</button>
       </section>}
       <Tabs value={panel} onChange={setPanel} items={[
-        { value: 'catalog' as const, label: t('model.workspaceCatalog'), count: overview?.catalog.length ?? 0 },
-        { value: 'installed' as const, label: t('model.workspaceInstalled'), count: overview?.installations.length ?? 0 },
+        { value: 'catalog' as const, label: t('model.workspaceCatalog'), count: filteredCatalog.length },
+        { value: 'installed' as const, label: t('model.workspaceInstalled'), count: kindInstallations.length },
         { value: 'activity' as const, label: t('model.workspaceActivity'),
-          count: downloadJobs.filter(job => job.status === 'queued' || job.status === 'running' || job.status === 'interrupted' || job.status === 'failed').length },
+          count: jobsAttention },
         { value: 'advanced' as const, label: t('model.workspaceAdvanced') }
       ]} />
       <p className="workspaceHint">{t('model.lifecycleHint')}</p>
-      {panel === 'activity' && operations.length > 0 && <section className="panel" aria-label="Recent operations">
-        <div className="panelTitle"><h2>Stop, uninstall and other operations</h2><span>{operations.filter(item => item.status === 'Running').length} running</span></div>
-        <div className="modelJobList">{operations.slice(0, 10).map(item => <div className="modelJobCard" key={item.id}>
-          <div className="actions"><strong>{item.title}</strong><Status value={item.status === 'Running' ? 'running' : item.status === 'Succeeded' ? 'completed' : 'failed'} /></div>
-          <div>{item.status === 'Failed' ? item.error ?? item.detail : item.detail}</div>
-          <div className="muted">{new Date(item.startedAtUtc).toLocaleString()}</div>
-        </div>)}</div>
-      </section>}
       {panel === 'activity' && <section className="panel">
-        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2>
-          <div className="actions"><span>{t('catalog.jobs')}</span>
-            <button className="secondary" onClick={() => setShowJobHistory(value => !value)}>
-              {showJobHistory ? t('catalog.hideHistory') : t('catalog.showHistory')}
-            </button>
-          </div>
-        </div>
-        {visibleJobs.length === 0 ? <p className="muted">{t('catalog.noDownloads')}</p> :
-          <div className="modelJobList">{visibleJobs.slice(0, 20).map(job => <div className="modelJobCard" key={job.id}>
-            <div className="actions"><strong>{job.request.catalogModelId} · {job.request.runtime}</strong><Status value={job.status}/>
-              {(job.status === 'queued' || job.status === 'running') &&
-                <button className="secondary" disabled={!canWrite || busy !== null} onClick={() => void cancelInstall(job.id)}>{t('catalog.cancelJob')}</button>}
-              {(job.status === 'interrupted' || job.status === 'failed' || job.status === 'cancelled') &&
-                <button className="primary" disabled={!canWrite || busy !== null || !overview?.agentAvailable}
-                  onClick={() => void retryInstall(job)}>{t('catalog.retryJob')}</button>}
-              {job.status === 'completed' && !overview?.installations.some(item => item.managedInstallationId === job.result?.installationId) &&
-                <button className="primary" disabled={!canWrite || busy !== null}
-                  onClick={() => void finishInstallation(job)}>{t('catalog.finishJob')}</button>}
-              {job.status === 'completed' && installedForJob(job) && installedForJob(job)!.agentStatus.toLowerCase() !== 'running' &&
-                <button className="primary" disabled={!canWrite || busy !== null}
-                  onClick={() => void action('start', installedForJob(job)!.id)}>{t('catalog.start')}</button>}
-              {job.status === 'completed' && installedForJob(job)?.agentStatus.toLowerCase() === 'running' && !installedForJob(job)?.enabled &&
-                <button className="primary" disabled={!canWrite || busy !== null}
-                  onClick={() => void action('activate', installedForJob(job)!.id)}>{t('catalog.activate')}</button>}
-              {job.status === 'completed' && installedForJob(job) &&
-                <button className="secondary" onClick={() => setPanel('installed')}>{t('catalog.goToInstalled')}</button>}
-            </div>
-            <div>{job.stage === 'container-image' ? 'Container image' : job.stage === 'model-weights' ? 'Model weights' : job.stage} · {job.detail}</div>
-            {job.percent != null ? <div className="stack">
-              <progress max="100" value={Math.min(100, Math.max(0, job.percent))} aria-label={'Download stage progress ' + job.request.catalogModelId} style={{width: '100%'}} />
-              <strong>{job.percent.toFixed(1)}% <span className="muted">of current stage/file</span></strong>
-            </div> : job.status === 'running' && <p className="muted">Preparing… percentage unavailable for this operation.</p>}
-            {job.completedBytes != null && job.totalBytes != null &&
-              <p className="muted">{(job.completedBytes / 1048576).toFixed(1)} / {(job.totalBytes / 1048576).toFixed(1)} MiB</p>}
-            {job.status === 'completed' && <p className="muted">
-              {job.request.startAfterInstall && job.result?.status === 'running'
-                ? t('catalog.autoStartCompleted') : t('catalog.completeNext')}
-            </p>}
-            {job.error && <StartupDiagnosis title={t('model.installFailedTitle')} text={job.error}
-              guide={<HuggingFaceAccessGuide nodeId={nodeId} failure={job.error} canWrite={canWrite}
-                onConfigured={() => retryInstall(job)} />} />}
-          </div>)}</div>}
+        <div className="panelTitle"><h2>{t('catalog.downloads')}</h2><span>{t('catalog.jobs')}</span></div>
+        <ModelJobsTable rows={jobRows} />
       </section>}
 
       {panel === 'catalog' && <section className="panel modelCatalogPanel">
@@ -732,28 +759,21 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
           <div><h2>{t('catalog.title')}</h2><span>{t('catalog.subtitle')}</span></div>
           <div className="actions">
             <span>{t('catalog.fitDescription')}</span>
-            {(modelKind === 'all' || modelKind === 'OpenAi') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
+            {(modelKind === 'OpenAi' || modelKind === 'Embedding') && <button className="secondary" disabled={!canWrite || !overview?.agentAvailable}
               title={!overview?.agentAvailable ? t('catalog.requiresAgent') : undefined}
               onClick={() => {
-                setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice('vllm')
+                setCustomSurface(modelKind === 'Embedding' ? 'Embedding' : 'OpenAi')
+                setInstallCatalogId('custom'); setStartAfterInstall(false); setRuntimeChoice(modelKind === 'Embedding' ? 'llama.cpp' : 'vllm')
                 setCustomRepository(''); setCustomConfirmed(false)
                 setLogicalAlias(''); setExtraArgumentsText(''); setInstallPort('')
                 setMaxModelLen(8192); setMaxOutputTokens(256); setMaxNumSeqs(1)
                 setTensorParallelSize(1); setGpuDevices('')
-              }}>{t('catalog.custom')}</button>}
+              }}>{modelKind === 'Embedding' ? t('kind.installCustomEmbedding') : t('catalog.custom')}</button>}
           </div>
         </div>
-        <div className="modelSurfaceChooser" role="group" aria-label={t('model.modelType')}>
-          {([
-            ['all', t('model.kindAll')],
-            ['OpenAi', t('model.kindChat')],
-            ['SystemOne', t('model.kindSystemOne')],
-            ['ImageGeneration', t('model.kindImage')],
-            ['SpeechSynthesis', t('model.kindTts')],
-            ['AudioTranscription', t('model.kindStt')]
-          ] as const).map(([kind, label]) =>
-            <button key={kind} type="button" className={modelKind === kind ? 'primary' : 'secondary'}
-              aria-pressed={modelKind === kind} onClick={() => setModelKind(kind)}>{label}</button>)}
+        <div className="modelKindHeader">
+          <p>{t(kindMeta.description)}</p>
+          <span className="muted">{t('kind.endpoint')}: <code>{kindMeta.endpoint}</code></span>
         </div>
         {filteredCatalog.length > 0 && <div className="tableScroll">
           <table className="modelCatalogTable">
@@ -834,38 +854,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             </tr>)}</tbody>
           </table>
         </div>}
-        {(modelKind === 'all' || modelKind === 'SystemOne' ||
-          modelKind === 'ImageGeneration' || modelKind === 'SpeechSynthesis') && <div className="modelCatalogPreviews">
-          {([
-            { surface: 'SystemOne', title: t('catalog.typeSystemOne'),
-              model: 'convaiinnovations/laya', runtime: 'laya (CPU)',
-              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/28' },
-            { surface: 'ImageGeneration', title: t('catalog.typeImage'),
-              model: 'segmind/SSD-1B', runtime: 'diffusers (NVIDIA GPU)',
-              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/31' },
-            { surface: 'SpeechSynthesis', title: t('catalog.typeTts'),
-              model: 'Kokoro-82M / af_heart', runtime: 'kokoro (CPU)',
-              pr: 'https://github.com/KeyserDSoze/LlmProxy/pull/30' }
-          ] as const).filter(item =>
-            (modelKind === 'all' || modelKind === item.surface) &&
-            !(overview?.catalog ?? []).some(ready => ready.model.surface === item.surface)
-          ).map(item =>
-            <article className="modelCatalogPreview" key={item.surface}>
-              <div className="modelCatalogPreviewHeader">
-                <strong>{item.title}</strong>
-                <span className="modelPreviewStatus">{t('catalog.availableSoon')}</span>
-              </div>
-              <div className="mono muted">{item.model}</div>
-              <div className="muted">{t('catalog.modelRuntime')}: {item.runtime}</div>
-              <p>{t('catalog.runtimePreview')}</p>
-              <p className="muted">{t('catalog.typeComing')}</p>
-              <a href={item.pr} target="_blank" rel="noreferrer">{t('catalog.moreInfo')} ↗</a>
-            </article>)}
+        {filteredCatalog.length === 0 && <div className="emptyState">
+          <strong>{t('model.noModelsForType')}</strong>
+          <p>{modelKind === 'Realtime' ? t('kind.voiceEmpty') : t('kind.noCuratedModels')}</p>
         </div>}
-        {filteredCatalog.length === 0 && modelKind === 'AudioTranscription' &&
-          <div className="emptyState">
-            <strong>{t('model.noModelsForType')}</strong><p>{t('model.typeAvailability')}</p>
-          </div>}
         <p className="muted modelCatalogFootnote">{t('catalog.fitCaution')}</p>
       </section>}
       {panel === 'catalog' && modelKind === 'OpenAi' && <HuggingFaceDiscoveryPanel canWrite={canWrite} onReview={reviewHubModel} />}
@@ -875,7 +867,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
               onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
           </div></div>
-        <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs} operations={operations}
+        <InstalledModelCards nodeId={nodeId} installations={kindInstallations} startJobs={startJobs} operations={operations}
           upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy} onEditProperties={openPropertiesEdit}
           agentAvailable={Boolean(overview?.agentAvailable)}
           verifications={verifications} onVerify={id => void verifyCapabilities(id)}
@@ -892,7 +884,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
       </section>}
       {panel === 'advanced' &&
         <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
-          canWrite={canWrite} refresh={refresh} embedded />}
+          canWrite={canWrite} refresh={refresh} embedded kind={modelKind} />}
     </>}
 
     <Modal open={resourcesOpen} title={t('model.memoryDiagnostics')}
@@ -1009,7 +1001,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
 
     <Modal open={propertiesFor !== null} title={t('props.edit')} description={propertiesFor?.logicalModel ?? ''} onClose={() => setPropertiesFor(null)}>
       <form className="formPanel" onSubmit={event => void saveProperties(event)}>
-        <InstallPropertiesEditor value={propertiesDraft}
+        <InstallPropertiesEditor compact={propertiesFor?.surface === 'Embedding'} value={propertiesDraft}
           onChange={(key, next) => setPropertiesDraft(current => ({ ...current, [key]: next }))}
           onReset={() => { if (propertiesSuggestion) setPropertiesDraft(fromSuggestion(propertiesSuggestion.properties)) }}
           suggestion={propertiesSuggestion} runtime={propertiesFor?.runtime ?? 'vllm'} contextWindowCeiling={262144} />
@@ -1049,7 +1041,9 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         </details>}
         <label>{t('model.engine')}
           <select aria-label={t('model.engine')} value={runtimeChoice} onChange={event => setRuntimeChoice(event.target.value as typeof runtimeChoice)}>
-            {installCatalogId === 'custom'
+            {installCatalogId === 'custom' && customSurface === 'Embedding'
+              ? <option value="llama.cpp">llama.cpp (GGUF embedding model)</option>
+              : installCatalogId === 'custom'
               ? <><option value="vllm">vLLM</option><option value="sglang">SGLang (experimental)</option><option value="llama.cpp">llama.cpp (GGUF :quant)</option><option value="airllm">AirLLM layer streaming (experimental)</option></>
               : overview?.catalog.find(item => item.model.id === installCatalogId)?.model.runtime === 'llama.cpp'
               ? <option value="llama.cpp">llama.cpp (GGUF)</option>
@@ -1116,7 +1110,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
           <input aria-label={t('model.maxOutput')} type="number" min="1" max={Math.min(4096, maxModelLen)}
             value={maxOutputTokens} onChange={event => setMaxOutputTokens(Number(event.target.value))} required />
         </label>}
-        {!fixedMediaRuntime && <InstallPropertiesEditor value={declared} onChange={editDeclared} suggestion={suggestedProps}
+        {!fixedMediaRuntime && (installKind === 'OpenAi' || installKind === 'Embedding') && <InstallPropertiesEditor compact={installKind === 'Embedding'} value={declared} onChange={editDeclared} suggestion={suggestedProps}
           onReset={() => { touchedProperties.current.clear(); if (suggestedProps) setDeclared(fromSuggestion(suggestedProps.properties)) }}
           runtime={runtimeChoice} contextWindowCeiling={installContextCeiling} />}
         <label>{t('model.logicalAlias')} (optional)<input aria-label={t('model.logicalAlias')} maxLength={160} placeholder={installCatalogId ?? ''} value={logicalAlias} onChange={event => setLogicalAlias(event.target.value)} /></label>

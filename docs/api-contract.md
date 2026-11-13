@@ -51,8 +51,31 @@ Same catalog as `/v1/models`, with what an application needs to use each model w
 
 - `context_window` is the longest prompt plus answer one request can use on this deployment (for llama.cpp, the shared pool divided by the parallel slots). `max_output_tokens` is the largest completion to ask for. Both are `null` when not declared.
 - Values are **declared by the administrator** (suggested from the curated catalog and the model's Hugging Face metadata, then reviewed). They describe the model; the gateway never blocks or rewrites a request because of them. Capabilities are `false` for non-chat surfaces.
+- `type` is the kind of model: `chat`, `embedding`, `image`, `speech`, `transcription` or `realtime`. `GET /v1/models/details?type=embedding` returns only that kind.
 - Authentication is the same API key as the rest of `/v1`. The response carries an `ETag` and `Cache-Control: private, max-age=30`; send `If-None-Match` to get `304`.
 - Administrators edit the values at install (Models → Install) or later with `PUT /api/admin/models/{id}/properties` (`AdminWrite`; body `supportsStreaming`, `supportsTools`, `supportsVision`, `supportsReasoning`, `contextWindowTokens`, `maxOutputTokens`; output may not exceed context).
+
+## One endpoint per kind of model
+
+Every kind of model has its own workspace in Admin and its own OpenAI-style endpoint. The `model` field is always the public (logical) name, which is routed only to deployments of the same kind: a chat alias never answers `/v1/embeddings`.
+
+| Kind (`type`) | Endpoint | Notes |
+| --- | --- | --- |
+| Text (`chat`) | `POST /v1/chat/completions`, `POST /v1/responses` | SSE streaming, tools, vision, reasoning as declared on the model |
+| Images (`image`) | `POST /v1/images/generations` | `b64_json` PNG |
+| Text to speech (`speech`) | `POST /v1/audio/speech` | |
+| Speech to text (`transcription`) | `POST /v1/audio/transcriptions`, `POST /v1/audio/translations` | multipart upload, 25 MiB |
+| Embeddings (`embedding`) | `POST /v1/embeddings` | see below |
+| Voice, streaming (`realtime`) | `GET /v1/realtime?model=<name>` | WebSocket, see below |
+| System One | `POST /v1/systemone[/{model}]` | typed classifier |
+
+### `POST /v1/embeddings`
+
+OpenAI-compatible: `{"model": "bge-m3", "input": "text"}`. `input` is a string, an array of non-empty strings, an array of token ids or an array of token-id arrays (at most 2048 items); `encoding_format` may be `float` or `base64`. The body may be up to 4 MiB; a larger or malformed request answers `400 invalid_embedding_input` / `413`. The runtime (llama.cpp with `--embedding`) returns the vectors and `usage`. Request bodies are not kept in the content log (metadata only), like the other non-chat endpoints. Errors use the same routing codes as chat (`model_not_found`, `model_not_running`, `capacity_exhausted`).
+
+### `GET /v1/realtime?model=<name>` (streaming voice)
+
+An OpenAI-Realtime-style WebSocket. The gateway authenticates the API key (header `Authorization: Bearer ...`), applies the caller's rate limits and the deployment's capacity, selects a deployment of a model of kind `realtime`, connects to the runtime's `/v1/realtime` and relays frames in both directions without interpreting them (audio and JSON events pass through unchanged). Errors before the upgrade are JSON: `426 websocket_required`, `400 model_required`, `404`/`503` routing errors, `429`. **Only runtimes the gateway reaches directly are served**: the server Agent relay carries HTTP, not WebSocket, so a model hosted behind an Agent answers `501 realtime_not_supported_through_agent_relay`. No runtime is bundled yet; publish a model of this type under *Voice (streaming) → Publishing* and point it at a runtime that implements the protocol.
 
 ## `POST /v1/chat/completions`
 

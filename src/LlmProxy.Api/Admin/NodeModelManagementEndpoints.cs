@@ -467,7 +467,7 @@ public static class NodeModelManagementEndpoints
                     descriptor.ProviderModelName,
                     request.Port,
                     runtime is "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
-                    request.ExtraArguments ?? [],
+                    LaunchArguments(descriptor, request),
                     runtime,
                     request.MaxNumSeqs,
                     request.MaxModelLen,
@@ -548,7 +548,7 @@ public static class NodeModelManagementEndpoints
                     return Results.BadRequest(new { error = "hardware_insufficient", compatibility });
                 var payload = new AgentInstallRequest(descriptor.Id, descriptor.ProviderModelName,
                     request.Port, runtime is "llama.cpp" or "airllm" or "faster-whisper" or "laya" or "kokoro" or "diffusers" ? 1 : (request.TensorParallelSize ?? Math.Max(1, compatibility.SuggestedTensorParallelSize)),
-                    request.ExtraArguments ?? [], runtime, request.MaxNumSeqs, request.MaxModelLen,
+                    LaunchArguments(descriptor, request), runtime, request.MaxNumSeqs, request.MaxModelLen,
                     runtime == "vllm" ? request.KvCacheDtype : null,
                     runtime == "vllm" ? request.CpuOffloadGiB : null, request.PublicName, request.GpuDevices, request.MaxOutputTokens,
                     request.StartAfterInstall && descriptor.Id != "custom");
@@ -579,7 +579,9 @@ public static class NodeModelManagementEndpoints
             try {
                 var jobs = await SendAgentAsync<IReadOnlyList<ModelInstallJob>>(factory.CreateClient("node-management"),
                     node, protector, HttpMethod.Get, "/v1/models/install-jobs", null, token);
-                return Results.Ok(jobs);
+                var ids = jobs.Select(job => job.Id).ToList();
+                var declarations = await db.ManagedInstallDeclarations.AsNoTracking().Where(x => ids.Contains(x.JobId)).ToDictionaryAsync(x => x.JobId, x => x.DeclaredJson, token);
+                return Results.Ok(jobs.Select(job => job with { Surface = SurfaceOf(job, declarations.GetValueOrDefault(job.Id)) }).ToList());
             }
             catch (AgentException error) { return Results.Problem(error.Message, statusCode: 502); }
         });
@@ -651,12 +653,15 @@ public static class NodeModelManagementEndpoints
                     "/v1/models/install-jobs/" + jobId, null, token);
                 if (job.Status != "completed" || job.Result is null)
                     return Results.Conflict(new { error = "job_not_completed" });
+                var declaration = await db.ManagedInstallDeclarations.SingleOrDefaultAsync(x => x.JobId == jobId, token);
+                var declared = declaration is null ? null
+                    : JsonSerializer.Deserialize<ModelPropertyResolver.DeclaredProperties>(declaration.DeclaredJson, DeclarationJson);
                 var descriptor = ResolveDescriptor(job.Request.CatalogModelId,
                     new InstallManagedModelRequest(job.Request.PublicName, job.Request.Port, true,
                         job.Request.ExtraArguments, job.Request.MaxNumSeqs, job.Request.MaxModelLen,
                         job.Request.KvCacheDtype, job.Request.CpuOffloadGiB, job.Request.Runtime,
                         job.Request.TensorParallelSize, job.Request.ProviderModelName,
-                    job.Request.GpuDevices, job.Request.MaxOutputTokens));
+                    job.Request.GpuDevices, job.Request.MaxOutputTokens, Declared: declared));
                 if (descriptor is null || ResolveRuntime(descriptor, job.Request.Runtime) != job.Result.Runtime ||
                     job.Result.CatalogModelId != descriptor.Id ||
                     job.Result.ProviderModelName != descriptor.ProviderModelName)
@@ -665,9 +670,7 @@ public static class NodeModelManagementEndpoints
                     job.Request.Port, false, job.Request.ExtraArguments, job.Request.MaxNumSeqs,
                     job.Request.MaxModelLen, job.Request.KvCacheDtype, job.Request.CpuOffloadGiB,
                     job.Request.Runtime, MaxOutputTokens: job.Request.MaxOutputTokens);
-                var declaration = await db.ManagedInstallDeclarations.SingleOrDefaultAsync(x => x.JobId == jobId, token);
-                if (declaration is not null)
-                    request = request with { Declared = JsonSerializer.Deserialize<ModelPropertyResolver.DeclaredProperties>(declaration.DeclaredJson, DeclarationJson) };
+                if (declared is not null) request = request with { Declared = declared };
                 // Trust a running job only when it is still listed as running
                 // by the Agent. Never republish a stale completed-job snapshot.
                 var current = await SendAgentAsync<ManagedModelsResponse>(client, node, protector,
@@ -1334,6 +1337,18 @@ public static class NodeModelManagementEndpoints
         return null;
     }
 
+    internal static string SurfaceOf(ModelInstallJob job, string? declarationJson)
+    {
+        if (DeployableModelCatalog.Find(job.Request.CatalogModelId) is { } curated) return curated.Surface.ToString();
+        try
+        {
+            var declared = declarationJson is null ? null : JsonSerializer.Deserialize<ModelPropertyResolver.DeclaredProperties>(declarationJson, DeclarationJson);
+            if (declared?.Surface is { Length: > 0 } surface) return surface;
+        }
+        catch (JsonException) { /* An unreadable declaration means the default kind. */ }
+        return nameof(LlmProxy.Domain.Models.ModelSurface.OpenAi);
+    }
+
     internal static readonly JsonSerializerOptions DeclarationJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -1344,6 +1359,13 @@ public static class NodeModelManagementEndpoints
         ModelDefinition model, DeployableModelDescriptor descriptor, ManagedModelState state,
         InstallManagedModelRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
+        if (descriptor.Surface == LlmProxy.Domain.Models.ModelSurface.Embedding)
+        {
+            // Embedding models take text in and return vectors: only the context window is meaningful.
+            model.UpdateCapabilities(false, false, false, false,
+                request.Declared?.ContextWindow ?? request.MaxModelLen ?? state.MaxModelLen ?? Math.Min(descriptor.ContextTokens, 8192), null);
+            return;
+        }
         if (descriptor.Surface != LlmProxy.Domain.Models.ModelSurface.OpenAi) return;
         var runtime = string.IsNullOrWhiteSpace(state.Runtime) ? request.Runtime ?? descriptor.Runtime : state.Runtime;
         var inspector = httpContext.RequestServices?.GetService<HuggingFaceRepositoryInspector>();
@@ -1361,6 +1383,25 @@ public static class NodeModelManagementEndpoints
             suggested = suggested with { Streaming = descriptor.SupportsStreaming && runtime != "airllm", Tools = descriptor.SupportsTools || suggested.Tools };
         var final = ModelPropertyResolver.Apply(suggested, request.Declared);
         model.UpdateCapabilities(final.Streaming, final.Tools, final.Vision, final.Reasoning, final.ContextWindow, final.MaxOutputTokens);
+    }
+
+    /// <summary>
+    /// Flags the model's kind always needs (embedding models need <c>--embedding</c> and a physical batch large enough for
+    /// the longest input), followed by the operator's own arguments, which can repeat nothing already set.
+    /// </summary>
+    internal static List<string> LaunchArguments(DeployableModelDescriptor descriptor, InstallManagedModelRequest request)
+    {
+        var args = new List<string>(descriptor.LaunchArguments ?? []);
+        if (descriptor.Surface == LlmProxy.Domain.Models.ModelSurface.Embedding && descriptor.Runtime == "llama.cpp")
+        {
+            // llama.cpp refuses an input longer than the physical batch (default 512 tokens) and splits the context among slots.
+            var perSlot = (request.MaxModelLen ?? Math.Min(descriptor.ContextTokens, 8192)) / Math.Max(1, request.MaxNumSeqs ?? 1);
+            var batch = Math.Clamp(perSlot, 512, 8192).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            args.AddRange(["--batch-size", batch, "--ubatch-size", batch]);
+        }
+        foreach (var extra in request.ExtraArguments ?? [])
+            if (!args.Contains(extra, StringComparer.Ordinal) || !extra.StartsWith("--", StringComparison.Ordinal)) args.Add(extra);
+        return args;
     }
 
     // The Hub lookup is a convenience: a slow or unreachable Hub must never block the form.
@@ -1387,14 +1428,19 @@ public static class NodeModelManagementEndpoints
         // llama.cpp accepts a bare repo and selects a default quant itself.
         if (request.Runtime != "llama.cpp" && request.ProviderModelName.Contains(':'))
             return null;
+        // An embedding model is a GGUF served by llama.cpp with --embedding; the kind travels with the install declaration.
+        var embedding = string.Equals(request.Declared?.Surface, nameof(LlmProxy.Domain.Models.ModelSurface.Embedding), StringComparison.Ordinal);
+        if (embedding && request.Runtime != "llama.cpp") return null;
         return new DeployableModelDescriptor("custom", request.PublicName, request.ProviderModelName,
             "Custom Hugging Face", "Unverified: review checkpoint license",
             "https://huggingface.co/" + request.ProviderModelName.Split(':')[0],
             0, request.MaxModelLen ?? 8192, "Unverified", 0, 0, 0, 0, 0,
             request.Runtime == "llama.cpp" ? 0 : 1, 1,
-            false, false, ["custom", "unverified"],
+            false, false, embedding ? ["custom", "unverified", "embeddings"] : ["custom", "unverified"],
             "Resources, streaming, license and safety have not been verified. Use a controlled test before routing production traffic.",
-            request.Runtime);
+            request.Runtime,
+            embedding ? LlmProxy.Domain.Models.ModelSurface.Embedding : LlmProxy.Domain.Models.ModelSurface.OpenAi,
+            embedding ? ["--embedding"] : null);
     }
 
     private static string? ResolveRuntime(DeployableModelDescriptor descriptor, string? requested)
@@ -1463,8 +1509,8 @@ public static class NodeModelManagementEndpoints
             {
                 model = item,
                 compatibility = EvaluateCompatibility(item, hardware),
-                capabilities = ModelCapabilitiesCatalog.Resolve(item.ProviderModelName, item.Runtime,
-                    item.Runtime == "airllm" ? 8192 : null)
+                capabilities = ModelCapabilitiesCatalog.ForSurface(ModelCapabilitiesCatalog.Resolve(item.ProviderModelName, item.Runtime,
+                    item.Runtime == "airllm" ? 8192 : null), item.Surface)
             }),
             installations = deployments.Select(deployment =>
             {
@@ -1491,6 +1537,7 @@ public static class NodeModelManagementEndpoints
                     agentState,
                     runtimeMetrics = runtimeMetrics.GetSnapshot(deployment.Id),
                     runtime = installedRuntime,
+                    surface = (logicalModel?.Surface ?? LlmProxy.Domain.Models.ModelSurface.OpenAi).ToString(),
                     // What /v1/models/details publishes for this model (declared by the operator).
                     properties = logicalModel is null ? null : new
                     {
@@ -1498,8 +1545,8 @@ public static class NodeModelManagementEndpoints
                         vision = logicalModel.SupportsVision, reasoning = logicalModel.SupportsReasoning,
                         contextWindow = logicalModel.ContextWindowTokens, maxOutputTokens = logicalModel.MaxOutputTokens
                     },
-                    capabilities = ModelCapabilitiesCatalog.Resolve(providerName, installedRuntime,
-                        agentState?.MaxModelLen, agentState?.MaxOutputTokens)
+                    capabilities = ModelCapabilitiesCatalog.ForSurface(ModelCapabilitiesCatalog.Resolve(providerName, installedRuntime,
+                        agentState?.MaxModelLen, agentState?.MaxOutputTokens), logicalModel?.Surface ?? LlmProxy.Domain.Models.ModelSurface.OpenAi)
                 };
             })
         };
@@ -1662,7 +1709,9 @@ public static class NodeModelManagementEndpoints
         DateTimeOffset? CompletedAtUtc = null);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
-        ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
+        ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null,
+        /// <summary>Kind of model the job installs (set by the gateway, not the Agent) so Admin can show it under the right workspace.</summary>
+        string? Surface = null);
     public sealed record ModelCompatibility(string Status, string Summary, IReadOnlyList<string> Reasons, int SuggestedTensorParallelSize);
     public sealed record GpuInventory(string Name, double MemoryTotalGiB, double MemoryFreeGiB, string? DriverVersion = null, string? ComputeCapability = null, string MemoryType = "dedicated", double? UtilizationPercent = null, double? TemperatureCelsius = null, double? PowerWatts = null);
     public sealed record HostReadiness(

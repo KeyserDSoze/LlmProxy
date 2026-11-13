@@ -53,10 +53,12 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
       const starting = job?.status === 'queued' || job?.status === 'starting'
       const working = operations.find(entry => entry.deploymentId === item.id && entry.status === 'Running')
       const typed = typedRuntimes.includes(item.runtime ?? '')
+      // Embedding and streaming-voice models have no chat features to summarise or tune.
+      const otherKind = item.surface === 'Embedding' || item.surface === 'Realtime'
       const revision = upstreamRevisions.find(entry => entry.installationId === item.managedInstallationId)
       const failure = job && (job.status === 'failed' || job.status === 'interrupted') && job.error
         ? job.error : item.agentState?.error
-      const endpoint = managedPublicEndpoint(item.runtime, name)
+      const endpoint = managedPublicEndpoint(item.runtime, name, item.surface)
       return <article key={item.id} className={'installedModelCard installedModelCard--' + state.tone}
         aria-label={name}>
         <header className="installedModelHeader">
@@ -88,25 +90,27 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
         </dl>
         {revision && <div className="notice">{revision.update.message}</div>}
 
-        <div className="installedModelRow">
+        {!otherKind && <div className="installedModelRow">
           <span className="installedModelLabel">{t('catalog.capabilities')}</span>
           <ModelCapabilitySummary profile={item.capabilities} />
-        </div>
-        {!typed && item.properties && <div className="installedModelRow">
+        </div>}
+        {!typed && item.properties && item.surface !== 'Realtime' && <div className="installedModelRow">
           <span className="installedModelLabel">{t('props.published')}</span>
           <span className="publishedProperties">
             <span className="publishedChips">
-              <PropertyChip on={item.properties.tools} label={t('props.tools')} />
-              <PropertyChip on={item.properties.vision} label={t('props.vision')} />
-              <PropertyChip on={item.properties.reasoning} label={t('props.reasoning')} />
-              <PropertyChip on={item.properties.streaming} label={t('props.streaming')} />
+              {item.surface !== 'Embedding' && <>
+                <PropertyChip on={item.properties.tools} label={t('props.tools')} />
+                <PropertyChip on={item.properties.vision} label={t('props.vision')} />
+                <PropertyChip on={item.properties.reasoning} label={t('props.reasoning')} />
+                <PropertyChip on={item.properties.streaming} label={t('props.streaming')} />
+              </>}
               <span className="pill pill-neutral">{t('props.contextShort')} {item.properties.contextWindow ? item.properties.contextWindow.toLocaleString() : '—'}</span>
-              <span className="pill pill-neutral">{t('props.outputShort')} {item.properties.maxOutputTokens ? item.properties.maxOutputTokens.toLocaleString() : '—'}</span>
+              {item.surface !== 'Embedding' && <span className="pill pill-neutral">{t('props.outputShort')} {item.properties.maxOutputTokens ? item.properties.maxOutputTokens.toLocaleString() : '—'}</span>}
             </span>
             {canWrite && onEditProperties && <button type="button" className="secondary compact" onClick={() => onEditProperties(item)}>{t('props.edit')}</button>}
           </span>
         </div>}
-        {!typed && <div className="installedModelRow">
+        {!typed && !otherKind && <div className="installedModelRow">
           <span className="installedModelLabel">{t('profile.title')}</span>
           <ModelProfile profile={item.agentState?.familyProfile} />
         </div>}
@@ -121,10 +125,10 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
         <div className="installedModelRow">
           <span className="installedModelLabel">{t('model.endpointLabel')}</span>
           <span className="installedModelEndpoint">
-            <code>POST {endpoint}</code>
+            <code>{item.surface === 'Realtime' ? 'GET' : 'POST'} {endpoint}</code>
             <CopyButton className="secondary compact" value={window.location.origin + endpoint}>
               {t('catalog.copyEndpoint')}</CopyButton>
-            <CopyButton className="secondary compact" title={t('catalog.copyCurlHelp')} value={managedCurlExample(item.runtime, name, window.location.origin)}>
+            <CopyButton className="secondary compact" title={t('catalog.copyCurlHelp')} value={managedCurlExample(item.runtime, name, window.location.origin, item.surface)}>
               {t('catalog.copyCurl')}</CopyButton>
           </span>
         </div>
@@ -193,7 +197,9 @@ function typedRuntimeSummary(runtime?: string) {
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
 
-export function managedPublicEndpoint(runtime: string | undefined, model: string): string {
+export function managedPublicEndpoint(runtime: string | undefined, model: string, surface?: string | null): string {
+  if (surface === 'Embedding') return '/v1/embeddings'
+  if (surface === 'Realtime') return '/v1/realtime?model=' + encodeURIComponent(model)
   switch (runtime) {
     case 'laya': return '/v1/systemone/' + encodeURIComponent(model)
     case 'kokoro': return '/v1/audio/speech'
@@ -204,11 +210,14 @@ export function managedPublicEndpoint(runtime: string | undefined, model: string
 }
 
 /** Ready-to-copy public API examples. Use the logical alias, never upstream HF name. */
-export function managedCurlExample(runtime: string | undefined, model: string, origin: string): string {
-  const endpoint = managedPublicEndpoint(runtime, model)
+export function managedCurlExample(runtime: string | undefined, model: string, origin: string, surface?: string | null): string {
+  const endpoint = managedPublicEndpoint(runtime, model, surface)
+  if (surface === 'Realtime')
+    return `websocat -H "Authorization: Bearer $LLMPROXY_API_KEY" ${shellQuote(origin.replace(/^http/, 'ws') + endpoint)}`
   const base = `curl --fail-with-body -sS -X POST ${shellQuote(origin + endpoint)} -H "Authorization: Bearer $LLMPROXY_API_KEY"`
   const json = (body: object) =>
     `${base} -H 'Content-Type: application/json' -d ${shellQuote(JSON.stringify(body))}`
+  if (surface === 'Embedding') return json({ model, input: ['The first sentence.', 'The second sentence.'] })
   switch (runtime) {
     case 'laya':
       return json({

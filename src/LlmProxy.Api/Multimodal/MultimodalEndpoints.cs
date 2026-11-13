@@ -26,10 +26,12 @@ public static class MultimodalEndpoints
     private const int MaxAudioUploadBytes = 25 * 1024 * 1024;
     private const int MaxFormFields = 24;
 
-    private sealed record Endpoint(string Path, ModelSurface Surface, string Metric, bool Multipart, int TimeoutMinutes);
+    private sealed record Endpoint(string Path, ModelSurface Surface, string Metric, bool Multipart, int TimeoutMinutes, int MaxJsonBytes = MaxJsonBytes);
     private static readonly Endpoint Image = new("/v1/images/generations", ModelSurface.ImageGeneration, "image_generation", false, 20);
     private static readonly Endpoint Speech = new("/v1/audio/speech", ModelSurface.SpeechSynthesis, "audio_speech", false, 10);
     private static readonly Endpoint Transcription = new("/v1/audio/transcriptions", ModelSurface.AudioTranscription, "audio_transcription", true, 20);
+    // Embedding batches are text only but can be large; vectors come back as JSON (or base64).
+    private static readonly Endpoint Embeddings = new("/v1/embeddings", ModelSurface.Embedding, "embeddings", false, 10, 4 * 1024 * 1024);
     private static readonly Endpoint Translation = new("/v1/audio/translations", ModelSurface.AudioTranscription, "audio_translation", true, 20);
 
     public static IEndpointRouteBuilder MapMultimodalEndpoints(this IEndpointRouteBuilder endpoints)
@@ -46,6 +48,10 @@ public static class MultimodalEndpoints
             IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
             IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
             ForwardAsync(context, Transcription, routing, capacity, limiter, metrics, clients, credentials));
+        endpoints.MapPost(Embeddings.Path, (HttpContext context, RoutingService routing,
+            IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
+            IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
+            ForwardAsync(context, Embeddings, routing, capacity, limiter, metrics, clients, credentials));
         endpoints.MapPost(Translation.Path, (HttpContext context, RoutingService routing,
             IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
             IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
@@ -119,7 +125,7 @@ public static class MultimodalEndpoints
                     await FailAsync(context, status, error, "This endpoint requires application/json.");
                     return;
                 }
-                var raw = await ReadBoundedAsync(context.Request.Body, MaxJsonBytes, context.RequestAborted);
+                var raw = await ReadBoundedAsync(context.Request.Body, endpoint.MaxJsonBytes, context.RequestAborted);
                 try { json = JsonNode.Parse(raw)?.AsObject(); }
                 catch (Exception exception) when (exception is JsonException or InvalidOperationException)
                 {
@@ -142,6 +148,19 @@ public static class MultimodalEndpoints
                 {
                     status = 400; error = "invalid_prompt";
                     await FailAsync(context, status, error, "A non-empty prompt is required.");
+                    return;
+                }
+                if (endpoint == Embeddings && !EmbeddingInput.IsValid(json["input"], out var embeddingProblem))
+                {
+                    status = 400; error = "invalid_embedding_input";
+                    await FailAsync(context, status, error, embeddingProblem!);
+                    return;
+                }
+                if (endpoint == Embeddings && json["encoding_format"] is JsonValue format &&
+                    (!format.TryGetValue<string>(out var formatName) || formatName is not ("float" or "base64")))
+                {
+                    status = 400; error = "invalid_encoding_format";
+                    await FailAsync(context, status, error, "encoding_format must be float or base64.");
                     return;
                 }
                 if (endpoint == Speech && (json["input"] is not JsonValue input ||

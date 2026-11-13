@@ -205,6 +205,12 @@ const productInfo = {
   releases: [{ version: '0.2.64', releasedOn: '2026-11-12', title: 'Pinned GGUF downloads and clearer model lifecycle', sections: { Fixed: ['llama.cpp models start from a verified local GGUF instead of resolving -hf at start.'], Changed: ['Models and Servers are reorganized into single workspaces.'] } }]
 }
 
+/** The management overview of the first server, for specs that add their own catalog entries or installations. */
+export const node1Overview = () => ({
+  node: { id: nodes[0].id, name: nodes[0].name, managementBaseAddress: nodes[0].managementBaseAddress, hasManagementCredential: true },
+  agentAvailable: true, inventoryStale: false, agentError: null, hardware: hardwareInventory, catalog: [...catalog], installations: [...installations]
+})
+
 export async function installMockAdmin(page: Page) {
   await page.route('**/api/**', async route => {
     const request = route.request()

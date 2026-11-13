@@ -13,7 +13,8 @@ public static class ModelPropertyResolver
     /// <summary>What the operator may override at install; a null field keeps the suggested value.</summary>
     public sealed record DeclaredProperties(
         bool? Streaming = null, bool? Tools = null, bool? Vision = null, bool? Reasoning = null,
-        int? ContextWindow = null, int? MaxOutputTokens = null);
+        int? ContextWindow = null, int? MaxOutputTokens = null,
+        string? Surface = null);
 
     public sealed record Suggestion(ModelProperties Properties, string Source, IReadOnlyList<string> Evidence);
 

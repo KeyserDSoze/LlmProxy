@@ -117,7 +117,7 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
 
     private static bool IsMultimodal(PathString path) =>
         path.Value?.ToLowerInvariant() is "/v1/images/generations" or "/v1/audio/speech"
-            or "/v1/audio/transcriptions" or "/v1/audio/translations";
+            or "/v1/audio/transcriptions" or "/v1/audio/translations" or "/v1/embeddings" or "/v1/realtime";
 
     private static Guid? TryGetRequestId(string value)
         => Guid.TryParse(value, out var parsed) ? parsed : null;
@@ -132,6 +132,7 @@ public sealed class InferenceContentLoggingMiddleware(RequestDelegate next)
             "/v1/audio/speech" => "audio_speech",
             "/v1/audio/transcriptions" => "audio_transcription",
             "/v1/audio/translations" => "audio_translation",
+            "/v1/embeddings" => "embeddings",
             _ => "unknown"
         };
 

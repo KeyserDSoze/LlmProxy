@@ -168,7 +168,7 @@ export type Model = {
   providerModelName: string
   supportsStreaming: boolean
   supportsTools: boolean
-  surface: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
+  surface: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
   enabled: boolean
 }
 
@@ -642,7 +642,7 @@ export type DeployableModel = {
   supportsStreaming: boolean
   supportsTools: boolean
   tags: string[]
-  surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription'
+  surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
   notes: string
 }
 
@@ -758,6 +758,8 @@ export type ManagedInstallation = {
   runtimeMetrics?: DeploymentRuntimeMetricsSnapshot | null
   agentState?: ManagedModelState | null
   capabilities?: ModelCapabilityProfile | null
+  /** Kind of model: OpenAi (text), Embedding, ImageGeneration, SpeechSynthesis, AudioTranscription, Realtime. */
+  surface?: string
   /** What /v1/models/details publishes for this model. */
   properties?: ModelProperties | null
 }
@@ -807,6 +809,8 @@ export type ModelInstallJob = {
   error?: string | null
   createdAtUtc: string
   completedAtUtc?: string | null
+  /** Kind of model this job installs (set by the gateway). */
+  surface?: string | null
 }
 export type GgufVariant = {
   quantization: string

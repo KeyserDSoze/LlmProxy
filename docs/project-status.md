@@ -1,3 +1,7 @@
+## 2026-11-13 — Workspaces per model kind, embeddings and realtime voice (source; CI pending)
+
+Admin has one workspace per kind of model (text, images, text to speech, speech to text, streaming voice, embeddings, plus System One) on the same pages; Jobs is a compact paginated table; the gateway serves `POST /v1/embeddings` (curated llama.cpp GGUF models) and a `GET /v1/realtime` WebSocket relay. Details: `docs/model-kinds.md`, `docs/api-contract.md`. External validation required: an embedding model on the Spark; a realtime runtime.
+
 ## 2026-11-13 — Paste-a-link install and published model properties (source; CI pending)
 
 Pasting a Hugging Face link fills the install form from the repository metadata; tools, vision, reasoning, streaming, context window and maximum output are detected, reviewable at install, stored per model and published on the new `GET /v1/models/details`. Details: `docs/api-contract.md`, `docs/model-hardware-management.md`. Action needed after deploy: edit the published properties of existing custom models once (they were registered with streaming/tools off).

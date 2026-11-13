@@ -6,7 +6,11 @@ public enum ModelSurface
     SystemOne = 1,
     ImageGeneration = 2,
     SpeechSynthesis = 3,
-    AudioTranscription = 4
+    AudioTranscription = 4,
+    /// <summary>OpenAI-style <c>POST /v1/embeddings</c>.</summary>
+    Embedding = 5,
+    /// <summary>Streaming voice (OpenAI-style realtime WebSocket); prepared, served only by a runtime that speaks it.</summary>
+    Realtime = 6
 }
 
 public sealed class ModelDefinition

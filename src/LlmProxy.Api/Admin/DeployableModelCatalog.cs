@@ -24,7 +24,9 @@ public sealed record DeployableModelDescriptor(
     IReadOnlyList<string> Tags,
     string Notes,
     string Runtime = "vllm",
-    ModelSurface Surface = ModelSurface.OpenAi);
+    ModelSurface Surface = ModelSurface.OpenAi,
+    /// <summary>Flags the runtime always needs for this kind of model (for example <c>--embedding</c>); the operator's own arguments are added after them.</summary>
+    IReadOnlyList<string>? LaunchArguments = null);
 
 public static class DeployableModelCatalog
 {
@@ -362,7 +364,40 @@ public static class DeployableModelCatalog
             1.3, 1024, "FP16 CUDA", 12, 16, 16, 24, 12, 1, 1,
             false, false, ["image", "text-to-image", "diffusers", "cuda", "sdxl", "arm64", "experimental"],
             "Single base64 PNG output, square sizes 512/768/1024; requires NVIDIA CUDA and target validation.",
-            "diffusers", ModelSurface.ImageGeneration)
+            "diffusers", ModelSurface.ImageGeneration),
+        // Embeddings are served by llama.cpp from GGUF files (`--embedding`); the pooling type is read from the file.
+        new(
+            "qwen3-embedding-0.6b-gguf", "Qwen3 Embedding 0.6B (llama.cpp)",
+            "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", "Qwen3 Embedding", "Apache-2.0",
+            "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF",
+            0.6, 32768, "Q8_0", 2, 4, 4, 8, 1, 0, 1,
+            false, false, ["embeddings", "multilingual", "gguf", "small", "long-context"],
+            "Multilingual text embeddings (1024 dimensions, up to 32K tokens). Small and fast; a good default for search and RAG.",
+            "llama.cpp", ModelSurface.Embedding, ["--embedding"]),
+        new(
+            "qwen3-embedding-4b-gguf", "Qwen3 Embedding 4B (llama.cpp)",
+            "Qwen/Qwen3-Embedding-4B-GGUF:Q4_K_M", "Qwen3 Embedding", "Apache-2.0",
+            "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF",
+            4.0, 32768, "Q4_K_M", 5, 8, 8, 16, 3, 0, 1,
+            false, false, ["embeddings", "multilingual", "gguf", "higher-quality", "long-context"],
+            "Higher-quality multilingual embeddings (2560 dimensions). Slower and larger than the 0.6B model; benchmark before using it for bulk indexing.",
+            "llama.cpp", ModelSurface.Embedding, ["--embedding"]),
+        new(
+            "bge-m3-gguf", "BGE-M3 (llama.cpp)",
+            "gpustack/bge-m3-GGUF:Q8_0", "BAAI BGE-M3", "MIT",
+            "https://huggingface.co/gpustack/bge-m3-GGUF",
+            0.57, 8192, "Q8_0", 2, 4, 4, 8, 1, 0, 1,
+            false, false, ["embeddings", "multilingual", "gguf", "retrieval", "8k-context"],
+            "Multilingual retrieval embeddings (1024 dimensions, 8K tokens). Dense vectors only; sparse and multi-vector outputs of BGE-M3 are not served.",
+            "llama.cpp", ModelSurface.Embedding, ["--embedding"]),
+        new(
+            "nomic-embed-text-v1.5-gguf", "Nomic Embed Text v1.5 (llama.cpp)",
+            "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0", "Nomic Embed", "Apache-2.0",
+            "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF",
+            0.137, 2048, "Q8_0", 1, 2, 2, 4, 1, 0, 1,
+            false, false, ["embeddings", "english", "gguf", "tiny", "matryoshka"],
+            "Very small English text embeddings (768 dimensions, 2K tokens). Expects task prefixes such as search_document: and search_query: in the input.",
+            "llama.cpp", ModelSurface.Embedding, ["--embedding"])
     ];
 
     public static DeployableModelDescriptor? Find(string id) =>

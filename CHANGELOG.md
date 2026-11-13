@@ -1,3 +1,13 @@
+## Unreleased — Workspaces per kind of model, embeddings, streaming voice and a compact Jobs table
+
+- **One workspace per kind of model** under *Models & inference*: Text (chat), Images, Text to speech, Speech to text, Voice (streaming), Embeddings, plus System One. They share the same pages and components (Discover & install, Installed, Jobs, Publishing); the kind is chosen in the navigation (`/admin/models?kind=...`) instead of a button row inside one crowded page. Install jobs, installed cards, publishing and the catalog are filtered by kind; each workspace shows its own OpenAI-style endpoint and example call.
+- **Embeddings** (new): `POST /v1/embeddings` (OpenAI-compatible, validated input, up to 4 MiB), a new model kind, four curated GGUF models served by llama.cpp with `--embedding` (Qwen3 Embedding 0.6B/4B, BGE-M3, Nomic Embed Text v1.5) and *Install custom GGUF embedding model*. Their card shows the endpoint, an example call and the context window only.
+- **Voice (streaming)** (prepared): `GET /v1/realtime?model=` WebSocket relay with authentication, rate limits, capacity and routing to models of kind `realtime`; works for runtimes the gateway reaches directly and answers `501` for models behind a server Agent. No runtime is bundled.
+- `GET /v1/models/details` now also reports `type` and accepts `?type=`; embedding and realtime models describe their modalities and endpoints.
+- **Jobs** is a compact paginated table (type, model, status, progress, started, actions) that merges downloads, model starts and administrative operations; the default view shows what is running or waiting for you, failures open their diagnosis, and it becomes cards on a phone.
+- Install jobs now carry the kind of model they install (`surface`), so a download appears under the right workspace.
+- Tests: paging and filtering, embedding input validation, catalog and launch arguments, WebSocket relay on real loopback sockets, workspaces and install flows in Playwright.
+
 ## Unreleased — Paste a Hugging Face link, published model properties and `/v1/models/details`
 
 - **Custom install is mostly automatic.** Paste a Hugging Face link (page URL, `hf.co`, `hf://` or `org/model[:quant]`); the form fills in the engine, GGUF quantization (Q4_K_M preselected), context and public name from the repository's public metadata. GPU split, launch arguments, port and sequences moved under *Advanced runtime settings*.

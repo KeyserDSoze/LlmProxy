@@ -38,13 +38,15 @@ export function validateDeclared(value: DeclaredProperties): string | null {
  * What API clients will be told about this model on /v1/models/details. It is filled in from the catalog and from the
  * Hugging Face repository, so the operator only reviews it; any value can be changed and is kept when the page re-detects.
  */
-export default function InstallPropertiesEditor({ value, onChange, onReset, suggestion, runtime, contextWindowCeiling }: {
+export default function InstallPropertiesEditor({ value, onChange, onReset, suggestion, runtime, contextWindowCeiling, compact = false }: {
   value: DeclaredProperties
   onChange: <K extends keyof DeclaredProperties>(key: K, next: DeclaredProperties[K]) => void
   onReset: () => void
   suggestion: SuggestedModelProperties | null
   runtime: string
   contextWindowCeiling: number
+  /** Embedding models only publish a context window: no tools, vision, reasoning, streaming or output limit. */
+  compact?: boolean
 }) {
   const t = useT()
   const problem = validateDeclared(value)
@@ -54,6 +56,14 @@ export default function InstallPropertiesEditor({ value, onChange, onReset, sugg
     { key: 'reasoning', label: t('props.reasoning'), help: t('props.reasoningHelp') },
     { key: 'streaming', label: t('props.streaming'), help: runtime === 'airllm' ? t('props.streamingAirllm') : t('props.streamingHelp') }
   ]
+  if (compact) return <fieldset className="installProperties">
+    <legend>{t('props.titleEmbedding')}</legend>
+    <p className="muted">{t('props.introEmbedding')}</p>
+    <label>{t('props.contextWindow')}
+      <input aria-label={t('props.contextWindow')} inputMode="numeric" value={value.contextWindow ?? ''}
+        onChange={event => onChange('contextWindow', parseTokenField(event.target.value))} placeholder={String(Math.min(contextWindowCeiling, 8192))} />
+    </label>
+  </fieldset>
   return <fieldset className="installProperties">
     <legend>{t('props.title')}</legend>
     <p className="muted">{t('props.intro')}</p>
