@@ -7,6 +7,7 @@ import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityP
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
+import type { VerificationState } from './InstalledModelCards'
 import StartupDiagnosis from './StartupDiagnosis'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import HuggingFaceRepositoryInspector from './HuggingFaceRepositoryInspector'
@@ -363,6 +364,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
     finally { setBusy(null) }
   }
 
+  const [verifications, setVerifications] = useState<Record<string, VerificationState>>({})
+  async function verifyCapabilities(deploymentId: string) {
+    setVerifications(current => ({ ...current, [deploymentId]: 'loading' }))
+    try {
+      const result = await api.verifyManagedDeployment(deploymentId)
+      setVerifications(current => ({ ...current, [deploymentId]: result }))
+    } catch (reason) {
+      setVerifications(current => ({ ...current, [deploymentId]: { error: reason instanceof Error ? reason.message : String(reason) } }))
+    }
+  }
+
   async function cancelInstall(jobId: string) {
     setBusy('cancel:' + jobId)
     try { await api.cancelModelInstall(nodeId, jobId); setDownloadJobs(await api.installJobs(nodeId)) }
@@ -708,6 +720,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs}
           upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy}
           agentAvailable={Boolean(overview?.agentAvailable)}
+          verifications={verifications} onVerify={id => void verifyCapabilities(id)}
           onAction={(kind, id) => void action(kind, id)}
           onCancelStart={jobId => void cancelStartJob(jobId)}
           onEdit={openProfileEdit}

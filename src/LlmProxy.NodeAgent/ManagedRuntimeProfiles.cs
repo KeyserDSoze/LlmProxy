@@ -215,6 +215,11 @@ public static class ManagedRuntimeProfiles
             if (record.GpuMemoryUtilization is double fraction)
                 args.AddRange(["--gpu-memory-utilization", fraction.ToString(CultureInfo.InvariantCulture)]);
         }
+        // Family knowledge (parsers, sampling) goes before the operator's arguments, and a flag the operator
+        // already set is never added twice, so an explicit choice always wins.
+        args.AddRange(ModelFamilyProfile.ArgumentsFor(
+            record.ProviderModelName, record.Runtime, record.ExtraArguments, options.ApplyModelFamilyProfiles));
+
         // The typed safety setting is authoritative when an older profile
         // already contains the same vLLM flag as a free-form extra argument.
         for (var i = 0; i < record.ExtraArguments.Count; i++)

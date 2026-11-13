@@ -25,7 +25,8 @@ public sealed record NodeAgentOptions(
     double GpuStartMaxTemperatureCelsius = 80,
     bool RequireGpuTemperatureSensor = false,
     string HuggingFaceEndpoint = "https://huggingface.co",
-    string? HuggingFaceToken = null)
+    string? HuggingFaceToken = null,
+    bool ApplyModelFamilyProfiles = true)
 {
     public static NodeAgentOptions From(IConfiguration configuration)
     {
@@ -53,7 +54,8 @@ public sealed record NodeAgentOptions(
             ParseTemperature(section["GpuStartMaxTemperatureCelsius"], 80),
             ParseBool(section["RequireGpuTemperatureSensor"], false),
             ParseEndpoint(section["HuggingFaceEndpoint"] ?? configuration["HF_ENDPOINT"]),
-            NullIfBlank(section["HuggingFaceToken"]) ?? NullIfBlank(configuration["HF_TOKEN"]));
+            NullIfBlank(section["HuggingFaceToken"]) ?? NullIfBlank(configuration["HF_TOKEN"]),
+            ParseBool(section["ApplyModelFamilyProfiles"], true));
     }
 
     // Mirrors are allowed (HF_ENDPOINT), but only as an absolute http(s) root.

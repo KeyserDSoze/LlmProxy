@@ -687,7 +687,29 @@ export type HardwareInventory = {
   } | null
 }
 
+export type FamilyProfileInfo = {
+  id: string
+  title: string
+  source: string
+  verifiedOn: string
+  appliedArguments: string[]
+  overriddenByOperator: string[]
+  requirement?: string | null
+  enabled: boolean
+}
+
+export type ProbeCheck = { id: 'chat' | 'reasoning' | 'streaming' | 'tools' | string; status: 'ok' | 'warning' | 'failed' | 'inconclusive' | string; detail: string }
+
+export type ModelVerification = {
+  deploymentId: string
+  model: string
+  checkedAtUtc: string
+  durationMilliseconds: number
+  checks: ProbeCheck[]
+}
+
 export type ManagedModelState = {
+  familyProfile?: FamilyProfileInfo | null
   runtime?: string
   maxNumSeqs?: number | null
   maxModelLen?: number | null

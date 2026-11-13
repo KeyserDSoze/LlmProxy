@@ -181,6 +181,19 @@ builder.Services.AddAuthorization(options =>
     });
 });
 builder.Services.AddScoped<IAuthorizationHandler, PlatformUserAccessAuthorizationHandler>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(NodeEnrollmentEndpoints.BootstrapRateLimitPolicy, httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationMiddlewareResultHandler>();
 
 if (reverseProxyEnabled)
@@ -215,6 +228,27 @@ if (app.Environment.IsProduction() && !entraEnabled)
     throw new InvalidOperationException("EntraId:Enabled must be true in Production.");
 }
 
+if (entraEnabled)
+{
+    // A multi-tenant authority ("common", "organizations", "consumers") would let any Microsoft account sign in,
+    // which breaks the assumption behind the administrator allow-list and the user registry.
+    var entraTenant = builder.Configuration["EntraId:TenantId"]?.Trim();
+    if (string.IsNullOrEmpty(entraTenant) ||
+        entraTenant.ToLowerInvariant() is "common" or "organizations" or "consumers")
+    {
+        throw new InvalidOperationException(
+            "EntraId:TenantId must name your own tenant (a GUID or tenant domain), not a multi-tenant authority.");
+    }
+
+    if (ConfiguredSuperAdminClaimsTransformation.ParseEntries(builder.Configuration["EntraId:SuperAdmins"])
+            .Any(entry => !entry.StartsWith("oid:", StringComparison.OrdinalIgnoreCase)))
+    {
+        app.Logger.LogWarning(
+            "EntraId:SuperAdmins contains name or e-mail entries. Those claims can be edited by users in some tenants; " +
+            "prefer 'oid:<object id>' entries.");
+    }
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var bootstrapper = scope.ServiceProvider.GetRequiredService<DatabaseBootstrapper>();
@@ -239,6 +273,7 @@ if (entraEnabled)
     app.UseAuthentication();
 }
 
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseMiddleware<InferenceApiKeyMiddleware>();
 app.UseMiddleware<InferenceContentLoggingMiddleware>();
@@ -291,6 +326,7 @@ app.MapRouteCatalogAdminEndpoints(entraEnabled);
 app.MapRuntimeStateAdminEndpoints(entraEnabled);
 app.MapNodeHardwareMetricsEndpoints(entraEnabled);
 app.MapNodeModelManagementEndpoints(entraEnabled);
+app.MapModelCapabilityProbeEndpoints(entraEnabled);
 app.MapNodeEnrollmentEndpoints(entraEnabled);
 app.MapCapacityAdminEndpoints(entraEnabled);
 app.MapInferenceBenchmarkAdminEndpoints(entraEnabled);

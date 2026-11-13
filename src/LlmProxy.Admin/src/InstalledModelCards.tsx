@@ -4,7 +4,7 @@ import StartupDiagnosis from './StartupDiagnosis'
 import { InfoIcon } from './UiPrimitives'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
-import type { ManagedInstallation, ModelRevisionStatus, ModelStartJob } from './types'
+import type { FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
 
 export type InstalledAction = 'start' | 'activate' | 'stop' | 'forceStop' | 'remove'
 
@@ -22,8 +22,10 @@ function cardState(item: ManagedInstallation, job?: ModelStartJob): CardState {
   return { tone: 'neutral', label: 'model.state.stopped' }
 }
 
+export type VerificationState = ModelVerification | 'loading' | { error: string }
+
 export default function InstalledModelCards({ nodeId, installations, startJobs, upstreamRevisions, canWrite, busy,
-  agentAvailable, onAction, onCancelStart, onEdit, onCapabilities, onBenchmark }: {
+  agentAvailable, verifications, onVerify, onAction, onCancelStart, onEdit, onCapabilities, onBenchmark }: {
   nodeId?: string
   installations: ManagedInstallation[]
   startJobs: ModelStartJob[]
@@ -31,6 +33,8 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
   canWrite: boolean
   busy: string | null
   agentAvailable: boolean
+  verifications: Record<string, VerificationState>
+  onVerify: (deploymentId: string) => void
   onAction: (kind: InstalledAction, deploymentId: string) => void
   onCancelStart: (jobId: string) => void
   onEdit: (item: ManagedInstallation) => void
@@ -85,6 +89,10 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <span className="installedModelLabel">{t('catalog.capabilities')}</span>
           <ModelCapabilitySummary profile={item.capabilities} />
         </div>
+        {!typed && <div className="installedModelRow">
+          <span className="installedModelLabel">{t('profile.title')}</span>
+          <ModelProfile profile={item.agentState?.familyProfile} />
+        </div>}
         <div className="installedModelRow">
           <span className="installedModelLabel">{t('model.loadLabel')}</span>
           {item.runtimeMetrics?.available
@@ -120,6 +128,9 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           guide={nodeId && <HuggingFaceAccessGuide nodeId={nodeId} failure={failure} canWrite={canWrite}
             onConfigured={() => onAction('start', item.id)} />} />}
 
+        {verifications[item.id] && verifications[item.id] !== 'loading' &&
+          <VerificationResults state={verifications[item.id] as ModelVerification | { error: string }} />}
+
         <footer className="installedModelActions">
           <button className={running ? 'secondary' : 'primary'}
             disabled={!canWrite || busy !== null || running || starting}
@@ -136,6 +147,9 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
             onClick={() => onEdit(item)}>{t('catalog.edit')}</button>
           {!typed && <button className="secondary" disabled={!running}
             onClick={() => onBenchmark(item.id)}>{t('catalog.benchmark')}</button>}
+          {!typed && <button className="secondary" disabled={!canWrite || !running || verifications[item.id] === 'loading'}
+            title={t('verify.hint')} onClick={() => onVerify(item.id)}>
+            {verifications[item.id] === 'loading' ? t('verify.running') : t('verify.action')}</button>}
           {item.capabilities && <button type="button" className="secondary capabilityActionButton"
             aria-label={`${t('cap.details')} · ${t('catalog.capabilities')} · ${item.logicalModel ?? item.providerModelName ?? 'Model'}`}
             title={t('cap.inspectDetails')} onClick={() => onCapabilities(item)}>
@@ -193,4 +207,43 @@ export function managedCurlExample(runtime: string | undefined, model: string, o
     default:
       return json({ model, messages: [{ role: 'user', content: 'Hello!' }], max_tokens: 64 })
   }
+}
+
+function ModelProfile({ profile }: { profile?: FamilyProfileInfo | null }) {
+  const t = useT()
+  if (!profile) return <span className="muted">{t('profile.none')}</span>
+  return <div className="modelProfile">
+    <strong>{profile.title}</strong>
+    {!profile.enabled && <span className="muted"> · {t('profile.disabled')}</span>}
+    {profile.appliedArguments.length > 0 && <div><span className="muted">{t('profile.applied')}: </span>
+      <code>{profile.appliedArguments.join(' ')}</code></div>}
+    {profile.overriddenByOperator.length > 0 && <div><span className="muted">{t('profile.overridden')}: </span>
+      <code>{profile.overriddenByOperator.join(' ')}</code></div>}
+    {profile.requirement && <div className="notice modelProfileRequirement"><strong>{t('profile.requirement')}: </strong>{profile.requirement}</div>}
+    <div className="muted modelProfileSource">{t('profile.source')}: <a href={profile.source} target="_blank" rel="noopener noreferrer">{profile.source}</a> · {t('profile.checked')} {profile.verifiedOn}</div>
+  </div>
+}
+
+const checkLabel: Record<string, TranslationKey> = {
+  chat: 'verify.chat', reasoning: 'verify.reasoning', streaming: 'verify.streaming', tools: 'verify.tools'
+}
+const statusLabel: Record<string, TranslationKey> = {
+  ok: 'verify.ok', warning: 'verify.warning', failed: 'verify.failed', inconclusive: 'verify.inconclusive'
+}
+const statusTone: Record<string, string> = { ok: 'success', warning: 'warning', failed: 'danger', inconclusive: 'neutral' }
+
+function VerificationResults({ state }: { state: ModelVerification | { error: string } }) {
+  const t = useT()
+  if ('error' in state) return <p className="error" role="alert">{state.error}</p>
+  return <section className="modelVerification" aria-label={t('verify.title')}>
+    <strong>{t('verify.title')}</strong>
+    <ul>
+      {state.checks.map(check => <li key={check.id}>
+        <span className={'pill pill-' + (statusTone[check.status] ?? 'neutral')}><i aria-hidden="true" />
+          {t(statusLabel[check.status] ?? 'verify.inconclusive')}</span>
+        <span className="modelVerificationName">{checkLabel[check.id] ? t(checkLabel[check.id]) : check.id}</span>
+        <span className="muted">{check.detail}</span>
+      </li>)}
+    </ul>
+  </section>
 }

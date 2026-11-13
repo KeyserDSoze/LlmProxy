@@ -90,6 +90,19 @@ public sealed class DockerStartupDiagnosticsTests
         var log = "llama_model_load: error loading model: error loading model architecture: unknown model architecture: 'lfm2moe'\n" +
                   "llama_model_load_from_file_impl: failed to load model\n";
         Assert.Contains("unknown model architecture: 'lfm2moe'", DockerStartupDiagnostics.FindRootCause(log));
-        Assert.Contains("LlamaCppDockerImage", DockerStartupDiagnostics.ForUi(log, null));
+        var ui = DockerStartupDiagnostics.ForUi(log, null);
+        Assert.Contains("LlamaCppDockerImage", ui);
+        Assert.Contains("docker pull", ui);
+    }
+
+    [Theory]
+    [InlineData("vllm: error: argument --reasoning-parser: invalid choice: 'muse_glimmer' (choose from 'deepseek_r1', 'qwen3')")]
+    [InlineData("vllm serve: error: unrecognized arguments: --tool-call-parser hermes --enable-auto-tool-choice")]
+    public void A_parser_the_image_does_not_know_points_to_the_family_profile_switch(string line)
+    {
+        var ui = DockerStartupDiagnostics.ForUi(line + "\n", null);
+
+        Assert.Contains("model-family profile", ui);
+        Assert.Contains("ApplyModelFamilyProfiles=false", ui);
     }
 }

@@ -93,7 +93,8 @@ public sealed record ManagedModelState(
     int? MaxOutputTokens = null,
     string? SourceRevision = null,
     double? GpuMemoryUtilization = null,
-    string? ModelFile = null);
+    string? ModelFile = null,
+    FamilyProfileInfo? FamilyProfile = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);
 

@@ -805,11 +805,12 @@ for index, entry in enumerate(files):
         return $"{slug}-{Guid.NewGuid():N}"[..(slug.Length + 9)];
     }
 
-    private static ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
+    private ManagedModelState ToState(ManagedModelRecord record, string status, string? runtimeBaseAddress) =>
         new(record.InstallationId, record.CatalogModelId, record.ProviderModelName, status, runtimeBaseAddress, record.Port, record.Error,
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
             record.GpuDevices, record.MaxOutputTokens, record.SourceRevision,
-            record.GpuMemoryUtilization, record.ModelFile);
+            record.GpuMemoryUtilization, record.ModelFile,
+            ModelFamilyProfile.Describe(record.ProviderModelName, record.Runtime, record.ExtraArguments, options.ApplyModelFamilyProfiles));
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 

@@ -1366,7 +1366,7 @@ public static class NodeModelManagementEndpoints
         catch (JsonException) { return null; }
     }
 
-    private static bool IsOutboundNode(InferenceNode node) =>
+    internal static bool IsOutboundNode(InferenceNode node) =>
         Uri.TryCreate(node.ManagementBaseAddress, UriKind.Absolute, out var uri) &&
         AgentRelayHub.TryParseNode(uri, out var nodeId) && nodeId == node.Id;
 
@@ -1375,7 +1375,7 @@ public static class NodeModelManagementEndpoints
         !string.IsNullOrWhiteSpace(state.RuntimeBaseAddress) &&
         state.Port is >= 1024 and <= 65535;
 
-    private static string? OutboundRuntimeAddress(InferenceNode node, ManagedModelState state) =>
+    internal static string? OutboundRuntimeAddress(InferenceNode node, ManagedModelState state) =>
         IsOutboundNode(node)
             ? AgentRelayHub.Root(node.Id) + "/runtime/" + state.Port
             : state.RuntimeBaseAddress;
@@ -1521,7 +1521,7 @@ public static class NodeModelManagementEndpoints
         catch (JsonException) { return null; }
     }
 
-    private static async Task<T> SendAgentAsync<T>(
+    internal static async Task<T> SendAgentAsync<T>(
         HttpClient client,
         InferenceNode node,
         UpstreamCredentialProtector protector,
@@ -1630,6 +1630,11 @@ public static class NodeModelManagementEndpoints
         HostReadiness? Readiness = null,
         double? CpuUtilizationPercent = null);
     public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState>? Models);
+    public sealed record FamilyProfileView(
+        string Id, string Title, string Source, string VerifiedOn,
+        IReadOnlyList<string> AppliedArguments, IReadOnlyList<string> OverriddenByOperator,
+        string? Requirement, bool Enabled);
+
     public sealed record ManagedModelState(
         string InstallationId,
         string? CatalogModelId,
@@ -1646,6 +1651,7 @@ public static class NodeModelManagementEndpoints
         string? GpuDevices = null, int? MaxOutputTokens = null,
         string? SourceRevision = null,
         double? GpuMemoryUtilization = null,
-        string? ModelFile = null);
-    private sealed class AgentException(string message) : Exception(message);
+        string? ModelFile = null,
+        FamilyProfileView? FamilyProfile = null);
+    internal sealed class AgentException(string message) : Exception(message);
 }
