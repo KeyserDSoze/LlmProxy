@@ -1,4 +1,4 @@
-import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, HuggingFaceInspectionResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant } from './types'
+import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, HuggingFaceInspectionResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant, CorsSettings } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
 import type { ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
@@ -240,8 +240,14 @@ export const api = {
     request<void>(`/api/admin/deployments/${id}/capacity-profile`, { method: 'DELETE' }),
   applyCapacityProfile: (id: string) =>
     request<Deployment>(`/api/admin/deployments/${id}/capacity-profile/apply`, { method: 'POST' }),
-  createApiCredential: (body: { name: string; expiresAtUtc?: string | null }) =>
+  createApiCredential: (body: { name: string; expiresAtUtc?: string | null; allowedOrigins?: string[] }) =>
     request<CreatedApiCredential>('/api/admin/api-credentials', { method: 'POST', body: JSON.stringify(body) }),
+  corsSettings: () => request<CorsSettings>('/api/admin/cors-settings'),
+  updateCorsSettings: (body: { allowedOrigins: string[]; maxAgeSeconds: number }) =>
+    request<CorsSettings>('/api/admin/cors-settings', { method: 'PUT', body: JSON.stringify(body) }),
+  updateCredentialOrigins: (id: string, allowedOrigins: string[]) =>
+    request<{ id: string; allowedOrigins: string[] }>(`/api/admin/api-credentials/${id}/allowed-origins`,
+      { method: 'PUT', body: JSON.stringify({ allowedOrigins }) }),
   rotateApiCredential: (id: string) => request<CreatedApiCredential>('/api/admin/api-credentials/' + id + '/rotate', { method: 'POST' }),
   revealApiCredential: (id: string) => request<RevealedApiCredential>('/api/admin/api-credentials/' + id + '/secret'),
   revokeApiCredential: (id: string) => request<void>(`/api/admin/api-credentials/${id}/revoke`, { method: 'POST' }),

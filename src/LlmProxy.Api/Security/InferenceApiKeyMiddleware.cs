@@ -1,5 +1,7 @@
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Observability;
+using LlmProxy.Application.Security;
+using LlmProxy.Domain.Security;
 using LlmProxy.Infrastructure.Security;
 
 namespace LlmProxy.Api.Security;
@@ -16,7 +18,8 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
         HttpContext context,
         ApiKeyHasher apiKeyHasher,
         IApiCredentialCache credentialCache,
-        ICredentialUsageSink credentialUsageSink)
+        ICredentialUsageSink credentialUsageSink,
+        CorsPolicyState corsPolicy)
     {
         if (!context.Request.Path.StartsWithSegments("/v1"))
         {
@@ -59,6 +62,20 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             }
 
             context.Items[ApiCredentialIdItem] = credential.Id;
+            context.Items[InferenceCorsMiddleware.CredentialOriginsItem] = credential.AllowedOrigins;
+
+            // A key that lists origins is usable from browsers only on those origins (or site-wide ones).
+            if (credential.AllowedOrigins is { Count: > 0 } &&
+                context.Request.Headers.TryGetValue("Origin", out var requestOrigin) &&
+                !(OriginPolicy.TryNormalize(requestOrigin.ToString(), out var normalizedOrigin) &&
+                  corsPolicy.Allows(normalizedOrigin, credential.AllowedOrigins)))
+            {
+                activity?.SetTag("llmproxy.auth.result", "origin_rejected");
+                LlmProxyActivity.MarkError(activity, "origin_not_allowed");
+                await WriteErrorAsync(context, StatusCodes.Status403Forbidden, "origin_not_allowed",
+                    "This API key is not allowed to be used from this browser origin.", "invalid_request_error");
+                return;
+            }
             if (credential.UsageGroupId is Guid usageGroupId)
             {
                 context.Items[UsageGroupIdItem] = usageGroupId;
@@ -84,7 +101,8 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
         await next(context);
     }
 
-    private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code, string message)
+    private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code, string message,
+        string type = "authentication_error")
     {
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json";
@@ -93,7 +111,7 @@ public sealed class InferenceApiKeyMiddleware(RequestDelegate next)
             error = new
             {
                 message,
-                type = "authentication_error",
+                type,
                 code
             }
         });

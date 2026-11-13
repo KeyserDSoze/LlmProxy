@@ -235,6 +235,13 @@ tbody tr:hover td{background:var(--row-hover)}
 .diagnosisActions{display:flex;flex-wrap:wrap;gap:8px}
 .modelJobCard .diagnosis{margin-top:2px}
 
+/* Browser origins (CORS) */
+.shell .panel td.nowrapCell{white-space:nowrap;overflow-wrap:normal}
+.originChips{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.originChip{padding:2px 7px;border-radius:7px;font-size:11.5px;background:var(--surface-deep);color:var(--text-secondary);overflow-wrap:anywhere}
+.corsPanel textarea{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.corsPanel .muted,.modalPanel .formPanel>.muted{max-width:none}
+
 /* Hugging Face repository inspector (custom install) */
 .hfInspect{display:grid;gap:12px;min-width:0;padding:14px 16px;border-radius:12px;border:1px solid var(--border);background:var(--surface-secondary)}
 .hfInspectHeader{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px}

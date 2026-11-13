@@ -62,7 +62,10 @@ public sealed class ApiCredential
     public string? OwnerObjectId { get; private set; }
     public string? OwnerPrincipalName { get; private set; }
     public bool EnforceCallerGovernance { get; private set; }
+    public string? AllowedOriginsText { get; private set; }
 
+    /// <summary>Browser origins allowed to use this key via CORS, on top of the site-wide list.</summary>
+    public IReadOnlyList<string> AllowedOrigins => OriginPolicy.ParseStored(AllowedOriginsText);
     public bool IsPersonal => OwnerTenantId is not null && OwnerObjectId is not null;
 
     public bool IsUsable(DateTimeOffset nowUtc)
@@ -117,6 +120,9 @@ public sealed class ApiCredential
     }
 
     public void ClearUsageGroup() => UsageGroupId = null;
+
+    public void SetAllowedOrigins(IEnumerable<string>? origins) =>
+        AllowedOriginsText = OriginPolicy.ToStored(OriginPolicy.NormalizeList(origins));
 
     public void SetCallerGovernance(bool enabled)
     {

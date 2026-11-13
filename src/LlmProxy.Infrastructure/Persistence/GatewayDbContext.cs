@@ -29,6 +29,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<ContentLogSettingsRecord> ContentLogSettings => Set<ContentLogSettingsRecord>();
     public DbSet<PlatformUserRecord> PlatformUsers => Set<PlatformUserRecord>();
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
+    public DbSet<CorsSettingsRecord> CorsSettings => Set<CorsSettingsRecord>();
     public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
     public DbSet<SystemOneDefaultRecord> SystemOneDefaults => Set<SystemOneDefaultRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
@@ -129,6 +130,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.OwnerTenantId).HasMaxLength(64);
             entity.Property(x => x.OwnerObjectId).HasMaxLength(64);
             entity.Property(x => x.OwnerPrincipalName).HasMaxLength(320);
+            entity.Property(x => x.AllowedOriginsText).HasColumnName("AllowedOrigins").HasColumnType("text");
             entity.HasIndex(x => x.KeyPrefix);
             entity.HasIndex(x => x.KeyHash).IsUnique();
             entity.HasIndex(x => x.UsageGroupId);
@@ -259,6 +261,14 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.ProvisioningMode).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<CorsSettingsRecord>(entity =>
+        {
+            entity.ToTable("cors_settings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.AllowedOriginsText).HasColumnName("AllowedOrigins").HasColumnType("text");
         });
 
         modelBuilder.Entity<SystemOneDefaultRecord>(entity =>

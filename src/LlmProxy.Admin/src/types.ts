@@ -247,6 +247,14 @@ export type ApiCredential = {
   ownerObjectId?: string | null
   ownerPrincipalName?: string | null
   secretAvailable?: boolean
+  /** Browser origins (CORS) allowed to use this key, in addition to the site-wide list. */
+  allowedOrigins?: string[]
+}
+
+export type CorsSettings = {
+  allowedOrigins: string[]
+  maxAgeSeconds: number
+  updatedAtUtc?: string | null
 }
 
 export type GovernanceCredential = ApiCredential & {

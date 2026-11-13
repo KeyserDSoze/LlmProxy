@@ -1,3 +1,10 @@
+## Unreleased — Browser access (CORS) per API key and site-wide
+
+- Web apps can now call `/v1` directly from a browser. Administrators set **site-wide allowed origins** (Credentials -> Browser access (CORS), `GET/PUT /api/admin/cors-settings`, optional preflight cache time) and each API key can list **its own origins** (Credentials -> Origins, at creation or later; users manage their personal keys in My dashboard). `*` allows any origin.
+- Preflights are answered from the site-wide list plus the origins of any enabled key; actual responses (including SSE streams and a readable 401) carry `Access-Control-Allow-Origin` for allowed origins. A key that lists origins is rejected with `403 origin_not_allowed` from any other browser origin; requests without an `Origin` header (servers, curl) are unaffected.
+- Origins are validated and normalized (`scheme://host[:port]`, max 50), stored in PostgreSQL (`cors_settings`, `api_credentials.AllowedOrigins`), propagated to replicas through the existing credential runtime-state path (site-wide settings refresh every 20 s) and audited without secrets. Help page documents a browser `fetch` example and the security caveat that CORS does not hide a key.
+- Tests: origin policy, middleware and interceptor-propagation unit tests, Playwright functional spec, and `tests/backend/integration/cors_smoke.sh` (real gateway, now a CI step).
+
 ## Unreleased — Hugging Face repository inspector for custom installs
 
 - Typing `org/model` in *Install custom Hugging Face model* now reads the repository from the public Hugging Face API and shows parameters, precision, weights size, context window, architecture, license and whether it is gated. It suggests an engine (safetensors -> vLLM, GGUF -> llama.cpp) and the context to use, applied with one click.

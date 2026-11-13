@@ -46,7 +46,7 @@ public static class IdentitySelfServiceEndpoints
                 return InvalidIdentity();
             }
 
-            var credentials = await dbContext.ApiCredentials.AsNoTracking()
+            var rows = await dbContext.ApiCredentials.AsNoTracking()
                 .Where(item => item.OwnerTenantId == identity.TenantId && item.OwnerObjectId == identity.ObjectId)
                 .OrderByDescending(item => item.CreatedAtUtc)
                 .Select(item => new
@@ -59,11 +59,62 @@ public static class IdentitySelfServiceEndpoints
                     item.ExpiresAtUtc,
                     item.LastUsedAtUtc,
                     item.UsageGroupId,
-                    item.EnforceCallerGovernance
+                    item.EnforceCallerGovernance,
+                    item.AllowedOriginsText
                 })
                 .ToListAsync(cancellationToken);
+            var credentials = rows.Select(item => new
+            {
+                item.Id,
+                item.Name,
+                item.KeyPrefix,
+                item.Enabled,
+                item.CreatedAtUtc,
+                item.ExpiresAtUtc,
+                item.LastUsedAtUtc,
+                item.UsageGroupId,
+                item.EnforceCallerGovernance,
+                allowedOrigins = OriginPolicy.ParseStored(item.AllowedOriginsText)
+            });
 
             return Results.Ok(credentials);
+        });
+
+        group.MapPut("/api-credentials/{id:guid}/allowed-origins", async (
+            Guid id,
+            UpdatePersonalAllowedOriginsRequest request,
+            GatewayDbContext dbContext,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            if (!EntraUserIdentityResolver.TryResolve(httpContext.User, out var identity))
+            {
+                return InvalidIdentity();
+            }
+
+            var credential = await FindOwnedCredentialAsync(dbContext, id, identity, cancellationToken);
+            if (credential is null)
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                credential.SetAllowedOrigins(request.AllowedOrigins);
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { error = "invalid_origins", message = error.Message });
+            }
+
+            AddAudit(dbContext, httpContext, identity, "credential.self_service.origins", credential, new
+            {
+                credential.Name,
+                credential.KeyPrefix,
+                origins = credential.AllowedOrigins
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Results.Ok(new { credential.Id, allowedOrigins = credential.AllowedOrigins });
         });
 
         group.MapPost("/api-credentials", async (
@@ -103,6 +154,14 @@ public static class IdentitySelfServiceEndpoints
             if (userGroupId is Guid groupId)
             {
                 credential.AssignUsageGroup(groupId);
+            }
+            try
+            {
+                credential.SetAllowedOrigins(request.AllowedOrigins);
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { error = "invalid_origins", message = error.Message });
             }
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
@@ -586,5 +645,6 @@ public static class IdentitySelfServiceEndpoints
             detailsJson));
     }
 
-    public sealed record CreatePersonalApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null);
+    public sealed record CreatePersonalApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null, IReadOnlyList<string>? AllowedOrigins = null);
+    public sealed record UpdatePersonalAllowedOriginsRequest(IReadOnlyList<string>? AllowedOrigins);
 }

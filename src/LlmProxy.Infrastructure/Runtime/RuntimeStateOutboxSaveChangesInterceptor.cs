@@ -21,7 +21,8 @@ public sealed class RuntimeStateOutboxSaveChangesInterceptor : SaveChangesInterc
         nameof(ApiCredential.Enabled),
         nameof(ApiCredential.ExpiresAtUtc),
         nameof(ApiCredential.UsageGroupId),
-        nameof(ApiCredential.EnforceCallerGovernance)
+        nameof(ApiCredential.EnforceCallerGovernance),
+        nameof(ApiCredential.AllowedOriginsText)
     ];
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)

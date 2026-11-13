@@ -3,6 +3,7 @@ import PageDocumentation from './PageDocumentation'
 import AppearanceControls from './AppearanceControls'
 import { useT } from './uiPreferences'
 import RequestAuditDetailModal from './RequestAuditDetail'
+import { OriginsModal, OriginsSummary, originsHelp, parseOrigins } from './OriginsEditor'
 import './requestAudit.css'
 
 type Identity = {
@@ -22,6 +23,7 @@ type PersonalCredential = {
   expiresAtUtc?: string | null
   lastUsedAtUtc?: string | null
   usageGroupId?: string | null
+  allowedOrigins?: string[]
 }
 
 type CreatedCredential = PersonalCredential & { secret: string }
@@ -155,6 +157,10 @@ export default function UserPortal() {
   const [selectedAudit, setSelectedAudit] = useState<PersonalContentLogDetail | null>(null)
   const [auditLoading, setAuditLoading] = useState(false)
   const [name, setName] = useState('')
+  const [createOrigins, setCreateOrigins] = useState('')
+  const [editingOrigins, setEditingOrigins] = useState<PersonalCredential | null>(null)
+  const [originsBusy, setOriginsBusy] = useState(false)
+  const [originsError, setOriginsError] = useState<string | null>(null)
   const [created, setCreated] = useState<CreatedCredential | null>(null)
   const [loading, setLoading] = useState(true)
   const [authRequired, setAuthRequired] = useState(false)
@@ -229,14 +235,29 @@ export default function UserPortal() {
       setError(null)
       const next = await request<CreatedCredential>('/api/me/api-credentials', {
         method: 'POST',
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name, allowedOrigins: parseOrigins(createOrigins) })
       })
       setCreated(next)
       setName('')
+      setCreateOrigins('')
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  async function saveOrigins(origins: string[]) {
+    if (!editingOrigins) return
+    setOriginsBusy(true); setOriginsError(null)
+    try {
+      await request<{ id: string }>(`/api/me/api-credentials/${editingOrigins.id}/allowed-origins`, {
+        method: 'PUT', body: JSON.stringify({ allowedOrigins: origins })
+      })
+      setEditingOrigins(null)
+      await refresh()
+    } catch (err) {
+      setOriginsError(err instanceof Error ? err.message : String(err))
+    } finally { setOriginsBusy(false) }
   }
 
   async function revoke(id: string) {
@@ -346,13 +367,14 @@ export default function UserPortal() {
         <div className="gridTwo">
           <section className="panel">
             <div className="panelTitle"><h2>Personal credentials</h2><span>{credentials.length} keys</span></div>
-            <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Created</th><th>Last used</th><th>Action</th></tr></thead><tbody>
+            <table><thead><tr><th>Name</th><th>Prefix</th><th>State</th><th>Browser origins</th><th>Created</th><th>Last used</th><th>Action</th></tr></thead><tbody>
               {credentials.map(item => <tr key={item.id}>
                 <td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td>
+                <td><OriginsSummary origins={item.allowedOrigins} empty="None (not usable from browsers)" /></td>
                 <td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td>
-                <td className="actions">{item.enabled && <><button onClick={() => void rotate(item.id)}>Rotate</button><button onClick={() => void revoke(item.id)}>Revoke</button></>}</td>
+                <td className="actions">{item.enabled && <><button onClick={() => { setOriginsError(null); setEditingOrigins(item) }}>Origins</button><button onClick={() => void rotate(item.id)}>Rotate</button><button onClick={() => void revoke(item.id)}>Revoke</button></>}</td>
               </tr>)}
-              {credentials.length === 0 && <tr><td colSpan={6} className="muted">No personal API keys yet.</td></tr>}
+              {credentials.length === 0 && <tr><td colSpan={7} className="muted">No personal API keys yet.</td></tr>}
             </tbody></table>
           </section>
 
@@ -360,6 +382,8 @@ export default function UserPortal() {
             <h2>Create personal API key</h2>
             <form onSubmit={createCredential}>
               <label>Name<input value={name} onChange={event => setName(event.target.value)} required placeholder="Project Alpha / Development" /></label>
+              <label>Allowed browser origins (optional, one per line)<textarea aria-label="Allowed browser origins for the new key" rows={3} spellCheck={false} value={createOrigins} onChange={event => setCreateOrigins(event.target.value)} placeholder={'https://app.example.com'} /></label>
+              <p className="muted">{originsHelp}</p>
               <button className="primary">Generate API key</button>
             </form>
             {created && <div className="secretBox"><strong>Copy this key now</strong><p>It will not be shown again. Store it in your application's secret manager.</p><code>{created.secret}</code><button className="secondary" onClick={() => void navigator.clipboard.writeText(created.secret)}>Copy</button></div>}
@@ -374,6 +398,10 @@ export default function UserPortal() {
           <p className="muted">Personal keys always participate in caller governance. User, group and optional credential/model policies compose together; the most restrictive output cap applies per request.</p>
         </section>}
       </>}
+      <OriginsModal open={editingOrigins !== null} title={`Browser origins · ${editingOrigins?.name ?? ''}`}
+        description="Which web apps may use this key directly from your browser. Replaces the key's current list."
+        initial={editingOrigins?.allowedOrigins ?? []} busy={originsBusy} error={originsError}
+        onSave={saveOrigins} onClose={() => setEditingOrigins(null)} />
     </main>
   </div>
 }

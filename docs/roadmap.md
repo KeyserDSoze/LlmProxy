@@ -1,6 +1,9 @@
 # Roadmap
 
 ## 2026-11-12 — Model startup reliability and Admin UX
+- [x] Browser access (CORS): site-wide origins, per-key origins, preflight, enforcement, audit.
+- [ ] Validate CORS from a real browser through the public hostname/Cloudflare and with two replicas.
+- [ ] Optional: per-origin rate limits or usage reporting by origin (the Origin header is not recorded today).
 - [x] Repository inspector in custom install (parameters, formats, context, GGUF quantizations, community quantized builds).
 - [ ] Compare weights size with the selected server's free memory and show fit (needs a verified KV-cache/unified-memory model first).
 - [x] Guided Hugging Face token flow on failed install/start cards (Admin -> Agent, owner-only storage).

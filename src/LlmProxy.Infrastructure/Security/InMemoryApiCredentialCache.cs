@@ -1,4 +1,5 @@
 using LlmProxy.Application.Abstractions;
+using LlmProxy.Domain.Security;
 
 namespace LlmProxy.Infrastructure.Security;
 
@@ -6,12 +7,14 @@ public sealed class InMemoryApiCredentialCache : IApiCredentialCache
 {
     private sealed record CacheState(
         Dictionary<string, ApiCredentialSnapshot> ByHash,
-        Dictionary<Guid, string> HashById);
+        Dictionary<Guid, string> HashById,
+        string[] AllowedOrigins);
 
     private readonly object _gate = new();
     private CacheState _state = new(
         new Dictionary<string, ApiCredentialSnapshot>(StringComparer.Ordinal),
-        new Dictionary<Guid, string>());
+        new Dictionary<Guid, string>(),
+        []);
 
     public bool TryGetUsableByHash(
         string keyHash,
@@ -28,6 +31,9 @@ public sealed class InMemoryApiCredentialCache : IApiCredentialCache
         credential = null!;
         return false;
     }
+
+    public bool AnyAllowsOrigin(string normalizedOrigin) =>
+        OriginPolicy.Matches(Volatile.Read(ref _state).AllowedOrigins, normalizedOrigin);
 
     public void Replace(IEnumerable<ApiCredentialSnapshot> credentials)
     {
@@ -49,7 +55,7 @@ public sealed class InMemoryApiCredentialCache : IApiCredentialCache
 
         lock (_gate)
         {
-            Volatile.Write(ref _state, new CacheState(byHash, hashById));
+            Volatile.Write(ref _state, new CacheState(byHash, hashById, IndexOrigins(byHash.Values)));
         }
     }
 
@@ -74,7 +80,7 @@ public sealed class InMemoryApiCredentialCache : IApiCredentialCache
 
             byHash[credential.KeyHash] = credential;
             hashById[credential.Id] = credential.KeyHash;
-            Volatile.Write(ref _state, new CacheState(byHash, hashById));
+            Volatile.Write(ref _state, new CacheState(byHash, hashById, IndexOrigins(byHash.Values)));
         }
     }
 
@@ -92,7 +98,14 @@ public sealed class InMemoryApiCredentialCache : IApiCredentialCache
             var hashById = new Dictionary<Guid, string>(current.HashById);
             byHash.Remove(keyHash);
             hashById.Remove(credentialId);
-            Volatile.Write(ref _state, new CacheState(byHash, hashById));
+            Volatile.Write(ref _state, new CacheState(byHash, hashById, IndexOrigins(byHash.Values)));
         }
     }
+
+    // Revoked credentials must not open preflights; expiry is judged per request.
+    private static string[] IndexOrigins(IEnumerable<ApiCredentialSnapshot> credentials) =>
+        credentials.Where(item => item.Enabled && item.AllowedOrigins is { Count: > 0 })
+            .SelectMany(item => item.AllowedOrigins!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 }

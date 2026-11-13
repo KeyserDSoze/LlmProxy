@@ -175,8 +175,8 @@ const requestMetrics = [
 ]
 
 const credentials = [
-  { id: 'credential-1', name: 'GitHub Copilot', keyPrefix: 'lp_org_7d2f', enabled: true, kind: 'organization', usageGroupId: 'group-1', enforceCallerGovernance: false, secretAvailable: true, createdAtUtc: '2026-10-01T08:00:00Z', lastUsedAtUtc: '2026-11-12T09:58:02Z' },
-  { id: 'credential-2', name: 'CI pipeline', keyPrefix: 'lp_org_19ac', enabled: false, kind: 'organization', usageGroupId: null, enforceCallerGovernance: true, secretAvailable: false, createdAtUtc: '2026-09-02T08:00:00Z', lastUsedAtUtc: '2026-10-20T17:00:00Z' }
+  { id: 'credential-1', name: 'GitHub Copilot', keyPrefix: 'lp_org_7d2f', enabled: true, kind: 'organization', usageGroupId: 'group-1', enforceCallerGovernance: false, secretAvailable: true, createdAtUtc: '2026-10-01T08:00:00Z', lastUsedAtUtc: '2026-11-12T09:58:02Z', allowedOrigins: ['https://ghostwriting.ws', 'http://localhost:5173'] },
+  { id: 'credential-2', name: 'CI pipeline', keyPrefix: 'lp_org_19ac', enabled: false, kind: 'organization', usageGroupId: null, enforceCallerGovernance: true, secretAvailable: false, createdAtUtc: '2026-09-02T08:00:00Z', lastUsedAtUtc: '2026-10-20T17:00:00Z', allowedOrigins: [] }
 ]
 
 const usageGroups = [{ id: 'group-1', name: 'Development CRM', description: 'CRM engineering team', credentialCount: 1, userCount: 2, createdAtUtc: '2026-10-03T06:00:00Z', updatedAtUtc: '2026-10-03T06:00:00Z' }]
@@ -229,6 +229,7 @@ export async function installMockAdmin(page: Page) {
       case '/api/admin/models': return json(route, models)
       case '/api/admin/deployments': return json(route, deployments)
       case '/api/admin/api-credentials': return json(route, credentials)
+      case '/api/admin/cors-settings': return json(route, { allowedOrigins: ['https://console.agic.it'], maxAgeSeconds: 600, updatedAtUtc: '2026-11-12T08:00:00Z' })
       case '/api/admin/governance/credentials': return json(route, credentials)
       case '/api/admin/metrics': return json(route, requestMetrics)
       case '/api/admin/metrics/query': return json(route, { items: requestMetrics, total: requestMetrics.length, page: 1, pageSize: 20 })
@@ -258,7 +259,7 @@ export async function installMockAdmin(page: Page) {
       case '/api/admin/updates': return json(route, { currentVersion: '0.2.64', agentAvailable: true, policy: { mode: 'manual', timeZoneId: 'Europe/Rome', localHour: 2, localMinute: 0, dayOfWeek: 0, dayOfMonth: 1, lastCheckedAtUtc: null, lastScheduledAtUtc: null, lastScheduledVersion: null, lastError: null, updatedAtUtc: '2026-11-01T08:00:00Z' }, agent: { installedVersion: '0.2.64', activeJob: null, recentJobs: [] }, releases: [] })
       case '/api/admin/model-management/catalog': return json(route, catalog.map(item => item.model))
       case '/api/me': return json(route, { tenantId: 'tenant-1', objectId: 'object-1', principalName: 'alessandro@agic.it', displayName: 'Alessandro Rapiti', roles: ['LlmProxy.User'] })
-      case '/api/me/api-credentials': return json(route, [{ id: 'my-1', name: 'VS Code Copilot', keyPrefix: 'lp_usr_3e1f', enabled: true, createdAtUtc: '2026-10-05T08:00:00Z', lastUsedAtUtc: '2026-11-12T09:58:02Z' }])
+      case '/api/me/api-credentials': return json(route, [{ id: 'my-1', name: 'VS Code Copilot', keyPrefix: 'lp_usr_3e1f', enabled: true, createdAtUtc: '2026-10-05T08:00:00Z', lastUsedAtUtc: '2026-11-12T09:58:02Z', allowedOrigins: ['https://ghostwriting.ws'] }])
       case '/api/me/rate-limits': return json(route, [{ id: 'user-rate-1', scope: 'user', scopeName: 'alessandro@agic.it', logicalModel: null, requestsPerWindow: 300, windowSeconds: 60, outputTokensPerWindow: 100000, maxOutputTokensPerRequest: 4096, enabled: true, updatedAtUtc: '2026-10-21T09:00:00Z' }])
       case '/api/me/requests': return json(route, requestMetrics.slice(0, 1))
       case '/api/me/content-logs': return json(route, { items: [contentLogItem], total: 1, page: 1, pageSize: 20 })

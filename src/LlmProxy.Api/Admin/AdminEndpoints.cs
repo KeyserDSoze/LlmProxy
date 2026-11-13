@@ -559,7 +559,8 @@ public static class AdminEndpoints
         });
 
         group.MapGet("/api-credentials", async (GatewayDbContext dbContext, CancellationToken cancellationToken) =>
-            Results.Ok(await dbContext.ApiCredentials.AsNoTracking().OrderByDescending(item => item.CreatedAtUtc).Select(item => new
+        {
+            var rows = await dbContext.ApiCredentials.AsNoTracking().OrderByDescending(item => item.CreatedAtUtc).Select(item => new
             {
                 item.Id,
                 item.Name,
@@ -574,8 +575,28 @@ public static class AdminEndpoints
                 item.OwnerObjectId,
                 item.OwnerPrincipalName,
                 kind = item.IsPersonal ? "personal" : "organization",
-                secretAvailable = item.SecretCiphertext != null
-            }).ToListAsync(cancellationToken)));
+                secretAvailable = item.SecretCiphertext != null,
+                item.AllowedOriginsText
+            }).ToListAsync(cancellationToken);
+            return Results.Ok(rows.Select(item => new
+            {
+                item.Id,
+                item.Name,
+                item.KeyPrefix,
+                item.Enabled,
+                item.CreatedAtUtc,
+                item.ExpiresAtUtc,
+                item.LastUsedAtUtc,
+                item.UsageGroupId,
+                item.EnforceCallerGovernance,
+                item.OwnerTenantId,
+                item.OwnerObjectId,
+                item.OwnerPrincipalName,
+                item.kind,
+                item.secretAvailable,
+                allowedOrigins = OriginPolicy.ParseStored(item.AllowedOriginsText)
+            }));
+        });
 
         var createCredential = group.MapPost("/api-credentials", async (
             CreateApiCredentialRequest request,
@@ -587,6 +608,8 @@ public static class AdminEndpoints
         {
             var secret = ApiKeyHasher.GenerateSecret("lp_org_");
             var credential = new ApiCredential(request.Name, ApiKeyHasher.GetPrefix(secret), hasher.Hash(secret), request.ExpiresAtUtc);
+            try { credential.SetAllowedOrigins(request.AllowedOrigins); }
+            catch (ArgumentException error) { return Results.BadRequest(new { error = "invalid_origins", message = error.Message }); }
             credential.SetSecretCiphertext(
                 sensitiveDataProtector.Protect(secret, $"api-credential:{credential.Id}"));
             dbContext.ApiCredentials.Add(credential);
@@ -596,7 +619,8 @@ public static class AdminEndpoints
                 credential.KeyPrefix,
                 credential.ExpiresAtUtc,
                 kind = "organization",
-                credential.EnforceCallerGovernance
+                credential.EnforceCallerGovernance,
+                allowedOrigins = credential.AllowedOrigins
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             return Results.Ok(new
@@ -608,6 +632,7 @@ public static class AdminEndpoints
                 credential.ExpiresAtUtc,
                 kind = "organization",
                 credential.EnforceCallerGovernance,
+                allowedOrigins = credential.AllowedOrigins,
                 secretAvailable = true,
                 secret
             });
@@ -815,6 +840,6 @@ public static class AdminEndpoints
     public sealed record CreateModelRequest(string PublicName, string ProviderModelName, bool SupportsStreaming = true, bool SupportsTools = true, ModelSurface Surface = ModelSurface.OpenAi);
     public sealed record CreateDeploymentRequest(Guid NodeId, Guid ModelId, int Weight = 1, int? MaxConcurrency = null, string? RuntimeBaseAddress = null);
     public sealed record UpdateDeploymentRequest(int Weight = 1, int? MaxConcurrency = null, bool Enabled = true);
-    public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null);
+    public sealed record CreateApiCredentialRequest(string Name, DateTimeOffset? ExpiresAtUtc = null, IReadOnlyList<string>? AllowedOrigins = null);
     public sealed record EndpointProbe(string Url, bool Success, int? StatusCode, long LatencyMilliseconds, string? Error);
 }

@@ -1,3 +1,13 @@
+## 2026-11-13 — Browser access (CORS) per API key and site-wide (source; CI pending)
+
+Trigger: a web app (`https://ghostwriting.ws`) calling `/v1/models` with its key was blocked by the browser: no `Access-Control-Allow-Origin`, and the preflight (`OPTIONS`, no key) had no answer.
+
+Design: a preflight cannot identify the key, so it is allowed when the origin is in the site-wide list or in the list of any enabled key; the real request is then checked against the authenticated key (enforcement in `InferenceApiKeyMiddleware`, headers via `OnStarting` so SSE is covered). Per-key origins ride on `ApiCredentialSnapshot`, hence the existing outbox/Redis/in-memory path; the site-wide singleton is cached in `CorsPolicyState` and refreshed from PostgreSQL every 20 s so replicas converge without a per-request query. A key without a list stays unrestricted; a key with a list is restricted for browsers only.
+
+Bug found by the real-gateway smoke test, not by unit tests: both credential save interceptors publish a snapshot only for an explicit property list, so changing only the origins did not refresh the runtime cache. `AllowedOriginsText` was added to both lists and an EF in-memory regression test covers it.
+
+Validation (local): backend 452/452, Vitest 50/50, Playwright functional 48/48 and visual 51/51 (credentials/help baselines updated), `cors_smoke.sh` passed against a freshly built gateway + PostgreSQL. Not verified: a real browser against the public hostname/Cloudflare, multi-replica convergence.
+
 ## 2026-11-13 — Hugging Face repository inspector for custom installs (source; CI pending)
 
 Request: pasting `meta-models/Muse-Glimmer-30B` showed nothing about quantizations; the GGUF selector only appeared after switching to llama.cpp, and that repository has no GGUF at all.

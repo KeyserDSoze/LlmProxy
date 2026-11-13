@@ -704,6 +704,9 @@ jobs:
       - name: PowerShell backup and restore smoke suite
         run: bash tests/backend/integration/backup_restore_powershell_smoke.sh
 
+      - name: Browser access (CORS) smoke suite
+        run: bash tests/backend/integration/cors_smoke.sh
+
       - name: Setup Node.js for the live Admin UI smoke
         uses: actions/setup-node@v4
         with:

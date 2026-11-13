@@ -162,6 +162,24 @@ Authorization: Bearer <gateway-api-key>
 
 Credentials are database-backed, HMAC-hashed, revocable and may have an expiry date. Administrators can create service credentials; authenticated Entra users with `LlmProxy.User` or `LlmProxy.Admin` can create personal credentials through `/api/me/api-credentials`. Personal ownership is the stable Entra `(tid, oid)` pair. Raw secrets are returned only once at creation or rotation.
 
+## Browser access (CORS)
+
+Web apps may call the `/v1` endpoints directly from the browser when their origin is allowed. Two lists exist and are combined:
+
+| List | Scope | Managed by |
+| --- | --- | --- |
+| Site-wide origins | every API key | administrators: `GET/PUT /api/admin/cors-settings` (`{ "allowedOrigins": [...], "maxAgeSeconds": 600 }`) |
+| Key origins | one API key | administrators: `PUT /api/admin/api-credentials/{id}/allowed-origins`, or `allowedOrigins` when creating a key; users for their own keys: `PUT /api/me/api-credentials/{id}/allowed-origins` |
+
+An origin is `scheme://host[:port]` without a path (`https://app.example.com`, `http://localhost:5173`); `*` allows any origin. Entries are normalized (lower case, default ports removed) and validated; at most 50 per list.
+
+- **Preflight** (`OPTIONS` with `Access-Control-Request-Method`) carries no API key, so it is answered when the origin is in the site-wide list or in the list of any *enabled* key. Allowed answers are `204` with `Access-Control-Allow-Origin` (the origin is echoed), `Allow-Methods: GET, POST, OPTIONS`, the requested headers (only well-formed names, else `authorization, content-type`) and `Max-Age`. Anything else is `403 origin_not_allowed` without CORS headers.
+- **Actual requests** with an `Origin` header receive `Access-Control-Allow-Origin` when the origin is allowed site-wide or by the authenticated key (or, for an invalid key, by any key, so a browser can read the `401`). `X-Request-Id` and `Retry-After` are exposed. SSE streams carry the headers too.
+- **Enforcement.** A key that lists origins is rejected with `403 origin_not_allowed` when it is used from a browser origin that is neither in its own list nor site-wide. A key with no list is not restricted (CORS headers only follow the site-wide list).
+- **Scope.** Requests without an `Origin` header (servers, curl) are never affected. CORS limits which web pages can *use* a key in a browser; it does not make a key safe to publish.
+
+Site-wide changes are persisted and picked up by every replica within about 20 seconds; per-key changes propagate through the normal credential runtime-state path. Changes are audited (`cors.settings.update`, `credential.origins.update`) with origins only.
+
 ## Administration
 
 Administration endpoints live under `/api/admin`. They are not OpenAI-compatible and may evolve independently of `/v1`.

@@ -1,3 +1,7 @@
+## 2026-11-13 — Browser access (CORS) per API key and site-wide (source; CI pending)
+
+Admin-managed site-wide origins plus per-key origins (admin and personal keys), preflight/response headers and enforcement on `/v1`. Details: `docs/api-contract.md` (Browser access), `docs/security.md`, `docs/development-log.md`. External validation still required: a real browser through the public hostname and multi-replica convergence.
+
 ## 2026-11-13 — Hugging Face repository inspector for custom installs (source; CI pending)
 
 Custom install reads parameters, formats, context window, GGUF quantizations and community quantized builds from the Hub and pre-fills engine/context. Details and validation: `docs/development-log.md`. External validation still required: live Hub for the intended repositories.

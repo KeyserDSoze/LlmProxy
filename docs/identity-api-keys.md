@@ -99,6 +99,7 @@ GET  /api/me/api-credentials
 POST /api/me/api-credentials
 POST /api/me/api-credentials/{id}/rotate
 POST /api/me/api-credentials/{id}/revoke
+PUT  /api/me/api-credentials/{id}/allowed-origins
 GET  /api/me/usage?days=30
 GET  /api/me/rate-limits
 GET  /api/me/requests?take=50
@@ -107,6 +108,8 @@ GET  /api/me/content-logs/{id}
 ```
 
 The server derives ownership exclusively from the authenticated Entra principal. A caller cannot submit another tenant/object ID in a request body.
+
+A personal key may list the browser origins (CORS) that may use it, at creation (`allowedOrigins`) or later through `PUT .../allowed-origins`; the rules and the site-wide list administrators manage are described in `docs/api-contract.md` (Browser access).
 
 List/rotate/revoke operations filter by both credential ID and the current `(tid, oid)` pair. A credential owned by another user therefore behaves as not found rather than exposing ownership information. Request-audit self-service follows the same rule: list queries are restricted to content-log rows linked to the caller's personal credential IDs, and a direct detail request for a non-owned row returns not found. Shared organization credentials have no user owner and are therefore excluded from self-service payload inspection.
 

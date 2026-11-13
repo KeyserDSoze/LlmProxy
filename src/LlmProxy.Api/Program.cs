@@ -11,6 +11,7 @@ using LlmProxy.Api.SystemOne;
 using LlmProxy.Application.Abstractions;
 using LlmProxy.Application.Governance;
 using LlmProxy.Application.Routing;
+using LlmProxy.Application.Security;
 using LlmProxy.Domain.Routing;
 using LlmProxy.Infrastructure.Governance;
 using LlmProxy.Infrastructure.Health;
@@ -53,6 +54,8 @@ builder.Services.AddHostedService<ManagedInstallFinalizationWorker>();
 builder.Services.AddHostedService<NodeAgentUpgradeMaintenanceWorker>();
 
 builder.Services.AddSingleton<IApiCredentialCache, InMemoryApiCredentialCache>();
+builder.Services.AddSingleton<CorsPolicyState>();
+builder.Services.AddHostedService<CorsSettingsRefreshWorker>();
 builder.Services.AddSingleton<IRouteCatalog, InMemoryRouteCatalog>();
 builder.Services.AddSingleton<IDeploymentCatalog>(services => services.GetRequiredService<IRouteCatalog>());
 builder.Services.AddSingleton<InMemoryRateLimitCounterStore>();
@@ -216,6 +219,9 @@ using (var scope = app.Services.CreateScope())
 {
     var bootstrapper = scope.ServiceProvider.GetRequiredService<DatabaseBootstrapper>();
     await bootstrapper.InitializeAsync();
+    await CorsAdminEndpoints.LoadAsync(
+        scope.ServiceProvider.GetRequiredService<GatewayDbContext>(),
+        app.Services.GetRequiredService<CorsPolicyState>(), CancellationToken.None);
 }
 
 if (reverseProxyEnabled)
@@ -225,6 +231,7 @@ if (reverseProxyEnabled)
 
 app.UseStaticFiles();
 app.UseMiddleware<TraceCorrelationMiddleware>();
+app.UseMiddleware<InferenceCorsMiddleware>();
 
 if (entraEnabled)
 {
@@ -269,6 +276,7 @@ app.MapIdentityAdminEndpoints(entraEnabled);
 app.MapPlatformUserAdminEndpoints(entraEnabled);
 app.MapPlatformUserGroupEndpoints(entraEnabled);
 app.MapAdminEndpoints(entraEnabled);
+app.MapCorsAdminEndpoints(entraEnabled);
 app.MapNodeMaintenanceAdminEndpoints(entraEnabled);
 app.MapCredentialRotationAdminEndpoints(entraEnabled);
 app.MapCredentialGovernanceAdminEndpoints(entraEnabled);

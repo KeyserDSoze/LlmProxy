@@ -17,7 +17,8 @@ public sealed class ApiCredentialCacheSaveChangesInterceptor(
         nameof(ApiCredential.UsageGroupId),
         nameof(ApiCredential.OwnerTenantId),
         nameof(ApiCredential.OwnerObjectId),
-        nameof(ApiCredential.EnforceCallerGovernance)
+        nameof(ApiCredential.EnforceCallerGovernance),
+        nameof(ApiCredential.AllowedOriginsText)
     ];
 
     private sealed record PendingChanges(IReadOnlyList<ApiCredentialSnapshot> Upserts, IReadOnlyList<Guid> Removes);

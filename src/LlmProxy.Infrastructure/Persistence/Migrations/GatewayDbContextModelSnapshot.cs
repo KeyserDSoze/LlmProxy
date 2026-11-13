@@ -253,6 +253,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
         modelBuilder.Entity("LlmProxy.Domain.Security.ApiCredential", b =>
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+            b.Property<string>("AllowedOriginsText").HasColumnName("AllowedOrigins").HasColumnType("text");
             b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
             b.Property<bool>("Enabled").HasColumnType("boolean");
             b.Property<bool>("EnforceCallerGovernance").HasColumnType("boolean");
@@ -353,6 +354,16 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
             b.HasKey("Id");
             b.ToTable("user_access_settings");
+        });
+
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.CorsSettingsRecord", b =>
+        {
+            b.Property<int>("Id").HasColumnType("integer");
+            b.Property<string>("AllowedOriginsText").HasColumnName("AllowedOrigins").HasColumnType("text");
+            b.Property<int>("MaxAgeSeconds").HasColumnType("integer");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("Id");
+            b.ToTable("cors_settings");
         });
 
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DailyUsageRollupRecord", b =>

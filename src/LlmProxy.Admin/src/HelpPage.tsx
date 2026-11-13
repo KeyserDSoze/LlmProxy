@@ -26,6 +26,14 @@ export default function HelpPage({ models }: { models: Model[] }) {
     '  -H "Content-Type: application/json" \\',
     '  -d \'{"model":"' + sampleModel + '","input":"Hello"}\''
   ].join('\n')
+  const browserExample = [
+    "const response = await fetch(BASE_URL + '/v1/chat/completions', {",
+    "  method: 'POST',",
+    "  headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },",
+    "  body: JSON.stringify({ model: '" + sampleModel + "', stream: true, messages: [{ role: 'user', content: 'Hello' }] })",
+    '})',
+    'const reader = response.body.getReader() // server-sent events, one chunk at a time'
+  ].join('\n')
   const classifierExample = [
     'curl "$BASE_URL/v1/systemone" \\',
     '  -H "Authorization: Bearer $LLMPROXY_API_KEY" \\',
@@ -43,6 +51,13 @@ export default function HelpPage({ models }: { models: Model[] }) {
         <Doc title="System One classifier" code={classifierExample} />
       </div>
       <p className="muted">The client sends the LlmProxy API key. For System One, LlmProxy replaces that credential with the classifier upstream bearer token configured on the server.</p>
+    </section>
+
+    <section className="panel formPanel">
+      <div className="panelTitle tuningTitle"><h2>Calling from a browser (CORS)</h2><span>Web apps that talk to LlmProxy directly</span></div>
+      <Doc title="Streaming chat from a web page" code={browserExample} />
+      <p>A browser only reaches the API when its origin is allowed. Administrators list site-wide origins and each API key can list its own under <strong>Credentials → Origins</strong> (users manage their personal keys in <strong>My dashboard</strong>). Use <code>scheme://host[:port]</code> without a path, or <code>*</code> for any origin. A key that lists origins is rejected from any other origin.</p>
+      <p className="muted">Never ship an administrator or shared key in a public front-end: CORS limits which pages may use a key in a browser, it does not hide the key. Prefer a personal key with its origin listed.</p>
     </section>
 
     <section className="panel">
