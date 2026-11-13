@@ -76,6 +76,8 @@ test('organization key created in the UI authenticates, then stops working once 
 
   const row = page.getByRole('row').filter({ hasText: name })
   await expect(row).toContainText('Enabled')
+  // Revoking is irreversible, so the UI asks first.
+  page.once('dialog', dialog => void dialog.accept())
   await row.getByRole('button', { name: 'Revoke' }).click()
   await expect(row).toContainText('Revoked')
   await expect.poll(async () => (await request.get('/v1/models', { headers: { Authorization: `Bearer ${secret}` } })).status(),
