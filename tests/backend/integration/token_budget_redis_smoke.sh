@@ -52,6 +52,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Rate-limit and budget windows are aligned to wall-clock multiples of their length. Wait for the next window
+# when fewer than <needed> seconds remain, so a boundary cannot reset counters in the middle of an assertion.
+wait_for_window_room() {
+  local window="$1" needed="$2" remaining
+  remaining=$(( window - $(date +%s) % window ))
+  if (( remaining < needed )); then
+    echo "Waiting ${remaining}s for the next ${window}s window so counters are not reset mid-test."
+    sleep $(( remaining + 1 ))
+  fi
+}
+
 fail_with_diagnostics() {
   echo "$1" >&2
   docker logs "$PEER_NAME" >&2 2>/dev/null || true
@@ -220,6 +231,7 @@ done
 
 # The convergence probe intentionally consumes the test policy after it becomes active. Reset only this
 # isolated Redis test counter so the real two-gateway assertion begins from a deterministic empty window.
+wait_for_window_room 60 15
 "${COMPOSE[@]}" exec -T redis redis-cli -a "$REDIS_PASSWORD" DEL "$user_rate_key" >/dev/null 2>&1
 
 user_first="$(call_model_with_key 8080 "$user_key_a_secret" /tmp/token-budget-user-a)"
@@ -260,6 +272,10 @@ done
 
 policy_field="${policy_id//-/}"
 budget_key="llmproxy:output-token-budget:${policy_field}:17:300"
+
+# The budget window is aligned to wall-clock multiples of 300 s. The Redis outage section below takes ~30 s;
+# a window boundary crossed mid-test legitimately resets usage and would fail the persistence assertion.
+wait_for_window_room 300 90
 
 first="$(call_budget_model 8080 /tmp/token-budget-a)"
 [[ "$first" == "200" ]] || fail_with_diagnostics "Expected first budgeted request on primary to succeed; got ${first}."
