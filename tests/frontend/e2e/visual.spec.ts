@@ -60,6 +60,8 @@ async function open(page: Page, screen: Screen, theme: 'light' | 'dark') {
   await page.goto(screen.url)
   await screen.ready(page)
   await expect(page.locator('.loading')).toHaveCount(0)
+  // The activity dock appears once its own poll has answered; without waiting, a slow runner photographs the page without it.
+  if (!screen.url.startsWith('/admin/me')) await expect(page.locator('.activityDock .activityButton')).toHaveText('1 running')
   await page.evaluate(() => document.fonts.ready)
   return problems
 }

@@ -56,6 +56,8 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
     recompute()
   }, [productUpdates, recompute])
 
+  const latestNodes = useRef(nodes)
+  latestNodes.current = nodes
   const managed = nodes.filter(node => node.managementBaseAddress)
   const managedKey = managed.map(node => node.id + ':' + node.name).join('|')
   const busy = Object.values(operations).some(operation => operation.status === 'running' || operation.status === 'attention')
@@ -66,6 +68,9 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
       inFlight.current = true
       try {
         const now = Date.now()
+        // Read the node list at call time: a re-run queued while an older poll was in flight must see the nodes that arrived since.
+        const nodes = latestNodes.current
+        const managed = nodes.filter(node => node.managementBaseAddress)
         const names = new Map(nodes.map(node => [node.id, node.name]))
         const [pairs, installResults, startResults] = await Promise.all([
           Promise.allSettled([api.pairedAgentNodes()]).then(results => results[0]),
@@ -112,8 +117,8 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
     void poll()
     const timer = window.setInterval(() => void poll(), busy ? BUSY_POLL_MS : IDLE_POLL_MS)
     return () => window.clearInterval(timer)
-    // `managedKey` stands for the node list: the closure above reads `nodes`/`managed` of the render that created it.
-  }, [busy, managedKey, recompute]) // eslint-disable-line react-hooks/exhaustive-deps
+    // `managedKey` restarts the poll when the set of managed servers changes.
+  }, [busy, managedKey, recompute])
 
   const dismiss = useCallback((id: string) => {
     dismissed.current.add(id)
