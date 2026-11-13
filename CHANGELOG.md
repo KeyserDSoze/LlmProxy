@@ -1,3 +1,11 @@
+## Unreleased — Background operations and visible Agent errors
+
+- **Why uninstall "did nothing":** the gateway answered an Agent failure with `502`, and Cloudflare replaces an origin `502`/`504` with its own HTML page, so Admin only ever said "HTTP 502: the server or reverse proxy returned an HTML error page". The real reason was never shown. Admin and self-service routes now report such failures as `424 Failed Dependency` (original status in `X-LlmProxy-Original-Status`); public `/v1` statuses are unchanged.
+- **Background operations.** Stop, force stop, uninstall, capability verification and host preparation now return `202` at once (`POST .../deployments/{id}/{stop|force-stop|remove|verify}-jobs`, `POST .../nodes/{id}/prepare-jobs`) and run on the gateway; the outcome, including the Agent's own message, is read from `GET /api/admin/operations`. The model card shows what is happening and disables its buttons, the *Jobs* tab lists recent operations, and the Background activity dock follows them from every page. The synchronous endpoints still exist.
+- **Uninstall:** if the Agent answers `404` (it no longer knows the installation), the stale gateway deployment is now removed instead of failing forever. Every failure is written to the audit log (`model.remove.failed`, with the Agent's message), so it can be read from the database even without the UI.
+- Capability verification (up to four probes of two minutes) no longer risks a Cloudflare `524`.
+- Tests: `ManagedModelOperations`, `AdminOperationService`, status remap, Vitest dock mapping, Playwright `background-operations.spec.ts`.
+
 ## Unreleased — Security follow-up and phone fleet cards
 
 - **Gateway:** inference POST routes refuse a JSON body above `Gateway:MaxRequestBodyBytes` (default 16 MiB, range 64 KiB to 256 MiB) with `413 request_too_large`, after authentication and before any stage reads the body. Multimodal uploads keep their own limits.

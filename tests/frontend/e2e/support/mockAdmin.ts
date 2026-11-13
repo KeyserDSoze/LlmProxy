@@ -240,6 +240,7 @@ export async function installMockAdmin(page: Page) {
       ])
       case '/api/admin/usage-groups': return json(route, usageGroups)
       case '/api/admin/rate-limits': return json(route, [{ id: 'rate-1', apiCredentialId: 'credential-1', credentialName: 'GitHub Copilot', keyPrefix: 'lp_org_7d2f', logicalModel: null, requestsPerWindow: 120, windowSeconds: 60, outputTokensPerWindow: 400000, maxOutputTokensPerRequest: 8192, enabled: true, createdAtUtc: '2026-10-01T08:00:00Z', updatedAtUtc: '2026-10-01T08:00:00Z' }])
+      case '/api/admin/operations': return json(route, [])
       case '/api/admin/user-rate-limits': return json(route, [])
       case '/api/admin/group-rate-limits': return json(route, [])
       case '/api/admin/usage/summary': return json(route, usageSummary)

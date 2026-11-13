@@ -14,6 +14,8 @@
 - [ ] Agent: runtime secrets given as `ExtraArguments` (for example `--api-key`) stay visible in `docker inspect` and the host process list; move them to an environment file if that exposure matters. Documented in `docs/security.md`.
 - [ ] Sign release assets (cosign) and refuse Agent downgrades.
 - [x] Route-level authorization test (`EndpointAuthorizationContractTests`: every `/api/admin` route has a policy, changes need `AdminWrite`, `/api/me` needs `SelfService`, anything else must be in a reviewed allow-list).
+- [x] Long Agent actions (stop, force stop, uninstall, verify, host prepare) are background operations; admin failures are readable behind Cloudflare.
+- [ ] Persist operations in PostgreSQL if a multi-replica gateway needs to show them from any replica.
 - [x] Copy buttons work over plain HTTP and say when the browser blocks the copy.
 - [x] Fleet table renders one card per server on a phone.
 - [ ] Extend profiles only with a cited source (LFM2.5, gpt-oss, Gemma 4, Llama 3.x); persist verification results if operators want history.

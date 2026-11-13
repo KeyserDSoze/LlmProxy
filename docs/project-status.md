@@ -1,3 +1,7 @@
+## 2026-11-13 — Background operations and visible Agent errors (source; CI pending)
+
+Stop, force stop, uninstall, verification and host preparation run as background operations with a readable outcome; admin failures are no longer masked by Cloudflare's HTML 502 page (`424`); an uninstall for an installation the Agent no longer has now removes the stale deployment. Details: `docs/api-contract.md`, `docs/development-log.md`. External validation required: uninstall `meta-muse-glimmer` on the real Spark.
+
 ## 2026-11-13 — Security follow-up and phone fleet cards (source; CI pending)
 
 Inference request-body limit (`413 request_too_large`), Agent tolerance of corrupt state files and bounded command output, a route-level authorization contract test, working Copy buttons over plain HTTP, and one card per server on phones. Open: single read of the request body across stages; secrets in `ExtraArguments` remain visible in `docker inspect`. Details: `docs/security.md`, `docs/development-log.md`.

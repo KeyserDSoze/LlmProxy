@@ -4,7 +4,7 @@ import StartupDiagnosis from './StartupDiagnosis'
 import { CopyButton, InfoIcon } from './UiPrimitives'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
-import type { FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
+import type { AdminOperation, FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
 
 export type InstalledAction = 'start' | 'activate' | 'stop' | 'forceStop' | 'remove'
 
@@ -24,11 +24,12 @@ function cardState(item: ManagedInstallation, job?: ModelStartJob): CardState {
 
 export type VerificationState = ModelVerification | 'loading' | { error: string }
 
-export default function InstalledModelCards({ nodeId, installations, startJobs, upstreamRevisions, canWrite, busy,
+export default function InstalledModelCards({ nodeId, installations, startJobs, operations = [], upstreamRevisions, canWrite, busy,
   agentAvailable, verifications, onVerify, onAction, onCancelStart, onEdit, onCapabilities, onBenchmark }: {
   nodeId?: string
   installations: ManagedInstallation[]
   startJobs: ModelStartJob[]
+  operations?: AdminOperation[]
   upstreamRevisions: ModelRevisionStatus[]
   canWrite: boolean
   busy: string | null
@@ -49,6 +50,7 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
       const state = cardState(item, job)
       const running = item.agentStatus.toLowerCase() === 'running'
       const starting = job?.status === 'queued' || job?.status === 'starting'
+      const working = operations.find(entry => entry.deploymentId === item.id && entry.status === 'Running')
       const typed = typedRuntimes.includes(item.runtime ?? '')
       const revision = upstreamRevisions.find(entry => entry.installationId === item.managedInstallationId)
       const failure = job && (job.status === 'failed' || job.status === 'interrupted') && job.error
@@ -130,16 +132,17 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <VerificationResults state={verifications[item.id] as ModelVerification | { error: string }} />}
 
         <footer className="installedModelActions">
+          {working && <p className="installedModelWorking" role="status"><span className="miniSpinner" aria-hidden="true" /> {working.title}: {working.detail === 'Queued' ? 'working…' : working.detail}</p>}
           <button className={running ? 'secondary' : 'primary'}
-            disabled={!canWrite || busy !== null || running || starting}
+            disabled={!canWrite || (busy !== null || !!working) || running || starting}
             onClick={() => onAction('start', item.id)}>{t('catalog.start')}</button>
           {running && !item.enabled &&
-            <button className="primary" disabled={!canWrite || busy !== null || !agentAvailable}
+            <button className="primary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable}
               title={t('catalog.healthTip')}
               onClick={() => onAction('activate', item.id)}>{t('catalog.activate')}</button>}
-          <button className="secondary" disabled={!canWrite || busy !== null || !running}
+          <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !running}
             onClick={() => onAction('stop', item.id)}>{t('catalog.stop')}</button>
-          <button className="secondary" disabled={!canWrite || busy !== null || !agentAvailable || typed || running}
+          <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable || typed || running}
             title={typed ? 'This typed media runtime has fixed concurrency and no Chat-token parameters.'
               : running ? t('catalog.startStopped') : t('catalog.editStopped')}
             onClick={() => onEdit(item)}>{t('catalog.edit')}</button>
@@ -154,7 +157,7 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
             <InfoIcon /> {t('cap.details')}
           </button>}
           <span className="installedModelSpacer" />
-          <button className="danger" disabled={!canWrite || busy !== null}
+          <button className="danger" disabled={!canWrite || (busy !== null || !!working)}
             onClick={() => onAction('remove', item.id)}>{t('catalog.uninstall')}</button>
         </footer>
         <div className="installedModelId mono muted">{item.managedInstallationId}</div>

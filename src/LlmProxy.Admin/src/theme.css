@@ -410,3 +410,5 @@ tbody tr:hover td{background:var(--row-hover)}
   .fleetTable td[data-label="Server"]{display:block}
   .fleetTable td[data-label="Server"]::before{content:none}
 }
+
+.installedModelWorking{display:flex;align-items:center;gap:8px;flex-basis:100%;margin:0 0 4px;color:var(--info-text);font-size:13px}

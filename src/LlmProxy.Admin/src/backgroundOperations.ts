@@ -1,4 +1,4 @@
-import type { ModelInstallJob, ModelStartJob, PairedNodeStatus, ProductUpdateOverview } from './types'
+import type { AdminOperation, ModelInstallJob, ModelStartJob, PairedNodeStatus, ProductUpdateOverview } from './types'
 
 /**
  * Long-running work (Agent update, model download, model start, gateway update) is started on one page and
@@ -6,7 +6,7 @@ import type { ModelInstallJob, ModelStartJob, PairedNodeStatus, ProductUpdateOve
  * can show on every page, and keep a finished item around until the operator has seen it.
  */
 export type OperationStatus = 'running' | 'attention' | 'failed' | 'done'
-export type OperationKind = 'agent-update' | 'model-install' | 'model-start' | 'product-update'
+export type OperationKind = 'agent-update' | 'model-install' | 'model-start' | 'product-update' | 'model-admin'
 
 export type BackgroundOperation = {
   id: string
@@ -112,6 +112,17 @@ export function startJobOperation(job: ModelStartJob, nodeId: string, nodeName: 
     return { terminal: { ...base, status: 'failed', detail: `${nodeName} · ${job.error?.split('\n')[0] ?? 'The start did not complete'}` } }
   }
   return {}
+}
+
+/** Stop, force stop and uninstall run on the gateway; the outcome (including the Agent's own message) stays readable. */
+export function adminOperation(operation: AdminOperation, nowMs: number): { active?: BackgroundOperation; terminal?: BackgroundOperation } {
+  const base = {
+    id: `admin-operation:${operation.id}`, kind: 'model-admin' as const, title: operation.title,
+    href: operation.nodeId ? `/admin/models?node=${encodeURIComponent(operation.nodeId)}` : '/admin/models', firstSeenAtMs: nowMs
+  }
+  if (operation.status === 'Running') return { active: { ...base, status: 'running', detail: operation.detail, progress: null } }
+  if (operation.status === 'Succeeded') return { terminal: { ...base, status: 'done', detail: operation.detail } }
+  return { terminal: { ...base, status: 'failed', detail: operation.error ?? operation.detail } }
 }
 
 export function productUpdateOperations(overview: ProductUpdateOverview | null, nowMs: number): OperationSnapshot {

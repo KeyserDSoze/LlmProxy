@@ -2,11 +2,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  agentUpdateOperation, installJobOperation, mergeOperations, parseAgentUpdateStatus, sortOperations, startJobOperation, summarizeOperations
+  adminOperation, agentUpdateOperation, installJobOperation, mergeOperations, parseAgentUpdateStatus, sortOperations, startJobOperation, summarizeOperations
 } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
 import type { BackgroundOperation } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
 import ActivityCenter from '../../../src/LlmProxy.Admin/src/ActivityCenter'
-import type { ModelInstallJob, ModelStartJob, PairedNodeStatus } from '../../../src/LlmProxy.Admin/src/types'
+import type { AdminOperation, ModelInstallJob, ModelStartJob, PairedNodeStatus } from '../../../src/LlmProxy.Admin/src/types'
 
 const pair = (patch: Partial<PairedNodeStatus> = {}): PairedNodeStatus => ({ nodeId: 'n1', mode: 'outbound', ...patch })
 const installJob = (patch: Partial<ModelInstallJob> = {}): ModelInstallJob => ({
@@ -59,6 +59,29 @@ describe('operation derivation', () => {
     expect(installJobOperation(installJob({ status: 'cancelled' }), 'n1', 'spark', 5)).toEqual({})
     expect(startJobOperation(startJob(), 'n1', 'spark', 'Model', 5).active?.status).toBe('running')
     expect(startJobOperation(startJob({ status: 'failed', error: 'oom\nstack' }), 'n1', 'spark', 'Model', 5).terminal?.detail).toContain('oom')
+  })
+})
+
+describe('gateway operations (stop, uninstall, verify)', () => {
+  const op = (patch: Partial<AdminOperation> = {}): AdminOperation => ({
+    id: 'o1', kind: 'model.remove', title: 'Uninstall · custom-01ea8a84', nodeId: 'n1', deploymentId: 'd1', status: 'Running',
+    detail: 'Queued', startedAtUtc: '2026-11-13T10:00:00Z', ...patch
+  })
+
+  it('shows a running operation and links to the models page of its server', () => {
+    const result = adminOperation(op(), 5).active
+    expect(result?.status).toBe('running')
+    expect(result?.href).toBe('/admin/models?node=n1')
+  })
+
+  it('reports success with the outcome message', () => {
+    expect(adminOperation(op({ status: 'Succeeded', detail: 'Uninstalled.' }), 5).terminal).toMatchObject({ status: 'done', detail: 'Uninstalled.' })
+  })
+
+  it('keeps the Agent reason when it failed', () => {
+    const failed = adminOperation(op({ status: 'Failed', error: 'Management agent returned HTTP 409: busy' }), 5).terminal
+    expect(failed).toMatchObject({ status: 'failed' })
+    expect(failed?.detail).toContain('HTTP 409')
   })
 })
 

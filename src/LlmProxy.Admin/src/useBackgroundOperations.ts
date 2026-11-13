@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import {
-  agentUpdateOperation, installJobOperation, mergeOperations, productUpdateOperations, sortOperations, startJobOperation
+  adminOperation, agentUpdateOperation, installJobOperation, mergeOperations, productUpdateOperations, sortOperations, startJobOperation
 } from './backgroundOperations'
 import type { BackgroundOperation, OperationSnapshot } from './backgroundOperations'
 import type { Node, ProductUpdateOverview } from './types'
@@ -72,11 +72,22 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
         const nodes = latestNodes.current
         const managed = nodes.filter(node => node.managementBaseAddress)
         const names = new Map(nodes.map(node => [node.id, node.name]))
-        const [pairs, installResults, startResults] = await Promise.all([
+        const [pairs, installResults, startResults, adminOps] = await Promise.all([
           Promise.allSettled([api.pairedAgentNodes()]).then(results => results[0]),
           Promise.allSettled(managed.map(node => api.installJobs(node.id))),
-          Promise.allSettled(managed.map(node => api.modelStartJobs(node.id)))
+          Promise.allSettled(managed.map(node => api.modelStartJobs(node.id))),
+          Promise.allSettled([api.adminOperations()]).then(results => results[0])
         ])
+
+        if (adminOps.status === 'fulfilled') {
+          const snapshot: OperationSnapshot = { active: [], terminal: [] }
+          for (const operation of adminOps.value) {
+            const outcome = adminOperation(operation, now)
+            if (outcome.active) snapshot.active.push(outcome.active)
+            if (outcome.terminal) snapshot.terminal.push(outcome.terminal)
+          }
+          sources.current.admin = snapshot
+        }
 
         if (pairs.status === 'fulfilled') {
           const snapshot: OperationSnapshot = { active: [], terminal: [] }

@@ -11,7 +11,7 @@ import type { VerificationState } from './InstalledModelCards'
 import StartupDiagnosis from './StartupDiagnosis'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import HuggingFaceRepositoryInspector from './HuggingFaceRepositoryInspector'
-import type { ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
+import type { AdminOperation, ModelVerification, ModelCapabilityProfile, ModelStartJob, ModelInstallJob, ManagedBenchmarkJob, ModelManagementOverview, ManagedInstallation, ModelRevisionStatus, NodeResourceSnapshot, Node, Model, Deployment, GgufVariant } from './types'
 
 type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced'
 
@@ -54,6 +54,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const [ggufVariantMessage, setGgufVariantMessage] = useState<string | null>(null)
   const [downloadJobs, setDownloadJobs] = useState<ModelInstallJob[]>([])
   const [startJobs, setStartJobs] = useState<ModelStartJob[]>([])
+  const [operations, setOperations] = useState<AdminOperation[]>([])
+  const knownOperations = useRef(new Map<string, AdminOperation['status']>())
   const activatingStarts = useRef(new Set<string>())
   const finalizing = useRef(new Set<string>())
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
@@ -265,6 +267,57 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
     return () => { mounted = false; window.clearInterval(timer) }
   }, [nodeId, canWrite, overview?.installations, load, refresh])
 
+  // Stop, force stop and uninstall run on the gateway. Poll their state so the cards show progress and the result
+  // (with the Agent's own message) appears here even after the operator has left and come back.
+  useEffect(() => {
+    if (!nodeId) return
+    let mounted = true
+    let first = true
+    const poll = async () => {
+      try {
+        const all = await api.adminOperations()
+        if (!mounted || currentNodeId.current !== nodeId) return
+        const mine = all.filter(operation => operation.nodeId === nodeId)
+        setOperations(mine)
+        let outcome: { ok: boolean; text: string } | null = null
+        const latestVerify = new Map<string, AdminOperation>()
+        for (const operation of [...mine].sort((a, b) => a.startedAtUtc.localeCompare(b.startedAtUtc)))
+          if (operation.kind === 'model.verify' && operation.deploymentId) latestVerify.set(operation.deploymentId, operation)
+        for (const [deploymentId, operation] of latestVerify) {
+          setVerifications(current => {
+            if (operation.status === 'Running') return current[deploymentId] === 'loading' ? current : { ...current, [deploymentId]: 'loading' }
+            const next: VerificationState = operation.status === 'Succeeded' && operation.data
+              ? operation.data as ModelVerification
+              : { error: operation.error ?? operation.detail }
+            const existing = current[deploymentId]
+            return existing && existing !== 'loading' && JSON.stringify(existing) === JSON.stringify(next) ? current : { ...current, [deploymentId]: next }
+          })
+        }
+        for (const operation of mine) {
+          if (operation.kind === 'model.verify') { knownOperations.current.set(operation.id, operation.status); continue }
+          const before = knownOperations.current.get(operation.id)
+          knownOperations.current.set(operation.id, operation.status)
+          if (operation.status === 'Running' || before === operation.status) continue
+          // On the first read only report what finished while this page was away, not old history.
+          if (first && before === undefined && Date.now() - Date.parse(operation.finishedAtUtc ?? operation.startedAtUtc) > 120_000) continue
+          outcome = operation.status === 'Succeeded'
+            ? { ok: true, text: operation.title + ' — ' + operation.detail }
+            : { ok: false, text: operation.title + ' failed: ' + (operation.error ?? operation.detail) }
+        }
+        first = false
+        if (outcome) {
+          // Reloading clears the banners, so show the outcome after it.
+          await Promise.all([load(), refresh()])
+          if (!mounted) return
+          if (outcome.ok) { setError(null); setMessage(outcome.text) } else { setMessage(null); setError(outcome.text) }
+        }
+      } catch { /* Gateway restarting: keep the last known list. */ }
+    }
+    void poll()
+    const timer = window.setInterval(() => { void poll() }, 2500)
+    return () => { mounted = false; window.clearInterval(timer) }
+  }, [nodeId, load, refresh])
+
   async function cancelStartJob(jobId: string) {
     if (!nodeId || !window.confirm('Cancel this pending startup? The Agent will stop and clean up the runtime; cached weights are preserved.')) return
     try {
@@ -306,10 +359,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   async function prepareHost() {
     setBusy('prepare'); setMessage(null); setError(null)
     try {
-      const result = await api.prepareNodeHost(nodeId)
-      setMessage(result.success ? 'Host prerequisites verified and ready.' :
-        'Host preparation requires attention: ' + result.code)
-      await load()
+      const operation = await api.queuePrepareHost(nodeId)
+      knownOperations.current.set(operation.id, operation.status)
+      setOperations(current => [operation, ...current.filter(item => item.id !== operation.id)])
+      setMessage(operation.title + ' started in the background. You can leave this page: progress stays in Background activity.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
   }
@@ -368,8 +421,10 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   async function verifyCapabilities(deploymentId: string) {
     setVerifications(current => ({ ...current, [deploymentId]: 'loading' }))
     try {
-      const result = await api.verifyManagedDeployment(deploymentId)
-      setVerifications(current => ({ ...current, [deploymentId]: result }))
+      // Runs in the background (up to four probes of two minutes); the operations poll delivers the result.
+      const operation = await api.queueVerify(deploymentId)
+      knownOperations.current.set(operation.id, operation.status)
+      setOperations(current => [operation, ...current.filter(item => item.id !== operation.id)])
     } catch (reason) {
       setVerifications(current => ({ ...current, [deploymentId]: { error: reason instanceof Error ? reason.message : String(reason) } }))
     }
@@ -403,19 +458,19 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         setStartJobs(current => [job, ...current.filter(x => x.id !== job.id)])
       }
       if (kind === 'activate') await api.activateManagedDeployment(deploymentId)
-      if (kind === 'stop') await api.stopManagedDeployment(deploymentId)
-      if (kind === 'forceStop') {
-        if (!window.confirm(t('model.forceStopConfirm'))) return
-        await api.forceStopManagedDeployment(deploymentId)
-      }
-      if (kind === 'remove') {
-        if (!window.confirm('Uninstall this runtime container and remove its deployment? Cached downloaded model weights are retained for reuse.')) return
-        await api.removeManagedDeployment(deploymentId)
+      if (kind === 'stop' || kind === 'forceStop' || kind === 'remove') {
+        if (kind === 'forceStop' && !window.confirm(t('model.forceStopConfirm'))) return
+        if (kind === 'remove' && !window.confirm('Uninstall this runtime container and remove its deployment? Cached downloaded model weights are retained for reuse.')) return
+        // Runs on the gateway in the background: answer at once, follow it in the card and in Background activity.
+        const operation = await api.queueManagedOperation(kind === 'forceStop' ? 'force-stop' : kind, deploymentId)
+        knownOperations.current.set(operation.id, operation.status)
+        setOperations(current => [operation, ...current.filter(item => item.id !== operation.id)])
+        setMessage(operation.title + ' started in the background. You can leave this page: progress stays in Background activity.')
+        return
       }
       setMessage(kind === 'start'
         ? 'Model startup queued on the Agent. It continues through browser and tunnel disconnects; follow the job status below.' :
-        kind === 'activate' ? 'Runtime /health verified; existing model enabled for routing.' :
-        kind === 'stop' || kind === 'forceStop' ? t('model.stopVerified') : 'Managed runtime uninstalled; cached model files are preserved.')
+        'Runtime /health verified; existing model enabled for routing.')
       await Promise.all([load(), refresh(), ...(resourcesOpen ? [loadResources()] : [])])
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(null) }
@@ -524,6 +579,14 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         { value: 'advanced' as const, label: t('model.workspaceAdvanced') }
       ]} />
       <p className="workspaceHint">{t('model.lifecycleHint')}</p>
+      {panel === 'activity' && operations.length > 0 && <section className="panel" aria-label="Recent operations">
+        <div className="panelTitle"><h2>Stop, uninstall and other operations</h2><span>{operations.filter(item => item.status === 'Running').length} running</span></div>
+        <div className="modelJobList">{operations.slice(0, 10).map(item => <div className="modelJobCard" key={item.id}>
+          <div className="actions"><strong>{item.title}</strong><Status value={item.status === 'Running' ? 'running' : item.status === 'Succeeded' ? 'completed' : 'failed'} /></div>
+          <div>{item.status === 'Failed' ? item.error ?? item.detail : item.detail}</div>
+          <div className="muted">{new Date(item.startedAtUtc).toLocaleString()}</div>
+        </div>)}</div>
+      </section>}
       {panel === 'activity' && <section className="panel">
         <div className="panelTitle"><h2>{t('catalog.downloads')}</h2>
           <div className="actions"><span>{t('catalog.jobs')}</span>
@@ -717,7 +780,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
               onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
           </div></div>
-        <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs}
+        <InstalledModelCards nodeId={nodeId} installations={overview?.installations ?? []} startJobs={startJobs} operations={operations}
           upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy}
           agentAvailable={Boolean(overview?.agentAvailable)}
           verifications={verifications} onVerify={id => void verifyCapabilities(id)}

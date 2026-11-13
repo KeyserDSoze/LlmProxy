@@ -1,6 +1,6 @@
 import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, HuggingFaceInspectionResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant, CorsSettings } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
-import type { ModelVerification, ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { AdminOperation, ModelVerification, ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 /** Never render an upstream HTML error page in an admin alert. */
@@ -313,6 +313,13 @@ export const api = {
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/stop`, { method: 'POST' }),
   forceStopManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/force-stop`, { method: 'POST' }),
+  queueVerify: (deploymentId: string) =>
+    request<AdminOperation>(`/api/admin/model-management/deployments/${deploymentId}/verify-jobs`, { method: 'POST' }),
+  queuePrepareHost: (nodeId: string) =>
+    request<AdminOperation>(`/api/admin/model-management/nodes/${nodeId}/prepare-jobs`, { method: 'POST' }),
+  adminOperations: () => request<AdminOperation[]>('/api/admin/operations'),
+  queueManagedOperation: (kind: 'stop' | 'force-stop' | 'remove', deploymentId: string) =>
+    request<AdminOperation>(`/api/admin/model-management/deployments/${deploymentId}/${kind}-jobs`, { method: 'POST' }),
   removeManagedDeployment: (deploymentId: string) =>
     request<void>(`/api/admin/model-management/deployments/${deploymentId}`, { method: 'DELETE' })
 }

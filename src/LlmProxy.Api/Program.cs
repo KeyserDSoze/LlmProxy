@@ -164,6 +164,7 @@ builder.Services.AddHttpClient("github-releases", client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 });
 builder.Services.AddSingleton(RequestBodyLimit.From(builder.Configuration));
+builder.Services.AddSingleton<AdminOperationService>();
 builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds)).AddHttpMessageHandler<AgentRelayHttpHandler>();
 builder.Services.AddHttpClient("multimodal", client => client.Timeout = Timeout.InfiniteTimeSpan).AddHttpMessageHandler<AgentRelayHttpHandler>();
@@ -268,6 +269,7 @@ if (reverseProxyEnabled)
 app.UseStaticFiles();
 app.UseMiddleware<InferencePathNormalizationMiddleware>();
 app.UseMiddleware<TraceCorrelationMiddleware>();
+app.UseMiddleware<AdminErrorStatusMiddleware>();
 app.UseMiddleware<InferenceCorsMiddleware>();
 
 if (entraEnabled)

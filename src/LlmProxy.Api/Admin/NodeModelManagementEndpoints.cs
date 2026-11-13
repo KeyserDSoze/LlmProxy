@@ -219,6 +219,41 @@ public static class NodeModelManagementEndpoints
             { return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway); }
         });
 
+        // Host preparation can install packages for minutes: run it in the background and report through /api/admin/operations.
+        var prepareJob = group.MapPost("/nodes/{id:guid}/prepare-jobs", async (
+            Guid id, GatewayDbContext db, AdminOperationService operations, HttpContext context) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, context.RequestAborted);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
+                return Results.Conflict(new { error = "agent_not_configured" });
+            if (await db.Deployments.AnyAsync(d => d.NodeId == id && d.Enabled, context.RequestAborted))
+                return Results.Conflict(new { error = "stop_active_models_before_host_repair",
+                    message = "Stop or disable active models from Admin before changing Docker host prerequisites." });
+            var caller = ManagedModelOperations.Caller.From(context);
+            var operation = operations.Start("node.prepare", "Prepare host · " + node.Name, id, null, async (services, token) =>
+            {
+                var scopedDb = services.GetRequiredService<GatewayDbContext>();
+                var target = await scopedDb.Nodes.AsNoTracking().SingleOrDefaultAsync(n => n.Id == id, token);
+                if (target is null) return new AdminOperationOutcome(false, "The server no longer exists.");
+                try
+                {
+                    var result = await SendAgentAsync<HostPrepareResult>(
+                        services.GetRequiredService<IHttpClientFactory>().CreateClient("node-management"), target,
+                        services.GetRequiredService<UpstreamCredentialProtector>(),
+                        HttpMethod.Post, "/v1/system/prepare", new { requested = true }, token);
+                    AddAudit(scopedDb, caller, "node.host.prepare", "node", id.ToString(), new { result.Success, result.Code });
+                    await scopedDb.SaveChangesAsync(token);
+                    return new AdminOperationOutcome(result.Success, result.Success ? "Host prerequisites are ready." : "Host preparation reported: " + result.Code, result);
+                }
+                catch (AgentException error)
+                {
+                    return new AdminOperationOutcome(false, error.Message);
+                }
+            });
+            return Results.Accepted($"/api/admin/operations/{operation!.Id}", operation);
+        });
+
         // Hugging Face access token for gated/private repositories. Write-only: the Agent stores it
         // owner-only on the inference host and never returns it; neither audit nor logs contain it.
         group.MapGet("/nodes/{id:guid}/huggingface-access", async (
@@ -892,117 +927,50 @@ public static class NodeModelManagementEndpoints
             catch (AgentException e) { return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway); }
         });
 
+        static IResult ToResult(AdminOperationOutcome outcome, bool noContent = false) => outcome.Succeeded
+            ? (noContent ? Results.NoContent() : Results.Ok(new { message = outcome.Message }))
+            : Results.Problem(outcome.Message, statusCode: StatusCodes.Status502BadGateway);
+
         var stop = group.MapPost("/deployments/{id:guid}/stop", async (
-            Guid id,
-            GatewayDbContext dbContext,
-            IHttpClientFactory httpClientFactory,
-            UpstreamCredentialProtector protector,
-            HttpContext httpContext,
-            CancellationToken cancellationToken) =>
-        {
-            var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
-            if (deployment is null) return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
-                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
-            var node = await dbContext.Nodes.FindAsync([deployment.NodeId], cancellationToken);
-            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
-                return Results.BadRequest(new { error = "management_agent_not_configured" });
-
-            // Remove it from routing before asking the remote runtime to stop.
-            deployment.Disable();
-            AddAudit(dbContext, httpContext, "model.stop", "deployment", deployment.Id.ToString(), new { node.Name, deployment.ManagedInstallationId });
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            try
-            {
-                var client = httpClientFactory.CreateClient("node-management");
-                var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/stop";
-                var state = await SendAgentAsync<ManagedModelState>(client, node, protector, HttpMethod.Post, path, new { action = "stop" }, cancellationToken);
-                return Results.Ok(new { deployment, state });
-            }
-            catch (AgentException exception)
-            {
-                return Results.Problem(
-                    $"Routing was disabled safely, but the management agent could not confirm the stop: {exception.Message}",
-                    statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
+            Guid id, IServiceProvider services, HttpContext context, CancellationToken token) =>
+            ToResult(await ManagedModelOperations.RunAsync(services, ManagedModelOperations.Kind.Stop, id, ManagedModelOperations.Caller.From(context), token)));
 
         // Explicit administrative last resort. No untracked Docker processes can
         // be killed: the Agent resolves the registered installation ID itself.
         var forceStop = group.MapPost("/deployments/{id:guid}/force-stop", async (
-            Guid id, GatewayDbContext db, IHttpClientFactory factory,
-            UpstreamCredentialProtector protector, HttpContext context,
-            CancellationToken token) =>
-        {
-            var deployment = await db.Deployments.FindAsync([id], token);
-            if (deployment is null) return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
-                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
-            var node = await db.Nodes.FindAsync([deployment.NodeId], token);
-            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
-                return Results.BadRequest(new { error = "management_agent_not_configured" });
-            deployment.Disable();
-            AddAudit(db, context, "model.force_stop", "deployment", id.ToString(),
-                new { node.Name, deployment.ManagedInstallationId });
-            await db.SaveChangesAsync(token);
-            try
-            {
-                var state = await SendAgentAsync<ManagedModelState>(
-                    factory.CreateClient("node-management"), node, protector,
-                    HttpMethod.Post, $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/force-stop",
-                    new { action = "force-stop" }, token);
-                return Results.Ok(new { deployment, state });
-            }
-            catch (AgentException error)
-            {
-                return Results.Problem(
-                    "Routing was disabled but the Agent could not verify force-stop: " + error.Message,
-                    statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
+            Guid id, IServiceProvider services, HttpContext context, CancellationToken token) =>
+            ToResult(await ManagedModelOperations.RunAsync(services, ManagedModelOperations.Kind.ForceStop, id, ManagedModelOperations.Caller.From(context), token)));
 
         var remove = group.MapDelete("/deployments/{id:guid}", async (
-            Guid id,
-            GatewayDbContext dbContext,
-            IHttpClientFactory httpClientFactory,
-            UpstreamCredentialProtector protector,
-            HttpContext httpContext,
-            CancellationToken cancellationToken) =>
+            Guid id, IServiceProvider services, HttpContext context, CancellationToken token) =>
+            ToResult(await ManagedModelOperations.RunAsync(services, ManagedModelOperations.Kind.Remove, id, ManagedModelOperations.Caller.From(context), token), noContent: true));
+
+        // Background versions: answer 202 at once and report the outcome through /api/admin/operations, so a slow Agent or a
+        // proxy that cuts long requests cannot hide what happened.
+        var operationJobs = new List<RouteHandlerBuilder>();
+        foreach (var kind in new[] { ManagedModelOperations.Kind.Stop, ManagedModelOperations.Kind.ForceStop, ManagedModelOperations.Kind.Remove })
         {
-            var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
-            if (deployment is null) return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
-                return Results.BadRequest(new { error = "deployment_not_agent_managed" });
-            var node = await dbContext.Nodes.FindAsync([deployment.NodeId], cancellationToken);
-            if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
-                return Results.BadRequest(new { error = "management_agent_not_configured" });
-
-            deployment.Disable();
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            try
+            operationJobs.Add(group.MapPost($"/deployments/{{id:guid}}/{ManagedModelOperations.Slug(kind)}-jobs", async (
+                Guid id, GatewayDbContext db, AdminOperationService operations, HttpContext context) =>
             {
-                var client = httpClientFactory.CreateClient("node-management");
-                var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}";
-                await SendAgentAsync<JsonElement>(client, node, protector, HttpMethod.Delete, path, null, cancellationToken);
-                AddAudit(dbContext, httpContext, "model.remove", "deployment", deployment.Id.ToString(), new { node.Name, deployment.ManagedInstallationId, deployment.CatalogModelId });
-                dbContext.Deployments.Remove(deployment);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                return Results.NoContent();
-            }
-            catch (AgentException exception)
-            {
-                return Results.Problem(
-                    $"Routing was disabled safely, but the management agent could not remove the model: {exception.Message}",
-                    statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
+                var deployment = await db.Deployments.FindAsync([id], context.RequestAborted);
+                if (deployment is null) return Results.NotFound();
+                if (string.IsNullOrWhiteSpace(deployment.ManagedInstallationId))
+                    return Results.BadRequest(new { error = "deployment_not_agent_managed" });
+                var caller = ManagedModelOperations.Caller.From(context);
+                var operation = operations.Start("model." + ManagedModelOperations.Slug(kind), $"{ManagedModelOperations.Verb(kind)} · {deployment.ManagedInstallationId}",
+                    deployment.NodeId, id, (services, token) => ManagedModelOperations.RunAsync(services, kind, id, caller, token));
+                return operation is null
+                    ? Results.Conflict(new { error = "operation_in_progress", message = "Another operation is already running for this model." })
+                    : Results.Accepted($"/api/admin/operations/{operation.Id}", operation);
+            }));
+        }
 
         if (entraEnabled)
         {
             configure.RequireAuthorization("AdminWrite");
             prepare.RequireAuthorization("AdminWrite");
+            prepareJob.RequireAuthorization("AdminWrite");
             setHuggingFace.RequireAuthorization("AdminWrite");
             clearHuggingFace.RequireAuthorization("AdminWrite");
             install.RequireAuthorization("AdminWrite");
@@ -1017,6 +985,7 @@ public static class NodeModelManagementEndpoints
             stop.RequireAuthorization("AdminWrite");
             forceStop.RequireAuthorization("AdminWrite");
             remove.RequireAuthorization("AdminWrite");
+            foreach (var job in operationJobs) job.RequireAuthorization("AdminWrite");
             configureProfile.RequireAuthorization("AdminWrite");
         }
 
@@ -1549,7 +1518,7 @@ public static class NodeModelManagementEndpoints
         {
             var detail = await response.Content.ReadAsStringAsync(cancellationToken);
             if (detail.Length > 1000) detail = detail[..1000];
-            throw new AgentException($"Management agent returned HTTP {(int)response.StatusCode}: {detail}");
+            throw new AgentException($"Management agent returned HTTP {(int)response.StatusCode}: {detail}", (int)response.StatusCode);
         }
 
         if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
@@ -1571,22 +1540,11 @@ public static class NodeModelManagementEndpoints
         }
     }
 
-    private static void AddAudit(GatewayDbContext dbContext, HttpContext httpContext, string action, string entityType, string entityId, object details)
-    {
-        var actor = httpContext.User.Identity?.IsAuthenticated == true
-            ? httpContext.User.FindFirst("preferred_username")?.Value
-              ?? httpContext.User.FindFirst(ClaimTypes.Email)?.Value
-              ?? httpContext.User.Identity?.Name
-              ?? "authenticated-admin"
-            : "local-admin";
-        dbContext.AuditEvents.Add(new AuditEvent(
-            actor,
-            action,
-            entityType,
-            entityId,
-            httpContext.Connection.RemoteIpAddress?.ToString(),
-            JsonSerializer.Serialize(details)));
-    }
+    private static void AddAudit(GatewayDbContext dbContext, HttpContext httpContext, string action, string entityType, string entityId, object details) =>
+        AddAudit(dbContext, ManagedModelOperations.Caller.From(httpContext), action, entityType, entityId, details);
+
+    internal static void AddAudit(GatewayDbContext dbContext, ManagedModelOperations.Caller caller, string action, string entityType, string entityId, object details) =>
+        dbContext.AuditEvents.Add(new AuditEvent(caller.Actor, action, entityType, entityId, caller.SourceIp, JsonSerializer.Serialize(details)));
 
     public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
         double? GpuMemoryUtilization = null);
@@ -1653,5 +1611,8 @@ public static class NodeModelManagementEndpoints
         double? GpuMemoryUtilization = null,
         string? ModelFile = null,
         FamilyProfileView? FamilyProfile = null);
-    internal sealed class AgentException(string message) : Exception(message);
+    internal sealed class AgentException(string message, int? statusCode = null) : Exception(message)
+    {
+        public int? StatusCode { get; } = statusCode;
+    }
 }

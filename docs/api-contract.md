@@ -167,6 +167,22 @@ Routing failures are told apart so a client can react correctly. Messages name o
 
 `Gateway:UpstreamResponseHeaderTimeoutSeconds` (default 900) and `Gateway:UpstreamIdleTimeoutSeconds` (default 300, silence between streamed chunks) bound a stalled node; values outside 5 to 86400 seconds fall back to the default. A timeout before the first byte fails over to another deployment; after the stream has started the connection is aborted, never retried. A request path with a trailing slash (`/v1/chat/completions/`) is treated exactly like the path without it by every governance layer.
 
+### Admin: background operations
+
+Stop, force stop, uninstall, capability verification and host preparation do not hold the HTTP request. They answer `202 Accepted` with an operation and finish on the gateway:
+
+| Request (`AdminWrite`) | Operation `kind` |
+| --- | --- |
+| `POST /api/admin/model-management/deployments/{id}/stop-jobs` | `model.stop` |
+| `POST .../deployments/{id}/force-stop-jobs` | `model.force_stop` |
+| `DELETE`-equivalent `POST .../deployments/{id}/remove-jobs` | `model.remove` |
+| `POST .../deployments/{id}/verify-jobs` | `model.verify` (result in `data`) |
+| `POST .../nodes/{id}/prepare-jobs` | `node.prepare` |
+
+`GET /api/admin/operations` and `GET /api/admin/operations/{id}` (`AdminRead`) return `status` (`Running`, `Succeeded`, `Failed`), `detail`, `error` (the Agent's own message) and timestamps. A second operation on the same deployment while one runs answers `409 operation_in_progress`. State is kept in memory per replica (last 100); each outcome is also in the audit log. The synchronous `stop`, `force-stop`, `DELETE deployments/{id}`, `verify` and `prepare` endpoints remain for scripts.
+
+Admin and self-service routes (`/api/admin`, `/api/me`) report an upstream `502`/`504` as `424` with `X-LlmProxy-Original-Status`, because Cloudflare would replace the body of a `502`/`504` with an HTML page. `/v1` keeps its documented statuses.
+
 ### Admin: verify a running model
 
 `POST /api/admin/model-management/deployments/{id}/verify` (`AdminWrite`) sends a few tiny requests directly to the runtime and returns `{ deploymentId, model, checkedAtUtc, durationMilliseconds, checks: [{ id, status, detail }] }` with `id` in `chat`, `reasoning`, `streaming`, `tools` and `status` in `ok`, `warning`, `failed`, `inconclusive`. A stopped model answers `409 runtime_not_running`; a model on another surface answers `400 probe_only_for_chat_models`. Details: `docs/model-profiles.md`.

@@ -50,6 +50,7 @@ internal static class GatewayEndpointMap
         endpoints.MapDataRetentionAdminEndpoints(entraEnabled);
         endpoints.MapProductReleaseAdminEndpoints(entraEnabled);
         endpoints.MapProductUpdateAdminEndpoints(entraEnabled);
+        endpoints.MapAdminOperationEndpoints(entraEnabled);
         return endpoints;
     }
 }

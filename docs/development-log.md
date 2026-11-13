@@ -1,3 +1,15 @@
+## 2026-11-13 — Background operations; why uninstall failed (source; CI pending)
+
+Report: uninstalling `meta-muse-glimmer` kept failing with "HTTP 502: the server or reverse proxy returned an HTML error page". Production gateway logs showed `DELETE /api/admin/model-management/deployments/6eb3...` answered `502 application/problem+json` in 200-400 ms, repeatedly: the gateway did produce a useful message, but Cloudflare replaced the `502` with an HTML page, so the Agent's reason was never visible. The Agent (Spark) is not reachable from this host, so the exact Agent answer could not be read; the fix therefore makes it readable (status `424`, audit event `model.remove.failed` with the message) and removes the known dead end (Agent `404` means the installation is already gone, so the stale deployment is deleted).
+
+Changes: `AdminOperationService` (in-memory, per replica), `ManagedModelOperations` (shared by the synchronous endpoints and the jobs), `*-jobs` endpoints, `/api/admin/operations`, `AdminErrorStatusMiddleware`; Admin: model cards show the running operation and lock their buttons, results (including verification) arrive through a poll that also works after navigating away, Background activity dock lists the operations. Verification and host preparation were moved to jobs too because they can exceed what Cloudflare waits for.
+
+Not converted (quick or already asynchronous): activate (one health call), configuration save, install and start (already Agent jobs), benchmarks (already jobs). Public `/v1` still returns `502`/`504` for upstream failures and Cloudflare can mask those for API clients.
+
+Validation (local): backend 634/634, Vitest 90/90, Playwright functional 58/58, visual 51/51 (no baseline change).
+
+Not verified: GitHub Actions; a real uninstall against the Spark Agent (the Agent was not reachable from here).
+
 ## 2026-11-13 — Security follow-up: request limit, Agent state, authorization test, copy buttons, phone cards (source; CI pending)
 
 Chosen with the operator from the remaining review items. Changes: `RequestBodyLimitMiddleware` (after API-key authentication, before the content log; `Content-Length` check plus Kestrel's per-request limit, chunked overflow mapped to 413); `AgentStateFile` (quarantine of unreadable state files, used by the install-job, start-job and model registries) and a bounded `ProcessRunner` capture; bounded Hub `config.json` read; all endpoint registrations moved into `GatewayEndpointMap` so `EndpointAuthorizationContractTests` can build the real route table (parameter inference needs the container, so every product interface and non-record class is declared as a never-resolved service); `CopyButton`/`copyText` with a selection-copy fallback; fleet table card layout at <= 820 px.

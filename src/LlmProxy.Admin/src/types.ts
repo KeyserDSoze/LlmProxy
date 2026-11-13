@@ -962,3 +962,18 @@ export type ProductUpdateOverview = {
   } | null
   releases: AvailableProductRelease[]
 }
+
+export type AdminOperation = {
+  id: string
+  kind: string
+  title: string
+  nodeId?: string | null
+  deploymentId?: string | null
+  status: 'Running' | 'Succeeded' | 'Failed'
+  detail: string
+  error?: string | null
+  startedAtUtc: string
+  finishedAtUtc?: string | null
+  /** Result payload of an operation that produces one (capability checks). */
+  data?: unknown
+}
