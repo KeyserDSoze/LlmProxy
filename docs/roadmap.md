@@ -122,6 +122,7 @@ For canonical current state use `docs/project-status.md`. Product-visible change
 - DONE: Entra plumbing with Admin/User/Reader roles.
 - DONE: React admin control plane plus `/admin/me` personal-key user portal.
 - DONE: task-focused Admin UX with tabs/dialogs for long configuration pages and a unified Models & Deployments workspace.
+- DONE (source): background activity dock for Agent updates, model downloads/starts and gateway updates, visible from every Admin page; fleet-table upgrade notice moved to a full-width row.
 - DONE: first-class platform-user registry with administrator-selectable manual census or automatic first-login provisioning.
 - DONE: administrator user disable/re-enable; disable blocks self-service and revokes active personal API keys.
 - DONE: user dashboard recent request history plus owner-scoped exact request/response audit from personal credentials.

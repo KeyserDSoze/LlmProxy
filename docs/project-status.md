@@ -1,3 +1,7 @@
+## 2026-11-13 — Background activity dock and fleet table notice (source; CI pending)
+
+A dock on every Admin page follows Agent updates, model downloads/starts and gateway updates while the operator works elsewhere, and links to the page that handles them; the Agent-upgrade notice moved into a full-width row under each server so it is readable on a phone. Details: `docs/admin-ux-navigation.md`, `docs/development-log.md`. External validation still required: a real Agent update on the Spark.
+
 ## 2026-11-13 — Review follow-up: hardening, model profiles, verification (source; CI pending)
 
 Gateway routing errors are now specific (`model_not_found`, `model_not_running`), a trailing-slash governance bypass is closed, upstream silence is bounded, and server details no longer appear in public errors. The Agent applies curated per-family launch flags and Admin can verify a running model. A Hugging Face 401 is no longer presented as "gated". Relay, recovery, enrolment and supply-chain gaps from the review are closed (lockfiles, archive ownership, deploy workflow input). Details: `CHANGELOG.md`, `docs/model-profiles.md`, `docs/development-log.md`. Still open from the review: request-body size limit and multi-read buffering, Agent state-file corruption handling and log limits, release signing (cosign) and downgrade protection, a route-level authorization test, clipboard error handling.

@@ -18,6 +18,8 @@ import PageDocumentation from './PageDocumentation'
 import PlaygroundExperience from './PlaygroundExperience'
 import UsersAccessExperience from './UsersAccessExperience'
 import UpdateBanner, { availableUpdateCount, useProductUpdates } from './UpdateBanner'
+import ActivityCenter from './ActivityCenter'
+import { useBackgroundOperations } from './useBackgroundOperations'
 import { AdminLink } from './UiPrimitives'
 import type { ApiCredential, AuditEvent, Deployment, DeploymentPerformanceSnapshot, MetricsSummary, Model, Node, NodeHardwareMetricsSnapshot, NodeRuntimeMetricsSnapshot, Overview, RoutingSettings, RoutingTuningSettings } from './types'
 
@@ -170,6 +172,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
   const urgent = attention.filter(item => item.tone !== 'info').length
   const { overview: productUpdates, refresh: refreshProductUpdates } = useProductUpdates()
   const pendingUpdates = availableUpdateCount(productUpdates)
+  const activity = useBackgroundOperations({ nodes, productUpdates })
 
   return (
     <div className="shell">
@@ -268,6 +271,8 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
           </>
         )}
       </main>
+      <ActivityCenter operations={activity.operations} onOpen={navigateAdmin}
+        onDismiss={activity.dismiss} onClearFinished={activity.clearFinished} />
     </div>
   )
 }

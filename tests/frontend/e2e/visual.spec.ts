@@ -27,7 +27,7 @@ const screens: Screen[] = [
   { name: 'servers-hardware', url: '/admin/infrastructure?section=hardware&node=node-1', ready: text('NVIDIA GB10') },
   { name: 'servers-capacity', url: '/admin/infrastructure?section=capacity', ready: text('spark-01') },
   { name: 'routing', url: '/admin/routing', ready: text('Smart-routing tuning') },
-  { name: 'system-one', url: '/admin/system-one', ready: text('systemone-laya') },
+  { name: 'system-one', url: '/admin/system-one', ready: page => expect(page.getByText('systemone-laya').filter({ visible: true }).first()).toBeVisible() },
   { name: 'playground', url: '/admin/playground', ready: text('agic-code-fast') },
   { name: 'credentials', url: '/admin/credentials', ready: text('GitHub Copilot') },
   { name: 'users', url: '/admin/users', ready: text('Alessandro Rapiti') },

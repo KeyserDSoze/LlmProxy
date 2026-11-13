@@ -1,3 +1,15 @@
+## 2026-11-13 — Background activity dock and fleet table notice (source; CI pending)
+
+Request: while an Agent update runs the operator is stuck on the Servers page, and the upgrade notice became a tall column in the narrow *Status* cell on a phone.
+
+Changes: `backgroundOperations.ts` (pure derive/merge/sort/summarize), `useBackgroundOperations.ts` (polling hook: 4 s while something runs, 15 s idle; per-source snapshots so a failed relay call keeps its previous state), `ActivityCenter.tsx` (dock + panel), wired in `App.tsx`. An operation appears only once seen in flight; when it leaves the active set it becomes finished/failed and stays until dismissed; an active operation is never hidden by an earlier dismissal with the same id. `NodesPage` renders the upgrade notice/status/progress in a second full-width row (sticky, screen-wide on phones).
+
+Bug found by the Playwright spec: a poll started with an empty node list was discarded when the node list arrived and the replacement poll was skipped as "in flight", so the dock stayed empty for 15 s. Polls are no longer discarded and a request made while one runs triggers a re-run.
+
+Validation (local): `tsc -b`, Admin build, Vitest 82/82, Playwright functional 56/56, visual 51/51 stable over four consecutive runs in the Playwright container. Two pre-existing visual flakes fixed (a spinner with `aria-label` and no role; a `getByText().first()` that could resolve a hidden `<option>`).
+
+Not verified: GitHub Actions for this source; behaviour against a real Agent update on the Spark.
+
 ## 2026-11-13 — Review follow-up: gateway hardening, model profiles, verification (source; CI pending)
 
 Context: a full review of the repository (gateway, Agents, relay, workflows, Admin) plus a production incident: `POST /v1/chat/completions` for `meta-muse-glimmer` answered `503 no_healthy_deployment` and the operator expected a more specific error. The deployment was simply disabled (`Enabled=false`, startup had failed), and the failure was caused by a mistyped Hugging Face id (`meta/muse-glimmer`; the real repository is `meta-models/Muse-Glimmer-30B-GGUF`).

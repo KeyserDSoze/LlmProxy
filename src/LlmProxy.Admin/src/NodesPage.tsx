@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { Fragment, FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
 import { BreakableUrl, Modal, Tabs } from './UiPrimitives'
@@ -124,6 +124,72 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
 
   const active = useMemo(() => nodes.filter(node => node.enabled), [nodes])
   const disabled = useMemo(() => nodes.filter(node => !node.enabled), [nodes])
+  const agentDetails = (pair: PairedNodeStatus) => <div key={pair.nodeId} className="agentDetails">
+    {pair.agentUpgradeTargetVersion && <div role="status" className="notice">
+      Agent upgrade to v{pair.agentUpgradeTargetVersion}: {pair.agentUpgradeMaintenanceStage ?? 'preparing'}.
+      Routing is temporarily drained; models remain running in Docker.
+      {pair.agentUpgradeMaintenanceStage === 'verifying' && ' Verifying Agent and inference health before restoring routing.'}
+      {pair.agentUpgradeMaintenanceStage === 'updating' && pair.lastHeartbeatAtUtc &&
+        Date.now() - Date.parse(pair.lastHeartbeatAtUtc) > 3 * 60_000 &&
+        <p>Agent heartbeat is stale. The update cannot complete remotely while the Agent is offline.
+          Inspect systemd updater logs on the inference host; do not restart Docker or GPU models.</p>}
+      {pair.agentUpgradeMaintenanceStage === 'needs_attention' && <>
+        <p>Update needs attention: the Agent may be offline or runtime health could not be verified.
+          On the inference host inspect <code>sudo systemctl status llmproxy-node-agent llmproxy-node-agent-update</code>,
+          <code>sudo journalctl -u llmproxy-node-agent-update -n 80 --no-pager</code>,
+          and <code>sudo cat /var/lib/llmproxy-node-agent/update-status.json</code>.
+          The node remains drained.</p>
+        {canWrite && <button type="button" className="secondary"
+          disabled={busy === 'agent-repair:' + pair.nodeId}
+          onClick={() => void abandonAgentUpgrade(pair.nodeId)}>
+          Exit maintenance · keep routing off
+        </button>}
+      </>}
+    </div>}
+    {pair.agentUpdateStatus && (() => {
+      const [status, target, phase, detail] = pair.agentUpdateStatus.split(':')
+      const errorDescriptions: Record<string, string> = {
+        archive_download_failed: 'Release archive could not be downloaded',
+        checksum_download_failed: 'Checksum could not be downloaded',
+        checksum_mismatch: 'Archive integrity check failed',
+        archive_invalid: 'Archive layout or executable is invalid',
+        staging_failed: 'Could not stage release files',
+        agent_stop_failed: 'Cannot stop existing Agent service',
+        backup_failed: 'Cannot preserve previous Agent binary',
+        activate_binary_failed: 'Cannot activate downloaded binary',
+        daemon_reload_failed: 'systemd daemon reload failed',
+        service_start_failed: 'Updated Agent failed to start',
+        healthcheck_failed: 'Legacy Agent update probe failed; see update and Agent logs',
+        health_version_mismatch: 'The local Agent responded HTTP 200, but reported a different version',
+        health_wrong_service: 'HTTP 200 came from a process other than LLMProxy Node Agent',
+        health_not_ready: 'The local Agent returned HTTP 200 without a ready health payload',
+        health_unauthorized: 'The new local Agent rejected the authenticated health request',
+        health_unreachable: 'The new local Agent could not be reached on its configured loopback port',
+        health_http_error: 'The local Agent health endpoint returned an unsuccessful HTTP status',
+        health_service_inactive: 'systemd reports that the updated Agent is not running',
+        health_listen_address_invalid: 'The configured Agent listener is not a supported local HTTP URL',
+        invalid_health_bearer: 'Invalid local health credential',
+        rollback_start_failed: 'Rollback restored files but service failed to start',
+        rollback_restore_failed: 'Rollback could not restore previous files',
+        rollback_missing: 'Previous binary backup is missing'
+      }
+      return <div role={status === 'failed' ? 'alert' : 'status'} className={status === 'failed' ? 'muted' : undefined}>
+        {status === 'failed' ? 'Update failed' : status === 'succeeded' ? 'Update successful' : 'Updating'}
+        {' · target v' + target}{phase ? ' · ' + phase : ''}
+        {status === 'failed' && detail && <p>{errorDescriptions[detail] ?? detail.replaceAll('_', ' ')}</p>}
+        {status === 'failed' && <p>The old version is still reported by the Agent after rollback. A heartbeat or an HTTP 200 from a runtime is not a successful version check.
+          Check update logs: <code>sudo journalctl -u llmproxy-node-agent-update -n 100 --no-pager</code>;
+          startup logs: <code>sudo journalctl -u llmproxy-node-agent -n 100 --no-pager</code>.</p>}
+      </div>
+    })()}
+    {pair.agentUpdateStatus?.split(':')[0] === 'running' && pair.agentUpdateStatus?.split(':')[2] === 'downloading' &&
+      /^[0-9]{1,3}$/.test(pair.agentUpdateStatus?.split(':')[3] ?? '') && <div className="stack">
+        <progress aria-label="Node Agent update archive download progress"
+          max="100" value={Number(pair.agentUpdateStatus?.split(':')[3])} style={{width: '100%'}} />
+        <span>{pair.agentUpdateStatus?.split(':')[3]}% of Agent release archive</span>
+      </div>}
+  </div>
+
   const visible = tab === 'active' ? active : disabled
 
   async function submit(event: FormEvent) {
@@ -219,77 +285,14 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
         </div>
       </div> : <div className="panelTitle"><h2>{tab === 'active' ? 'Active nodes' : 'Disabled nodes'}</h2><span>{visible.length} shown</span></div>}
       <div className="tableScroll"><table><thead><tr><th>Name</th><th>Status</th><th>Service root</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>
-        {visible.map(node => <tr key={node.id}>
+        {visible.map(node => <Fragment key={node.id}><tr>
           <td><strong>{node.name}</strong><div className="muted">weight {node.weight} · upstream auth {node.hasUpstreamCredential ? 'configured' : 'none'}</div></td>
           <td><Status value={pairedNodes.some(pair => pair.nodeId === node.id) && node.baseAddress === 'http://127.0.0.1:1' ? 'No runtime' : node.status} />{pairedNodes.filter(pair => pair.nodeId === node.id).map(pair => {
             const fresh = pair.lastHeartbeatAtUtc && Date.now() - Date.parse(pair.lastHeartbeatAtUtc) < 30000
             return <div key={pair.nodeId} className="muted">
               Agent {fresh ? 'connected' : 'offline'} · {pair.mode}
               {pair.agentVersion ? ' · installed v' + pair.agentVersion : ''}
-              {pair.agentUpgradeTargetVersion && <div role="status" className="notice">
-                Agent upgrade to v{pair.agentUpgradeTargetVersion}: {pair.agentUpgradeMaintenanceStage ?? 'preparing'}.
-                Routing is temporarily drained; models remain running in Docker.
-                {pair.agentUpgradeMaintenanceStage === 'verifying' && ' Verifying Agent and inference health before restoring routing.'}
-                {pair.agentUpgradeMaintenanceStage === 'updating' && pair.lastHeartbeatAtUtc &&
-                  Date.now() - Date.parse(pair.lastHeartbeatAtUtc) > 3 * 60_000 &&
-                  <p>Agent heartbeat is stale. The update cannot complete remotely while the Agent is offline.
-                    Inspect systemd updater logs on the inference host; do not restart Docker or GPU models.</p>}
-                {pair.agentUpgradeMaintenanceStage === 'needs_attention' && <>
-                  <p>Update needs attention: the Agent may be offline or runtime health could not be verified.
-                    On the inference host inspect <code>sudo systemctl status llmproxy-node-agent llmproxy-node-agent-update</code>,
-                    <code>sudo journalctl -u llmproxy-node-agent-update -n 80 --no-pager</code>,
-                    and <code>sudo cat /var/lib/llmproxy-node-agent/update-status.json</code>.
-                    The node remains drained.</p>
-                  {canWrite && <button type="button" className="secondary"
-                    disabled={busy === 'agent-repair:' + pair.nodeId}
-                    onClick={() => void abandonAgentUpgrade(pair.nodeId)}>
-                    Exit maintenance · keep routing off
-                  </button>}
-                </>}
-              </div>}
-              {pair.agentUpdateStatus && (() => {
-                const [status, target, phase, detail] = pair.agentUpdateStatus.split(':')
-                const errorDescriptions: Record<string, string> = {
-                  archive_download_failed: 'Release archive could not be downloaded',
-                  checksum_download_failed: 'Checksum could not be downloaded',
-                  checksum_mismatch: 'Archive integrity check failed',
-                  archive_invalid: 'Archive layout or executable is invalid',
-                  staging_failed: 'Could not stage release files',
-                  agent_stop_failed: 'Cannot stop existing Agent service',
-                  backup_failed: 'Cannot preserve previous Agent binary',
-                  activate_binary_failed: 'Cannot activate downloaded binary',
-                  daemon_reload_failed: 'systemd daemon reload failed',
-                  service_start_failed: 'Updated Agent failed to start',
-                  healthcheck_failed: 'Legacy Agent update probe failed; see update and Agent logs',
-                  health_version_mismatch: 'The local Agent responded HTTP 200, but reported a different version',
-                  health_wrong_service: 'HTTP 200 came from a process other than LLMProxy Node Agent',
-                  health_not_ready: 'The local Agent returned HTTP 200 without a ready health payload',
-                  health_unauthorized: 'The new local Agent rejected the authenticated health request',
-                  health_unreachable: 'The new local Agent could not be reached on its configured loopback port',
-                  health_http_error: 'The local Agent health endpoint returned an unsuccessful HTTP status',
-                  health_service_inactive: 'systemd reports that the updated Agent is not running',
-                  health_listen_address_invalid: 'The configured Agent listener is not a supported local HTTP URL',
-                  invalid_health_bearer: 'Invalid local health credential',
-                  rollback_start_failed: 'Rollback restored files but service failed to start',
-                  rollback_restore_failed: 'Rollback could not restore previous files',
-                  rollback_missing: 'Previous binary backup is missing'
-                }
-                return <div role={status === 'failed' ? 'alert' : 'status'} className={status === 'failed' ? 'muted' : undefined}>
-                  {status === 'failed' ? 'Update failed' : status === 'succeeded' ? 'Update successful' : 'Updating'}
-                  {' · target v' + target}{phase ? ' · ' + phase : ''}
-                  {status === 'failed' && detail && <p>{errorDescriptions[detail] ?? detail.replaceAll('_', ' ')}</p>}
-                  {status === 'failed' && <p>The old version is still reported by the Agent after rollback. A heartbeat or an HTTP 200 from a runtime is not a successful version check.
-                    Check update logs: <code>sudo journalctl -u llmproxy-node-agent-update -n 100 --no-pager</code>;
-                    startup logs: <code>sudo journalctl -u llmproxy-node-agent -n 100 --no-pager</code>.</p>}
-                </div>
-              })()}
-              {pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}
-              {pair.agentUpdateStatus?.split(':')[0] === 'running' && pair.agentUpdateStatus?.split(':')[2] === 'downloading' &&
-                /^[0-9]{1,3}$/.test(pair.agentUpdateStatus?.split(':')[3] ?? '') && <div className="stack">
-                  <progress aria-label="Node Agent update archive download progress"
-                    max="100" value={Number(pair.agentUpdateStatus?.split(':')[3])} style={{width: '100%'}} />
-                  <span>{pair.agentUpdateStatus?.split(':')[3]}% of Agent release archive</span>
-                </div>}</div>
+              {pair.mode === 'outbound' ? (pair.tunnelConnected ? ' · tunnel ready' : ' · tunnel unavailable') : ''}</div>
           })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : <BreakableUrl value={node.baseAddress} />}</td>
           <td>{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
             ? <div className="muted">Install and start an inference model to enable health checks.</div>
@@ -333,7 +336,10 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                 onClick={() => void act(() => api.enableNode(node.id))}>Enable</button>}
             {canWrite && !node.enabled && <button className="danger" disabled={busy === `delete:${node.id}`} onClick={() => void deleteNode(node)}>{busy === `delete:${node.id}` ? 'Deleting…' : 'Delete'}</button>}
           </div></td>
-        </tr>)}
+        </tr>
+        {pairedNodes.filter(pair => pair.nodeId === node.id && (pair.agentUpgradeTargetVersion || pair.agentUpdateStatus)).map(pair =>
+          <tr key={'agent-' + pair.nodeId} className="agentDetailsRow"><td colSpan={6}>{agentDetails(pair)}</td></tr>)}
+        </Fragment>)}
         {visible.length === 0 && <tr><td colSpan={6} className="muted">No nodes in this view.</td></tr>}
       </tbody></table></div>
       {Object.values(connectionTests).map(result => <div className="secretBox" key={result.nodeId}>

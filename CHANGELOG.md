@@ -1,3 +1,10 @@
+## Unreleased — Background activity dock and readable upgrade notices
+
+- **Background activity.** A dock at the bottom-right of every Admin page follows long operations while you work elsewhere: Agent updates (including draining/verifying/needs-attention and the real download percentage), model downloads, model starts and gateway updates. Open it to see each operation, jump to the page that handles it (`Open`) and `Dismiss`/`Clear finished` once done. It derives everything from the endpoints the pages already use, never invents a percentage, keeps the last known state when an Agent is unreachable, and survives a page reload (session storage).
+- **Fleet table.** The long Agent-upgrade notice, update status and download bar moved out of the narrow *Status* cell into a full-width row under the server, so on a phone it no longer becomes a tall column of single words. The first status line (Agent connected · installed vX · tunnel) is unchanged.
+- Accessibility: the loading spinner of *My request audit* now has a role for its label.
+- Tests: Vitest `BackgroundOperations` (derivation, merge, dock), Playwright `activity-center.spec.ts`; visual baselines regenerated (the dock appears while mock jobs run); the System One visual wait no longer matches a hidden `<option>`.
+
 ## Unreleased — Gateway hardening, model profiles and capability verification
 
 **Gateway (breaking error codes, see `docs/api-contract.md`)**

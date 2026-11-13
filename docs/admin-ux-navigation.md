@@ -78,7 +78,7 @@ The old deeply nested Infrastructure → Inventory → Deploy models path remain
 1. **Atomic System One connection endpoint** with server-side validation and transactional create of logical alias + deployment, plus optional runtime authentication and diagnostic health probing. Current guided flow uses the existing pair of endpoints and explicitly supports partial failure.
 2. **Real managed System One installer** only after defining supported classifier engines, model architectures, license, typed protocol adapter, hardware sizing, health readiness and end-to-end tests. Hugging Face files by themselves cannot act as a System One HTTP service.
 3. **Model-detail routes** (`/admin/models/<id>`) and **hardware-detail routes** to keep search/filter/selection stable across F5. Current model list and hardware node ID deep-link cover the common workflow, not every modal or filter.
-4. **Background finalisation and notifications** for model install/download/start independent of Admin tab lifetime; avoid relying on an open browser to finish deployment registration.
+4. **Background finalisation** for model install/download/start independent of Admin tab lifetime (the *visibility* part is done by the activity dock, see below); avoid relying on an open browser to finish deployment registration.
 5. Guided contextual troubleshooting based on observed states (Agent offline, No Runtime, Started/Disabled, Unhealthy, insufficient resources), with precise action buttons and links.
 6. Search across models/nodes/deployments and better small-screen table presentation. Visual polish is a separate phase after navigation and task usability is tested.
 
@@ -90,3 +90,13 @@ The old deeply nested Infrastructure → Inventory → Deploy models path remain
 - Guided System One setup writes `surface=SystemOne`, no Chat-only capability flags, and an explicit runtime root to a specific existing node.
 - No System One blind deploy-to-all and no manual classifier deployment with missing service root.
 - Legacy Infrastructure tabs, published-model views, routing, credentials, audits and releases remain accessible.
+
+## Background activity dock
+
+`ActivityCenter` (bottom-right, every page) lists long operations so the operator can leave the page that started them:
+
+- Sources, all already exposed by the API: paired Agent status (`agentUpgradeTargetVersion`, maintenance stage, `agentUpdateStatus`), per-server install and start jobs, and the product update overview.
+- An operation appears once it has been seen in flight; old finished jobs the sources still list are ignored. When it leaves the active set it becomes *Finished* or *Failed* (with the reported error) and stays until dismissed. Dismissing never hides a later run with the same id.
+- Progress bars show only real percentages (model download, Agent archive download); otherwise an indeterminate bar.
+- A source that fails (for example an unreachable Agent) keeps its last known state. Polling is 4 s while something runs and 15 s otherwise; state survives a reload in session storage.
+- `Open` navigates to the page that can act (Servers for Agent updates, Models for jobs, Release notes for the gateway).
