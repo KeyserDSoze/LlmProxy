@@ -57,12 +57,12 @@ export default function InstallPropertiesEditor({ value, onChange, onReset, sugg
   return <fieldset className="installProperties">
     <legend>{t('props.title')}</legend>
     <p className="muted">{t('props.intro')}</p>
-    {suggestion && <p className="notice" role="status">
+    {suggestion && <div className="notice" role="status">
       <strong>{t('props.detectedFrom')}:</strong> {suggestion.source}.
       {suggestion.evidence.length > 0 && <ul className="installPropertiesEvidence">
         {suggestion.evidence.map(item => <li key={item}>{item}</li>)}
       </ul>}
-    </p>}
+    </div>}
     <div className="installPropertiesToggles">
       {toggles.map(toggle => <label key={toggle.key} className="installPropertyToggle">
         <input type="checkbox" checked={value[toggle.key]} onChange={event => onChange(toggle.key, event.target.checked)} />
