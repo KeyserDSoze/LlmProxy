@@ -438,8 +438,15 @@ public sealed class GgufModelStore(NodeAgentOptions options, HuggingFaceCredenti
         var code = (int)status;
         return status switch
         {
+            // Hugging Face answers an anonymous 401 for a repository that does not exist exactly as for a private one,
+            // while a gated repository is listed normally and only refuses its files. So a 401 on the listing is
+            // "not found or private"; a 401 on a file of a listed repository is the gated case.
+            HttpStatusCode.Unauthorized when credentials.Token is null && file is null => new InvalidOperationException(
+                $"Hugging Face does not show {target} (HTTP 401): the repository does not exist or is private (Hugging Face answers 401 for both). " +
+                "Check the exact org/model ID on huggingface.co; a gated repository would be listed and only ask for a token when its files are downloaded. " +
+                "If it is your private repository, add a Hugging Face access token for this server in LlmProxy Admin and retry."),
             HttpStatusCode.Unauthorized when credentials.Token is null => new InvalidOperationException(
-                $"Hugging Face requires authentication for {target} (HTTP 401): the repository is private or gated. " +
+                $"Hugging Face requires authentication for {target} (HTTP 401): the repository is gated. " +
                 "Accept its license on huggingface.co, add a Hugging Face access token for this server in LlmProxy Admin and retry."),
             HttpStatusCode.Unauthorized => new InvalidOperationException(
                 $"Hugging Face rejected the configured access token for {target} (HTTP 401). Replace it in LlmProxy Admin."),

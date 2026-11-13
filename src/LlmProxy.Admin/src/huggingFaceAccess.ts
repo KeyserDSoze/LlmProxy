@@ -1,5 +1,5 @@
 export type HuggingFaceAccessIssue = {
-  kind: 'required' | 'rejected' | 'forbidden'
+  kind: 'required' | 'rejected' | 'forbidden' | 'missing'
   repository?: string
 }
 
@@ -14,11 +14,18 @@ export function huggingFaceAccessIssue(text: string | null | undefined): Hugging
   // "'file' in 'org/repo'" names the repository last; "'org/repo' is gated" names it alone.
   const repository = quoted.reverse().find(value => /^[\w.-]+\/[\w.-]+$/.test(value))
 
+  // Anonymous 401 = the repository does not exist or is private; Hugging Face never answers it for a gated one.
+  if (/does not exist or is private/i.test(sentence)) return { kind: 'missing', repository }
   if (/rejected the configured access token/i.test(sentence)) return { kind: 'rejected', repository }
   if (/\(HTTP 403\)/.test(sentence) && /restricted/i.test(sentence)) return { kind: 'forbidden', repository }
   if (/requires authentication for/i.test(sentence) || /is a gated Hugging Face repository/i.test(sentence))
     return { kind: 'required', repository }
   return null
+}
+
+export function huggingFaceSearchPage(repository: string): string {
+  const name = repository.split('/').pop() ?? repository
+  return 'https://huggingface.co/models?search=' + encodeURIComponent(name)
 }
 
 export const huggingFaceTokenPage = 'https://huggingface.co/settings/tokens/new?tokenType=read'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  huggingFaceAccessIssue, huggingFaceRepositoryPage
+  huggingFaceAccessIssue, huggingFaceRepositoryPage, huggingFaceSearchPage
 } from '../../../src/LlmProxy.Admin/src/huggingFaceAccess'
 
 describe('Hugging Face access failures', () => {
@@ -23,6 +23,16 @@ describe('Hugging Face access failures', () => {
       .toEqual({ kind: 'rejected', repository: 'org/repo' })
     expect(huggingFaceAccessIssue("Access to 'org/repo' is restricted (HTTP 403). Request access on huggingface.co with the account that owns the access token."))
       .toEqual({ kind: 'forbidden', repository: 'org/repo' })
+  })
+
+  it('treats an anonymous 401 on a repository listing as not found or private, never as gated', () => {
+    expect(huggingFaceAccessIssue(
+      "Hugging Face does not show 'meta/muse-glimmer' (HTTP 401): the repository does not exist or is private (Hugging Face answers 401 for both). Check the exact org/model ID."
+    )).toEqual({ kind: 'missing', repository: 'meta/muse-glimmer' })
+  })
+
+  it('searches by the repository name so a wrong organisation still finds the real one', () => {
+    expect(huggingFaceSearchPage('meta/muse-glimmer')).toBe('https://huggingface.co/models?search=muse-glimmer')
   })
 
   it('ignores unrelated failures', () => {

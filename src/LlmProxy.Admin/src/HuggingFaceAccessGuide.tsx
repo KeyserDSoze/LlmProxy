@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from './api'
-import { huggingFaceAccessIssue, huggingFaceRepositoryPage, huggingFaceTokenPage } from './huggingFaceAccess'
+import { huggingFaceAccessIssue, huggingFaceRepositoryPage, huggingFaceSearchPage, huggingFaceTokenPage } from './huggingFaceAccess'
 import { useT } from './uiPreferences'
 import type { HuggingFaceAccessStatus } from './types'
 
@@ -56,7 +56,8 @@ export default function HuggingFaceAccessGuide({ nodeId, failure, canWrite, onCo
     finally { setBusy(false) }
   }
 
-  const intro = issue.kind === 'rejected' ? t('hfaccess.rejectedIntro')
+  const missing = issue.kind === 'missing'
+  const intro = missing ? t('hfaccess.missingIntro') : issue.kind === 'rejected' ? t('hfaccess.rejectedIntro')
     : issue.kind === 'forbidden' ? t('hfaccess.forbiddenIntro') : t('hfaccess.requiredIntro')
 
   return <form className="hfAccess" onSubmit={event => void save(event)} aria-label={t('hfaccess.title')}>
@@ -64,12 +65,13 @@ export default function HuggingFaceAccessGuide({ nodeId, failure, canWrite, onCo
     <p>{intro}</p>
     <ol className="hfSteps">
       <li>
-        <span>{t('hfaccess.step1')}</span>
+        <span>{missing ? t('hfaccess.missingStep1') : t('hfaccess.step1')}</span>
         {issue.repository && <a className="buttonLink secondary compact" target="_blank" rel="noopener noreferrer"
-          href={huggingFaceRepositoryPage(issue.repository)}>{t('hfaccess.openRepo')} · {issue.repository}</a>}
+          href={missing ? huggingFaceSearchPage(issue.repository) : huggingFaceRepositoryPage(issue.repository)}>
+          {missing ? t('hfaccess.searchRepo') : t('hfaccess.openRepo')} · {issue.repository}</a>}
       </li>
       <li>
-        <span>{t('hfaccess.step2')}</span>
+        <span>{missing ? t('hfaccess.missingStep2') : t('hfaccess.step2')}</span>
         <a className="buttonLink secondary compact" target="_blank" rel="noopener noreferrer"
           href={huggingFaceTokenPage}>{t('hfaccess.openTokens')}</a>
       </li>

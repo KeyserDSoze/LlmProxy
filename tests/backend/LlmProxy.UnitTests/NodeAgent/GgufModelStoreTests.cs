@@ -197,13 +197,26 @@ public sealed class GgufModelStoreTests : IDisposable
 
     [Theory]
     [InlineData(HttpStatusCode.NotFound, "was not found")]
-    [InlineData(HttpStatusCode.Unauthorized, "requires authentication")]
+    [InlineData(HttpStatusCode.Unauthorized, "does not exist or is private")]
     public async Task Hub_errors_are_translated_into_actionable_messages(HttpStatusCode status, string expected)
     {
         var hub = new FakeHub(Revision) { MetadataStatus = status };
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Store(hub).PrepareAsync("org/missing", null, null, TestContext.Current.CancellationToken));
         Assert.Contains(expected, error.Message);
+    }
+
+    [Fact]
+    public async Task A_listed_repository_whose_file_is_refused_with_401_is_reported_as_gated_not_as_missing()
+    {
+        var hub = new FakeHub(Revision) { FileStatus = HttpStatusCode.Unauthorized }.AddLfs("model-Q4_K_M.gguf", [1]);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Store(hub).PrepareAsync("org/repo", null, null, TestContext.Current.CancellationToken));
+
+        Assert.Contains("requires authentication", error.Message);
+        Assert.Contains("is gated", error.Message);
+        Assert.DoesNotContain("does not exist", error.Message);
     }
 
     private GgufModelStore Store(FakeHub hub)
@@ -235,6 +248,7 @@ public sealed class GgufModelStoreTests : IDisposable
         public List<string> Requests { get; } = [];
         public List<string> Ranges { get; } = [];
         public HttpStatusCode MetadataStatus { get; init; } = HttpStatusCode.OK;
+        public HttpStatusCode? FileStatus { get; init; }
 
         public FakeHub AddLfs(string path, byte[] content, byte[]? servedContent = null)
         {
@@ -262,6 +276,7 @@ public sealed class GgufModelStoreTests : IDisposable
                 });
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
             }
+            if (FileStatus is { } fileStatus) return Task.FromResult(new HttpResponseMessage(fileStatus));
             var match = _files.First(file => url.EndsWith("/" + file.Path, StringComparison.Ordinal));
             var range = request.Headers.Range?.Ranges.FirstOrDefault();
             if (range?.From is long from)

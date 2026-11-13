@@ -157,13 +157,13 @@ public sealed partial class HuggingFaceCredentialStore
         if (GatedFailure().IsMatch(output))
             return hasToken
                 ? $"Access to '{repository}' is restricted (HTTP 403). Request access on huggingface.co with the account that owns the access token."
-                : $"Hugging Face requires authentication for '{repository}' (HTTP 401): the repository is private or gated. " +
+                : $"Hugging Face requires authentication for '{repository}' (HTTP 401): the repository is gated. " +
                   "Accept its license on huggingface.co, add a Hugging Face access token for this server in LlmProxy Admin and retry.";
         if (UnauthorizedFailure().IsMatch(output))
             return hasToken
                 ? $"Hugging Face rejected the configured access token for '{repository}' (HTTP 401), or the repository does not exist. Check the ID or replace the token in LlmProxy Admin."
-                : $"Hugging Face requires authentication for '{repository}' (HTTP 401): the repository is private or gated. " +
-                  "Accept its license on huggingface.co, add a Hugging Face access token for this server in LlmProxy Admin and retry.";
+                : $"Hugging Face does not show '{repository}' (HTTP 401): the repository does not exist or is private (Hugging Face answers 401 for both). " +
+                  "Check the exact org/model ID on huggingface.co. If it is your private repository, add a Hugging Face access token for this server in LlmProxy Admin and retry.";
         return null;
     }
 

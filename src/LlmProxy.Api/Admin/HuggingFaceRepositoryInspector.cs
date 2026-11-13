@@ -191,10 +191,11 @@ public sealed class HuggingFaceRepositoryInspector(IHttpClientFactory clients, I
             entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
             var client = clients.CreateClient("huggingface-hub");
             using var response = await client.GetAsync("https://huggingface.co/api/models/" + repoId + "?blobs=true", token);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            // Anonymous requests get 401 both for repositories that do not exist and for private ones, whereas a
+            // gated repository is returned normally (200 with "gated": "auto"|"manual"). A 401/403/404 is therefore
+            // never evidence of a gated repository: report it as not visible instead of inviting a token.
+            if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
                 return Missing(repoId, gated: false);
-            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                return Missing(repoId, gated: true) with { Found = true };
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: token);

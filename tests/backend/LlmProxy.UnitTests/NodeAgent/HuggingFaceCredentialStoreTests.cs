@@ -127,7 +127,7 @@ public sealed class HuggingFaceCredentialStoreTests : IDisposable
 
     [Theory]
     [InlineData("huggingface_hub.errors.GatedRepoError: 403 Client Error. Cannot access gated repo", false, "(HTTP 401)")]
-    [InlineData("huggingface_hub.errors.RepositoryNotFoundError: 401 Client Error.", false, "requires authentication")]
+    [InlineData("huggingface_hub.errors.RepositoryNotFoundError: 401 Client Error.", false, "does not exist or is private")]
     [InlineData("GatedRepoError: 403 Client Error", true, "(HTTP 403)")]
     [InlineData("401 Client Error: Unauthorized for url", true, "rejected the configured access token")]
     public void Prefetch_container_failures_are_translated_into_the_guided_message(
