@@ -102,6 +102,7 @@ test('inference node controls use safe maintenance drain and validated resume', 
   await page.getByRole('button', { name: 'Servers & hardware' }).click()
 
   const row = page.getByRole('row').filter({ hasText: 'inference-maintenance' })
+  page.once('dialog', dialog => void dialog.accept())
   await row.getByRole('button', { name: 'Drain' }).click()
   await expect(row.getByText('Draining', { exact: true })).toBeVisible()
   expect(state.wasLegacyDrainCalled()).toBe(false)

@@ -97,7 +97,7 @@ describe('Usage governance', () => {
   })
 
   it('shows consolidated usage and makes historical rollup coverage explicit', async () => {
-    render(<Governance />)
+    render(<Governance canWrite />)
 
     expect(await screen.findByRole('heading', { name: 'Governance workspace' })).toBeInTheDocument()
     expect(screen.getAllByText('Development CRM').length).toBeGreaterThan(0)
@@ -110,7 +110,7 @@ describe('Usage governance', () => {
 
   it('supports long-term UTC-day reporting windows', async () => {
     const user = userEvent.setup()
-    render(<Governance />)
+    render(<Governance canWrite />)
     await screen.findByRole('heading', { name: 'Governance workspace' })
 
     await user.selectOptions(screen.getByLabelText('Usage window'), '365')
@@ -119,7 +119,7 @@ describe('Usage governance', () => {
 
   it('creates groups and rate-limit policies through the admin API', async () => {
     const user = userEvent.setup()
-    render(<Governance />)
+    render(<Governance canWrite />)
     await screen.findByRole('heading', { name: 'Governance workspace' })
     await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
     expect(screen.getByText('Copilot CRM')).toBeInTheDocument()
@@ -146,5 +146,47 @@ describe('Usage governance', () => {
     await waitFor(() => expect(mockedApi.createRateLimit).toHaveBeenCalledWith(expect.objectContaining({
       apiCredentialId: 'credential-1', requestsPerWindow: 2, windowSeconds: 10, enabled: true
     })))
+  })
+
+  it('hides every write control from a read-only administrator', async () => {
+    const user = userEvent.setup()
+    mockedApi.rateLimits.mockResolvedValue([{ id: 'rate-1', apiCredentialId: 'credential-1', credentialName: 'Copilot CRM', logicalModel: null, requestsPerWindow: 10, windowSeconds: 60, enabled: true, outputTokensPerWindow: null, maxOutputTokensPerRequest: null }])
+    render(<Governance />)
+    await screen.findByRole('heading', { name: 'Governance workspace' })
+
+    await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
+    expect(screen.queryByRole('button', { name: 'Create usage group' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rotate' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /Quotas/ }))
+    expect(screen.queryByRole('button', { name: 'Add credential limit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('shows the server error when a mutation is rejected instead of dropping it', async () => {
+    const user = userEvent.setup()
+    mockedApi.createUsageGroup.mockRejectedValue(new Error('HTTP 409: name already exists'))
+    render(<Governance canWrite />)
+    await screen.findByRole('heading', { name: 'Governance workspace' })
+    await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
+    await user.click(screen.getByRole('button', { name: 'Create usage group' }))
+    await user.type(screen.getByPlaceholderText('Development CRM'), 'Platform')
+    await user.click(screen.getByRole('button', { name: 'Create group' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 409: name already exists')
+  })
+
+  it('asks before rotating a key and does nothing when declined', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mockedApi.rotateApiCredential.mockResolvedValue({})
+    render(<Governance canWrite />)
+    await screen.findByRole('heading', { name: 'Governance workspace' })
+    await user.click(screen.getByRole('tab', { name: /Groups & credentials/ }))
+    await user.click(screen.getByRole('button', { name: 'Rotate' }))
+
+    expect(confirm).toHaveBeenCalled()
+    expect(mockedApi.rotateApiCredential).not.toHaveBeenCalled()
+    confirm.mockRestore()
   })
 })

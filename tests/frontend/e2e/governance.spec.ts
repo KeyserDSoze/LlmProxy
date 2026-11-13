@@ -1,4 +1,5 @@
 import { expect, Route, test } from '@playwright/test'
+import { installMockAdmin } from './support/mockAdmin'
 
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
@@ -11,6 +12,8 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   const users = [{ id: 'user-1', tenantId: 'tenant-1', objectId: 'object-1', principalName: 'user@example.com', displayName: 'Example User', enabled: true, provisioningSource: 'admin', createdAtUtc: '2026-09-17T06:00:00Z', lastSeenAtUtc: null, disabledAtUtc: null, credentialCount: 2, activeCredentialCount: 2, lastCredentialUsedAtUtc: null, requestCount30d: 42, errorCount30d: 2 }]
   const userPolicies: Array<Record<string, unknown>> = []
 
+  // The shell needs session/overview/etc.; this spec only overrides the governance endpoints on top of the shared mock.
+  await installMockAdmin(page)
   await page.route('**/api/admin/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
@@ -72,7 +75,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
       Object.assign(policies[0], { outputTokensPerWindow: null, maxOutputTokensPerRequest: null })
       return route.fulfill({ status: 204 })
     }
-    return json(route, { error: `${request.method()} ${path}` }, 500)
+    return route.fallback()
   })
 
   await page.goto('/admin/governance')
@@ -94,6 +97,7 @@ test('admin can review grouped usage, historical rollups, rotate credentials and
   await expect(credentialRow).toContainText('lp_org_abcd')
   await expect(page.getByLabel('Usage group for Copilot CRM')).toHaveValue('group-1')
 
+  page.once('dialog', dialog => void dialog.accept())
   await credentialRow.getByRole('button', { name: 'Rotate' }).click()
   await expect(page.getByText('Credential rotated. The previous secret is invalid.')).toBeVisible()
   const rotatedSecret = page.getByTestId('rotated-credential-secret')

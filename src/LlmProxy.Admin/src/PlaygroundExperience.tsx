@@ -90,7 +90,7 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   }
 
   return <div className="stack compactPage">
-    {error && <div className="error">{error}</div>}
+    {error && <div className="error" role="alert">{error}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'chat', label: 'Model chat' }, { value: 'classifier', label: 'System One classifier' }]} />
 
     {tab === 'chat' && routeDiagnosis && routeDiagnosis.code !== 'candidate_configured' &&
@@ -154,7 +154,7 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
           <div><span>Failover</span><strong>Up to 3 deployments</strong></div>
           <div><span>Timeout</span><strong>{classifierStatus ? String(classifierStatus.timeoutSeconds) + 's' : '—'}</strong></div>
         </div>
-        {classifierStatus?.configurationError && systemOneModels.length === 0 && <div className="error">{classifierStatus.configurationError}</div>}
+        {classifierStatus?.configurationError && systemOneModels.length === 0 && <div className="error" role="alert">{classifierStatus.configurationError}</div>}
         <form onSubmit={runClassifier}>
           <label>System One logical model<select aria-label="System One logical model" value={classifierModel} onChange={event => setClassifierModel(event.target.value)} required>
             {systemOneModels.length === 0 && <option value="">No System One models</option>}

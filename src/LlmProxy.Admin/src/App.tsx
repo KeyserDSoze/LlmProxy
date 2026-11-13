@@ -239,7 +239,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {authRequired && <div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>. Normal users can open <a href="/admin/me">My API Keys</a>.</div>}
         {view !== 'releases' && <UpdateBanner overview={productUpdates} loadedVersion={productVersion} canWrite={canWrite}
           onOpenReleases={() => navigate('releases')} onRefresh={refreshProductUpdates} />}
-        {error && <div className="error">{error}</div>}
+        {error && <div className="error" role="alert">{error}</div>}
         {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
             {view === 'dashboard' && <>
@@ -254,7 +254,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
               canWrite={canWrite} refresh={refresh} mode="models" defaultPanel="installed" />}
             {view === 'system-one' && <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
             {view === 'settings' && <SettingsPage productVersion={productVersion} onOpenReleases={() => navigate('releases')} />}
-            {view === 'routing' && <Routing routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
+            {view === 'routing' && <Routing canWrite={canWrite} routing={routing} tuning={routingTuning} performance={routingPerformance} runtime={routingRuntime} deployments={deployments} nodes={nodes} models={models} refresh={refresh} />}
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'users' && canWrite && <UsersAccessExperience />}
             {view === 'metrics' && <MetricsPage summary={metricsSummary} nodes={nodes} credentials={credentials} />}
@@ -262,7 +262,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
             {view === 'help' && <HelpPage models={models} />}
-            {view === 'governance' && <GovernanceExperience />}
+            {view === 'governance' && <GovernanceExperience canWrite={canWrite} />}
             {view === 'releases' && <ReleaseNotesPage embedded canWrite={canWrite} />}
             {view !== 'releases' && <PageDocumentation page={view} />}
           </>
@@ -403,23 +403,28 @@ function Dashboard({ overview, nodes, routing, metricsSummary }: { overview: Ove
   </>
 }
 
-function Routing({ routing, tuning, performance, runtime, deployments, nodes, models, refresh }: { routing: RoutingSettings; tuning: RoutingTuningSettings; performance: DeploymentPerformanceSnapshot[]; runtime: NodeRuntimeMetricsSnapshot[]; deployments: Deployment[]; nodes: Node[]; models: Model[]; refresh: () => Promise<void> }) {
+function Routing({ canWrite, routing, tuning, performance, runtime, deployments, nodes, models, refresh }: { canWrite: boolean; routing: RoutingSettings; tuning: RoutingTuningSettings; performance: DeploymentPerformanceSnapshot[]; runtime: NodeRuntimeMetricsSnapshot[]; deployments: Deployment[]; nodes: Node[]; models: Model[]; refresh: () => Promise<void> }) {
   const [strategy, setStrategy] = useState<RoutingSettings['strategy']>(routing.strategy)
   const [saved, setSaved] = useState(false)
   const [tuningDraft, setTuningDraft] = useState<RoutingTuningSettings>(tuning)
   const [tuningSaved, setTuningSaved] = useState(false)
   useEffect(() => setStrategy(routing.strategy), [routing.strategy])
-  useEffect(() => setTuningDraft(tuning), [tuning])
+  // Reload the draft only when the saved settings really change: `tuning` is a new object on every 10 s refresh,
+  // and syncing on identity would overwrite what the operator is typing.
+  useEffect(() => setTuningDraft(tuning), [tuning.updatedAtUtc]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [routeError, setRouteError] = useState<string | null>(null)
 
   const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
   const modelNames = useMemo(() => new Map(models.map(model => [model.id, model.publicName])), [models])
   const deploymentMap = useMemo(() => new Map(deployments.map(deployment => [deployment.id, deployment])), [deployments])
 
   async function submit(event: FormEvent) {
-    event.preventDefault()
-    await api.updateRouting(strategy)
-    setSaved(true)
-    await refresh()
+    event.preventDefault(); setRouteError(null)
+    try {
+      await api.updateRouting(strategy)
+      setSaved(true)
+      await refresh()
+    } catch (reason) { setRouteError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
   function setTuning<K extends keyof RoutingTuningSettings>(key: K, value: number) {
@@ -428,8 +433,9 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
   }
 
   async function submitTuning(event: FormEvent) {
-    event.preventDefault()
-    await api.updateRoutingTuning({
+    event.preventDefault(); setRouteError(null)
+    try {
+      await api.updateRoutingTuning({
       warmupSamples: tuningDraft.warmupSamples,
       ttftTargetMilliseconds: tuningDraft.ttftTargetMilliseconds,
       ttftPenaltyWeight: tuningDraft.ttftPenaltyWeight,
@@ -440,12 +446,15 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
       kvCachePenaltyWeight: tuningDraft.kvCachePenaltyWeight,
       degradedNodePenalty: tuningDraft.degradedNodePenalty,
       unknownNodePenalty: tuningDraft.unknownNodePenalty
-    })
-    setTuningSaved(true)
-    await refresh()
+      })
+      setTuningSaved(true)
+      await refresh()
+    } catch (reason) { setRouteError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
   return <div className="stack">
+    {routeError && <div className="error" role="alert">{routeError}</div>}
+    {!canWrite && <div className="notice" role="status">Read-only access: routing settings can be viewed but not changed.</div>}
     <div className="gridTwo">
       <section className="panel">
         <div className="panelTitle"><h2>Current routing policy</h2><span>Applied live, no gateway restart</span></div>
@@ -455,19 +464,19 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
         <p>Weighted least loaded also uses recent TTFT/failure EWMA plus live vLLM queue and KV-cache pressure. PostgreSQL is not queried on the inference hot path.</p>
         <p className="muted">Published model names and their server placements are managed in <AdminLink href="/admin/models?panel=advanced">Models → Publishing</AdminLink>.</p>
       </section>
-      <section className="panel formPanel"><h2>Change strategy</h2><form onSubmit={submit}>
+      <section className="panel formPanel"><h2>Change strategy</h2><form onSubmit={submit}><fieldset className="plainFieldset" disabled={!canWrite}>
         <label>Routing strategy<select value={strategy} onChange={e => { setStrategy(e.target.value as RoutingSettings['strategy']); setSaved(false) }}>
           {routing.supportedStrategies.map(item => <option key={item} value={item}>{friendlyStrategy(item)}</option>)}
         </select></label>
         <p>{strategyDescription(strategy)}</p>
         <button className="primary">Apply routing strategy</button>
         {saved && <div className="notice">Routing policy updated live.</div>}
-      </form></section>
+      </fieldset></form></section>
     </div>
 
     <section className="panel formPanel">
       <div className="panelTitle tuningTitle"><h2>Smart-routing tuning</h2><span>Persisted in PostgreSQL · applied immediately · last update {formatDate(tuning.updatedAtUtc)}</span></div>
-      <form onSubmit={submitTuning} className="tuningGrid">
+      <form onSubmit={submitTuning} className="tuningGrid"><fieldset className="plainFieldset" disabled={!canWrite}>
         <label>Warm-up samples<input aria-label="Warm-up samples" type="number" min="0" max="100" value={tuningDraft.warmupSamples} onChange={e => setTuning('warmupSamples', Number(e.target.value))} /></label>
         <label>TTFT target (ms)<input aria-label="TTFT target" type="number" min="1" max="120000" value={tuningDraft.ttftTargetMilliseconds} onChange={e => setTuning('ttftTargetMilliseconds', Number(e.target.value))} /></label>
         <label>TTFT penalty weight<input aria-label="TTFT penalty weight" type="number" min="0" max="10" step="0.05" value={tuningDraft.ttftPenaltyWeight} onChange={e => setTuning('ttftPenaltyWeight', Number(e.target.value))} /></label>
@@ -479,7 +488,7 @@ function Routing({ routing, tuning, performance, runtime, deployments, nodes, mo
         <label>Degraded-node penalty<input aria-label="Degraded node penalty" type="number" min="0" max="10" step="0.05" value={tuningDraft.degradedNodePenalty} onChange={e => setTuning('degradedNodePenalty', Number(e.target.value))} /></label>
         <label>Unknown-node penalty<input aria-label="Unknown node penalty" type="number" min="0" max="10" step="0.05" value={tuningDraft.unknownNodePenalty} onChange={e => setTuning('unknownNodePenalty', Number(e.target.value))} /></label>
         <div className="tuningActions"><button className="primary">Apply smart-routing tuning</button><button type="button" className="secondary" onClick={() => { setTuningDraft(emptyRoutingTuning); setTuningSaved(false) }}>Load defaults</button>{tuningSaved && <span className="notice inlineNotice">Tuning updated live.</span>}</div>
-      </form>
+      </fieldset></form>
     </section>
 
     <div className="gridEqual">

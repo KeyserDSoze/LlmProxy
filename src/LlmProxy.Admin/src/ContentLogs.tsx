@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import RequestAuditDetailModal from './RequestAuditDetail'
 import RequestAuditSummaryModal from './RequestAuditSummaryModal'
@@ -63,7 +63,10 @@ export default function ContentLogs({ credentials, nodes, models: providedModels
     ? credentials.filter(item => item.ownerTenantId === selectedOwner?.tenantId && item.ownerObjectId === selectedOwner?.objectId)
     : credentials
 
+  // Only the newest request may write its result: a slow response to an older filter must not replace a newer one.
+  const loadSequence = useRef(0)
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current
     setLoading(true)
     try {
       const owner = owners.find(item => item.key === ownerKey)
@@ -80,12 +83,14 @@ export default function ContentLogs({ credentials, nodes, models: providedModels
         fromUtc: localToIso(fromLocal),
         toUtc: localToIso(toLocal)
       })
+      if (sequence !== loadSequence.current) return
       setResult(next)
       setError(null)
     } catch (err) {
+      if (sequence !== loadSequence.current) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
   }, [page, pageSize, model, surface, credentialId, ownerKey, status, requestId, fromLocal, toLocal, owners])
 
@@ -225,34 +230,8 @@ export default function ContentLogs({ credentials, nodes, models: providedModels
   const selectedUserLabel = selectedCredential?.ownerPrincipalName ?? (selectedCredential ? 'Organization / shared' : 'Internal / diagnostic')
 
   return <div className="stack compactPage">
-    {error && <div className="error">{error}</div>}
+    {error && <div className="error" role="alert">{error}</div>}
     {message && <div className="notice">{message}</div>}
-
-    <section className="panel formPanel">
-      <div className="panelTitle tuningTitle"><div><h2>Request audit retention</h2><span>Application-encrypted request and response bodies</span></div><span>Administrator policy</span></div>
-      <div className="retentionBar">
-        <label>Days<input aria-label="Request audit retention days" type="number" min={settings?.minimumRetentionDays ?? 10} max={settings?.maximumRetentionDays ?? 4015} value={retentionDays} onChange={event => setRetentionDays(Number(event.target.value))} /></label>
-        <button className="primary" onClick={() => void saveRetention()}>Save retention</button>
-        <button className="secondary" onClick={() => void runCleanup()}>Run cleanup now</button>
-        <span className="muted">Allowed {settings?.minimumRetentionDays ?? 10} days–11 years ({settings?.maximumRetentionDays ?? 4015} days) · automatic cleanup every {settings?.cleanupIntervalHours ?? 4}h</span>
-      </div>
-    </section>
-
-    <section className="panel formPanel summaryPolicyPanel">
-      <div className="panelTitle tuningTitle"><div><h2>AI request summaries</h2><span>Administrator-only prompt, model and routing defaults</span></div><span>{summarySettings?.updatedAtUtc ? 'Updated ' + new Date(summarySettings.updatedAtUtc).toLocaleString() : 'Administrator policy'}</span></div>
-      <div className="summaryPolicyGrid">
-        <label className="summaryPromptField">System prompt<textarea aria-label="Request summary system prompt" rows={9} value={summarySystemPrompt} onChange={event => setSummarySystemPrompt(event.target.value)} /></label>
-        <div className="summaryPolicyOptions">
-          <label>Default model<select aria-label="Default request summary model" value={summaryDefaultModel} onChange={event => setSummaryDefaultModel(event.target.value)}><option value="">Automatic: first enabled OpenAI model</option>{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
-          <label>Default node<select aria-label="Default request summary node" value={summaryDefaultNodeId} onChange={event => setSummaryDefaultNodeId(event.target.value)}><option value="">Automatic routing</option>{nodes.filter(item => item.enabled).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <p className="muted">If a node is selected, the summary model must be deployed there. With automatic routing, LlmProxy selects a healthy eligible node for the chosen logical model.</p>
-          <div className="actions">
-            <button className="primary" onClick={() => void saveSummarySettings()}>Save summary policy</button>
-            <button className="secondary" disabled={!summarySettings} onClick={() => setSummarySystemPrompt(summarySettings?.defaultSystemPrompt ?? '')}>Reset default prompt</button>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section className="panel">
       <div className="panelTitle"><div><h2>Request / response audit</h2><span>Inspect all retained inference payloads across users, credentials and models.</span></div><label className="inlineToggle"><input type="checkbox" checked={live} onChange={event => setLive(event.target.checked)} /> Live · 2s</label></div>
@@ -290,6 +269,37 @@ export default function ContentLogs({ credentials, nodes, models: providedModels
 
       <div className="pagination"><span className="paginationStatus"><span>{result.total === 0 ? '0 requests' : `${(result.page - 1) * result.pageSize + 1}–${Math.min(result.page * result.pageSize, result.total)} of ${result.total}`}</span><span className={loading ? 'miniSpinner' : 'miniSpinner idle'} aria-label={loading ? 'Refreshing request audit' : undefined} /></span><div className="actions"><button disabled={page <= 1 || loading} onClick={() => setPage(current => Math.max(1, current - 1))}>Previous</button><span>Page {page} / {pageCount}</span><button disabled={page >= pageCount || loading} onClick={() => setPage(current => current + 1)}>Next</button></div></div>
     </section>
+
+    <details className="panel settingsDisclosure">
+      <summary>Retention and AI summary settings</summary>
+      <div className="stack">
+    <section className="panel formPanel">
+      <div className="panelTitle tuningTitle"><div><h2>Request audit retention</h2><span>Application-encrypted request and response bodies</span></div><span>Administrator policy</span></div>
+      <div className="retentionBar">
+        <label>Days<input aria-label="Request audit retention days" type="number" min={settings?.minimumRetentionDays ?? 10} max={settings?.maximumRetentionDays ?? 4015} value={retentionDays} onChange={event => setRetentionDays(Number(event.target.value))} /></label>
+        <button className="primary" onClick={() => void saveRetention()}>Save retention</button>
+        <button className="secondary" onClick={() => void runCleanup()}>Run cleanup now</button>
+        <span className="muted">Allowed {settings?.minimumRetentionDays ?? 10} days–11 years ({settings?.maximumRetentionDays ?? 4015} days) · automatic cleanup every {settings?.cleanupIntervalHours ?? 4}h</span>
+      </div>
+    </section>
+
+    <section className="panel formPanel summaryPolicyPanel">
+      <div className="panelTitle tuningTitle"><div><h2>AI request summaries</h2><span>Administrator-only prompt, model and routing defaults</span></div><span>{summarySettings?.updatedAtUtc ? 'Updated ' + new Date(summarySettings.updatedAtUtc).toLocaleString() : 'Administrator policy'}</span></div>
+      <div className="summaryPolicyGrid">
+        <label className="summaryPromptField">System prompt<textarea aria-label="Request summary system prompt" rows={9} value={summarySystemPrompt} onChange={event => setSummarySystemPrompt(event.target.value)} /></label>
+        <div className="summaryPolicyOptions">
+          <label>Default model<select aria-label="Default request summary model" value={summaryDefaultModel} onChange={event => setSummaryDefaultModel(event.target.value)}><option value="">Automatic: first enabled OpenAI model</option>{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
+          <label>Default node<select aria-label="Default request summary node" value={summaryDefaultNodeId} onChange={event => setSummaryDefaultNodeId(event.target.value)}><option value="">Automatic routing</option>{nodes.filter(item => item.enabled).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <p className="muted">If a node is selected, the summary model must be deployed there. With automatic routing, LlmProxy selects a healthy eligible node for the chosen logical model.</p>
+          <div className="actions">
+            <button className="primary" onClick={() => void saveSummarySettings()}>Save summary policy</button>
+            <button className="secondary" disabled={!summarySettings} onClick={() => setSummarySystemPrompt(summarySettings?.defaultSystemPrompt ?? '')}>Reset default prompt</button>
+          </div>
+        </div>
+      </div>
+    </section>
+      </div>
+    </details>
 
     <RequestAuditDetailModal
       detail={selected}

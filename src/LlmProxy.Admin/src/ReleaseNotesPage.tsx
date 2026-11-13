@@ -153,8 +153,8 @@ export default function ReleaseNotesPage({ embedded = false, canWrite = false }:
 
   const cls = embedded ? 'stack' : 'releasePage'
   if (error === 'AUTH_REQUIRED') return <div className={cls}><div className="notice">Authentication is required. <a href="/auth/login">Sign in with Entra ID</a>.</div></div>
-  if (error === 'FORBIDDEN') return <div className={cls}><div className="error">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
-  if (error) return <div className={cls}><div className="error">{error}</div></div>
+  if (error === 'FORBIDDEN') return <div className={cls}><div className="error" role="alert">Access denied. Your Entra account does not have an administrative LlmProxy role.</div></div>
+  if (error) return <div className={cls}><div className="error" role="alert">{error}</div></div>
   if (!product) return <div className={cls}><div className="loading">Loading release notes…</div></div>
 
   const activeJob = updates?.agent?.activeJob

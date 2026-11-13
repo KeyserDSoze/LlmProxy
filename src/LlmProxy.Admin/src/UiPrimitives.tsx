@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { navigateAdmin } from './adminNavigation'
 import { useT } from './uiPreferences'
@@ -11,6 +11,22 @@ export function AdminLink({ href, className, children }: { href: string; classNa
     navigateAdmin(href)
   }
   return <a href={href} className={className} onClick={onClick}>{children}</a>
+}
+
+/** Text with soft break opportunities after every "/" so URLs wrap between segments, not inside a word. */
+export function BreakableUrl({ value }: { value: string }) {
+  const parts = value.split('/')
+  return <>{parts.map((part, index) => <Fragment key={index}>{part}{index < parts.length - 1 && <>/<wbr /></>}</Fragment>)}</>
+}
+
+/** Copies text and reports whether the browser allowed it (clipboard is refused on plain HTTP). */
+export async function copyText(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Decorative "info" glyph as SVG, so it never becomes part of a button's visible text. */

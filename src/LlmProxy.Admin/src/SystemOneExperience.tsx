@@ -214,7 +214,7 @@ export default function SystemOneExperience({ models, deployments, nodes, canWri
               onChange={event => setRuntimeRoot(event.target.value)} type="url"
               placeholder="http://10.0.0.21:8002" required />
           </label>
-          {urlError && <div className="error">{urlError}</div>}
+          {urlError && <div className="error" role="alert">{urlError}</div>}
           <p className="muted">{t('systemOne.rootHelp')}</p>
           {alreadyOnNode && <div className="notice">{t('systemOne.already')}</div>}
           <label>{t('systemOne.limit')}

@@ -25,8 +25,16 @@ export default function CredentialsPage({ credentials, canWrite, refresh }: { cr
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
   async function rotate(item: ApiCredential) {
+    if (!window.confirm(`Rotate "${item.name}"? The old key stops working immediately: every client using it must be updated with the new key.`)) return
     setBusy(`rotate:${item.id}`); setError(null)
     try { setCreated(await api.rotateApiCredential(item.id)); await refresh() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
+  }
+
+  async function revoke(item: ApiCredential) {
+    if (!window.confirm(`Revoke "${item.name}"? The key stops working immediately and cannot be re-enabled; create or rotate a key to restore access.`)) return
+    setBusy(`revoke:${item.id}`); setError(null)
+    try { await api.revokeApiCredential(item.id); await refresh() }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
@@ -43,9 +51,9 @@ export default function CredentialsPage({ credentials, canWrite, refresh }: { cr
       {canWrite && <button className="primary" onClick={() => setCreateOpen(true)}>Create organization key</button>}
     </section>
     <section className="scopeLegend"><div><span className="scopeBadge scope-org">ORG</span><strong> Organization</strong><p>Created by administrators for shared integrations. Administrators can reveal recoverable secrets, rotate and revoke.</p></div><div><span className="scopeBadge scope-personal">PERSONAL</span><strong> Personal</strong><p>Owned by a stable Entra user identity. Users manage their own keys in <a href="/admin/me">My dashboard</a>.</p></div><div><span className="scopeBadge">GROUP</span><strong> Usage Group</strong><p>A governance/accounting assignment. It does not change who owns the API key.</p></div></section>
-    {error && <div className="error">{error}</div>}
+    {error && <div className="error" role="alert">{error}</div>}
     <section className="panel"><div className="panelTitle"><h2>Credentials</h2><span>{credentials.length} visible to the administrator</span></div><div className="tableScroll"><table><thead><tr><th>Name</th><th>Scope</th><th>Prefix</th><th>State</th><th>Browser origins</th><th>Created</th><th>Last used</th><th>Secret</th><th>Actions</th></tr></thead><tbody>
-      {credentials.map(item => { const personal = item.kind === 'personal'; return <tr key={item.id}><td><strong>{item.name}</strong>{item.ownerPrincipalName && <div className="muted">{item.ownerPrincipalName}</div>}</td><td><span className={`scopeBadge ${personal ? 'scope-personal' : 'scope-org'}`}>{personal ? 'PERSONAL' : 'ORG'}</span></td><td className="mono nowrapCell"><span className="muted">{personal ? 'personal · ' : 'org · '}</span>{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td><OriginsSummary origins={item.allowedOrigins} empty="Site-wide only" /></td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable by admin' : 'Rotate to enable recovery'}</td><td className="actions">{canWrite && item.secretAvailable && <button disabled={busy === `reveal:${item.id}`} onClick={() => void reveal(item)}>Reveal / copy</button>}{canWrite && item.enabled && <button disabled={busy === `rotate:${item.id}`} onClick={() => void rotate(item)}>Rotate</button>}{canWrite && item.enabled && <button onClick={() => { setError(null); setEditingOrigins(item) }}>Origins</button>}{canWrite && item.enabled && <button onClick={() => void api.revokeApiCredential(item.id).then(refresh)}>Revoke</button>}</td></tr> })}
+      {credentials.map(item => { const personal = item.kind === 'personal'; return <tr key={item.id}><td><strong>{item.name}</strong>{item.ownerPrincipalName && <div className="muted">{item.ownerPrincipalName}</div>}</td><td><span className={`scopeBadge ${personal ? 'scope-personal' : 'scope-org'}`}>{personal ? 'PERSONAL' : 'ORG'}</span></td><td className="mono nowrapCell"><span className="muted">{personal ? 'personal · ' : 'org · '}</span>{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td><td><OriginsSummary origins={item.allowedOrigins} empty="Site-wide only" /></td><td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td><td>{item.secretAvailable ? 'Recoverable by admin' : 'Rotate to enable recovery'}</td><td><div className="actions">{canWrite && item.secretAvailable && <button disabled={busy === `reveal:${item.id}`} onClick={() => void reveal(item)}>Reveal / copy</button>}{canWrite && item.enabled && <button disabled={busy === `rotate:${item.id}`} onClick={() => void rotate(item)}>Rotate</button>}{canWrite && item.enabled && <button onClick={() => { setError(null); setEditingOrigins(item) }}>Origins</button>}{canWrite && item.enabled && <button className="danger" disabled={busy === `revoke:${item.id}`} onClick={() => void revoke(item)}>Revoke</button>}</div></td></tr> })}
       {credentials.length === 0 && <tr><td colSpan={9} className="muted">No credentials created yet.</td></tr>}
     </tbody></table></div></section>
     <CorsSettingsPanel canWrite={canWrite} />

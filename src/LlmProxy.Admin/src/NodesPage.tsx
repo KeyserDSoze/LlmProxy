@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
-import { Modal, Tabs } from './UiPrimitives'
+import { BreakableUrl, Modal, Tabs } from './UiPrimitives'
 import type { AgentDownloads, AgentPairingInvitation, AgentRecoverySecret, Node, NodeConnectionTest, PairedNodeStatus } from './types'
 
 function shellQuote(value: string) { return "'" + value.replace(/'/g, "'\\''") + "'" }
@@ -47,6 +47,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
   const [testingNode, setTestingNode] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
   const pairingCommand = invitation
     ? `curl -fsSL ${window.location.origin}/downloads/agent/connect-node.sh | sudo LLMPROXY_GATEWAY_URL=${shellQuote(window.location.origin)} LLMPROXY_ENROLLMENT_TOKEN=${shellQuote(invitation.enrollmentToken)} LLMPROXY_CONNECTION_MODE=${pairMode}${pairMode === 'direct' && directHost.trim() ? ' LLMPROXY_ADVERTISE_HOST=' + shellQuote(directHost.trim()) : ''} bash`
@@ -59,6 +60,13 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
 
   function closeRecovery() {
     setRecoveryNode(null); setRecoverySecret(null); setRecoveryVisible(false)
+  }
+
+  // Every direct node action goes through here so a failed request is shown instead of being dropped.
+  async function act(operation: () => Promise<unknown>) {
+    setError(null); setMessage(null)
+    try { await operation(); await refresh() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
   async function revealRecovery(rotate = false) {
@@ -97,9 +105,9 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
     setBusy('agent-repair:' + nodeId); setError(null)
     try {
       const result = await api.abandonAgentUpgrade(nodeId)
-      setError(`Upgrade maintenance exited safely. ${result.disabledDeployments} deployment(s) disabled for manual health verification and reactivation.`)
       await refresh()
       setPairedNodes(await api.pairedAgentNodes())
+      setMessage(`Upgrade maintenance exited safely. ${result.disabledDeployments} deployment(s) disabled for manual health verification and reactivation.`)
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(null) }
   }
@@ -190,7 +198,8 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
       {canWrite && <div className="actions"><button className="primary" disabled={busy === 'pair'} onClick={() => void beginPair()}>Pair Linux agent</button><button onClick={() => setAddOpen(true)}>Add inference node</button></div>}
     </section>}
 
-    {error && <div className="error">{error}</div>}
+    {error && <div className="error" role="alert">{error}</div>}
+    {message && <div className="notice" role="status">{message}</div>}
     {!embedded && <Tabs value={tab} onChange={setTab} items={[{ value: 'active', label: 'Active nodes', count: active.length }, { value: 'disabled', label: 'Disabled nodes', count: disabled.length }]} />}
 
     <section className="panel">
@@ -281,7 +290,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
                     max="100" value={Number(pair.agentUpdateStatus?.split(':')[3])} style={{width: '100%'}} />
                   <span>{pair.agentUpdateStatus?.split(':')[3]}% of Agent release archive</span>
                 </div>}</div>
-          })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : node.baseAddress}</td>
+          })}</td><td className="mono">{node.baseAddress === 'http://127.0.0.1:1' ? 'No inference model deployed' : <BreakableUrl value={node.baseAddress} />}</td>
           <td>{node.baseAddress === 'http://127.0.0.1:1' && pairedNodes.some(pair => pair.nodeId === node.id)
             ? <div className="muted">Install and start an inference model to enable health checks.</div>
             : <><div>{formatLatency(node.lastHealthLatencyMilliseconds)} · {healthStreak(node)}</div>
@@ -292,7 +301,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
               <div className="muted">Node health is independent of Agent heartbeat and update verification.</div>
             </>}</td>
           <td>{node.maxConcurrency}</td>
-          <td className="actions">
+          <td><div className="actions">
             <button disabled={node.baseAddress === 'http://127.0.0.1:1' && !node.managementBaseAddress}
               title="Checks Agent health if all deployments are stopped; otherwise checks the enabled inference runtime. Does not start any model."
               onClick={() => void testConnection(node)}>{testingNode === node.id ? 'Testing…' : 'Test'}</button>
@@ -311,15 +320,19 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
             {canWrite && <button onClick={() => openEdit(node)}>Edit</button>}
             {canWrite && <button onClick={() => { setCredentialNode(node); setCredentialSecret('') }}>Credentials</button>}
             {canWrite && nodes.length > 1 && <button onClick={() => openConsolidate(node)}>Consolidate</button>}
-            {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.drainNode(node.id).then(refresh)}>Drain</button>}
-            {canWrite && node.enabled && node.status !== 'Draining' && <button onClick={() => void api.disableNode(node.id).then(refresh)}>Disable</button>}
+            {canWrite && node.enabled && node.status !== 'Draining' &&
+              <button title="Stops sending new requests to this server; running requests finish."
+                onClick={() => { if (window.confirm(`Drain ${node.name}? New requests stop going to this server; running requests finish.`)) void act(() => api.drainNode(node.id)) }}>Drain</button>}
+            {canWrite && node.enabled && node.status !== 'Draining' &&
+              <button className="danger" title="Takes this server out of routing."
+                onClick={() => { if (window.confirm(`Disable ${node.name}? It leaves routing until you enable it again.`)) void act(() => api.disableNode(node.id)) }}>Disable</button>}
             {canWrite && (!node.enabled || node.status === 'Draining') &&
               <button disabled={pairedNodes.some(pair => pair.nodeId === node.id && !!pair.agentUpgradeTargetVersion)}
                 title={pairedNodes.some(pair => pair.nodeId === node.id && !!pair.agentUpgradeTargetVersion) ?
                   'Upgrade maintenance is controlling this drain; wait for verified routing restoration.' : undefined}
-                onClick={() => void api.enableNode(node.id).then(refresh)}>Enable</button>}
+                onClick={() => void act(() => api.enableNode(node.id))}>Enable</button>}
             {canWrite && !node.enabled && <button className="danger" disabled={busy === `delete:${node.id}`} onClick={() => void deleteNode(node)}>{busy === `delete:${node.id}` ? 'Deleting…' : 'Delete'}</button>}
-          </td>
+          </div></td>
         </tr>)}
         {visible.length === 0 && <tr><td colSpan={6} className="muted">No nodes in this view.</td></tr>}
       </tbody></table></div>
@@ -344,7 +357,7 @@ export default function NodesPage({ nodes, canWrite, refresh, embedded = false }
         {pairMode === 'direct' && <label>Private reachable IP/hostname (optional)<input aria-label="Direct agent hostname" value={directHost} onChange={event => setDirectHost(event.target.value)} placeholder="10.0.0.21" /></label>}
         <p className="muted">On the Linux server, run this command once as an administrator. The installer verifies the immutable release checksum, starts systemd and enrolls automatically.</p>
         {window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' &&
-          <p className="error">Remote enrollment needs HTTPS. Access the Admin through its public HTTPS domain before copying the command.</p>}
+          <p className="error" role="alert">Remote enrollment needs HTTPS. Access the Admin through its public HTTPS domain before copying the command.</p>}
         {agentDownloads && <section className="stack">
           <strong>Agent release {agentDownloads.version} — download from LLMProxy Admin</strong>
           <div className="actions">

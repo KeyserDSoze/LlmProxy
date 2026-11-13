@@ -101,5 +101,5 @@ test('personal keys show their origins in the user portal and can be edited', as
   await dialog.getByLabel('Allowed browser origins').fill('')
   await dialog.getByRole('button', { name: 'Save origins' }).click()
   await expect(dialog).toHaveCount(0)
-  expect(body).toEqual({ allowedOrigins: [] })
+  await expect.poll(() => body).toEqual({ allowedOrigins: [] })
 })

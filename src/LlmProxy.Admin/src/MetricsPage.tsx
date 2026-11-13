@@ -43,7 +43,7 @@ export default function MetricsPage({ summary, nodes, credentials }: { summary: 
         <label>Status<select aria-label="Filter requests by status" value={status} onChange={event => { setStatus(event.target.value as StatusFilter); resetPage() }}><option value="all">All</option><option value="success">Success</option><option value="error">Errors</option></select></label>
         <label>Rows<select aria-label="Request page size" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }}><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
       </div>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       <div className="tableScroll"><table><thead><tr><th>Started</th><th>Model</th><th>Surface</th><th>Node</th><th>Credential</th><th>Status</th><th>Total</th><th>TTFT</th><th>Attempts</th><th>Tokens</th></tr></thead><tbody>
         {result.items.map(item => <tr key={item.id}><td>{formatDate(item.startedAtUtc)}</td><td><strong>{item.logicalModel}</strong></td><td>{surfaceLabel(item)}</td><td>{item.nodeId ? nodeNames.get(item.nodeId) ?? item.nodeId : '—'}</td><td>{item.apiCredentialId ? credentialNames.get(item.apiCredentialId) ?? item.apiCredentialId : '—'}</td><td>{item.statusCode}{item.errorCode ? <div className="muted">{item.errorCode}</div> : null}</td><td>{item.durationMilliseconds} ms</td><td>{formatMs(item.timeToFirstByteMilliseconds)}</td><td>{item.attemptCount}{item.attemptCount > 1 ? ' · failover' : ''}</td><td>{item.totalTokens ?? '—'}</td></tr>)}
         {!loading && result.items.length === 0 && <tr><td colSpan={10} className="muted">No requests match these filters.</td></tr>}

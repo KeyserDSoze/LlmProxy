@@ -338,3 +338,9 @@ tbody tr:hover td{background:var(--row-hover)}
   .installedModelActions .installedModelSpacer{display:none}
 }
 @media(prefers-reduced-motion:reduce){.pill-info i{animation:none}*{transition:none!important}}
+
+/* Disables a group of controls for read-only users without adding a box around them. */
+.plainFieldset{border:0;margin:0;padding:0;min-width:0;display:contents}
+.settingsDisclosure>summary{cursor:pointer;padding:14px var(--panel-pad,18px);font-weight:600;color:var(--text)}
+.settingsDisclosure[open]>summary{border-bottom:1px solid var(--border-soft)}
+.settingsDisclosure>.stack{padding:var(--panel-pad,18px)}

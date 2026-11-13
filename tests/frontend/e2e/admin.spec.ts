@@ -325,6 +325,7 @@ test('admin playground tests models and System One and full-body logs are inspec
 
   await page.getByRole('button', { name: 'Request audit' }).click()
   await expect(page.getByRole('heading', { name: 'Request / response audit' })).toBeVisible()
+  await page.getByText('Retention and AI summary settings').click()
   await page.getByRole('button', { name: 'Inspect' }).click()
   await expect(page.getByRole('heading', { name: 'Request detail' })).toBeVisible()
   await expect(page.getByText('agic-code-fast', { exact: true }).nth(1)).toBeVisible()

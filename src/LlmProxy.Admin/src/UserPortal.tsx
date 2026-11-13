@@ -260,16 +260,23 @@ export default function UserPortal() {
     } finally { setOriginsBusy(false) }
   }
 
-  async function revoke(id: string) {
-    setCreated(null)
-    await request<void>(`/api/me/api-credentials/${id}/revoke`, { method: 'POST' })
-    await refresh()
+  async function revoke(id: string, name: string) {
+    if (!window.confirm(`Revoke "${name}"? The key stops working immediately and cannot be re-enabled; create a new key to restore access.`)) return
+    setCreated(null); setError(null)
+    try {
+      await request<void>(`/api/me/api-credentials/${id}/revoke`, { method: 'POST' })
+      await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
-  async function rotate(id: string) {
-    const next = await request<CreatedCredential>(`/api/me/api-credentials/${id}/rotate`, { method: 'POST' })
-    setCreated(next)
-    await refresh()
+  async function rotate(id: string, name: string) {
+    if (!window.confirm(`Rotate "${name}"? The old key stops working immediately: update every client that uses it with the new key.`)) return
+    setError(null)
+    try {
+      const next = await request<CreatedCredential>(`/api/me/api-credentials/${id}/rotate`, { method: 'POST' })
+      setCreated(next)
+      await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
   }
 
   const selectedCredential = selectedAudit?.apiCredentialId
@@ -291,7 +298,7 @@ export default function UserPortal() {
       <PageDocumentation page="me" />
 
       {authRequired && <div className="notice">Authentication is required. <a href="/auth/user-login">Sign in with Entra ID</a>.</div>}
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error" role="alert">{error}</div>}
       {loading ? <div className="loading">Loading your LlmProxy profile…</div> : !authRequired && <>
         {identity && <section className="panel">
           <div className="panelTitle"><h2>{identity.displayName ?? identity.principalName ?? 'Signed-in user'}</h2><span>{identity.principalName}</span></div>
@@ -372,7 +379,7 @@ export default function UserPortal() {
                 <td><strong>{item.name}</strong></td><td className="mono">{item.keyPrefix}…</td><td>{item.enabled ? 'Enabled' : 'Revoked'}</td>
                 <td><OriginsSummary origins={item.allowedOrigins} empty="None (not usable from browsers)" /></td>
                 <td>{formatDate(item.createdAtUtc)}</td><td>{formatDate(item.lastUsedAtUtc)}</td>
-                <td className="actions">{item.enabled && <><button onClick={() => { setOriginsError(null); setEditingOrigins(item) }}>Origins</button><button onClick={() => void rotate(item.id)}>Rotate</button><button onClick={() => void revoke(item.id)}>Revoke</button></>}</td>
+                <td><div className="actions">{item.enabled && <><button onClick={() => { setOriginsError(null); setEditingOrigins(item) }}>Origins</button><button onClick={() => void rotate(item.id, item.name)}>Rotate</button><button className="danger" onClick={() => void revoke(item.id, item.name)}>Revoke</button></>}</div></td>
               </tr>)}
               {credentials.length === 0 && <tr><td colSpan={7} className="muted">No personal API keys yet.</td></tr>}
             </tbody></table>

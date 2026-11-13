@@ -123,7 +123,7 @@ export default function ModelsDeployments({ models, deployments, nodes, canWrite
       <div><h2>Published models & routing</h2><p>These are the names your clients call. A logical model alone does not install weights or start a runtime; each model needs a healthy deployment on a server. OpenAI Chat and System One classifiers are different API protocols.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/system-one">Connect a System One classifier →</a></div></div>
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
-    {message && <div className="notice">{message}</div>}{error && <div className="error">{error}</div>}
+    {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'models', label: 'By model', count: models.length }, { value: 'nodes', label: 'By node', count: nodes.length }]} />
 
     {tab === 'models' && <section className="panel">
