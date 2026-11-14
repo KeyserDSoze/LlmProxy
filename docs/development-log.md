@@ -1,3 +1,10 @@
+## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
+
+- Playground (`routableModels.ts`) offers only models that are enabled with a switched-on deployment on an enabled, non-Unhealthy/Draining server; a stale selection is cleared. Vitest + Playwright cover it.
+- Data Protection key ring moved to PostgreSQL via `DatabaseDataProtectionRepository` (application-encrypted, application name `LlmProxy`); migration `20261114090000_AddDataProtectionKeys`. Tests: cookie readable after a simulated restart, keys stored encrypted, undecryptable key skipped, upsert.
+- Local: backend 698/698, Vitest 120/120, Playwright 65/65, visual 51/51.
+- Not verified: migration against real PostgreSQL (CI integration), behaviour on production.
+
 ## 2026-11-13 — Workspaces per model kind, embeddings, realtime voice and the Jobs table (source; CI pending)
 
 Request: Jobs as a compact paginated table; split *Models & inference* into text, voice (streaming), text to speech, speech to text, embeddings and images (plus the existing System One), all with the same mode and graphics, and prepare OpenAI-style APIs for every kind. "Voice" was clarified as streaming voice, distinct from TTS and STT.

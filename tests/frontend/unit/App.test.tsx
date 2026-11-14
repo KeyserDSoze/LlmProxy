@@ -138,7 +138,8 @@ describe('admin application', () => {
       { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Test', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
       { id: 'model-systemone', publicName: 'systemone-laya', providerModelName: 'convaiinnovations/laya', supportsStreaming: false, supportsTools: false, surface: 'SystemOne', enabled: true }
     ])
-    mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
+    mockedApi.deployments.mockResolvedValue([{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 },
+      { id: 'deployment-systemone', nodeId: 'node-1', modelId: 'model-systemone', enabled: true, weight: 1, maxConcurrency: 2 }])
     mockedApi.apiCredentials.mockResolvedValue([])
     mockedApi.systemOneStatus.mockResolvedValue({ enabled: true, baseAddress: 'http://classifier:8001', upstreamEndpoint: 'http://classifier:8001/v1/systemone', publicEndpoint: '/v1/systemone', apiKeyConfigured: true, timeoutSeconds: 30, configurationError: null, models: ['systemone-laya'], defaultModel: 'systemone-laya' })
     mockedApi.testChat.mockResolvedValue({ requestId: 'test-chat', success: true, statusCode: 200, latencyMilliseconds: 20, nodeName: 'inference-01', requestBody: '{}', responseBody: '{"ok":true}' })

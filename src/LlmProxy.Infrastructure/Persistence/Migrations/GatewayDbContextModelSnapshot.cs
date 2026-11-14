@@ -370,6 +370,15 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("cors_settings");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DataProtectionKeyRecord", b =>
+        {
+            b.Property<string>("FriendlyName").HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("XmlCiphertext").IsRequired().HasColumnType("text");
+            b.HasKey("FriendlyName");
+            b.ToTable("data_protection_keys");
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.ManagedInstallDeclarationRecord", b =>
         {
             b.Property<Guid>("JobId").HasColumnType("uuid");

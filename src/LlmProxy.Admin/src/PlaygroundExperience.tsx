@@ -3,16 +3,18 @@ import { api, testChatStream } from './api'
 import type { ChatTestProgress } from './chatTestStream'
 import { useRouteTab } from './adminNavigation'
 import { Tabs } from './UiPrimitives'
-import type { AdminTestResult, Model, ModelRouteDiagnosis, SystemOneStatus } from './types'
+import type { AdminTestResult, Deployment, Model, ModelRouteDiagnosis, Node, SystemOneStatus } from './types'
+import { routableModels } from './routableModels'
 import { useT } from './uiPreferences'
 
 const defaultClassifierBody = JSON.stringify({ state: { document: 'The customer reports a duplicate card charge' }, questions: { billing: { type: 'noul', instructions: 'Is this request about billing?' } } }, null, 2)
 
-export default function PlaygroundExperience({ models }: { models: Model[] }) {
+export default function PlaygroundExperience({ models, deployments, nodes }: { models: Model[]; deployments: Deployment[]; nodes: Node[] }) {
   const t = useT()
   const [tab, setTab] = useRouteTab<'chat' | 'classifier'>('tab', ['chat', 'classifier'], 'chat')
-  const openAiModels = useMemo(() => models.filter(model => model.enabled && (model.surface ?? 'OpenAi') === 'OpenAi'), [models])
-  const systemOneModels = useMemo(() => models.filter(model => model.enabled && model.surface === 'SystemOne'), [models])
+  // Only models a request can reach: enabled, with a switched-on deployment on a server that can take requests.
+  const openAiModels = useMemo(() => routableModels(models, deployments, nodes, 'OpenAi'), [models, deployments, nodes])
+  const systemOneModels = useMemo(() => routableModels(models, deployments, nodes, 'SystemOne'), [models, deployments, nodes])
   const [model, setModel] = useState('')
   const [classifierModel, setClassifierModel] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('You are a concise assistant.')
@@ -29,8 +31,12 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState<'chat' | 'classifier' | null>(null)
 
-  useEffect(() => { if (!model && openAiModels[0]) setModel(openAiModels[0].publicName) }, [openAiModels, model])
+  // A model that stops being routable must not stay selected; fall back to the first one that is.
   useEffect(() => {
+    if (!openAiModels.some(item => item.publicName === model)) setModel(openAiModels[0]?.publicName ?? '')
+  }, [openAiModels, model])
+  useEffect(() => {
+    if (classifierModel && !systemOneModels.some(item => item.publicName === classifierModel)) setClassifierModel('')
     if (!classifierModel) {
       const configured = classifierStatus?.defaultModel
       setClassifierModel(systemOneModels.find(item => item.publicName === configured)?.publicName ?? systemOneModels[0]?.publicName ?? '')
@@ -117,7 +123,7 @@ export default function PlaygroundExperience({ models }: { models: Model[] }) {
       <section className="panel formPanel">
         <div className="panelTitle tuningTitle"><h2>Model chat test</h2><span>OpenAI surface · routed</span></div>
         <form onSubmit={runChat}>
-          <label>Active OpenAI logical model<select value={model} onChange={event => setModel(event.target.value)} required>{openAiModels.length === 0 && <option value="">No active OpenAI models</option>}{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
+          <label>Active OpenAI logical model<select value={model} onChange={event => setModel(event.target.value)} required>{openAiModels.length === 0 && <option value="">No active text models: start one under Text (chat)</option>}{openAiModels.map(item => <option key={item.id} value={item.publicName}>{item.publicName}</option>)}</select></label>
           <label>System prompt<textarea value={systemPrompt} onChange={event => setSystemPrompt(event.target.value)} rows={4} /></label>
           <label>User prompt<textarea value={userPrompt} onChange={event => setUserPrompt(event.target.value)} rows={7} required /></label>
           <label>{t('playground.outputTokens')}

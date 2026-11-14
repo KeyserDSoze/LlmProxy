@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using LlmProxy.Api;
+using Microsoft.AspNetCore.DataProtection;
 using LlmProxy.Api.Admin;
 using LlmProxy.Api.AgentConnectivity;
 using LlmProxy.Api.Identity;
@@ -164,6 +165,13 @@ builder.Services.AddHttpClient("github-releases", client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 });
 builder.Services.AddSingleton(RequestBodyLimit.From(builder.Configuration));
+// The Admin sign-in cookie is protected with Data Protection keys. They live in PostgreSQL (encrypted), not in the
+// container, so an update or restart keeps everyone signed in and every replica shares the same keys.
+builder.Services.AddDataProtection().SetApplicationName("LlmProxy");
+builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+    .Configure<IServiceProvider>((options, services) => options.XmlRepository = new DatabaseDataProtectionRepository(
+        services.GetRequiredService<IServiceScopeFactory>(), services.GetRequiredService<SensitiveDataProtector>(),
+        services.GetRequiredService<ILogger<DatabaseDataProtectionRepository>>()));
 builder.Services.AddSingleton<AdminOperationService>();
 builder.Services.AddHttpClient("update-agent", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient("system-one", client => client.Timeout = TimeSpan.FromSeconds(systemOneTimeoutSeconds)).AddHttpMessageHandler<AgentRelayHttpHandler>();

@@ -264,7 +264,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
             {view === 'credentials' && <CredentialsPage credentials={credentials} canWrite={canWrite} refresh={refresh} />}
             {view === 'users' && canWrite && <UsersAccessExperience />}
             {view === 'metrics' && <MetricsPage summary={metricsSummary} nodes={nodes} credentials={credentials} />}
-            {view === 'playground' && canWrite && <PlaygroundExperience models={models} />}
+            {view === 'playground' && canWrite && <PlaygroundExperience models={models} deployments={deployments} nodes={nodes} />}
             {view === 'logs' && canWrite && <ContentLogs credentials={credentials} nodes={nodes} />}
             {view === 'audit' && <Audit events={audit} />}
             {view === 'help' && <HelpPage models={models} />}

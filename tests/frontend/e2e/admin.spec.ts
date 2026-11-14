@@ -46,6 +46,11 @@ async function installAdminApi(page: Page) {
     id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4,
     recommendedMaxConcurrency: null, benchmarkP95TtftMilliseconds: null, benchmarkP95DurationMilliseconds: null,
     sustainableOutputTokensPerSecond: null, benchmarkSource: null, benchmarkMeasuredAtUtc: null
+  }, {
+    // The classifier has to be switched on to be offered in the Playground.
+    id: 'deployment-systemone', nodeId: 'node-1', modelId: 'model-systemone', enabled: true, weight: 1, maxConcurrency: 2,
+    recommendedMaxConcurrency: null, benchmarkP95TtftMilliseconds: null, benchmarkP95DurationMilliseconds: null,
+    sustainableOutputTokensPerSecond: null, benchmarkSource: null, benchmarkMeasuredAtUtc: null
   }]
   let systemOneDefault: string | null = null
   let routingStrategy = 'WeightedLeastLoaded'
@@ -758,6 +763,11 @@ test('guided System One connection creates only a classifier alias and a specifi
 
 test('System One does not offer unverified deploy-to-all routing or missing service roots', async ({ page }) => {
   await installAdminApi(page)
+  // A classifier that is not deployed yet: the node list offers every node that does not already run it.
+  await page.route('**/api/admin/deployments', route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    return json(route, [{ id: 'deployment-1', nodeId: 'node-1', modelId: 'model-1', enabled: true, weight: 1, maxConcurrency: 4 }])
+  })
   await page.goto('/admin/models?kind=SystemOne')
   await page.getByRole('tab', { name: /Publishing/ }).click()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })

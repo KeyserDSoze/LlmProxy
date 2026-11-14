@@ -1,3 +1,6 @@
+## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
+Playground lists only routable models; Admin session keys persist in PostgreSQL (encrypted with the pepper). First update after this needs one re-login. Production still on 0.2.72.
+
 ## 2026-11-13 — Workspaces per model kind, embeddings and realtime voice (source; CI pending)
 
 Admin has one workspace per kind of model (text, images, text to speech, speech to text, streaming voice, embeddings, plus System One) on the same pages; Jobs is a compact paginated table; the gateway serves `POST /v1/embeddings` (curated llama.cpp GGUF models) and a `GET /v1/realtime` WebSocket relay. Details: `docs/model-kinds.md`, `docs/api-contract.md`. External validation required: an embedding model on the Spark; a realtime runtime.

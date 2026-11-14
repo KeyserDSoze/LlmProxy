@@ -1,5 +1,10 @@
 # Roadmap
 
+## 2026-11-14 — Sessions and Playground
+- [x] Playground lists only active (routable) models.
+- [x] Admin sign-in survives updates (Data Protection keys in PostgreSQL).
+- [ ] Green CI; then update production (backup first; one re-login expected).
+
 ## 2026-11-13 — Review follow-up
 - [x] Specific routing errors on the public API; trailing-slash governance bypass closed.
 - [x] Upstream response-header and stream-idle timeouts.

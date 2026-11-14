@@ -31,6 +31,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<UserAccessSettingsRecord> UserAccessSettings => Set<UserAccessSettingsRecord>();
     public DbSet<CorsSettingsRecord> CorsSettings => Set<CorsSettingsRecord>();
     public DbSet<ManagedInstallDeclarationRecord> ManagedInstallDeclarations => Set<ManagedInstallDeclarationRecord>();
+    public DbSet<DataProtectionKeyRecord> DataProtectionKeys => Set<DataProtectionKeyRecord>();
     public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
     public DbSet<SystemOneDefaultRecord> SystemOneDefaults => Set<SystemOneDefaultRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
@@ -270,6 +271,14 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.AllowedOriginsText).HasColumnName("AllowedOrigins").HasColumnType("text");
+        });
+
+        modelBuilder.Entity<DataProtectionKeyRecord>(entity =>
+        {
+            entity.ToTable("data_protection_keys");
+            entity.HasKey(x => x.FriendlyName);
+            entity.Property(x => x.FriendlyName).HasMaxLength(200);
+            entity.Property(x => x.XmlCiphertext).HasColumnType("text").IsRequired();
         });
 
         modelBuilder.Entity<ManagedInstallDeclarationRecord>(entity =>
