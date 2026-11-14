@@ -101,3 +101,5 @@ public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Mode
 public sealed record ManagedProfileUpdate(
     int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
     double? GpuMemoryUtilization = null);
+
+public sealed record RuntimeEngineJobRequest(string Action);

@@ -32,6 +32,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
     public DbSet<CorsSettingsRecord> CorsSettings => Set<CorsSettingsRecord>();
     public DbSet<ManagedInstallDeclarationRecord> ManagedInstallDeclarations => Set<ManagedInstallDeclarationRecord>();
     public DbSet<DataProtectionKeyRecord> DataProtectionKeys => Set<DataProtectionKeyRecord>();
+    public DbSet<RuntimeEnginePolicyRecord> RuntimeEnginePolicies => Set<RuntimeEnginePolicyRecord>();
     public DbSet<ProductUpdatePolicyRecord> ProductUpdatePolicies => Set<ProductUpdatePolicyRecord>();
     public DbSet<SystemOneDefaultRecord> SystemOneDefaults => Set<SystemOneDefaultRecord>();
     public DbSet<DailyUsageRollupRecord> DailyUsageRollups => Set<DailyUsageRollupRecord>();
@@ -271,6 +272,17 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).ValueGeneratedNever();
             entity.Property(x => x.AllowedOriginsText).HasColumnName("AllowedOrigins").HasColumnType("text");
+        });
+
+        modelBuilder.Entity<RuntimeEnginePolicyRecord>(entity =>
+        {
+            entity.ToTable("runtime_engine_policies");
+            entity.HasKey(x => new { x.NodeId, x.EngineId });
+            entity.Property(x => x.EngineId).HasMaxLength(40);
+            entity.Property(x => x.UpdateAtLocal).HasMaxLength(5).IsRequired();
+            entity.Property(x => x.TimeZone).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.LastResult).HasMaxLength(20);
+            entity.Property(x => x.LastMessage).HasMaxLength(600);
         });
 
         modelBuilder.Entity<DataProtectionKeyRecord>(entity =>

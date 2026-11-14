@@ -1,4 +1,5 @@
 import { useRouteTab } from './adminNavigation'
+import EnginesExperience from './EnginesExperience'
 import HardwareExperience from './HardwareExperience'
 import ModelHardwareExperience from './ModelHardwareExperience'
 import NodesPage from './NodesPage'
@@ -6,7 +7,7 @@ import { AdminLink, Tabs } from './UiPrimitives'
 import { useT } from './uiPreferences'
 import type { Deployment, Model, Node, NodeHardwareMetricsSnapshot } from './types'
 
-type Section = 'fleet' | 'hardware' | 'capacity'
+type Section = 'fleet' | 'hardware' | 'engines' | 'capacity'
 
 /** Servers: pairing/agents, per-server hardware and fleet capacity. Model lifecycle lives in Models. */
 export default function InfrastructureExperience({ nodes, deployments, hardware, canWrite, refresh }: {
@@ -18,7 +19,7 @@ export default function InfrastructureExperience({ nodes, deployments, hardware,
   refresh: () => Promise<void>
 }) {
   const t = useT()
-  const [section, setSection] = useRouteTab<Section>('section', ['fleet', 'hardware', 'capacity'], 'fleet')
+  const [section, setSection] = useRouteTab<Section>('section', ['fleet', 'hardware', 'engines', 'capacity'], 'fleet')
   const healthy = nodes.filter(node => node.status === 'Healthy').length
   const allHealthy = nodes.length > 0 && healthy === nodes.length
 
@@ -34,12 +35,14 @@ export default function InfrastructureExperience({ nodes, deployments, hardware,
     <Tabs value={section} onChange={setSection} items={[
       { value: 'fleet', label: t('infra.fleet'), count: nodes.length },
       { value: 'hardware', label: t('infra.hardware') },
+      { value: 'engines', label: t('infra.engines') },
       { value: 'capacity', label: t('infra.capacity'), count: nodes.length }
     ]} />
 
     {section === 'fleet' && <NodesPage nodes={nodes} canWrite={canWrite} refresh={refresh} embedded />}
     {section === 'hardware' && <ModelHardwareExperience nodes={nodes} canWrite={canWrite} refresh={refresh}
       mode="hardware" onRecoverAgent={() => setSection('fleet')} />}
+    {section === 'engines' && <EnginesExperience nodes={nodes} canWrite={canWrite} />}
     {section === 'capacity' && <HardwareExperience nodes={nodes} hardware={hardware} canWrite={canWrite} refresh={refresh} embedded />}
 
     <section className="panel infrastructureGuide">

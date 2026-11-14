@@ -25,6 +25,7 @@ const screens: Screen[] = [
   { name: 'models-publishing', url: '/admin/models?node=node-1&panel=advanced', ready: text('agic-code-fast') },
   { name: 'servers-fleet', url: '/admin/infrastructure', ready: text('spark-02') },
   { name: 'servers-hardware', url: '/admin/infrastructure?section=hardware&node=node-1', ready: text('NVIDIA GB10') },
+  { name: 'servers-engines', url: '/admin/infrastructure?section=engines', ready: text('Engines on this server') },
   { name: 'servers-capacity', url: '/admin/infrastructure?section=capacity', ready: text('spark-01') },
   { name: 'routing', url: '/admin/routing', ready: text('Smart-routing tuning') },
   { name: 'system-one', url: '/admin/models?kind=SystemOne&panel=setup', ready: page => expect(page.getByText('systemone-laya').filter({ visible: true }).first()).toBeVisible() },

@@ -40,6 +40,21 @@ export const nodes = [
   }
 ]
 
+const engineBase = { source: 'pulled', installed: false, version: null, revision: null, imageId: null, createdAtUtc: null, sizeBytes: null, runningContainers: 0, installations: 0 }
+const engineNoPolicy = { autoUpdate: false, updateAtLocal: '03:00', timeZone: 'UTC', lastRunAtUtc: null, lastResult: null, lastMessage: null }
+
+/** Default engine inventory of a paired server: some installed, one with an automatic update, some not installed. */
+export const enginesOverview = {
+  agentConfigured: true, agentAvailable: true, agentError: null, jobs: [],
+  engines: [
+    { engine: { ...engineBase, id: 'vllm', label: 'vLLM', description: 'High-throughput GPU server for chat models (OpenAI-compatible).', image: 'vllm/vllm-openai:latest', installed: true, version: 'v0.11.0', imageId: 'sha256:5b1c0d2e9f3a4b6c', createdAtUtc: '2026-10-28T09:00:00Z', sizeBytes: 21 * 1024 ** 3, runningContainers: 1, installations: 1, serves: ['OpenAi'] },
+      policy: { autoUpdate: true, updateAtLocal: '03:30', timeZone: 'Europe/Rome', lastRunAtUtc: '2026-11-13T02:30:00Z', lastResult: 'up_to_date', lastMessage: 'vLLM is already up to date.' } },
+    { engine: { ...engineBase, id: 'llama.cpp', label: 'llama.cpp', description: 'GGUF models on GPU or CPU; also serves embeddings.', image: 'ghcr.io/ggml-org/llama.cpp:server-cuda', installed: true, version: 'server-cuda', imageId: 'sha256:9a8b7c6d5e4f3a2b', createdAtUtc: '2026-11-10T14:00:00Z', sizeBytes: 3.4 * 1024 ** 3, runningContainers: 0, installations: 2, serves: ['OpenAi', 'Embedding'] }, policy: engineNoPolicy },
+    { engine: { ...engineBase, id: 'sglang', label: 'SGLang', description: 'Alternative GPU server for chat models.', image: 'lmsysorg/sglang:latest', serves: ['OpenAi'] }, policy: engineNoPolicy },
+    { engine: { ...engineBase, id: 'faster-whisper', label: 'faster-whisper', description: 'Speech to text (Whisper) on CPU.', image: 'llmproxy-faster-whisper:0.1', source: 'built', serves: ['AudioTranscription'] }, policy: engineNoPolicy }
+  ]
+}
+
 export const models = [
   { id: 'model-1', publicName: 'agic-code-fast', providerModelName: 'Qwen/Qwen3-8B', supportsStreaming: true, supportsTools: true, surface: 'OpenAi', enabled: true },
   { id: 'model-2', publicName: 'gemma-vision-gguf', providerModelName: 'unsloth/gemma-3-4b-it-GGUF:Q4_K_M', supportsStreaming: true, supportsTools: false, surface: 'OpenAi', enabled: true },
@@ -275,6 +290,8 @@ export async function installMockAdmin(page: Page) {
       case '/api/me/content-logs': return json(route, { items: [contentLogItem], total: 1, page: 1, pageSize: 20 })
       case '/api/me/usage': return json(route, { windowDays: 30, sinceUtc: '2026-10-13T00:00:00Z', windowGranularity: 'utc_day', historicalRollupsUsed: false, requestCount: 1240, errorCount: 3, inputTokens: 620000, outputTokens: 150000, totalTokens: 770000, rateLimitedRequests: 0, credentials: [{ apiCredentialId: 'my-1', name: 'VS Code Copilot', keyPrefix: 'lp_usr_3e1f', requestCount: 1240, errorCount: 3, inputTokens: 620000, outputTokens: 150000, totalTokens: 770000, rateLimitedRequests: 0 }] })
     }
+
+    if (/^\/api\/admin\/engines\/nodes\/[^/]+$/.test(path) && route.request().method() === 'GET') return json(route, enginesOverview)
 
     const nodeRoute = path.match(/^\/api\/admin\/model-management\/nodes\/([^/]+)\/(overview|install-jobs|start-jobs|upstream-updates|resources)$/)
     if (nodeRoute) {

@@ -1,3 +1,9 @@
+## 2026-11-14 — Runtime engines
+- [x] Engine inventory, install, update, uninstall per server; update check; scheduled automatic update with time zone.
+- [ ] Green CI, upgrade the Spark Agent, then verify a real engine update and one scheduled run.
+- [ ] Read the llama.cpp build number (`llama-server --version`) instead of only the tag/image id.
+- [ ] Registry credentials for private engine images.
+
 # Roadmap
 
 ## 2026-11-14 — Sessions and Playground

@@ -1,3 +1,6 @@
+## 2026-11-14 — Runtime engines per server (source; CI pending)
+Servers & hardware → Engines: installed/version/usage per engine, install/update/uninstall, update check, scheduled automatic updates (`docs/runtime-engines.md`). Needs an Agent release with the engine endpoints; the Spark Agent must be upgraded before the page works there.
+
 ## 2026-11-14 — Playground for every kind and `/v1/modalities` (CI green, v0.2.77)
 Playground tabs per kind of model; new `GET /v1/modalities`. Streaming voice not testable from the Playground. Production runs 0.2.76; 0.2.77 is released but not installed.
 

@@ -157,8 +157,11 @@ public static class ManagedRuntimeProfiles
         record.GpuDevices == request.GpuDevices &&
         record.ExtraArguments.SequenceEqual(request.ExtraArguments ?? []);
 
-    public static string Image(ManagedModelRecord record, NodeAgentOptions options) =>
-        record.Runtime switch
+    public static string Image(ManagedModelRecord record, NodeAgentOptions options) => ImageForRuntime(record.Runtime, options);
+
+    /// <summary>The Docker image a runtime engine runs from. Shared with the engine inventory so both always agree.</summary>
+    public static string ImageForRuntime(string? runtime, NodeAgentOptions options) =>
+        runtime switch
         {
             "llama.cpp" => options.LlamaCppDockerImage,
             "sglang" => options.SglangDockerImage,

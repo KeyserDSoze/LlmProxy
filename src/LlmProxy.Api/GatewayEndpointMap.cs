@@ -38,6 +38,7 @@ internal static class GatewayEndpointMap
         endpoints.MapRuntimeStateAdminEndpoints(entraEnabled);
         endpoints.MapNodeHardwareMetricsEndpoints(entraEnabled);
         endpoints.MapNodeModelManagementEndpoints(entraEnabled);
+        endpoints.MapRuntimeEngineAdminEndpoints(entraEnabled);
         endpoints.MapModelCapabilityProbeEndpoints(entraEnabled);
         endpoints.MapNodeEnrollmentEndpoints(entraEnabled);
         endpoints.MapCapacityAdminEndpoints(entraEnabled);

@@ -1,3 +1,12 @@
+## 2026-11-14 — Runtime engines per server with scheduled updates (source; CI pending)
+
+- Agent: `RuntimeEngines.cs` (catalog + pure parsing), `RuntimeEngineService` (inventory via `docker image inspect`, install/update via `docker pull`/`docker build --pull`, remove, update check), `RegistryDigestClient` (registry HEAD with anonymous token flow, no `docker buildx` needed), `RuntimeEngineJobManager` (persistent, one job at a time); six `/v1/runtime-engines*` routes added to the Agent and to the outbound relay allow-list.
+- Gateway: `RuntimeEnginePolicyRecord` + migration, `RuntimeEngineAdminEndpoints` (proxy to the Agent, policies, audit), `RuntimeEngineSchedule` (pure daily/time-zone/catch-up logic), `RuntimeEngineUpdateWorker` (conditional-UPDATE claim, waits for the Agent job, records the result).
+- Admin: `EnginesExperience.tsx` as a fifth Servers & hardware tab.
+- Live check on a development host (real Docker + registry): install job with progress, second job refused (409), up-to-date, update available (3.20 tag re-pointed at the 3.19 image), update with `changed: true`, remove, 404 unknown engine, 400 bad action, 401 without token. The `docker buildx` dependency found on the first attempt was removed.
+- Tests: `RuntimeEngineTests` (inspect parsing, versions, reference parsing, token handshake with a fake registry, catalog consistency), `RuntimeEngineScheduleTests` (daylight saving, catch-up, retry, spring gap), `engines.spec.ts`, new `servers-engines` visual screen. Local: backend 749/749, Vitest 120/120, Playwright 77/77 (dev server in the Playwright container), visual 53/53.
+- Not verified: the worker against PostgreSQL (CI integration only covers migrations), a real scheduled run, the target ARM64 server and the Spark Agent (needs an Agent upgrade).
+
 ## 2026-11-14 — Playground tabs for every kind and `GET /v1/modalities` (CI green, v0.2.77)
 
 - `MultimodalEndpoints.MapAdminTests` exposes the four media pipelines under `/api/admin/testing/*` (AdminWrite) by reusing `ForwardAsync`; `ModelDetails.Modalities` builds `/v1/modalities`.

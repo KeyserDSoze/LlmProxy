@@ -23,6 +23,8 @@ builder.Services.AddSingleton<GgufModelStore>();
 builder.Services.AddSingleton<DockerModelRuntimeManager>();
 builder.Services.AddSingleton<ModelInstallJobManager>();
 builder.Services.AddSingleton<ModelStartJobManager>();
+builder.Services.AddSingleton<RuntimeEngineService>();
+builder.Services.AddSingleton<RuntimeEngineJobManager>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHostedService<ManagedRuntimeRestartGuard>();
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
@@ -59,6 +61,24 @@ app.MapPut("/v1/settings/huggingface", async (HuggingFaceTokenRequest request, H
 });
 app.MapDelete("/v1/settings/huggingface", async (HuggingFaceCredentialStore store, CancellationToken cancellationToken) =>
     Results.Ok(await store.ClearAsync(cancellationToken)));
+// Serving engines (Docker images): inventory, install/update jobs, removal.
+app.MapGet("/v1/runtime-engines", async (RuntimeEngineService engines, CancellationToken token) => Results.Ok(await engines.ListAsync(token)));
+app.MapPost("/v1/runtime-engines/check-updates", async (RuntimeEngineService engines, CancellationToken token) => Results.Ok(await engines.CheckUpdatesAsync(token)));
+app.MapGet("/v1/runtime-engines/jobs", (RuntimeEngineJobManager jobs) => Results.Ok(jobs.List()));
+app.MapPost("/v1/runtime-engines/{engineId}/jobs", (string engineId, RuntimeEngineJobRequest request, RuntimeEngineJobManager jobs) =>
+{
+    try { return Results.Accepted(value: jobs.Enqueue(engineId, request.Action)); }
+    catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
+    catch (InvalidOperationException error) { return Results.Conflict(new { error = error.Message }); }
+});
+app.MapDelete("/v1/runtime-engines/jobs/{jobId:guid}", (Guid jobId, RuntimeEngineJobManager jobs) =>
+    jobs.Cancel(jobId) ? Results.Ok(new { cancelled = true }) : Results.NotFound());
+app.MapDelete("/v1/runtime-engines/{engineId}", async (string engineId, RuntimeEngineService engines, CancellationToken token) =>
+{
+    try { return Results.Ok(new { message = await engines.RemoveAsync(engineId, token) }); }
+    catch (KeyNotFoundException error) { return Results.NotFound(new { error = error.Message }); }
+    catch (InvalidOperationException error) { return Results.Conflict(new { error = error.Message }); }
+});
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
 app.MapGet("/v1/models/start-jobs", (ModelStartJobManager jobs) => Results.Ok(jobs.List()));
 app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs) =>

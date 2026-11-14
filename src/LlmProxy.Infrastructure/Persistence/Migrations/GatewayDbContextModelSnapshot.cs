@@ -370,6 +370,22 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.ToTable("cors_settings");
         });
 
+        modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.RuntimeEnginePolicyRecord", b =>
+        {
+            b.Property<Guid>("NodeId").HasColumnType("uuid");
+            b.Property<string>("EngineId").HasMaxLength(40).HasColumnType("character varying(40)");
+            b.Property<bool>("AutoUpdate").HasColumnType("boolean");
+            b.Property<DateTimeOffset?>("LastAttemptAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("LastMessage").HasMaxLength(600).HasColumnType("character varying(600)");
+            b.Property<DateTimeOffset?>("LastRunAtUtc").HasColumnType("timestamp with time zone");
+            b.Property<string>("LastResult").HasMaxLength(20).HasColumnType("character varying(20)");
+            b.Property<string>("TimeZone").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<string>("UpdateAtLocal").IsRequired().HasMaxLength(5).HasColumnType("character varying(5)");
+            b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");
+            b.HasKey("NodeId", "EngineId");
+            b.ToTable("runtime_engine_policies");
+        });
+
         modelBuilder.Entity("LlmProxy.Infrastructure.Persistence.DataProtectionKeyRecord", b =>
         {
             b.Property<string>("FriendlyName").HasMaxLength(200).HasColumnType("character varying(200)");

@@ -1002,3 +1002,55 @@ export type SuggestedModelProperties = {
   evidence: string[]
   hubContextTokens?: number | null
 }
+
+export type EnginePolicy = {
+  autoUpdate: boolean
+  /** Local time of day, HH:mm, in `timeZone`. */
+  updateAtLocal: string
+  timeZone: string
+  lastRunAtUtc?: string | null
+  lastResult?: 'updated' | 'up_to_date' | 'skipped' | 'failed' | 'waiting' | string | null
+  lastMessage?: string | null
+}
+
+export type RuntimeEngine = {
+  id: string
+  label: string
+  description: string
+  /** `pulled` from a registry, or `built` by the Agent from its bundled adapter. */
+  source: 'pulled' | 'built'
+  image: string
+  installed: boolean
+  version?: string | null
+  revision?: string | null
+  imageId?: string | null
+  createdAtUtc?: string | null
+  sizeBytes?: number | null
+  runningContainers: number
+  installations: number
+  serves: string[]
+}
+
+export type EngineEntry = { engine: RuntimeEngine; policy: EnginePolicy }
+
+export type EngineJob = {
+  id: string
+  engineId: string
+  action: 'install' | 'update'
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  detail: string
+  error?: string | null
+  result?: { changed: boolean; message: string } | null
+  createdAtUtc: string
+  completedAtUtc?: string | null
+}
+
+export type EnginesOverview = {
+  agentConfigured: boolean
+  agentAvailable: boolean
+  agentError?: string | null
+  engines: EngineEntry[]
+  jobs: EngineJob[]
+}
+
+export type EngineUpdateCheck = { id: string; status: 'up_to_date' | 'update_available' | 'unknown' | 'not_installed' | 'not_applicable'; detail?: string | null }
