@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
+import { isRoutable } from './routableModels'
 import type { Deployment, Model, Node } from './types'
 
 type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
@@ -22,8 +23,12 @@ const surfaceEndpoint: Record<Surface, string> = {
 export default function ModelsDeployments({ models: allModels, deployments: allDeployments, nodes, canWrite, refresh, embedded = false, kind: scope }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; kind?: Surface }) {
   const [showAllTypes, setShowAllTypes] = useState(false)
   const effectiveScope = showAllTypes ? undefined : scope
-  const models = useMemo(() => effectiveScope ? allModels.filter(model => (model.surface ?? 'OpenAi') === effectiveScope) : allModels, [allModels, effectiveScope])
-  const deployments = useMemo(() => effectiveScope ? allDeployments.filter(item => models.some(model => model.id === item.modelId)) : allDeployments, [allDeployments, models, effectiveScope])
+  // Models that are registered but not running are hidden unless asked for: they cannot answer anything.
+  const [showInactive, setShowInactive] = useState(false)
+  const scopedModels = useMemo(() => effectiveScope ? allModels.filter(model => (model.surface ?? 'OpenAi') === effectiveScope) : allModels, [allModels, effectiveScope])
+  const inactiveCount = useMemo(() => scopedModels.filter(model => !isRoutable(model, allDeployments, nodes)).length, [scopedModels, allDeployments, nodes])
+  const models = useMemo(() => showInactive ? scopedModels : scopedModels.filter(model => isRoutable(model, allDeployments, nodes)), [scopedModels, showInactive, allDeployments, nodes])
+  const deployments = useMemo(() => effectiveScope ? allDeployments.filter(item => scopedModels.some(model => model.id === item.modelId)) : allDeployments, [allDeployments, scopedModels, effectiveScope])
   const [tab, setTab] = useRouteTab<'models' | 'nodes'>(embedded ? 'advancedTab' : 'tab', ['models', 'nodes'], 'models')
   const [publishOpen, setPublishOpen] = useState(false)
   const [deployModel, setDeployModel] = useState<Model | null>(null)
@@ -40,10 +45,10 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const deploymentsByModel = useMemo(() => new Map(models.map(model => [model.id, deployments.filter(item => item.modelId === model.id)])), [models, deployments])
+  const deploymentsByModel = useMemo(() => new Map(scopedModels.map(model => [model.id, deployments.filter(item => item.modelId === model.id)])), [scopedModels, deployments])
   const deploymentsByNode = useMemo(() => new Map(nodes.map(node => [node.id, deployments.filter(item => item.nodeId === node.id)])), [nodes, deployments])
   const nodeNames = useMemo(() => new Map(nodes.map(node => [node.id, node.name])), [nodes])
-  const modelById = useMemo(() => new Map(models.map(model => [model.id, model])), [models])
+  const modelById = useMemo(() => new Map(scopedModels.map(model => [model.id, model])), [scopedModels])
   const nodeById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes])
   const activeNodes = useMemo(() => nodes.filter(node => node.enabled), [nodes])
 
@@ -142,6 +147,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
     {scope && <label className="inlineCheck"><input type="checkbox" checked={showAllTypes} onChange={event => setShowAllTypes(event.target.checked)} /> Show models of every type (text, images, voice, embeddings, System One)</label>}
+    {inactiveCount > 0 || showInactive ? <label className="inlineCheck"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /> Show models that are not running ({inactiveCount})</label> : null}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'models', label: 'By model', count: models.length }, { value: 'nodes', label: 'By node', count: nodes.length }]} />
 
     {tab === 'models' && <section className="panel">
@@ -161,7 +167,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
               {canWrite && kind === 'SystemOne' && <a href="/admin/models?kind=SystemOne&panel=setup">Connect classifier →</a>}</td>
           </tr>
         })}
-        {models.length === 0 && <tr><td colSpan={6} className="muted">No logical models published yet.</td></tr>}
+        {models.length === 0 && <tr><td colSpan={6} className="muted">{inactiveCount > 0 ? `No model is running. ${inactiveCount} registered but not running: tick "Show models that are not running".` : 'No logical models published yet.'}</td></tr>}
       </tbody></table></div>
     </section>}
 
@@ -195,7 +201,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
     </Modal>
 
     <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>
-      <div className="modalList">{models.map(model => {
+      <div className="modalList">{scopedModels.map(model => {
         const deployment = (deploymentsByNode.get(manageNode?.id ?? '') ?? []).find(item => item.modelId === model.id)
         return <div className="modalListRow" key={model.id}><div><strong>{model.publicName}</strong><div className="muted">{modelSurface(model) === 'SystemOne' ? 'System One' : 'OpenAI'} · <span className="mono">{model.providerModelName}</span></div>{deployment && <div className="muted">deployment max {deployment.maxConcurrency ?? 'inherits hardware'} · runtime <span className="mono">{deployment.runtimeBaseAddress ?? manageNode?.baseAddress}</span></div>}</div><div className="actions">{deployment ? <><span className={deployment.enabled ? 'scopeBadge scope-org' : 'scopeBadge'}>{deployment.enabled ? 'Routing on' : 'Routing off'}</span><button onClick={() => openDeploymentSettings(deployment)}>Capacity</button><button disabled={busy === `deployment:${deployment.id}`} onClick={() => void toggleDeployment(deployment, !deployment.enabled)}>{deployment.enabled ? 'Disable' : 'Enable'}</button></> : <button className="primary" disabled={!manageNode?.enabled || busy === `node:${model.id}`} onClick={() => void deployOnManagedNode(model)}>Deploy</button>}</div></div>
       })}</div>

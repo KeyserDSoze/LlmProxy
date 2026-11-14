@@ -12,6 +12,8 @@ Admin → *Models & inference* has a workspace for every kind of model. They all
 | Embeddings | `Embedding` | `/v1/embeddings` | llama.cpp `--embedding` (GGUF) | context window |
 | System One | `SystemOne` | `/v1/systemone` | Laya (CPU) | n/a; its guided setup is the *Setup* tab |
 
+By default a workspace lists what is running: *Installed* shows running, starting, installing and failed-to-start models, *Publishing* shows routable models; a tick shows the stopped ones so they can be started or removed. The public `GET /v1/models` follows the same rule.
+
 A model appears in exactly one workspace, by its kind: installed cards, install jobs, the catalog and Publishing are all filtered, so a System One classifier (Laya) never shows up among the text models and an embedding model never among the voice models. System One's own workspace has the same four tabs plus **Setup** (default classifier and connection of an external service); the old address `/admin/system-one` opens it.
 
 The workspace is selected by `?kind=` in the URL (`/admin/models?kind=Embedding`); a missing or unknown value means Text. *Publishing* lists only the models of the workspace; a checkbox shows every type.

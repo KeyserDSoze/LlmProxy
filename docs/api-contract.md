@@ -6,7 +6,7 @@ The public inference API follows the OpenAI-compatible shape required by GitHub 
 
 ## `GET /v1/models`
 
-Returns logical models currently enabled for clients.
+Returns the logical models a client can use **right now**: the model is enabled and has at least one enabled deployment on an enabled server that is not Unhealthy or Draining (the same test routing applies). Registered models that are stopped are not listed; a request for one still answers `503 model_not_running`, not `404`. Capacity is not considered, so a busy model stays listed. `GET /v1/models/details` follows the same rule.
 
 Example:
 

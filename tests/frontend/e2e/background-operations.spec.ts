@@ -27,6 +27,7 @@ test('uninstall runs in the background and shows the Agent reason when it fails'
   })
 
   await page.goto('/admin/models?node=node-1')
+  await page.getByLabel(/Show stopped models/).check()
   const card = page.getByRole('article', { name: 'gemma-vision-gguf' })
   await card.getByRole('button', { name: 'Uninstall' }).click()
 

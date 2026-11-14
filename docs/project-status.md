@@ -1,3 +1,6 @@
+## 2026-11-14 — Only running models in the API and Admin lists (source; CI pending)
+`/v1/models` and `/v1/models/details` list models with an enabled deployment on an operational server; Admin Installed/Publishing hide stopped ones behind a tick. Production still on 0.2.72.
+
 ## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
 Playground lists only routable models; Admin session keys persist in PostgreSQL (encrypted with the pepper). First update after this needs one re-login. Production still on 0.2.72.
 

@@ -251,6 +251,17 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const filteredCatalog = (overview?.catalog ?? []).filter(item => surfaceOf(item.model.surface) === modelKind)
   const surfaceOfModel = (modelId: string) => surfaceOf(models.find(model => model.id === modelId)?.surface)
   const kindInstallations = (overview?.installations ?? []).filter(item => surfaceOfModel(item.modelId) === modelKind)
+  // Stopped models cannot answer anything: the list shows what runs, is starting/installing or failed to start (the
+  // operator has to read why) unless asked for the rest.
+  const [showStopped, setShowStopped] = useState(false)
+  const isLive = (item: ManagedInstallation) => {
+    const status = item.agentStatus.toLowerCase()
+    const job = startJobs.find(entry => entry.installationId === item.managedInstallationId)
+    return status === 'running' || status === 'installing' || status === 'error' ||
+      job?.status === 'queued' || job?.status === 'starting' || job?.status === 'failed' || job?.status === 'interrupted'
+  }
+  const stoppedCount = kindInstallations.filter(item => !isLive(item)).length
+  const visibleInstallations = showStopped ? kindInstallations : kindInstallations.filter(isLive)
   const kindInstallationIds = new Set(kindInstallations.map(item => item.id))
   const kindManagedIds = new Set(kindInstallations.map(item => item.managedInstallationId))
   const kindMeta = kindInfo(modelKind)
@@ -869,7 +880,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
             <button className="secondary" disabled={!overview?.agentAvailable || revisionBusy}
               onClick={() => void checkRevisions()}>{revisionBusy ? t('catalog.checking') : t('catalog.checkUpdates')}</button>
           </div></div>
-        <InstalledModelCards nodeId={nodeId} installations={kindInstallations} startJobs={startJobs} operations={operations}
+        <InstalledModelCards nodeId={nodeId} installations={visibleInstallations} startJobs={startJobs} operations={operations}
           upstreamRevisions={upstreamRevisions} canWrite={canWrite} busy={busy} onEditProperties={openPropertiesEdit}
           agentAvailable={Boolean(overview?.agentAvailable)}
           verifications={verifications} onVerify={id => void verifyCapabilities(id)}
@@ -879,6 +890,11 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
           onCapabilities={item => setCapabilityDetails({ title: item.logicalModel ?? item.providerModelName ?? 'Model',
             profile: item.capabilities!, logicalModel: item.logicalModel ?? item.catalogModelId ?? item.modelId })}
           onBenchmark={id => setBenchmarkDeploymentId(id)} />
+        {(stoppedCount > 0 || showStopped) && <label className="inlineCheck"><input type="checkbox" checked={showStopped}
+          onChange={event => setShowStopped(event.target.checked)} /> {t('model.showStopped')} ({stoppedCount})</label>}
+        {visibleInstallations.length === 0 && stoppedCount > 0 && <div className="emptyState">
+          <strong>{t('model.noneRunning')}</strong><p>{t('model.noneRunningHint')}</p>
+        </div>}
         {(overview?.installations.length ?? 0) === 0 && <div className="emptyState">
           <strong>{t('model.noInstalled')}</strong><p>{t('model.installFirst')}</p>
           <button className="primary" onClick={() => setPanel('catalog')}>{t('model.workspaceCatalog')}</button>

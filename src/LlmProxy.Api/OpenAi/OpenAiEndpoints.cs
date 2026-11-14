@@ -25,7 +25,7 @@ public static class OpenAiEndpoints
     {
         endpoints.MapGet("/v1/models", async (IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
         {
-            var models = (await catalog.GetPublicModelsAsync(cancellationToken))
+            var models = (await catalog.GetAvailableModelsAsync(cancellationToken))
                 .Where(model => model.Surface != ModelSurface.SystemOne);
             return Results.Ok(new
             {
@@ -46,7 +46,7 @@ public static class OpenAiEndpoints
         endpoints.MapGet("/v1/models/details", async (HttpContext context, IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
         {
             var type = context.Request.Query["type"].ToString();
-            var models = (await catalog.GetPublicModelsAsync(cancellationToken))
+            var models = (await catalog.GetAvailableModelsAsync(cancellationToken))
                 .Where(model => model.Surface != ModelSurface.SystemOne)
                 .Where(model => type.Length == 0 || string.Equals(ModelDetails.TypeOf(model.Surface), type, StringComparison.OrdinalIgnoreCase));
             var body = JsonSerializer.SerializeToUtf8Bytes(new

@@ -1,3 +1,10 @@
+## 2026-11-14 — Only running models in `/v1/models` and the Admin lists (source; CI pending)
+
+- `IDeploymentCatalog.GetAvailableModelsAsync` (default interface method over `GetCandidatesAsync` + `RouteSelectorSupport.IsOperational`) feeds `/v1/models` and `/v1/models/details`; routing keeps `GetPublicModelsAsync` to tell `model_not_running` from `model_not_found`.
+- Admin: Installed hides stopped installations (failed ones stay), Publishing hides non-routable models; ticks restore them. Test: `Available_models_are_only_those_a_request_can_reach`, Playwright `playground-models.spec.ts`.
+- Local: backend 699/699, Vitest 120/120, Playwright 66/66, visual 51/51 (publishing baseline updated).
+- Not verified: Docker full-stack smoke (CI).
+
 ## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
 
 - Playground (`routableModels.ts`) offers only models that are enabled with a switched-on deployment on an enabled, non-Unhealthy/Draining server; a stale selection is cleared. Vitest + Playwright cover it.

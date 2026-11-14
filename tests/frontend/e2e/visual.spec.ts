@@ -19,7 +19,7 @@ const text = (value: string | RegExp) => (page: Page) => expect(page.getByText(v
 
 const screens: Screen[] = [
   { name: 'dashboard', url: '/admin/dashboard', ready: text('Connection refused (10.0.0.22:8000)') },
-  { name: 'models-installed', url: '/admin/models?node=node-1', ready: page => expect(page.locator('.installedModelCard')).toHaveCount(3) },
+  { name: 'models-installed', url: '/admin/models?node=node-1', ready: page => expect(page.locator('.installedModelCard')).toHaveCount(2) },
   { name: 'models-discover', url: '/admin/catalog?node=node-1', ready: text('Qwen3 8B') },
   { name: 'models-activity', url: '/admin/models?node=node-1&panel=activity', ready: text(/LFM2\.5-24B-A2B-Q4_K_M\.gguf/) },
   { name: 'models-publishing', url: '/admin/models?node=node-1&panel=advanced', ready: text('agic-code-fast') },

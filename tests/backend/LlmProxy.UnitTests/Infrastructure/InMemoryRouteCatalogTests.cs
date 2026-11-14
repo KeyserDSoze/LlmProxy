@@ -227,4 +227,58 @@ public sealed class InMemoryRouteCatalogTests
     }
 
 
+
+    [Fact]
+    public async Task Available_models_are_only_those_a_request_can_reach()
+    {
+        var healthy = Guid.NewGuid();
+        var unhealthy = Guid.NewGuid();
+        var draining = Guid.NewGuid();
+        var disabledNode = Guid.NewGuid();
+        var catalog = new InMemoryRouteCatalog();
+        var running = Guid.NewGuid();
+        var stopped = Guid.NewGuid();
+        var noDeployment = Guid.NewGuid();
+        var onUnhealthy = Guid.NewGuid();
+        var onDraining = Guid.NewGuid();
+        var onDisabledNode = Guid.NewGuid();
+        var disabledModel = Guid.NewGuid();
+        var degraded = Guid.NewGuid();
+        var degradedNode = Guid.NewGuid();
+
+        catalog.Replace(
+            [
+                new RouteNodeSnapshot(healthy, "a", "http://a:8000", true, NodeStatus.Healthy, 1, 4),
+                new RouteNodeSnapshot(unhealthy, "b", "http://b:8000", true, NodeStatus.Unhealthy, 1, 4),
+                new RouteNodeSnapshot(draining, "c", "http://c:8000", true, NodeStatus.Draining, 1, 4),
+                new RouteNodeSnapshot(disabledNode, "d", "http://d:8000", false, NodeStatus.Healthy, 1, 4),
+                new RouteNodeSnapshot(degradedNode, "e", "http://e:8000", true, NodeStatus.Degraded, 1, 4)
+            ],
+            [
+                new RouteModelSnapshot(running, "running", "p/running", true, true, true),
+                new RouteModelSnapshot(stopped, "stopped", "p/stopped", true, true, true),
+                new RouteModelSnapshot(noDeployment, "no-deployment", "p/none", true, true, true),
+                new RouteModelSnapshot(onUnhealthy, "on-unhealthy", "p/u", true, true, true),
+                new RouteModelSnapshot(onDraining, "on-draining", "p/d", true, true, true),
+                new RouteModelSnapshot(onDisabledNode, "on-disabled-node", "p/n", true, true, true),
+                new RouteModelSnapshot(disabledModel, "disabled", "p/x", false, true, true),
+                new RouteModelSnapshot(degraded, "degraded", "p/g", true, true, true)
+            ],
+            [
+                new RouteDeploymentSnapshot(Guid.NewGuid(), healthy, running, true, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), healthy, stopped, false, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), unhealthy, onUnhealthy, true, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), draining, onDraining, true, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), disabledNode, onDisabledNode, true, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), healthy, disabledModel, true, 1, null),
+                new RouteDeploymentSnapshot(Guid.NewGuid(), degradedNode, degraded, true, 1, null)
+            ]);
+
+        var available = await ((IDeploymentCatalog)catalog).GetAvailableModelsAsync(CancellationToken.None);
+        var registered = await catalog.GetPublicModelsAsync(CancellationToken.None);
+
+        Assert.Equal(["degraded", "running"], available.Select(model => model.PublicName));
+        // Routing still needs the full list to tell "not running" from "does not exist".
+        Assert.Contains(registered, model => model.PublicName == "stopped");
+    }
 }
