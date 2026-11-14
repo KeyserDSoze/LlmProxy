@@ -64,6 +64,20 @@ public static class OpenAiEndpoints
             return Results.Bytes(body, "application/json");
         });
 
+        // Every modality (text, images, speech, transcription, embeddings, voice, classifiers) with the models running for it.
+        // Not part of the OpenAI API: a convenience for applications that need to discover what this gateway offers.
+        endpoints.MapGet("/v1/modalities", async (HttpContext context, IDeploymentCatalog catalog, CancellationToken cancellationToken) =>
+        {
+            var body = JsonSerializer.SerializeToUtf8Bytes(
+                ModelDetails.Modalities(await catalog.GetAvailableModelsAsync(cancellationToken)), ModelDetails.Json);
+            var etag = "\"" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(body))[..32] + "\"";
+            context.Response.Headers.ETag = etag;
+            context.Response.Headers.CacheControl = "private, max-age=30";
+            if (context.Request.Headers.IfNoneMatch.Any(value => value == etag))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            return Results.Bytes(body, "application/json");
+        });
+
         endpoints.MapPost("/v1/chat/completions", ForwardChatCompletionsAsync);
         endpoints.MapPost("/v1/responses", ForwardResponsesAsync);
         return endpoints;

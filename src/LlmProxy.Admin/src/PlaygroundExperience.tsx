@@ -5,15 +5,19 @@ import { useRouteTab } from './adminNavigation'
 import { Tabs } from './UiPrimitives'
 import type { AdminTestResult, Deployment, Model, ModelRouteDiagnosis, Node, SystemOneStatus } from './types'
 import { routableModels } from './routableModels'
+import ModalityPlayground, { type PlaygroundModality } from './ModalityPlayground'
 import { useT } from './uiPreferences'
 
 const defaultClassifierBody = JSON.stringify({ state: { document: 'The customer reports a duplicate card charge' }, questions: { billing: { type: 'noul', instructions: 'Is this request about billing?' } } }, null, 2)
 
 export default function PlaygroundExperience({ models, deployments, nodes }: { models: Model[]; deployments: Deployment[]; nodes: Node[] }) {
   const t = useT()
-  const [tab, setTab] = useRouteTab<'chat' | 'classifier'>('tab', ['chat', 'classifier'], 'chat')
+  const [tab, setTab] = useRouteTab<'chat' | 'image' | 'speech' | 'transcription' | 'embedding' | 'classifier'>('tab', ['chat', 'image', 'speech', 'transcription', 'embedding', 'classifier'], 'chat')
   // Only models a request can reach: enabled, with a switched-on deployment on a server that can take requests.
   const openAiModels = useMemo(() => routableModels(models, deployments, nodes, 'OpenAi'), [models, deployments, nodes])
+  const modalitySurface: Record<PlaygroundModality, string> = { image: 'ImageGeneration', speech: 'SpeechSynthesis', transcription: 'AudioTranscription', embedding: 'Embedding' }
+  const modalityModels = useMemo(() => Object.fromEntries((Object.keys(modalitySurface) as PlaygroundModality[])
+    .map(key => [key, routableModels(models, deployments, nodes, modalitySurface[key])])) as Record<PlaygroundModality, Model[]>, [models, deployments, nodes])
   const systemOneModels = useMemo(() => routableModels(models, deployments, nodes, 'SystemOne'), [models, deployments, nodes])
   const [model, setModel] = useState('')
   const [classifierModel, setClassifierModel] = useState('')
@@ -97,7 +101,15 @@ export default function PlaygroundExperience({ models, deployments, nodes }: { m
 
   return <div className="stack compactPage">
     {error && <div className="error" role="alert">{error}</div>}
-    <Tabs value={tab} onChange={setTab} items={[{ value: 'chat', label: 'Model chat' }, { value: 'classifier', label: 'System One classifier' }]} />
+    <Tabs value={tab} onChange={setTab} items={[
+      { value: 'chat', label: 'Model chat' },
+      { value: 'image', label: t('kind.image'), count: modalityModels.image.length },
+      { value: 'speech', label: t('kind.tts'), count: modalityModels.speech.length },
+      { value: 'transcription', label: t('kind.stt'), count: modalityModels.transcription.length },
+      { value: 'embedding', label: t('kind.embedding'), count: modalityModels.embedding.length },
+      { value: 'classifier', label: 'System One classifier' }]} />
+    {(tab === 'image' || tab === 'speech' || tab === 'transcription' || tab === 'embedding') &&
+      <ModalityPlayground modality={tab} models={modalityModels[tab]} />}
 
     {tab === 'chat' && routeDiagnosis && routeDiagnosis.code !== 'candidate_configured' &&
       <section className="notice" role="status">

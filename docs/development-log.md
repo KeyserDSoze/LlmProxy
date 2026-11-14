@@ -1,3 +1,10 @@
+## 2026-11-14 — Playground tabs for every kind and `GET /v1/modalities` (source; CI pending)
+
+- `MultimodalEndpoints.MapAdminTests` exposes the four media pipelines under `/api/admin/testing/*` (AdminWrite) by reusing `ForwardAsync`; `ModelDetails.Modalities` builds `/v1/modalities`.
+- Admin: `ModalityPlayground.tsx` (image, speech, transcription, embeddings) and six Playground tabs with running-model counts.
+- Tests: `ModalitiesTests` (grouping, empty modalities, vision union), `playground-modalities.spec.ts`; authorization contract test covers the new routes. Local: backend 702/702, Vitest 120/120, Playwright 71/71 (dev server in the Playwright container), visual 51/51 (playground baseline updated).
+- Not verified: calls against real image/TTS/STT/embedding runtimes; no streaming-voice test.
+
 ## 2026-11-14 — Only running models in `/v1/models` and the Admin lists (source; CI pending)
 
 - `IDeploymentCatalog.GetAvailableModelsAsync` (default interface method over `GetCandidatesAsync` + `RouteSelectorSupport.IsOperational`) feeds `/v1/models` and `/v1/models/details`; routing keeps `GetPublicModelsAsync` to tell `model_not_running` from `model_not_found`.

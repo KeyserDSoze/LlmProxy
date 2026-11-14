@@ -46,6 +46,44 @@ export async function testChatStream(
   return readChatTestStream(response, onProgress)
 }
 
+export type ModalityTestResponse = {
+  status: number
+  latencyMilliseconds: number
+  requestId: string | null
+  contentType: string
+  /** Audio or image bytes; present when the runtime answered with media. */
+  blob: Blob | null
+  /** Any other answer (JSON), as text. */
+  text: string | null
+}
+
+/**
+ * Playground call for the media endpoints. The body is exactly what the public API takes (JSON, or multipart for audio files);
+ * the administrator's session replaces the API key.
+ */
+export async function testModality(path: 'images' | 'speech' | 'transcriptions' | 'embeddings', body: unknown, signal?: AbortSignal): Promise<ModalityTestResponse> {
+  const started = performance.now()
+  const form = typeof FormData !== 'undefined' && body instanceof FormData
+  const response = await fetch(`/api/admin/testing/${path}`, {
+    credentials: 'same-origin', method: 'POST', signal,
+    headers: form ? undefined : { 'Content-Type': 'application/json' },
+    body: form ? body : JSON.stringify(body)
+  })
+  if (response.status === 401) throw new Error('AUTH_REQUIRED')
+  if (response.status === 403) throw new Error('FORBIDDEN')
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!response.ok) throw new Error(describeHttpError(response.status, contentType, (await response.text()).slice(0, 4096)))
+  const media = /^(audio|image|video)\//i.test(contentType) || /octet-stream/i.test(contentType)
+  return {
+    status: response.status,
+    latencyMilliseconds: Math.round(performance.now() - started),
+    requestId: response.headers.get('x-llmproxy-request-id'),
+    contentType,
+    blob: media ? await response.blob() : null,
+    text: media ? null : await response.text()
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: 'same-origin',

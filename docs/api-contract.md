@@ -55,6 +55,26 @@ Same catalog as `/v1/models`, with what an application needs to use each model w
 - Authentication is the same API key as the rest of `/v1`. The response carries an `ETag` and `Cache-Control: private, max-age=30`; send `If-None-Match` to get `304`.
 - Administrators edit the values at install (Models → Install) or later with `PUT /api/admin/models/{id}/properties` (`AdminWrite`; body `supportsStreaming`, `supportsTools`, `supportsVision`, `supportsReasoning`, `contextWindowTokens`, `maxOutputTokens`; output may not exceed context).
 
+## `GET /v1/modalities`
+
+Everything this gateway offers, grouped by way of use, with the models running for each. It is not part of the OpenAI API; it exists so an application can discover what it may call without querying `/v1/models/details` once per type.
+
+```json
+{
+  "object": "list",
+  "data": [
+    { "type": "chat", "llmproxy_surface": "OpenAi", "endpoints": ["/v1/chat/completions", "/v1/responses"],
+      "input_modalities": ["text", "image"], "output_modalities": ["text"], "model_count": 2, "models": [ { "id": "agic-code-fast", "type": "chat", "capabilities": { "streaming": true } } ] },
+    { "type": "image", "endpoints": ["/v1/images/generations"], "model_count": 0, "models": [] }
+  ]
+}
+```
+
+- Types, always in this order: `chat`, `image`, `speech`, `transcription`, `embedding`, `realtime`, `classifier` (System One, `/v1/systemone`).
+- A type with no running model is still listed with `models: []`, so "offered but nothing runs" is distinguishable from "not offered".
+- `models` holds only models that are running (same rule as `/v1/models`) and each entry is the object `/v1/models/details` returns. `input_modalities` and `output_modalities` are what the running models of that type accept and return together (chat lists `image` only if a running model has vision).
+- Same API key, `ETag` and `Cache-Control: private, max-age=30` as `/v1/models/details`.
+
 ## One endpoint per kind of model
 
 Every kind of model has its own workspace in Admin and its own OpenAI-style endpoint. The `model` field is always the public (logical) name, which is routed only to deployments of the same kind: a chat alias never answers `/v1/embeddings`.

@@ -59,6 +59,31 @@ public static class MultimodalEndpoints
         return endpoints;
     }
 
+    /// <summary>
+    /// Playground tests for the Admin: the same pipeline as the public endpoints (model validation, routing, capacity,
+    /// the runtime call), authenticated by the administrator's session instead of an API key. The request and response
+    /// bodies are exactly those of the public API.
+    /// </summary>
+    public static void MapAdminTests(RouteGroupBuilder group)
+    {
+        group.MapPost("/images", (HttpContext context, RoutingService routing,
+            IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
+            IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
+            ForwardAsync(context, Image, routing, capacity, limiter, metrics, clients, credentials));
+        group.MapPost("/speech", (HttpContext context, RoutingService routing,
+            IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
+            IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
+            ForwardAsync(context, Speech, routing, capacity, limiter, metrics, clients, credentials));
+        group.MapPost("/transcriptions", (HttpContext context, RoutingService routing,
+            IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
+            IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
+            ForwardAsync(context, Transcription, routing, capacity, limiter, metrics, clients, credentials));
+        group.MapPost("/embeddings", (HttpContext context, RoutingService routing,
+            IRequestCapacityGate capacity, RequestRateLimiter limiter, IRequestMetricsSink metrics,
+            IHttpClientFactory clients, UpstreamCredentialProtector credentials) =>
+            ForwardAsync(context, Embeddings, routing, capacity, limiter, metrics, clients, credentials));
+    }
+
     private static async Task ForwardAsync(HttpContext context, Endpoint endpoint,
         RoutingService routing, IRequestCapacityGate capacity, RequestRateLimiter limiter,
         IRequestMetricsSink metrics, IHttpClientFactory clients,

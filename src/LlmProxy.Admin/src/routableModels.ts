@@ -18,6 +18,6 @@ export function isRoutable(model: Model, deployments: Deployment[], nodes: Node[
 }
 
 /** The routable models of one surface; the Playground offers only these. */
-export function routableModels(models: Model[], deployments: Deployment[], nodes: Node[], surface: 'OpenAi' | 'SystemOne'): Model[] {
+export function routableModels(models: Model[], deployments: Deployment[], nodes: Node[], surface: string): Model[] {
   return models.filter(model => (model.surface ?? 'OpenAi') === surface && isRoutable(model, deployments, nodes))
 }

@@ -26,6 +26,8 @@ public static class TestingAdminEndpoints
             group.RequireAuthorization("AdminWrite");
         }
 
+        LlmProxy.Api.Multimodal.MultimodalEndpoints.MapAdminTests(group);
+
         group.MapGet("/chat/diagnosis", async (
             string model, GatewayDbContext db, IDeploymentCatalog catalog, CancellationToken token) =>
         {
