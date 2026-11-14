@@ -727,6 +727,11 @@ export type ManagedModelState = {
   runtimeBaseAddress?: string | null
   port?: number | null
   error?: string | null
+  /** What the operator last asked for; a reboot leaves it true, which is why the Agent starts the model again. */
+  desiredRunning?: boolean | null
+  /** Set while the Agent restarts a model that should be running. */
+  autoStart?: 'waiting' | 'starting' | 'retrying' | 'gave_up' | null
+  autoStartDetail?: string | null
 }
 
 export type DeploymentRuntimeMetricsSnapshot = {
@@ -1011,6 +1016,8 @@ export type EnginePolicy = {
   lastRunAtUtc?: string | null
   lastResult?: 'updated' | 'up_to_date' | 'skipped' | 'failed' | 'waiting' | string | null
   lastMessage?: string | null
+  /** After an update that changed the image, restart the running models that use the engine. */
+  restartModels?: boolean
 }
 
 export type RuntimeEngine = {
@@ -1036,6 +1043,7 @@ export type EngineEntry = { engine: RuntimeEngine; policy: EnginePolicy }
 export type EngineJob = {
   id: string
   engineId: string
+  engineLabel?: string | null
   action: 'install' | 'update'
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
   detail: string

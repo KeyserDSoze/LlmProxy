@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace LlmProxy.NodeAgent;
 
 public sealed record RuntimeEngineJob(
-    Guid Id, string EngineId, string Action, string Status, string Detail, string? Error, RuntimeEngineResult? Result,
+    Guid Id, string EngineId, string EngineLabel, string Action, string Status, string Detail, string? Error, RuntimeEngineResult? Result,
     DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
 
 /// <summary>
@@ -50,7 +50,7 @@ public sealed class RuntimeEngineJobManager
             foreach (var old in _jobs.Values.Where(job => job.Status is not ("queued" or "running"))
                 .OrderBy(job => job.CreatedAtUtc).Take(Math.Max(0, _jobs.Count - 99)).ToArray())
                 _jobs.Remove(old.Id);
-            var created = new RuntimeEngineJob(Guid.NewGuid(), engineId, action, "queued", "Queued on the Agent.", null, null, DateTimeOffset.UtcNow);
+            var created = new RuntimeEngineJob(Guid.NewGuid(), engineId, RuntimeEngineCatalog.Find(engineId)!.Label, action, "queued", "Queued on the Agent.", null, null, DateTimeOffset.UtcNow);
             _jobs.Add(created.Id, created);
             Persist();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_host.ApplicationStopping);

@@ -220,7 +220,7 @@ for index, entry in enumerate(files):
                 report?.Invoke(new TransferProgress("ready", 100, "Runtime and model files prepared", null, null));
                 if (await registry.FindAsync(record.InstallationId, CancellationToken.None) is null)
                     throw new InvalidOperationException("The installation was removed while its files were being prepared.");
-                record = record with { Status = "stopped", Error = null };
+                record = record with { Status = "stopped", Error = null, DesiredRunning = false };
                 await registry.UpsertAsync(record, cancellationToken);
                 return ToState(record, "stopped", null);
             }
@@ -418,7 +418,7 @@ for index, entry in enumerate(files):
             finally { _operations.Release(); }
             await WaitForHealthyAsync(record, cancellationToken);
             if (record.Runtime == "laya") await VerifyLayaInferenceAsync(record.Port, cancellationToken);
-            record = record with { Status = "running", RuntimeBaseAddress = RuntimeAddress(record.Port), Error = null };
+            record = record with { Status = "running", RuntimeBaseAddress = RuntimeAddress(record.Port), Error = null, DesiredRunning = true };
             await registry.UpsertAsync(record, cancellationToken);
             return ToState(record, "running", record.RuntimeBaseAddress);
         }
@@ -541,7 +541,7 @@ for index, entry in enumerate(files):
                         "Docker still reports the managed runtime as running. Memory is not confirmed released.");
                 if (attempt == 0) await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
-            record = record with { Status = "stopped", RuntimeBaseAddress = null, Error = null };
+            record = record with { Status = "stopped", RuntimeBaseAddress = null, Error = null, DesiredRunning = false };
             await registry.UpsertAsync(record, cancellationToken);
             return ToState(record, "stopped", null);
         }
@@ -573,7 +573,8 @@ for index, entry in enumerate(files):
                 GpuMemoryUtilization = update.GpuMemoryUtilization,
                 Status = "stopped",
                 RuntimeBaseAddress = null,
-                Error = null
+                Error = null,
+                DesiredRunning = false
             };
             await registry.UpsertAsync(changed, cancellationToken);
             return ToState(changed, "stopped", null);
@@ -779,7 +780,7 @@ for index, entry in enumerate(files):
             if (state.Success && state.StandardOutput.Trim().StartsWith("false ", StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     "Model container exited during startup with exit code " + state.StandardOutput.Trim()["false ".Length..] +
-                    ". Automatic GPU restart is disabled; review the diagnosis below before retrying.");
+                    ". Docker does not restart GPU containers by itself; the Agent retries a model that should be running a few times, then stops. Review the diagnosis below.");
             await Task.Delay(TimeSpan.FromSeconds(2), timeoutCts.Token);
         }
     }
@@ -810,7 +811,8 @@ for index, entry in enumerate(files):
             record.Runtime, record.MaxNumSeqs, record.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
             record.GpuDevices, record.MaxOutputTokens, record.SourceRevision,
             record.GpuMemoryUtilization, record.ModelFile,
-            ModelFamilyProfile.Describe(record.ProviderModelName, record.Runtime, record.ExtraArguments, options.ApplyModelFamilyProfiles));
+            ModelFamilyProfile.Describe(record.ProviderModelName, record.Runtime, record.ExtraArguments, options.ApplyModelFamilyProfiles),
+            ManagedModelBootstrap.IsWanted(record));
 
     private static string Trim(string value) => value.Length <= 1200 ? value.Trim() : value[..1200].Trim();
 

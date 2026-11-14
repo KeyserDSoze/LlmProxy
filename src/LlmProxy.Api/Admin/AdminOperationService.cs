@@ -42,7 +42,15 @@ public sealed class AdminOperationService(IServiceScopeFactory scopes, IHostAppl
 
     /// <summary>Starts the work and returns at once. Returns null when this deployment already has an operation running.</summary>
     public AdminOperation? Start(string kind, string title, Guid? nodeId, Guid? deploymentId,
-        Func<IServiceProvider, CancellationToken, Task<AdminOperationOutcome>> work)
+        Func<IServiceProvider, CancellationToken, Task<AdminOperationOutcome>> work) =>
+        StartWithProgress(kind, title, nodeId, deploymentId, (services, _, token) => work(services, token), MaxDuration);
+
+    /// <summary>
+    /// Like <see cref="Start"/>, for work that takes long and can say how far it is: <paramref name="work"/> receives a callback
+    /// that replaces the operation's detail, and the time limit is chosen by the caller.
+    /// </summary>
+    public AdminOperation? StartWithProgress(string kind, string title, Guid? nodeId, Guid? deploymentId,
+        Func<IServiceProvider, Action<string>, CancellationToken, Task<AdminOperationOutcome>> work, TimeSpan maxDuration)
     {
         lock (_operations)
         {
@@ -51,19 +59,25 @@ public sealed class AdminOperationService(IServiceScopeFactory scopes, IHostAppl
                 AdminOperationStatus.Running, "Queued", null, DateTimeOffset.UtcNow, null);
             _operations[operation.Id] = operation;
             Trim();
-            _ = Task.Run(() => ExecuteAsync(operation, work));
+            _ = Task.Run(() => ExecuteAsync(operation, work, maxDuration));
             return operation;
         }
     }
 
-    private async Task ExecuteAsync(AdminOperation operation, Func<IServiceProvider, CancellationToken, Task<AdminOperationOutcome>> work)
+    private async Task ExecuteAsync(AdminOperation operation,
+        Func<IServiceProvider, Action<string>, CancellationToken, Task<AdminOperationOutcome>> work, TimeSpan maxDuration)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
-        timeout.CancelAfter(MaxDuration);
+        timeout.CancelAfter(maxDuration);
         try
         {
             using var scope = scopes.CreateScope();
-            var outcome = await work(scope.ServiceProvider, timeout.Token);
+            var outcome = await work(scope.ServiceProvider, detail =>
+            {
+                var text = detail.Length > 300 ? detail[..300] : detail;
+                _operations.AddOrUpdate(operation.Id, operation with { Detail = text },
+                    (_, current) => current.Status == AdminOperationStatus.Running ? current with { Detail = text } : current);
+            }, timeout.Token);
             Finish(operation, outcome.Succeeded ? AdminOperationStatus.Succeeded : AdminOperationStatus.Failed,
                 outcome.Succeeded ? outcome.Message : "Failed", outcome.Succeeded ? null : outcome.Message, outcome.Data);
         }
@@ -72,7 +86,7 @@ public sealed class AdminOperationService(IServiceScopeFactory scopes, IHostAppl
             Finish(operation, AdminOperationStatus.Failed, "Failed",
                 lifetime.ApplicationStopping.IsCancellationRequested
                     ? "The gateway restarted before this finished. Routing was already disabled; check the model and retry."
-                    : $"It did not finish within {MaxDuration.TotalMinutes:0} minutes. Check the Agent and retry.");
+                    : $"It did not finish within {maxDuration.TotalMinutes:0} minutes. Check the Agent and retry.");
         }
         catch (Exception error)
         {

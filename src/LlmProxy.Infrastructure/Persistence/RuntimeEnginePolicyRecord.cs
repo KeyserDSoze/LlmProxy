@@ -12,6 +12,8 @@ public sealed class RuntimeEnginePolicyRecord
     /// <summary>Local time of day, <c>HH:mm</c>.</summary>
     public string UpdateAtLocal { get; set; } = "03:00";
     public string TimeZone { get; set; } = "UTC";
+    /// <summary>After an update that changed the image, restart the running models that use the engine (one at a time) so they use it.</summary>
+    public bool RestartModels { get; set; } = true;
     /// <summary>The last time a replica claimed the schedule; gates retries so replicas never act twice.</summary>
     public DateTimeOffset? LastAttemptAtUtc { get; set; }
     /// <summary>The last scheduled run that reached the Agent (finished, failed or skipped on purpose).</summary>

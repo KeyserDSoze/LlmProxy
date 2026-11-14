@@ -80,7 +80,19 @@ public sealed class RuntimeEngineUpdateWorker(IServiceScopeFactory scopes, ILogg
         {
             if (node is null || string.IsNullOrWhiteSpace(node.ManagementBaseAddress))
                 (result, message) = ("skipped", "The server has no management Agent.");
-            else (result, message) = await RunOnAgentAsync(node, engineId, factory.CreateClient("node-management"), protector, token);
+            else
+            {
+                (result, message) = await RunOnAgentAsync(node, engineId, factory.CreateClient("node-management"), protector, token);
+                // A new image only reaches models that start after it; bring the running ones onto it, one at a time.
+                if (result == "updated" && (await db.RuntimeEnginePolicies.AsNoTracking()
+                        .SingleOrDefaultAsync(item => item.NodeId == nodeId && item.EngineId == engineId, token))?.RestartModels == true)
+                {
+                    var label = engineId;
+                    var outcome = await RuntimeEngineRestarter.RestartRunningModelsAsync(scope.ServiceProvider, nodeId, engineId, label, _ => { }, token);
+                    message += " " + outcome.Message;
+                    if (!outcome.Succeeded) result = "failed";
+                }
+            }
         }
         catch (NodeModelManagementEndpoints.AgentException error)
         {

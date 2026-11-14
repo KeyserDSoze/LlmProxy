@@ -103,6 +103,9 @@ public sealed class RuntimeEngineService(NodeAgentOptions options, ProcessRunner
         return $"{engine.Label} removed. Downloaded model files were kept; models using it install the engine again when they start.";
     }
 
+    public async Task<bool> IsInstalledAsync(string engineId, CancellationToken token) =>
+        RuntimeEngineCatalog.Find(engineId) is { } engine && await InspectAsync(RuntimeEngineCatalog.Image(engine, options), token) is not null;
+
     private async Task<InspectedImage?> InspectAsync(string image, CancellationToken token)
     {
         var result = await runner.RunAsync(options.DockerExecutable, ["image", "inspect", "--format", "{{json .}}", image], TimeSpan.FromSeconds(15), token);

@@ -2,11 +2,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  adminOperation, agentUpdateOperation, installJobOperation, mergeOperations, parseAgentUpdateStatus, sortOperations, startJobOperation, summarizeOperations
+  adminOperation, agentUpdateOperation, engineJobOperation, installJobOperation, mergeOperations, parseAgentUpdateStatus, sortOperations, startJobOperation, summarizeOperations
 } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
 import type { BackgroundOperation } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
 import ActivityCenter from '../../../src/LlmProxy.Admin/src/ActivityCenter'
-import type { AdminOperation, ModelInstallJob, ModelStartJob, PairedNodeStatus } from '../../../src/LlmProxy.Admin/src/types'
+import type { AdminOperation, EngineJob, ModelInstallJob, ModelStartJob, PairedNodeStatus } from '../../../src/LlmProxy.Admin/src/types'
 
 const pair = (patch: Partial<PairedNodeStatus> = {}): PairedNodeStatus => ({ nodeId: 'n1', mode: 'outbound', ...patch })
 const installJob = (patch: Partial<ModelInstallJob> = {}): ModelInstallJob => ({
@@ -158,5 +158,39 @@ describe('ActivityCenter', () => {
     expect(screen.getByRole('region', { name: 'Background activity' })).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByRole('region', { name: 'Background activity' })).not.toBeInTheDocument()
+  })
+})
+
+describe('engine operations', () => {
+  const engineJob = (patch: Partial<EngineJob> = {}): EngineJob => ({
+    id: 'e1', engineId: 'llama.cpp', engineLabel: 'llama.cpp', action: 'update', status: 'running', detail: 'Downloading', createdAtUtc: '2026-11-14T10:00:00Z', ...patch
+  })
+
+  it('shows a running engine job with its label and a link back to the engines of that server', () => {
+    const { active } = engineJobOperation(engineJob(), 'node 1', 'spark-01', 1000)
+
+    expect(active).toMatchObject({ kind: 'engine', title: 'Update engine · llama.cpp', status: 'running', href: '/admin/infrastructure?section=engines&node=node%201' })
+    expect(active?.detail).toBe('spark-01 · Downloading')
+    expect(active?.progress).toBeNull()
+  })
+
+  it('names an install differently and falls back to the engine id when the Agent sends no label', () => {
+    expect(engineJobOperation(engineJob({ action: 'install', engineLabel: null, engineId: 'vllm' }), 'n1', 'spark', 0).active?.title).toBe('Install engine · vllm')
+  })
+
+  it('reports the end of a job: the outcome message, or the first line of the error', () => {
+    expect(engineJobOperation(engineJob({ status: 'completed', result: { changed: true, message: 'llama.cpp updated.' } }), 'n1', 'spark', 0).terminal)
+      .toMatchObject({ status: 'done', detail: 'spark · llama.cpp updated.' })
+    expect(engineJobOperation(engineJob({ status: 'failed', error: 'Docker failed (1): no space left\nmore text' }), 'n1', 'spark', 0).terminal)
+      .toMatchObject({ status: 'failed', detail: 'spark · Docker failed (1): no space left' })
+    expect(engineJobOperation(engineJob({ status: 'cancelled' }), 'n1', 'spark', 0)).toEqual({})
+  })
+
+  it('links the gateway-side restart of the models to the engines page too', () => {
+    const operation: AdminOperation = { id: 'o1', kind: 'engine.restart', title: 'Restart models · llama.cpp', nodeId: 'node-1', deploymentId: null,
+      status: 'Running', detail: 'Restarting org/a (1 of 2): stopping', error: null, startedAtUtc: '2026-11-14T10:00:00Z', finishedAtUtc: null }
+
+    expect(adminOperation(operation, 0).active?.href).toBe('/admin/infrastructure?section=engines&node=node-1')
+    expect(adminOperation({ ...operation, kind: 'model.stop' }, 0).active?.href).toBe('/admin/models?node=node-1')
   })
 })

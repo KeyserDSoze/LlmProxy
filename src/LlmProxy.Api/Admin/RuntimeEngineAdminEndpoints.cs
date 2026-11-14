@@ -10,7 +10,7 @@ internal sealed record AgentEngine(string Id, string Label, string Description, 
     string? Version, string? Revision, string? ImageId, DateTimeOffset? CreatedAtUtc, long? SizeBytes,
     int RunningContainers, int Installations, string[] Serves);
 
-internal sealed record AgentEngineJob(Guid Id, string EngineId, string Action, string Status, string Detail, string? Error,
+internal sealed record AgentEngineJob(Guid Id, string EngineId, string? EngineLabel, string Action, string Status, string Detail, string? Error,
     JsonElement? Result, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc);
 
 internal sealed record AgentEngineCheck(string Id, string Status, string? Detail);
@@ -22,8 +22,8 @@ internal sealed record AgentEngineCheck(string Id, string Status, string? Detail
 /// </summary>
 public static class RuntimeEngineAdminEndpoints
 {
-    public sealed record EngineJobRequest(string Action);
-    public sealed record EnginePolicyRequest(bool AutoUpdate, string UpdateAtLocal, string TimeZone);
+    public sealed record EngineJobRequest(string Action, bool RestartModels = false);
+    public sealed record EnginePolicyRequest(bool AutoUpdate, string UpdateAtLocal, string TimeZone, bool RestartModels = true);
 
     public static IEndpointRouteBuilder MapRuntimeEngineAdminEndpoints(this IEndpointRouteBuilder endpoints, bool entraEnabled)
     {
@@ -62,6 +62,21 @@ public static class RuntimeEngineAdminEndpoints
             }
         });
 
+        // Only the jobs: the shell polls this for the activity dock, so it must not inspect every image each time.
+        group.MapGet("/nodes/{id:guid}/jobs", async (Guid id, GatewayDbContext db, IHttpClientFactory factory,
+            UpstreamCredentialProtector protector, CancellationToken token) =>
+        {
+            var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id, token);
+            if (node is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(node.ManagementBaseAddress)) return Results.Ok(Array.Empty<AgentEngineJob>());
+            try
+            {
+                return Results.Ok(await NodeModelManagementEndpoints.SendAgentAsync<IReadOnlyList<AgentEngineJob>>(
+                    factory.CreateClient("node-management"), node, protector, HttpMethod.Get, "/v1/runtime-engines/jobs", null, token));
+            }
+            catch (NodeModelManagementEndpoints.AgentException error) { return AgentProblem(error); }
+        });
+
         var check = group.MapPost("/nodes/{id:guid}/check-updates", async (Guid id, GatewayDbContext db, IHttpClientFactory factory,
             UpstreamCredentialProtector protector, CancellationToken token) =>
         {
@@ -76,7 +91,8 @@ public static class RuntimeEngineAdminEndpoints
         });
 
         var start = group.MapPost("/nodes/{id:guid}/{engineId}/jobs", async (Guid id, string engineId, EngineJobRequest request,
-            GatewayDbContext db, IHttpClientFactory factory, UpstreamCredentialProtector protector, HttpContext http, CancellationToken token) =>
+            GatewayDbContext db, IHttpClientFactory factory, UpstreamCredentialProtector protector, AdminOperationService operations,
+            HttpContext http, CancellationToken token) =>
         {
             if (!ValidEngineId(engineId) || request.Action is not ("install" or "update"))
                 return Results.BadRequest(new { error = "invalid_engine_request" });
@@ -87,8 +103,11 @@ public static class RuntimeEngineAdminEndpoints
                 var job = await NodeModelManagementEndpoints.SendAgentAsync<AgentEngineJob>(factory.CreateClient("node-management"), node, protector,
                     HttpMethod.Post, $"/v1/runtime-engines/{Uri.EscapeDataString(engineId)}/jobs", new { action = request.Action }, token);
                 NodeModelManagementEndpoints.AddAudit(db, ManagedModelOperations.Caller.From(http), "engine." + request.Action, "node", id.ToString(),
-                    new { engine = engineId, node = node.Name });
+                    new { engine = engineId, node = node.Name, request.RestartModels });
                 await db.SaveChangesAsync(token);
+                if (request.Action == "update" && request.RestartModels)
+                    operations.StartWithProgress("engine.restart", $"Restart models · {job.EngineLabel ?? engineId}", id, null,
+                        (services, progress, work) => FollowUpdateThenRestartAsync(services, id, job, job.EngineLabel ?? engineId, progress, work), TimeSpan.FromHours(3));
                 return Results.Accepted(value: job);
             }
             catch (NodeModelManagementEndpoints.AgentException error) { return AgentProblem(error); }
@@ -139,6 +158,7 @@ public static class RuntimeEngineAdminEndpoints
             var row = await db.RuntimeEnginePolicies.SingleOrDefaultAsync(item => item.NodeId == id && item.EngineId == engineId, token);
             if (row is null) db.RuntimeEnginePolicies.Add(row = new RuntimeEnginePolicyRecord { NodeId = id, EngineId = engineId });
             var scheduleChanged = row.AutoUpdate != request.AutoUpdate || row.UpdateAtLocal != request.UpdateAtLocal || row.TimeZone != request.TimeZone;
+            row.RestartModels = request.RestartModels;
             row.AutoUpdate = request.AutoUpdate;
             row.UpdateAtLocal = request.UpdateAtLocal;
             row.TimeZone = request.TimeZone;
@@ -146,7 +166,7 @@ public static class RuntimeEngineAdminEndpoints
             // Choosing a new time today must not be answered by a run that already happened under the old schedule.
             if (scheduleChanged) { row.LastRunAtUtc = null; row.LastAttemptAtUtc = null; }
             NodeModelManagementEndpoints.AddAudit(db, ManagedModelOperations.Caller.From(http), "engine.policy", "node", id.ToString(),
-                new { engine = engineId, request.AutoUpdate, request.UpdateAtLocal, request.TimeZone });
+                new { engine = engineId, request.AutoUpdate, request.UpdateAtLocal, request.TimeZone, request.RestartModels });
             await db.SaveChangesAsync(token);
             return Results.Ok(PolicyView(row));
         });
@@ -163,6 +183,34 @@ public static class RuntimeEngineAdminEndpoints
         return endpoints;
     }
 
+    /// <summary>Waits for the Agent's update job and, only if it really changed the image, restarts the models that use the engine.</summary>
+    private static async Task<AdminOperationOutcome> FollowUpdateThenRestartAsync(IServiceProvider services, Guid nodeId, AgentEngineJob job,
+        string engineLabel, Action<string> progress, CancellationToken token)
+    {
+        var db = services.GetRequiredService<GatewayDbContext>();
+        var node = await db.Nodes.AsNoTracking().SingleOrDefaultAsync(item => item.Id == nodeId, token);
+        if (node is null) return new AdminOperationOutcome(false, "The server no longer exists.");
+        var client = services.GetRequiredService<IHttpClientFactory>().CreateClient("node-management");
+        var protector = services.GetRequiredService<UpstreamCredentialProtector>();
+
+        progress($"Waiting for the {engineLabel} update to finish");
+        AgentEngineJob? finished = null;
+        for (var attempt = 0; attempt < 720 && finished is null; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
+            var jobs = await NodeModelManagementEndpoints.SendAgentAsync<IReadOnlyList<AgentEngineJob>>(
+                client, node, protector, HttpMethod.Get, "/v1/runtime-engines/jobs", null, token);
+            var current = jobs.FirstOrDefault(item => item.Id == job.Id);
+            if (current is null) return new AdminOperationOutcome(false, "The Agent forgot the update job.");
+            if (current.Status is "completed" or "failed" or "cancelled" or "interrupted") finished = current;
+        }
+        if (finished is null) return new AdminOperationOutcome(false, "The update did not finish in time.");
+        if (finished.Status != "completed") return new AdminOperationOutcome(false, $"The {engineLabel} update did not complete, so no model was restarted: " + (finished.Error ?? finished.Detail));
+        var changed = finished.Result is { ValueKind: JsonValueKind.Object } result && result.TryGetProperty("changed", out var flag) && flag.ValueKind == JsonValueKind.True;
+        if (!changed) return new AdminOperationOutcome(true, $"{engineLabel} was already up to date; the models keep running.");
+        return await RuntimeEngineRestarter.RestartRunningModelsAsync(services, nodeId, finished.EngineId, engineLabel, progress, token);
+    }
+
     public static bool ValidEngineId(string? id) =>
         id is { Length: > 0 and <= 40 } && id.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character is '.' or '-');
 
@@ -171,6 +219,7 @@ public static class RuntimeEngineAdminEndpoints
         autoUpdate = policy?.AutoUpdate ?? false,
         updateAtLocal = policy?.UpdateAtLocal ?? "03:00",
         timeZone = policy?.TimeZone ?? "UTC",
+        restartModels = policy?.RestartModels ?? true,
         lastRunAtUtc = policy?.LastRunAtUtc,
         lastResult = policy?.LastResult,
         lastMessage = policy?.LastMessage

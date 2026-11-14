@@ -257,7 +257,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const isLive = (item: ManagedInstallation) => {
     const status = item.agentStatus.toLowerCase()
     const job = startJobs.find(entry => entry.installationId === item.managedInstallationId)
-    return status === 'running' || status === 'installing' || status === 'error' ||
+    // A model the server is restarting by itself is shown too: it is about to run, or the operator has to read why it will not.
+    return status === 'running' || status === 'installing' || status === 'error' || Boolean(item.agentState?.autoStart) ||
       job?.status === 'queued' || job?.status === 'starting' || job?.status === 'failed' || job?.status === 'interrupted'
   }
   const stoppedCount = kindInstallations.filter(item => !isLive(item)).length

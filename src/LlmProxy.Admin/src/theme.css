@@ -194,6 +194,7 @@ tbody tr:hover td{background:var(--row-hover)}
 .installedModelTitle{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
 .installedModelTitle h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.25;overflow-wrap:anywhere}
 .installedModelSubtitle{margin-top:-6px;font-size:12px;color:var(--text-muted);overflow-wrap:anywhere}
+.installedModelHint--warn{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning-text)}
 .installedModelHint{margin:0;padding:8px 11px;border-radius:10px;font-size:12.5px;line-height:1.45;
   color:var(--warning-text);background:var(--warning-bg);border:1px solid var(--warning-border)}
 .installedModelFacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:1px;margin:0;

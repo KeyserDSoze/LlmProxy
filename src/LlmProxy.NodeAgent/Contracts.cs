@@ -70,6 +70,11 @@ public sealed record ManagedModelRecord
     public required int Port { get; init; }
     public required int TensorParallelSize { get; init; }
     public IReadOnlyList<string> ExtraArguments { get; init; } = [];
+    /// <summary>
+    /// What the operator wants: true after a verified start, false after a stop. A reboot or a crash leaves it true, which is how
+    /// the Agent knows to start the model again. Null on records from older Agents: they count as wanted only if they were running.
+    /// </summary>
+    public bool? DesiredRunning { get; init; }
     public string Status { get; set; } = "stopped";
     public string? RuntimeBaseAddress { get; set; }
     public string? Error { get; set; }
@@ -94,7 +99,11 @@ public sealed record ManagedModelState(
     string? SourceRevision = null,
     double? GpuMemoryUtilization = null,
     string? ModelFile = null,
-    FamilyProfileInfo? FamilyProfile = null);
+    FamilyProfileInfo? FamilyProfile = null,
+    bool? DesiredRunning = null,
+    /// <summary><c>waiting</c>, <c>starting</c>, <c>retrying</c> or <c>gave_up</c> while the Agent restarts a model that should be running.</summary>
+    string? AutoStart = null,
+    string? AutoStartDetail = null);
 
 public sealed record ManagedModelsResponse(IReadOnlyList<ManagedModelState> Models);
 

@@ -45,7 +45,7 @@ const engineNoPolicy = { autoUpdate: false, updateAtLocal: '03:00', timeZone: 'U
 
 /** Default engine inventory of a paired server: some installed, one with an automatic update, some not installed. */
 export const enginesOverview = {
-  agentConfigured: true, agentAvailable: true, agentError: null, jobs: [],
+  agentConfigured: true, agentAvailable: true, agentError: null, jobs: [] as unknown[],
   engines: [
     { engine: { ...engineBase, id: 'vllm', label: 'vLLM', description: 'High-throughput GPU server for chat models (OpenAI-compatible).', image: 'vllm/vllm-openai:latest', installed: true, version: 'v0.11.0', imageId: 'sha256:5b1c0d2e9f3a4b6c', createdAtUtc: '2026-10-28T09:00:00Z', sizeBytes: 21 * 1024 ** 3, runningContainers: 1, installations: 1, serves: ['OpenAi'] },
       policy: { autoUpdate: true, updateAtLocal: '03:30', timeZone: 'Europe/Rome', lastRunAtUtc: '2026-11-13T02:30:00Z', lastResult: 'up_to_date', lastMessage: 'vLLM is already up to date.' } },
@@ -292,6 +292,7 @@ export async function installMockAdmin(page: Page) {
     }
 
     if (/^\/api\/admin\/engines\/nodes\/[^/]+$/.test(path) && route.request().method() === 'GET') return json(route, enginesOverview)
+    if (/^\/api\/admin\/engines\/nodes\/[^/]+\/jobs$/.test(path) && route.request().method() === 'GET') return json(route, enginesOverview.jobs)
 
     const nodeRoute = path.match(/^\/api\/admin\/model-management\/nodes\/([^/]+)\/(overview|install-jobs|start-jobs|upstream-updates|resources)$/)
     if (nodeRoute) {

@@ -84,7 +84,21 @@ public static class RuntimeEngineParsing
 
     /// <summary>The release the image claims in its OCI labels, otherwise the tag it was pulled or built under.</summary>
     public static string? VersionOf(string image, InspectedImage inspected) =>
-        inspected.Labels.GetValueOrDefault("org.opencontainers.image.version") is { Length: > 0 } label ? label : TagOf(image);
+        inspected.Labels.GetValueOrDefault("org.opencontainers.image.version") is { Length: > 0 } label ? Readable(label) : TagOf(image);
+
+    /// <summary>
+    /// Some images put a repository path or a full commit hash in the version label (<c>vllm/vllm-openai:v5df63a72…</c>).
+    /// Keep the part a person can read: drop the repository, shorten a long hash, cap anything else.
+    /// </summary>
+    public static string Readable(string version)
+    {
+        var value = version.Trim();
+        var colon = value.LastIndexOf(':');
+        if (colon >= 0 && colon < value.Length - 1) value = value[(colon + 1)..];
+        var hash = System.Text.RegularExpressions.Regex.Match(value, "^(v?)([0-9a-f]{24,})$");
+        if (hash.Success) return hash.Groups[1].Value + hash.Groups[2].Value[..12];
+        return value.Length > 28 ? value[..27] + "…" : value;
+    }
 
     public static string? RevisionOf(InspectedImage inspected) =>
         inspected.Labels.GetValueOrDefault("org.opencontainers.image.revision") is { Length: > 0 } revision

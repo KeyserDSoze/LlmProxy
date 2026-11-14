@@ -22,14 +22,16 @@ Model weights are separate from engines (Hugging Face cache, GGUF store). Instal
 ## What the page shows
 
 - **Status**: Installed / Not installed / Installing / Updating.
-- **Version**: the OCI `org.opencontainers.image.version` label if the image has one, otherwise its tag; plus the short image id, an optional revision label, creation date and size. A moving tag such as `latest` or `server-cuda` is shown as the tag; the image id and date are what tell two pulls apart.
+- **Version**: the OCI `org.opencontainers.image.version` label if the image has one (a repository path or a long commit hash in it is shortened), otherwise its tag; plus the short image id, an optional revision label, creation date and size. A moving tag such as `latest` or `server-cuda` is shown as the tag; the image id and date are what tell two pulls apart.
 - **Used by**: running containers started from the image and installed models that use the engine.
 - **Updates**: filled in by *Check for updates*. For a pulled image the Agent asks the registry for the digest the tag points to (HEAD on the manifest with the anonymous token flow, the same request Docker makes; no Docker plugin, no download) and compares it with the digests the image was pulled with: *Update available*, *Up to date*, or *Cannot tell* (private repository, no internet from the server, or an image that was not pulled from a registry). Built engines have no registry; *Update* rebuilds them with fresh base layers.
 - **Actions**: Install, Update, Uninstall (refused while a running model uses the engine), Cancel for a running job.
 
 Install and Update are **jobs on the Agent** (persisted in `engine-jobs.json`): closing the browser or losing the tunnel does not cancel them, progress is shown in the row, and the Agent runs one engine operation at a time (a second request answers `409`). A job interrupted by an Agent restart is marked `interrupted`; run it again.
 
-A running model keeps the image it started from. A new image applies the next time a model starts. Uninstalling an engine used by stopped models is allowed; those models set the engine up again when they start.
+A running model keeps the image it started from; a new image applies when it restarts. The Update dialog (shown when running models use the engine) and each automatic-update policy offer **Restart the running models afterwards**, which restarts them one at a time with routing taken off first (see `docs/model-bootstrap.md`). Uninstalling an engine used by stopped models is allowed; those models set the engine up again when they start.
+
+**Activity panel.** Engine installs and updates appear in the pop-up at the bottom right on every page, like downloads and model starts, so you can move around Admin and return to the engines of that server with one click (`/admin/infrastructure?section=engines&node=<id>`). The gateway-side restart of the models shows as *Restart models · <engine>*.
 
 ## Automatic updates
 
@@ -41,7 +43,7 @@ A running model keeps the image it started from. A new image applies the next ti
 
 The time follows daylight saving; a wall-clock time skipped by the spring change runs one hour later. Changing the time or enabling the policy clears the "already ran" marker, so a new time chosen today still runs today if it is still ahead.
 
-Nothing is restarted by an automatic update.
+With **Restart the running models after an update** on (the default), a scheduled update that really changed the image is followed by a one-at-a-time restart of the running models that use the engine; the result is in the policy's *Last* line and in the audit log. With it off, nothing is restarted.
 
 ## API
 
@@ -50,10 +52,11 @@ Admin API, `AdminRead` for reads and `AdminWrite` for the rest:
 ```http
 GET    /api/admin/engines/nodes/{nodeId}                      inventory + policies + jobs
 POST   /api/admin/engines/nodes/{nodeId}/check-updates
-POST   /api/admin/engines/nodes/{nodeId}/{engineId}/jobs      {"action":"install"|"update"}  -> 202
+POST   /api/admin/engines/nodes/{nodeId}/{engineId}/jobs      {"action":"install"|"update","restartModels":false}  -> 202
 DELETE /api/admin/engines/nodes/{nodeId}/jobs/{jobId}         cancel
 DELETE /api/admin/engines/nodes/{nodeId}/{engineId}           uninstall (409 while in use)
-PUT    /api/admin/engines/nodes/{nodeId}/{engineId}/policy    {"autoUpdate":true,"updateAtLocal":"03:30","timeZone":"Europe/Rome"}
+GET    /api/admin/engines/nodes/{nodeId}/jobs                 only the Agent's engine jobs (what the activity panel polls)
+PUT    /api/admin/engines/nodes/{nodeId}/{engineId}/policy    {"autoUpdate":true,"updateAtLocal":"03:30","timeZone":"Europe/Rome","restartModels":true}
 ```
 
 Agent API (management port, bearer token; paths are on the relay allow-list for outbound Agents):

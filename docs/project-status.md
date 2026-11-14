@@ -1,3 +1,6 @@
+## 2026-11-14 — Bootstrap of models and engines (source; CI pending)
+The Agent restarts models that were running after a reboot/crash (guards: temperature, one at a time, backoff, limit); engines are ensured first; engine installs/updates are in the activity panel; engine updates can restart the running models one at a time. **Needs the new Agent on the Spark.** `docs/model-bootstrap.md`.
+
 ## 2026-11-14 — Runtime engines per server (source; CI pending)
 Servers & hardware → Engines: installed/version/usage per engine, install/update/uninstall, update check, scheduled automatic updates (`docs/runtime-engines.md`). Needs an Agent release with the engine endpoints; the Spark Agent must be upgraded before the page works there.
 

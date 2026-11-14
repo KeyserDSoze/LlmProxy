@@ -1,3 +1,10 @@
+## 2026-11-14 — Bootstrap
+- [x] Models that were running come back after a reboot or crash (Agent), engines ensured first.
+- [x] Engine installs/updates in the activity panel; optional restart of running models after an update.
+- [ ] Green CI, upgrade the Agent on the Spark, then reboot it once and confirm the models return without a first request.
+- [ ] Per-deployment readiness in routing: do not send requests to a model that is still loading (today the whole server counts as healthy).
+- [ ] Multi-replica drain for the restart (it waits on the local replica's active requests only).
+
 ## 2026-11-14 — Runtime engines
 - [x] Engine inventory, install, update, uninstall per server; update check; scheduled automatic update with time zone.
 - [ ] Green CI, upgrade the Spark Agent, then verify a real engine update and one scheduled run.

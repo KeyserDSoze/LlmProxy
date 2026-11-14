@@ -85,7 +85,7 @@ test('installing an engine runs in the background and ends with its version', as
 
   await expect(vllm).toContainText('Installing')
   await expect(vllm).toContainText('Downloading vllm')
-  expect(calls.find(call => call.method === 'POST' && call.path.endsWith('/vllm/jobs'))?.body).toEqual({ action: 'install' })
+  expect(calls.find(call => call.method === 'POST' && call.path.endsWith('/vllm/jobs'))?.body).toEqual({ action: 'install', restartModels: false })
 
   await expect(vllm).toContainText('Installed', { timeout: 15_000 })
   await expect(vllm).toContainText('0.11.0')
@@ -129,7 +129,7 @@ test('automatic update is set per engine with a time and a time zone', async ({ 
 
   await expect(page.getByRole('row', { name: 'llama.cpp' })).toContainText('Daily at 04:15')
   await expect(page.getByRole('row', { name: 'llama.cpp' })).toContainText('Europe/Rome')
-  expect(calls.find(call => call.method === 'PUT')?.body).toEqual({ autoUpdate: true, updateAtLocal: '04:15', timeZone: 'Europe/Rome' })
+  expect(calls.find(call => call.method === 'PUT')?.body).toEqual({ autoUpdate: true, updateAtLocal: '04:15', timeZone: 'Europe/Rome', restartModels: true })
 })
 
 test('an Agent too old for engines says so instead of showing an empty table', async ({ page }) => {
@@ -140,4 +140,54 @@ test('an Agent too old for engines says so instead of showing an empty table', a
 
   await expect(page.getByRole('alert')).toContainText('too old to manage engines')
   await expect(page.getByRole('table')).toHaveCount(0)
+})
+
+test('the restart option of an automatic update can be switched off', async ({ page }) => {
+  const calls = await installEngines(page, initial())
+  await page.goto('/admin/infrastructure?section=engines')
+  await page.getByRole('row', { name: 'llama.cpp' }).getByRole('button', { name: 'Auto-update…' }).click()
+  const dialog = page.getByRole('dialog', { name: /Automatic update · llama.cpp/ })
+  await dialog.getByLabel('Update automatically').check()
+  await expect(dialog.getByLabel(/Restart the running models after an update/)).toBeChecked()
+  await dialog.getByLabel(/Restart the running models after an update/).uncheck()
+  await dialog.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByRole('row', { name: 'llama.cpp' })).toContainText('models are not restarted')
+  expect(calls.find(call => call.method === 'PUT')?.body).toMatchObject({ autoUpdate: true, restartModels: false })
+})
+
+test('updating an engine that running models use asks whether to restart them', async ({ page }) => {
+  const calls = await installEngines(page, initial())
+  await page.goto('/admin/infrastructure?section=engines')
+  await page.getByRole('row', { name: 'llama.cpp' }).getByRole('button', { name: 'Update', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: /Update llama.cpp/ })
+  await expect(dialog).toContainText('1 running model uses llama.cpp')
+  await expect(dialog.getByLabel(/Restart them afterwards/)).toBeChecked()
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+
+  expect(calls.find(call => call.method === 'POST' && call.path.endsWith('/llama.cpp/jobs'))?.body).toEqual({ action: 'update', restartModels: true })
+  await expect(page.getByText(/running models restart afterwards/)).toBeVisible()
+})
+
+test('an engine nothing is running on updates at once, and the restart can be declined', async ({ page }) => {
+  const state = initial()
+  const calls = await installEngines(page, state)
+  await page.goto('/admin/infrastructure?section=engines')
+
+  await page.getByRole('row', { name: 'faster-whisper' }).getByRole('button', { name: 'Update', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(calls.find(call => call.method === 'POST' && call.path.endsWith('/faster-whisper/jobs'))?.body).toEqual({ action: 'update', restartModels: false })
+
+  await page.getByRole('row', { name: 'llama.cpp' }).getByRole('button', { name: 'Update', exact: true }).click()
+  await page.getByRole('dialog').getByLabel(/Restart them afterwards/).uncheck()
+  await page.getByRole('dialog').getByRole('button', { name: 'Update', exact: true }).click()
+  await expect.poll(() => calls.filter(call => call.method === 'POST' && call.path.endsWith('/llama.cpp/jobs')).map(call => call.body)).toEqual([{ action: 'update', restartModels: false }])
+})
+
+test('the page opens on the server the dock linked to', async ({ page }) => {
+  await installEngines(page, initial())
+  await page.goto('/admin/infrastructure?section=engines&node=node-2')
+
+  await expect(page.getByLabel('Engines server')).toHaveValue('node-2')
 })

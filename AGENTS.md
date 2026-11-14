@@ -295,6 +295,7 @@ docs/deployment.md                  deployment contract/automation summary
 docs/versioning.md                  SemVer/release/build/supply-chain rules
 docs/operations.md                  health, acceptance, maintenance and release operations
 docs/runtime-engines.md            serving engines per server: inventory, install/update, scheduled updates
+docs/model-bootstrap.md             automatic restart of models after reboot/crash, engine restart after update
 docs/data-retention.md              raw metrics + daily rollups + audit/outbox retention
 docs/usage-governance.md            auth, credential lifecycle, groups, quotas, usage
 docs/runtime-cache.md               L1/L2 + transactional outbox

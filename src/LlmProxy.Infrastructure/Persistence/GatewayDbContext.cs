@@ -281,6 +281,7 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
             entity.Property(x => x.EngineId).HasMaxLength(40);
             entity.Property(x => x.UpdateAtLocal).HasMaxLength(5).IsRequired();
             entity.Property(x => x.TimeZone).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.RestartModels).HasDefaultValue(true);
             entity.Property(x => x.LastResult).HasMaxLength(20);
             entity.Property(x => x.LastMessage).HasMaxLength(600);
         });

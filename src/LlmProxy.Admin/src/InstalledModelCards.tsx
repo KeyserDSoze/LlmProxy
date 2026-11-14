@@ -74,6 +74,8 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           {item.agentState?.port ? ' · :' + item.agentState.port : ''}
         </div>
         {running && !item.enabled && <p className="installedModelHint">{t('catalog.unrouted')}</p>}
+        {!running && item.agentState?.autoStart && <p className={'installedModelHint' + (item.agentState.autoStart === 'gave_up' ? ' installedModelHint--warn' : '')} role="status">
+          {item.agentState.autoStart === 'gave_up' ? 'Automatic restart stopped. ' : 'Restarting automatically. '}{item.agentState.autoStartDetail}</p>}
 
         <dl className="installedModelFacts" aria-label={t('model.factsLabel')}>
           {typed ? <div><dt>{t('model.factsLabel')}</dt><dd>{typedRuntimeSummary(item.runtime)}</dd></div> : <>

@@ -379,6 +379,7 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
             b.Property<string>("LastMessage").HasMaxLength(600).HasColumnType("character varying(600)");
             b.Property<DateTimeOffset?>("LastRunAtUtc").HasColumnType("timestamp with time zone");
             b.Property<string>("LastResult").HasMaxLength(20).HasColumnType("character varying(20)");
+            b.Property<bool>("RestartModels").ValueGeneratedOnAdd().HasColumnType("boolean").HasDefaultValue(true);
             b.Property<string>("TimeZone").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
             b.Property<string>("UpdateAtLocal").IsRequired().HasMaxLength(5).HasColumnType("character varying(5)");
             b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("timestamp with time zone");

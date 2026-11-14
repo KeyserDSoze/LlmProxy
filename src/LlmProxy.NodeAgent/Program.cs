@@ -25,6 +25,8 @@ builder.Services.AddSingleton<ModelInstallJobManager>();
 builder.Services.AddSingleton<ModelStartJobManager>();
 builder.Services.AddSingleton<RuntimeEngineService>();
 builder.Services.AddSingleton<RuntimeEngineJobManager>();
+builder.Services.AddSingleton<BootstrapTracker>();
+builder.Services.AddHostedService<ManagedModelBootstrapWorker>();
 builder.Services.AddHttpClient("gateway", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHostedService<ManagedRuntimeRestartGuard>();
 builder.Services.AddHostedService<OutboundNodeConnectionWorker>();
@@ -49,8 +51,8 @@ app.MapPost("/v1/system/prepare", async (NodeHostPreparer preparer, Cancellation
     Results.Ok(await preparer.RunAsync(token)));
 app.MapGet("/v1/system/resources", async (NodeResourceDiagnostics diagnostics, CancellationToken token) =>
     Results.Ok(await diagnostics.ReadAsync(token)));
-app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
-    Results.Ok(await manager.ListAsync(cancellationToken)));
+app.MapGet("/v1/models", async (DockerModelRuntimeManager manager, BootstrapTracker bootstrap, CancellationToken cancellationToken) =>
+    Results.Ok(bootstrap.Annotate(await manager.ListAsync(cancellationToken))));
 // Write-only: the token is never returned, only whether and for which account it is configured.
 app.MapGet("/v1/settings/huggingface", (HuggingFaceCredentialStore store) => Results.Ok(store.Status()));
 app.MapPut("/v1/settings/huggingface", async (HuggingFaceTokenRequest request, HuggingFaceCredentialStore store,

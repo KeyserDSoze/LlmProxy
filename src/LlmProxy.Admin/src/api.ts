@@ -330,12 +330,13 @@ export const api = {
   installJobs: (nodeId: string) => request<ModelInstallJob[]>(`/api/admin/model-management/nodes/${nodeId}/install-jobs`),
   engines: (nodeId: string) => request<EnginesOverview>(`/api/admin/engines/nodes/${nodeId}`),
   checkEngineUpdates: (nodeId: string) => request<EngineUpdateCheck[]>(`/api/admin/engines/nodes/${nodeId}/check-updates`, { method: 'POST' }),
-  startEngineJob: (nodeId: string, engineId: string, action: 'install' | 'update') =>
-    request<EngineJob>(`/api/admin/engines/nodes/${nodeId}/${encodeURIComponent(engineId)}/jobs`, { method: 'POST', body: JSON.stringify({ action }) }),
+  engineJobs: (nodeId: string) => request<EngineJob[]>(`/api/admin/engines/nodes/${nodeId}/jobs`),
+  startEngineJob: (nodeId: string, engineId: string, action: 'install' | 'update', restartModels = false) =>
+    request<EngineJob>(`/api/admin/engines/nodes/${nodeId}/${encodeURIComponent(engineId)}/jobs`, { method: 'POST', body: JSON.stringify({ action, restartModels }) }),
   cancelEngineJob: (nodeId: string, jobId: string) => request<void>(`/api/admin/engines/nodes/${nodeId}/jobs/${jobId}`, { method: 'DELETE' }),
   removeEngine: (nodeId: string, engineId: string) =>
     request<{ message: string }>(`/api/admin/engines/nodes/${nodeId}/${encodeURIComponent(engineId)}`, { method: 'DELETE' }),
-  saveEnginePolicy: (nodeId: string, engineId: string, policy: { autoUpdate: boolean; updateAtLocal: string; timeZone: string }) =>
+  saveEnginePolicy: (nodeId: string, engineId: string, policy: { autoUpdate: boolean; updateAtLocal: string; timeZone: string; restartModels: boolean }) =>
     request<EnginePolicy>(`/api/admin/engines/nodes/${nodeId}/${encodeURIComponent(engineId)}/policy`, { method: 'PUT', body: JSON.stringify(policy) }),
   modelStartJobs: (nodeId: string) => request<ModelStartJob[]>(`/api/admin/model-management/nodes/${nodeId}/start-jobs`),
   queueManagedStartJob: (deploymentId: string) => request<ModelStartJob>(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import {
-  adminOperation, agentUpdateOperation, installJobOperation, mergeOperations, productUpdateOperations, sortOperations, startJobOperation
+  adminOperation, agentUpdateOperation, engineJobOperation, installJobOperation, mergeOperations, productUpdateOperations, sortOperations, startJobOperation
 } from './backgroundOperations'
 import type { BackgroundOperation, OperationSnapshot } from './backgroundOperations'
 import type { Node, ProductUpdateOverview } from './types'
@@ -75,10 +75,11 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
         const nodes = latestNodes.current
         const managed = nodes.filter(node => node.managementBaseAddress)
         const names = new Map(nodes.map(node => [node.id, node.name]))
-        const [pairs, installResults, startResults, adminOps] = await Promise.all([
+        const [pairs, installResults, startResults, engineResults, adminOps] = await Promise.all([
           settleOne(() => api.pairedAgentNodes()),
           Promise.allSettled(managed.map(node => (async () => api.installJobs(node.id))())),
           Promise.allSettled(managed.map(node => (async () => api.modelStartJobs(node.id))())),
+          Promise.allSettled(managed.map(node => (async () => api.engineJobs(node.id))())),
           settleOne(() => api.adminOperations())
         ])
 
@@ -105,6 +106,7 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
         managed.forEach((node, index) => {
           const installs = installResults[index]
           const starts = startResults[index]
+          const engineJobs = engineResults[index]
           if (installs.status !== 'fulfilled' || starts.status !== 'fulfilled') return
           const snapshot: OperationSnapshot = { active: [], terminal: [] }
           const labels = new Map(installs.value.flatMap(job => job.result?.installationId
@@ -116,6 +118,12 @@ export function useBackgroundOperations({ nodes, productUpdates }: { nodes: Node
           }
           for (const job of starts.value) {
             const outcome = startJobOperation(job, node.id, node.name, labels.get(job.installationId) ?? job.installationId, now)
+            if (outcome.active) snapshot.active.push(outcome.active)
+            if (outcome.terminal) snapshot.terminal.push(outcome.terminal)
+          }
+          // An Agent that predates engine management answers 404; that is not an error for the rest of the list.
+          if (engineJobs.status === 'fulfilled') for (const job of engineJobs.value) {
+            const outcome = engineJobOperation(job, node.id, node.name, now)
             if (outcome.active) snapshot.active.push(outcome.active)
             if (outcome.terminal) snapshot.terminal.push(outcome.terminal)
           }

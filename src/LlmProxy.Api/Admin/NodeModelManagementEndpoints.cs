@@ -1755,7 +1755,10 @@ public static class NodeModelManagementEndpoints
         string? SourceRevision = null,
         double? GpuMemoryUtilization = null,
         string? ModelFile = null,
-        FamilyProfileView? FamilyProfile = null);
+        FamilyProfileView? FamilyProfile = null,
+        bool? DesiredRunning = null,
+        string? AutoStart = null,
+        string? AutoStartDetail = null);
     internal sealed class AgentException(string message, int? statusCode = null) : Exception(message)
     {
         public int? StatusCode { get; } = statusCode;

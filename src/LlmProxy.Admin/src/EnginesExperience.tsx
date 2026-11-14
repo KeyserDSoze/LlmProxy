@@ -14,6 +14,18 @@ function formatSize(bytes?: number | null) {
 
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleDateString() : '—' }
 
+/** The dock links here with `?node=`, so the page opens on the server the operation belongs to. */
+function initialNode(nodes: Node[]) {
+  const wanted = new URLSearchParams(window.location.search).get('node')
+  return nodes.find(node => node.id === wanted)?.id ?? nodes[0]?.id ?? ''
+}
+
+function rememberNode(id: string) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('node', id)
+  window.history.replaceState(window.history.state, '', url)
+}
+
 function browserZone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' } }
 
 const resultText: Record<string, string> = {
@@ -26,7 +38,7 @@ const resultText: Record<string, string> = {
  */
 export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; canWrite: boolean }) {
   const t = useT()
-  const [nodeId, setNodeId] = useState(nodes[0]?.id ?? '')
+  const [nodeId, setNodeId] = useState(() => initialNode(nodes))
   const [overview, setOverview] = useState<EnginesOverview | null>(null)
   const [checks, setChecks] = useState<Record<string, EngineUpdateCheck>>({})
   const [loading, setLoading] = useState(false)
@@ -38,6 +50,9 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
   const [enabled, setEnabled] = useState(false)
   const [time, setTime] = useState('03:00')
   const [zone, setZone] = useState('UTC')
+  const [restartAfterPolicy, setRestartAfterPolicy] = useState(true)
+  const [updateFor, setUpdateFor] = useState<EngineEntry | null>(null)
+  const [restartAfterUpdate, setRestartAfterUpdate] = useState(true)
   const finished = useRef(new Set<string>())
 
   useEffect(() => { if (!nodeId && nodes[0]) setNodeId(nodes[0].id) }, [nodeId, nodes])
@@ -77,11 +92,20 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
     finally { setBusy(null) }
   }
 
-  const start = (entry: EngineEntry, action: 'install' | 'update') => guarded(entry.engine.id, async () => {
-    await api.startEngineJob(nodeId, entry.engine.id, action)
-    setMessage(action === 'install' ? `Installing ${entry.engine.label}…` : `Updating ${entry.engine.label}…`)
+  const start = (entry: EngineEntry, action: 'install' | 'update', restartModels = false) => guarded(entry.engine.id, async () => {
+    await api.startEngineJob(nodeId, entry.engine.id, action, restartModels)
+    setMessage(action === 'install' ? `Installing ${entry.engine.label}…`
+      : restartModels ? `Updating ${entry.engine.label}; the running models restart afterwards. Follow it in the activity panel.` : `Updating ${entry.engine.label}…`)
     await load(true)
   })
+
+  // Models that are running keep the old version until they restart, so ask whether to restart them.
+  const update = (entry: EngineEntry) => {
+    if (entry.engine.runningContainers === 0) return start(entry, 'update')
+    setRestartAfterUpdate(true)
+    setUpdateFor(entry)
+    return Promise.resolve()
+  }
 
   const remove = (entry: EngineEntry) => {
     const used = entry.engine.installations
@@ -112,13 +136,14 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
     setEnabled(entry.policy.autoUpdate)
     setTime(entry.policy.updateAtLocal)
     setZone(entry.policy.autoUpdate ? entry.policy.timeZone : browserZone())
+    setRestartAfterPolicy(entry.policy.restartModels ?? true)
   }
 
   async function savePolicy(event: FormEvent) {
     event.preventDefault()
     if (!policyFor) return
     await guarded(policyFor.engine.id, async () => {
-      await api.saveEnginePolicy(nodeId, policyFor.engine.id, { autoUpdate: enabled, updateAtLocal: time, timeZone: zone.trim() })
+      await api.saveEnginePolicy(nodeId, policyFor.engine.id, { autoUpdate: enabled, updateAtLocal: time, timeZone: zone.trim(), restartModels: restartAfterPolicy })
       setMessage(enabled ? `${policyFor.engine.label} will update every day at ${time} (${zone}).` : `Automatic updates for ${policyFor.engine.label} are off.`)
       setPolicyFor(null)
       await load(true)
@@ -134,10 +159,10 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
     <section className="panel pageToolbar">
       <div>
         <h2>Engines</h2>
-        <p className="muted">The programs that run your models on each server (llama.cpp, vLLM and the others): installed or not, which version, and when they update. Updating an engine never touches downloaded model files; a running model keeps the version it started with and a new one applies the next time it starts.</p>
+        <p className="muted">The programs that run your models on each server (llama.cpp, vLLM and the others): installed or not, which version, and when they update. Updating an engine never touches downloaded model files. A running model keeps the version it started with until it restarts: you can have the running models restarted after an update, one at a time.</p>
       </div>
       <div className="actions">
-        <label>Server<select aria-label="Engines server" value={nodeId} onChange={event => setNodeId(event.target.value)}>
+        <label>Server<select aria-label="Engines server" value={nodeId} onChange={event => { setNodeId(event.target.value); rememberNode(event.target.value) }}>
           {nodes.map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
         <button className="secondary" disabled={loading} onClick={() => void load()}>Refresh</button>
         <button className="secondary" disabled={!overview?.agentAvailable || checking || installed === 0} onClick={() => void check()}>
@@ -177,12 +202,12 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
               : <span className={'pill ' + (verdict.status === 'update_available' ? 'pill-warning' : verdict.status === 'up_to_date' ? 'pill-success' : 'pill-neutral')} title={verdict.detail ?? undefined}>
                 <i aria-hidden="true" />{verdict.status === 'update_available' ? 'Update available' : verdict.status === 'up_to_date' ? 'Up to date'
                   : verdict.status === 'not_applicable' ? 'Rebuild to refresh' : 'Cannot tell'}</span>}</td>
-            <td>{policy.autoUpdate ? <><strong>Daily at {policy.updateAtLocal}</strong><div className="muted">{policy.timeZone}</div></> : <span className="muted">Off</span>}
+            <td>{policy.autoUpdate ? <><strong>Daily at {policy.updateAtLocal}</strong><div className="muted">{policy.timeZone}{policy.restartModels === false ? ' · models are not restarted' : ' · restarts running models'}</div></> : <span className="muted">Off</span>}
               {policy.lastResult && <div className="muted" title={policy.lastMessage ?? undefined}>Last: {resultText[policy.lastResult] ?? policy.lastResult}{policy.lastRunAtUtc ? ` · ${new Date(policy.lastRunAtUtc).toLocaleString()}` : ''}</div>}</td>
             {canWrite && <td><div className="actions">
               {job ? <button className="secondary" disabled={working} onClick={() => void cancel(job)}>Cancel</button> : <>
                 {!engine.installed && <button className="primary" disabled={working || busy !== null} onClick={() => void start(entry, 'install')}>Install</button>}
-                {engine.installed && <button disabled={working || busy !== null || running.length > 0} onClick={() => void start(entry, 'update')}>Update</button>}
+                {engine.installed && <button disabled={working || busy !== null || running.length > 0} onClick={() => void update(entry)}>Update</button>}
                 {engine.installed && <button className="secondary" disabled={working || busy !== null || engine.runningContainers > 0}
                   title={engine.runningContainers > 0 ? 'Stop the models that use it first' : undefined} onClick={() => void remove(entry)}>Uninstall</button>}
                 <button className="secondary" disabled={busy !== null} onClick={() => openPolicy(entry)}>Auto-update…</button>
@@ -193,13 +218,30 @@ export default function EnginesExperience({ nodes, canWrite }: { nodes: Node[]; 
       </table></div>
     </section>}
 
+    <Modal open={updateFor !== null} title={`Update ${updateFor?.engine.label ?? ''}`}
+      description="The new image is downloaded first. Running models keep using the old one until they restart." onClose={() => setUpdateFor(null)}>
+      <form className="formPanel" onSubmit={event => {
+        event.preventDefault()
+        const entry = updateFor
+        setUpdateFor(null)
+        if (entry) void start(entry, 'update', restartAfterUpdate)
+      }}>
+        <p>{updateFor?.engine.runningContainers} running model{updateFor?.engine.runningContainers === 1 ? '' : 's'} use{updateFor?.engine.runningContainers === 1 ? 's' : ''} {updateFor?.engine.label}.</p>
+        <label className="inlineCheck"><input type="checkbox" checked={restartAfterUpdate} onChange={event => setRestartAfterUpdate(event.target.checked)} /> Restart them afterwards so they use the new version</label>
+        <p className="muted">Each model is taken out of routing, given time to finish its requests, stopped and started again, one at a time. It is unavailable while it reloads, which can take several minutes. If one does not come back, its routing stays off and the others are left running. Without the box, nothing restarts.</p>
+        <div className="actions"><button className="primary" disabled={busy !== null}>Update</button>
+          <button type="button" className="secondary" onClick={() => setUpdateFor(null)}>Cancel</button></div>
+      </form>
+    </Modal>
+
     <Modal open={policyFor !== null} title={`Automatic update · ${policyFor?.engine.label ?? ''}`}
       description="Every day at the chosen time the server checks this engine and updates it if a newer version exists." onClose={() => setPolicyFor(null)}>
       <form className="formPanel" onSubmit={event => void savePolicy(event)}>
         <label className="inlineCheck"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} /> Update automatically</label>
         <label>Time<input aria-label="Update time" type="time" value={time} disabled={!enabled} onChange={event => setTime(event.target.value)} required /></label>
         <label>Time zone<input aria-label="Time zone" value={zone} disabled={!enabled} placeholder="Europe/Rome" onChange={event => setZone(event.target.value)} required /></label>
-        <p className="muted">Only installed engines are updated; one that is not installed is skipped. Models that are running are not restarted: they keep the version they started with and use the new one the next time they start. If the server is unreachable at that time, it is retried for the next 12 hours.</p>
+        <label className="inlineCheck"><input type="checkbox" checked={restartAfterPolicy} disabled={!enabled} onChange={event => setRestartAfterPolicy(event.target.checked)} /> Restart the running models after an update, so they use the new version</label>
+        <p className="muted">Only installed engines are updated; one that is not installed is skipped. With the box above ticked, running models are restarted one at a time (taken out of routing first, requests in flight allowed to finish) and are unavailable while they reload, which can take several minutes; without it they keep the version they started with until they next start. If the server is unreachable at that time, it is retried for the next 12 hours.</p>
         <div className="actions"><button className="primary" disabled={busy !== null}>Save</button>
           <button type="button" className="secondary" onClick={() => setPolicyFor(null)}>Cancel</button></div>
       </form>
