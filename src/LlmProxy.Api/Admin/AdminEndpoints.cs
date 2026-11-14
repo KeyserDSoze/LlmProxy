@@ -363,6 +363,21 @@ public static class AdminEndpoints
             return Results.Created($"/api/admin/models/{model.Id}", model);
         });
 
+        // Removes a published name that nothing serves (the dashboard offers it for names with no deployment at all).
+        var unpublishModel = group.MapDelete("/models/{id:guid}", async (
+            Guid id, GatewayDbContext dbContext, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var caller = ManagedModelOperations.Caller.From(httpContext);
+            return await ModelUnpublish.RunAsync(dbContext, id, caller.Actor, caller.SourceIp, cancellationToken) switch
+            {
+                ModelUnpublish.Outcome.Removed => Results.NoContent(),
+                ModelUnpublish.Outcome.NotFound => Results.NotFound(),
+                _ => Results.Conflict(new { error = "model_has_deployments",
+                    message = "This name still has an installation or a deployment on a server. Uninstall it first, then unpublish the name." })
+            };
+        });
+        if (entraEnabled) unpublishModel.RequireAuthorization("AdminWrite");
+
         // What clients may expect from a model (tools, vision, reasoning, streaming) and its limits. Declarations only:
         // they are published on /v1/models/details and never block or rewrite a request.
         var updateModelProperties = group.MapPut("/models/{id:guid}/properties", async (

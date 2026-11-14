@@ -1,3 +1,11 @@
+## 2026-11-14 — Unpublish from the dashboard and a closable activity pill (source; CI pending)
+
+- `ModelUnpublish` + `DELETE /api/admin/models/{id}` (AdminWrite). The model→deployment FK cascades, so the endpoint refuses any name that still has a deployment (409) rather than relying on the cascade. Audit `model.unpublish`.
+- Dashboard `AttentionCenter`: *Unpublish* button only for names with no deployment (`unpublishId`), confirm, refresh. Names with a switched-off deployment do not get it: uninstall first.
+- `ActivityCenter`: close × beside the pill for finished (and failed) items; auto-clear of an all-successful dock after 60 s; bar layout kept identical on phones (`.activityBar`, `.attentionActions` grid placement fix).
+- Tests: `ModelUnpublishTests` (removed + audited, refused with a disabled deployment, not found); Vitest auto-clear and close; Playwright `dashboard-attention.spec.ts` (one-step removal, no button for a switched-off name). Local: backend 776/776, Vitest 127/127, Playwright 92/92 (dev server in the Playwright container), visual 53/53 with no baseline change.
+- Verified by eye: dock in the Finished state with the × (throwaway capture, removed).
+
 ## 2026-11-14 — False "routing activation needs attention" and a clearer Publishing window (source; CI pending)
 
 - Cause of `Model is running but routing activation needs attention: HTTP 409 … not running`: `ModelHardwareExperience` auto-activated routing for any completed start job in the Agent's persisted list (`start-jobs.json`, last 50) whose installation had routing off, so a model stopped on purpose triggered `POST /deployments/{id}/activate`, which correctly answered `runtime_not_running`. Now `finishedRecently` (<= 10 min) and `agentStatus === 'running'` are required.

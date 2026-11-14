@@ -1,3 +1,6 @@
+## 2026-11-14 — Unpublish names from the dashboard; the activity pill closes (source; CI pending)
+A published name with no deployment can be removed from the dashboard (`DELETE /api/admin/models/{id}`, refused while a deployment exists). The bottom-right pill can be closed; it also closes by itself after a successful run. Production still on 0.2.79.
+
 ## 2026-11-14 — Bootstrap of models and engines (source; CI pending)
 The Agent restarts models that were running after a reboot/crash (guards: temperature, one at a time, backoff, limit); engines are ensured first; engine installs/updates are in the activity panel; engine updates can restart the running models one at a time. **Needs the new Agent on the Spark.** `docs/model-bootstrap.md`.
 

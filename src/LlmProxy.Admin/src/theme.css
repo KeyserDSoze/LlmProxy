@@ -329,7 +329,7 @@ tbody tr:hover td{background:var(--row-hover)}
   .installedModelGrid{padding:12px}
   .installedModelCard{padding:14px 14px 12px 17px}
   .attentionItem{grid-template-columns:auto minmax(0,1fr)}
-  .attentionItem .buttonLink{grid-column:2;justify-self:start}
+  .attentionItem .buttonLink,.attentionItem .attentionActions{grid-column:2;justify-self:start}
   .modelWorkspaceToolbar{padding:12px}
   .serverSummary{width:100%}
 }
@@ -379,6 +379,8 @@ tbody tr:hover td{background:var(--row-hover)}
   .activityDock{right:12px;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));align-items:stretch}
   .activityPanel{width:auto}
   .activityButton{justify-content:center}
+  .activityBar{width:100%}
+  .activityBar .activityButton{flex:1 1 auto}
 }
 
 .agentDetailsRow>td{padding-top:0;border-top:0}
@@ -480,3 +482,10 @@ tbody tr:hover td{background:var(--row-hover)}
   .deployRow{grid-template-columns:minmax(0,1fr) auto;padding:12px 16px}
   .deployActions{grid-column:1 / -1;justify-content:flex-start}
 }
+
+/* Dashboard: a published name with nothing behind it can be removed in one step. */
+.attentionActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+/* The bottom-right dock: the pill and a small close button when everything is finished. */
+.activityBar{display:flex;align-items:center;gap:6px}
+.activityDismiss{width:40px;height:40px;border-radius:999px;font-size:20px}

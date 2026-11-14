@@ -262,6 +262,7 @@ export const api = {
   },
   disableNode: (id: string) => request<void>(`/api/admin/nodes/${id}/disable`, { method: 'POST' }),
   deleteNode: (id: string) => request<void>(`/api/admin/nodes/${id}`, { method: 'DELETE' }),
+  unpublishModel: (modelId: string) => request<void>(`/api/admin/models/${modelId}`, { method: 'DELETE' }),
   createModel: (body: { publicName: string; providerModelName: string; supportsStreaming: boolean; supportsTools: boolean; surface?: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime' }) =>
     request<Model>('/api/admin/models', { method: 'POST', body: JSON.stringify(body) }),
   createDeployment: (body: { nodeId: string; modelId: string; weight: number; maxConcurrency?: number; runtimeBaseAddress?: string | null }) =>

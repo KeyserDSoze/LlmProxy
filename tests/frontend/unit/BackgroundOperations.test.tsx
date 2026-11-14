@@ -142,6 +142,27 @@ describe('ActivityCenter', () => {
     expect(screen.queryByText('Agent update · spark')).not.toBeInTheDocument()
   })
 
+  it('closes itself after a minute when everything finished well, and can be closed at once', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const onClear = vi.fn()
+      render(<ActivityCenter operations={[operation({ id: 'done1', status: 'done' })]} onOpen={vi.fn()} onDismiss={vi.fn()} onClearFinished={onClear} />)
+      expect(screen.getByRole('button', { name: /Finished/ })).toBeInTheDocument()
+      expect(onClear).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(60_000)
+      expect(onClear).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('shows a close button on the bar once everything is finished, and a failure stays until it is closed', async () => {
+    const onClear = vi.fn()
+    const { rerender } = render(<ActivityCenter operations={[operation({ id: 'run1' })]} onOpen={vi.fn()} onDismiss={vi.fn()} onClearFinished={onClear} />)
+    expect(screen.queryByRole('button', { name: 'Clear finished' })).not.toBeInTheDocument()
+    rerender(<ActivityCenter operations={[operation({ id: 'failed1', status: 'failed' })]} onOpen={vi.fn()} onDismiss={vi.fn()} onClearFinished={onClear} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Clear finished' }))
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
   it('lets the operator dismiss and clear finished items, but not running ones', async () => {
     const onDismiss = vi.fn(); const onClear = vi.fn()
     render(<ActivityCenter operations={[operation({ id: 'done1', status: 'done' }), operation({ id: 'run1' })]} onOpen={vi.fn()} onDismiss={onDismiss} onClearFinished={onClear} />)

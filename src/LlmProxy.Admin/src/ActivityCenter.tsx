@@ -35,12 +35,21 @@ export default function ActivityCenter({ operations, onOpen, onDismiss, onClearF
 
   useEffect(() => { if (operations.length === 0) setOpen(false) }, [operations.length])
 
+  // Everything went well: the dock has done its job and goes away by itself after a minute (a failure stays until read).
+  useEffect(() => {
+    if (summary.tone !== 'done') return
+    const timer = window.setTimeout(onClearFinished, 60_000)
+    return () => window.clearTimeout(timer)
+  }, [summary.tone, onClearFinished])
+
   if (operations.length === 0) return null
 
   const label = summary.tone === 'attention' ? t('activity.attention')
     : summary.tone === 'failed' ? t('activity.failed')
     : summary.tone === 'running' ? `${summary.running} ${t('activity.running')}`
     : t('activity.done')
+
+  const closable = summary.tone === 'done' || summary.tone === 'failed'
 
   return <div className="activityDock" data-tone={summary.tone} ref={dock}>
     {open && <section id="activity-panel" className="activityPanel" aria-label={t('activity.title')}>
@@ -69,10 +78,13 @@ export default function ActivityCenter({ operations, onOpen, onDismiss, onClearF
         </li>)}
       </ul>
     </section>}
-    <button type="button" className="activityButton" aria-expanded={open} aria-controls="activity-panel" onClick={() => setOpen(value => !value)}>
-      {summary.tone === 'running' && <span className="miniSpinner" aria-hidden="true" />}
-      <span>{label}</span>
-    </button>
+    <div className="activityBar">
+      <button type="button" className="activityButton" aria-expanded={open} aria-controls="activity-panel" onClick={() => setOpen(value => !value)}>
+        {summary.tone === 'running' && <span className="miniSpinner" aria-hidden="true" />}
+        <span>{label}</span>
+      </button>
+      {closable && <button type="button" className="iconButton activityDismiss" aria-label={t('activity.clear')} title={t('activity.clear')} onClick={onClearFinished}>×</button>}
+    </div>
     <div className="srOnly" role="status" aria-live="polite">{label}</div>
   </div>
 }

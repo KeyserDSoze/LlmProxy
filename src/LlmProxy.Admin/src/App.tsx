@@ -250,7 +250,7 @@ export default function App({ initialView = 'dashboard' }: { initialView?: View 
         {loading ? <div className="loading">{t('common.loading')}</div> : (
           <>
             {view === 'dashboard' && <>
-              <AttentionCenter items={attention} />
+              <AttentionCenter items={attention} canWrite={canWrite} onChanged={refresh} />
               <Dashboard overview={overview} nodes={nodes} routing={routing} metricsSummary={metricsSummary} />
               <OperatorStart nodes={nodes} models={models} deployments={deployments} canWrite={canWrite} />
             </>}
@@ -289,6 +289,8 @@ type AttentionItem = {
   href: string
   titleKey?: TranslationKey
   detailKey?: TranslationKey
+  /** Set when the name has no deployment at all, so the dashboard can remove it in one step. */
+  unpublishId?: string
 }
 
 const usableNodeStatuses = new Set(['Healthy', 'Degraded', 'Unknown'])
@@ -318,10 +320,12 @@ export function attentionItems(nodes: Node[], models: Model[], deployments: Depl
   for (const model of models) {
     if (model.enabled === false) continue
     const routed = deployments.some(item => item.modelId === model.id && item.enabled && usableNodes.has(item.nodeId))
-    if (!routed)
+    if (!routed) {
+      const unused = !deployments.some(item => item.modelId === model.id)
       items.push({ key: 'model-' + model.id, tone: 'warning', title: model.publicName, titleKey: 'dashboard.attention.noRoute',
         detail: '', detailKey: 'dashboard.attention.noRouteDesc', action: 'dashboard.attention.openModels',
-        href: '/admin/models?panel=advanced' })
+        href: '/admin/models?panel=advanced', unpublishId: unused ? model.id : undefined })
+    }
   }
   const disabled = deployments.filter(item => !item.enabled).length
   if (disabled > 0)
@@ -331,8 +335,17 @@ export function attentionItems(nodes: Node[], models: Model[], deployments: Depl
   return items
 }
 
-function AttentionCenter({ items }: { items: AttentionItem[] }) {
+function AttentionCenter({ items, canWrite, onChanged }: { items: AttentionItem[]; canWrite: boolean; onChanged: () => Promise<void> }) {
   const t = useT()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  async function unpublish(item: AttentionItem) {
+    if (!item.unpublishId || !window.confirm(`${t('dashboard.attention.unpublishConfirm')} ${item.title}?`)) return
+    setBusy(item.key); setError(null)
+    try { await api.unpublishModel(item.unpublishId); await onChanged() }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+    finally { setBusy(null) }
+  }
   if (items.length === 0) return <section className="panel attentionPanel attentionPanel--ok" aria-label={t('dashboard.attention.title')}>
     <div className="attentionOk"><span className="attentionOkIcon" aria-hidden="true">✓</span>
       <div><strong>{t('dashboard.attention.ok')}</strong><p>{t('dashboard.attention.okDesc')}</p></div></div>
@@ -340,6 +353,7 @@ function AttentionCenter({ items }: { items: AttentionItem[] }) {
   return <section className="panel attentionPanel" aria-label={t('dashboard.attention.title')}>
     <div className="panelTitle"><div><h2>{t('dashboard.attention.title')}</h2><span>{t('dashboard.attention.desc')}</span></div>
       <span className="pill pill-warning">{items.length}</span></div>
+    {error && <div className="error" role="alert">{error}</div>}
     <ul className="attentionList">
       {items.map(item => <li key={item.key} className={'attentionItem attentionItem--' + item.tone}>
         <span className="attentionDot" aria-hidden="true" />
@@ -347,7 +361,10 @@ function AttentionCenter({ items }: { items: AttentionItem[] }) {
           <strong>{item.titleKey ? t(item.titleKey) : item.title}{item.titleKey && item.title ? ' · ' + item.title : ''}</strong>
           {(item.detailKey || item.detail) && <span>{item.detailKey ? t(item.detailKey) : item.detail}</span>}
         </div>
-        <AdminLink className="buttonLink secondary" href={item.href}>{t(item.action)} →</AdminLink>
+        <div className="attentionActions">
+          {canWrite && item.unpublishId && <button type="button" className="secondary" disabled={busy !== null} onClick={() => void unpublish(item)}>{t('dashboard.attention.unpublish')}</button>}
+          <AdminLink className="buttonLink secondary" href={item.href}>{t(item.action)} →</AdminLink>
+        </div>
       </li>)}
     </ul>
   </section>
