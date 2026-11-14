@@ -1,11 +1,11 @@
-## 2026-11-14 — Playground for every kind and `/v1/modalities` (source; CI pending)
-Playground tabs per kind of model; new `GET /v1/modalities`. Streaming voice not testable from the Playground. Production still on 0.2.72.
+## 2026-11-14 — Playground for every kind and `/v1/modalities` (CI green, v0.2.77)
+Playground tabs per kind of model; new `GET /v1/modalities`. Streaming voice not testable from the Playground. Production runs 0.2.76; 0.2.77 is released but not installed.
 
-## 2026-11-14 — Only running models in the API and Admin lists (source; CI pending)
-`/v1/models` and `/v1/models/details` list models with an enabled deployment on an operational server; Admin Installed/Publishing hide stopped ones behind a tick. Production still on 0.2.72.
+## 2026-11-14 — Only running models in the API and Admin lists (CI green, v0.2.76)
+`/v1/models` and `/v1/models/details` list models with an enabled deployment on an operational server; Admin Installed/Publishing hide stopped ones behind a tick. 
 
-## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
-Playground lists only routable models; Admin session keys persist in PostgreSQL (encrypted with the pepper). First update after this needs one re-login. Production still on 0.2.72.
+## 2026-11-14 — Active-only Playground and persistent Admin sessions (CI green, v0.2.75)
+Playground lists only routable models; Admin session keys persist in PostgreSQL (encrypted with the pepper). First update after this needs one re-login.
 
 ## 2026-11-13 — Workspaces per model kind, embeddings and realtime voice (source; CI pending)
 

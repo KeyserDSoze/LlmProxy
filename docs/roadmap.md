@@ -3,7 +3,8 @@
 ## 2026-11-14 — Sessions and Playground
 - [x] Playground lists only active (routable) models.
 - [x] Admin sign-in survives updates (Data Protection keys in PostgreSQL).
-- [ ] Green CI; then update production (backup first; one re-login expected).
+- [x] Green CI (v0.2.75–v0.2.77).
+- [ ] Install 0.2.77 on production (backup first) and confirm the Admin session survives the update (production is on 0.2.76).
 
 ## 2026-11-13 — Review follow-up
 - [x] Specific routing errors on the public API; trailing-slash governance bypass closed.

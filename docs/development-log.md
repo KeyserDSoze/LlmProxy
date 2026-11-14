@@ -1,23 +1,23 @@
-## 2026-11-14 — Playground tabs for every kind and `GET /v1/modalities` (source; CI pending)
+## 2026-11-14 — Playground tabs for every kind and `GET /v1/modalities` (CI green, v0.2.77)
 
 - `MultimodalEndpoints.MapAdminTests` exposes the four media pipelines under `/api/admin/testing/*` (AdminWrite) by reusing `ForwardAsync`; `ModelDetails.Modalities` builds `/v1/modalities`.
 - Admin: `ModalityPlayground.tsx` (image, speech, transcription, embeddings) and six Playground tabs with running-model counts.
 - Tests: `ModalitiesTests` (grouping, empty modalities, vision union), `playground-modalities.spec.ts`; authorization contract test covers the new routes. Local: backend 702/702, Vitest 120/120, Playwright 71/71 (dev server in the Playwright container), visual 51/51 (playground baseline updated).
-- Not verified: calls against real image/TTS/STT/embedding runtimes; no streaming-voice test.
+- CI 43593500672 SUCCESS on `d056e69`; release tag `v0.2.77`. Not verified: calls against real image/TTS/STT/embedding runtimes; no streaming-voice test.
 
-## 2026-11-14 — Only running models in `/v1/models` and the Admin lists (source; CI pending)
+## 2026-11-14 — Only running models in `/v1/models` and the Admin lists (CI green, v0.2.76)
 
 - `IDeploymentCatalog.GetAvailableModelsAsync` (default interface method over `GetCandidatesAsync` + `RouteSelectorSupport.IsOperational`) feeds `/v1/models` and `/v1/models/details`; routing keeps `GetPublicModelsAsync` to tell `model_not_running` from `model_not_found`.
 - Admin: Installed hides stopped installations (failed ones stay), Publishing hides non-routable models; ticks restore them. Test: `Available_models_are_only_those_a_request_can_reach`, Playwright `playground-models.spec.ts`.
 - Local: backend 699/699, Vitest 120/120, Playwright 66/66, visual 51/51 (publishing baseline updated).
-- Not verified: Docker full-stack smoke (CI).
+- The first push (`79f4ad8`) failed CI on a wrong assertion in a new Playwright test (failed-to-start models stay visible); fixed in `71fe731`, CI 43591624770 SUCCESS, tag `v0.2.76`.
 
-## 2026-11-14 — Active-only Playground and persistent Admin sessions (source; CI pending)
+## 2026-11-14 — Active-only Playground and persistent Admin sessions (CI green, v0.2.75)
 
 - Playground (`routableModels.ts`) offers only models that are enabled with a switched-on deployment on an enabled, non-Unhealthy/Draining server; a stale selection is cleared. Vitest + Playwright cover it.
 - Data Protection key ring moved to PostgreSQL via `DatabaseDataProtectionRepository` (application-encrypted, application name `LlmProxy`); migration `20261114090000_AddDataProtectionKeys`. Tests: cookie readable after a simulated restart, keys stored encrypted, undecryptable key skipped, upsert.
 - Local: backend 698/698, Vitest 120/120, Playwright 65/65, visual 51/51.
-- Not verified: migration against real PostgreSQL (CI integration), behaviour on production.
+- CI 43588237766 SUCCESS on `81d7a0e` (including the Docker/PostgreSQL integration and full-stack gates, so the migration ran against real PostgreSQL); tag `v0.2.75`. Production was later moved to 0.2.76 by the owner; behaviour of the persistent session after that update is not yet confirmed.
 
 ## 2026-11-13 — Workspaces per model kind, embeddings, realtime voice and the Jobs table (source; CI pending)
 
