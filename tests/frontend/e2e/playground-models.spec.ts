@@ -15,11 +15,13 @@ test('Installed and Publishing show what runs and keep stopped models one tick a
   await installMockAdmin(page)
   await page.goto('/admin/models?node=node-1&panel=installed')
 
-  // gemma-vision-gguf is installed but stopped: hidden by default, reachable with the tick.
+  // lfm25-24b is stopped: hidden by default, reachable with the tick. gemma-vision-gguf failed to start and stays in
+  // view so its error can be read.
   await expect(page.getByRole('article', { name: 'agic-code-fast' })).toBeVisible()
-  await expect(page.getByRole('article', { name: 'gemma-vision-gguf' })).toHaveCount(0)
-  await page.getByLabel(/Show stopped models/).check()
   await expect(page.getByRole('article', { name: 'gemma-vision-gguf' })).toBeVisible()
+  await expect(page.getByRole('article', { name: 'lfm25-24b' })).toHaveCount(0)
+  await page.getByLabel(/Show stopped models/).check()
+  await expect(page.getByRole('article', { name: 'lfm25-24b' })).toBeVisible()
 
   await page.goto('/admin/models?panel=advanced')
   await expect(page.getByRole('row').filter({ hasText: 'agic-code-fast' })).toHaveCount(1)
