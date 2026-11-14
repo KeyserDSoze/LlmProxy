@@ -4,7 +4,7 @@ import { installMockAdmin, node1Overview, enginesOverview } from './support/mock
 test('a model the server restarts by itself is shown, with what it is doing', async ({ page }) => {
   await installMockAdmin(page)
   await page.route('**/api/admin/model-management/nodes/node-1/overview', route => {
-    const body = node1Overview() as { installations: { logicalModel: string; agentState: Record<string, unknown> }[] }
+    const body = structuredClone(node1Overview()) as { installations: { logicalModel: string; agentState: Record<string, unknown> }[] }
     const stopped = body.installations.find(item => item.logicalModel === 'lfm25-24b')!
     stopped.agentState = { ...stopped.agentState, desiredRunning: true, autoStart: 'retrying', autoStartDetail: 'Start failed (2 of 5); next try in 2 min. out of memory' }
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
@@ -21,7 +21,7 @@ test('a model the server restarts by itself is shown, with what it is doing', as
 test('after the Agent gave up the card says it stopped trying', async ({ page }) => {
   await installMockAdmin(page)
   await page.route('**/api/admin/model-management/nodes/node-1/overview', route => {
-    const body = node1Overview() as { installations: { logicalModel: string; agentState: Record<string, unknown> }[] }
+    const body = structuredClone(node1Overview()) as { installations: { logicalModel: string; agentState: Record<string, unknown> }[] }
     const stopped = body.installations.find(item => item.logicalModel === 'lfm25-24b')!
     stopped.agentState = { ...stopped.agentState, desiredRunning: true, autoStart: 'gave_up', autoStartDetail: 'Stopped trying after 5 failed starts. Start it by hand once the cause is fixed.' }
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })

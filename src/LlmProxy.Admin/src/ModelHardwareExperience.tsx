@@ -27,6 +27,12 @@ type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced' | 'setup
  * mode="models": install, run, troubleshoot and publish models on the selected server.
  * mode="hardware": the server's hardware, host readiness and Agent configuration.
  */
+/** A start job that completed in the last ten minutes, i.e. one this session is still waiting to activate. */
+export function finishedRecently(job: { completedAtUtc?: string | null }, nowMs = Date.now()): boolean {
+  const finished = job.completedAtUtc ? new Date(job.completedAtUtc).getTime() : NaN
+  return Number.isFinite(finished) && nowMs - finished <= 10 * 60_000
+}
+
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [], kind: modelKind = 'OpenAi' }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[]; kind?: ModelKind }) {
   const t = useT()
   const [panel, setPanel] = useRouteTab<WorkspacePanel>('panel',
@@ -395,9 +401,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         setStartJobs(jobs)
         for (const job of jobs) {
           if (!canWrite || job.status !== 'completed' || job.result?.status !== 'running') continue
+          // The Agent remembers its last 50 start jobs. A start that finished long ago says nothing about the model today:
+          // it may have been stopped on purpose, and activating it would only produce a false "model is running" error.
+          if (!finishedRecently(job)) continue
           const installation = overview?.installations.find(x =>
             x.managedInstallationId === job.installationId)
-          if (!installation || installation.enabled) continue
+          if (!installation || installation.enabled || installation.agentStatus?.toLowerCase() !== 'running') continue
           const key = nodeId + ':' + job.id
           if (activatingStarts.current.has(key)) continue
           activatingStarts.current.add(key)

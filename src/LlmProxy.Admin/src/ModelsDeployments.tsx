@@ -142,7 +142,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar modelExplainer">
-      <div><h2>Published models & routing</h2><p>These are the names your clients call. A logical model alone does not install weights or start a runtime; each model needs a healthy deployment on a server. OpenAI Chat and System One classifiers are different API protocols.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/models?kind=SystemOne&panel=setup">Connect a System One classifier →</a></div></div>
+      <div><h2>Published models & routing</h2><p>These are the names your clients call. <strong>You normally do not publish anything by hand:</strong> installing a model under <em>Discover &amp; install</em> and starting it publishes it under the public name you chose, and switches it on once its health check passes. Use this page to connect a runtime you run yourself, to put a model on another server, to switch a model on or off, or to cap its capacity.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/models?kind=SystemOne&panel=setup">Connect a System One classifier →</a></div></div>
       {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
@@ -200,11 +200,38 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
       <form className="formPanel" onSubmit={deploy}><label>Node<select value={nodeId} onChange={event => setNodeId(event.target.value)} required><option value="">Select node</option>{activeNodes.filter(node => !(deploymentsByModel.get(deployModel?.id ?? '') ?? []).some(item => item.nodeId === node.id)).map(node => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>Runtime service root {deployModel && modelSurface(deployModel) !== 'OpenAi' ? '(required for this non-Chat runtime)' : '(optional)'}<input aria-label="Runtime service root" value={runtimeBaseAddress} onChange={event => setRuntimeBaseAddress(event.target.value)} placeholder="Use node service root" /></label><div className="muted">Use an override when this model runs on a different port/service root on the same hardware, for example a System One classifier beside an OpenAI runtime.</div><div className="modalActions"><button type="button" className="secondary" onClick={() => setDeployModel(null)}>Cancel</button><button className="primary" disabled={!nodeId || busy === 'deploy' || !!(deployModel && modelSurface(deployModel) !== 'OpenAi' && !runtimeBaseAddress.trim())}>Create deployment</button></div></form>
     </Modal>
 
-    <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`} description="Enable or disable routing for existing deployments, or add another OpenAI/System One workload." onClose={() => setManageNode(null)}>
-      <div className="modalList">{scopedModels.map(model => {
-        const deployment = (deploymentsByNode.get(manageNode?.id ?? '') ?? []).find(item => item.modelId === model.id)
-        return <div className="modalListRow" key={model.id}><div><strong>{model.publicName}</strong><div className="muted">{modelSurface(model) === 'SystemOne' ? 'System One' : 'OpenAI'} · <span className="mono">{model.providerModelName}</span></div>{deployment && <div className="muted">deployment max {deployment.maxConcurrency ?? 'inherits hardware'} · runtime <span className="mono">{deployment.runtimeBaseAddress ?? manageNode?.baseAddress}</span></div>}</div><div className="actions">{deployment ? <><span className={deployment.enabled ? 'scopeBadge scope-org' : 'scopeBadge'}>{deployment.enabled ? 'Routing on' : 'Routing off'}</span><button onClick={() => openDeploymentSettings(deployment)}>Capacity</button><button disabled={busy === `deployment:${deployment.id}`} onClick={() => void toggleDeployment(deployment, !deployment.enabled)}>{deployment.enabled ? 'Disable' : 'Enable'}</button></> : <button className="primary" disabled={!manageNode?.enabled || busy === `node:${model.id}`} onClick={() => void deployOnManagedNode(model)}>Deploy</button>}</div></div>
-      })}</div>
+    <Modal open={Boolean(manageNode)} title={`Models on ${manageNode?.name ?? ''}`}
+      description="A model answers clients only while it is switched on here. Switching it off keeps it installed." onClose={() => setManageNode(null)}>
+      {(() => {
+        const here = deploymentsByNode.get(manageNode?.id ?? '') ?? []
+        const onServer = scopedModels.flatMap(model => { const deployment = here.find(item => item.modelId === model.id); return deployment ? [{ model, deployment }] : [] })
+        const others = scopedModels.filter(model => !here.some(item => item.modelId === model.id))
+        const kindText = (model: Model) => modelSurface(model) === 'SystemOne' ? 'System One' : surfaceBadge[modelSurface(model)]
+        return <div className="deployPanel">
+          {onServer.length === 0 && <p className="muted deployEmpty">No model is set up on this server yet.</p>}
+          <div className="deployList">{onServer.map(({ model, deployment }) => <div className="deployRow" key={model.id}>
+            <div className="deployInfo">
+              <strong title={model.publicName}>{model.publicName}</strong>
+              <span className="muted deployMeta" title={model.providerModelName}>{kindText(model)} · {model.providerModelName}</span>
+              <span className="muted deployMeta">{deployment.maxConcurrency ? `Up to ${deployment.maxConcurrency} requests at once` : "Shares the server's request limit"}</span>
+            </div>
+            <span className={'pill ' + (deployment.enabled ? 'pill-success' : 'pill-neutral')}><i aria-hidden="true" />{deployment.enabled ? 'Live' : 'Off'}</span>
+            <div className="deployActions">
+              <button className="secondary" onClick={() => openDeploymentSettings(deployment)}>Capacity</button>
+              <button disabled={busy === `deployment:${deployment.id}`} onClick={() => void toggleDeployment(deployment, !deployment.enabled)}>{deployment.enabled ? 'Disable' : 'Enable'}</button>
+            </div>
+          </div>)}</div>
+          {others.length > 0 && <details className="deployMore">
+            <summary>Add a published model to this server ({others.length})</summary>
+            <div className="deployList">{others.map(model => <div className="deployRow" key={model.id}>
+              <div className="deployInfo"><strong title={model.publicName}>{model.publicName}</strong>
+                <span className="muted deployMeta" title={model.providerModelName}>{kindText(model)} · {model.providerModelName}</span></div>
+              <span />
+              <div className="deployActions"><button className="primary" disabled={!manageNode?.enabled || busy === `node:${model.id}`} onClick={() => void deployOnManagedNode(model)}>Deploy</button></div>
+            </div>)}</div>
+          </details>}
+        </div>
+      })()}
     </Modal>
 
     <Modal open={Boolean(settingsDeployment)} title="Deployment capacity" description="Optionally cap this model/runtime below the physical hardware ceiling. Leave it empty to inherit the hardware limit." onClose={() => setSettingsDeployment(null)}>

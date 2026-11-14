@@ -1,3 +1,10 @@
+## 2026-11-14 — False "routing activation needs attention" and a clearer Publishing window (source; CI pending)
+
+- Cause of `Model is running but routing activation needs attention: HTTP 409 … not running`: `ModelHardwareExperience` auto-activated routing for any completed start job in the Agent's persisted list (`start-jobs.json`, last 50) whose installation had routing off, so a model stopped on purpose triggered `POST /deployments/{id}/activate`, which correctly answered `runtime_not_running`. Now `finishedRecently` (<= 10 min) and `agentStatus === 'running'` are required.
+- Publishing: *Models on <server>* rebuilt (`deployRow`), unused published names folded, intro states that install + start publishes automatically.
+- Test hygiene: the mock's `node1Overview()` copies the installation list shallowly, so specs that edit it must `structuredClone` it (a leak made one spec depend on worker order).
+- Tests: Vitest `finishedRecently`, Playwright `publishing.spec.ts` (old start ignored, fresh start activated, fresh start of a stopped model ignored, the window, the intro). Local: Vitest 125/125, Playwright 89/89, visual 53/53 (publishing baseline updated).
+
 ## 2026-11-14 — Bootstrap of models and engines, engine jobs in the activity panel (source; CI pending)
 
 - Trigger: after the Spark was rebooted the models stayed down (GPU containers run with `--restart no` by design), the gateway kept routing to them and the first requests failed (`Agent connection lost`, `no_healthy_deployment` after 16 s in `request_metrics`); the operator had to start them from the Playground diagnosis. Engine updates were also invisible in the bottom-right activity panel.

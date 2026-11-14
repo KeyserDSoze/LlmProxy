@@ -5,6 +5,7 @@ import {
   adminOperation, agentUpdateOperation, engineJobOperation, installJobOperation, mergeOperations, parseAgentUpdateStatus, sortOperations, startJobOperation, summarizeOperations
 } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
 import type { BackgroundOperation } from '../../../src/LlmProxy.Admin/src/backgroundOperations'
+import { finishedRecently } from '../../../src/LlmProxy.Admin/src/ModelHardwareExperience'
 import ActivityCenter from '../../../src/LlmProxy.Admin/src/ActivityCenter'
 import type { AdminOperation, EngineJob, ModelInstallJob, ModelStartJob, PairedNodeStatus } from '../../../src/LlmProxy.Admin/src/types'
 
@@ -192,5 +193,19 @@ describe('engine operations', () => {
 
     expect(adminOperation(operation, 0).active?.href).toBe('/admin/infrastructure?section=engines&node=node-1')
     expect(adminOperation({ ...operation, kind: 'model.stop' }, 0).active?.href).toBe('/admin/models?node=node-1')
+  })
+})
+
+describe('finishedRecently', () => {
+  const now = Date.parse('2026-11-14T16:00:00Z')
+
+  it('accepts a start that finished minutes ago and rejects an old or unfinished one', () => {
+    expect(finishedRecently({ completedAtUtc: '2026-11-14T15:55:00Z' }, now)).toBe(true)
+    expect(finishedRecently({ completedAtUtc: '2026-11-14T15:50:00Z' }, now)).toBe(true)
+    expect(finishedRecently({ completedAtUtc: '2026-11-14T15:49:00Z' }, now)).toBe(false)
+    expect(finishedRecently({ completedAtUtc: '2026-11-12T10:00:00Z' }, now)).toBe(false)
+    expect(finishedRecently({ completedAtUtc: null }, now)).toBe(false)
+    expect(finishedRecently({}, now)).toBe(false)
+    expect(finishedRecently({ completedAtUtc: 'not a date' }, now)).toBe(false)
   })
 })
