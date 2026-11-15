@@ -32,6 +32,8 @@ Example:
 }
 ```
 
+> Admin → **Help & endpoints** shows a ready-to-copy example for each endpoint below, per kind of model, with the names of the models published in that gateway: `/admin/help?tab=discover|text|images|audio|embeddings|voice|systemone`.
+
 ## `GET /v1/models/details`
 
 Same catalog as `/v1/models`, with what an application needs to use each model well. `/v1/models` is unchanged so OpenAI clients keep working; this is the richer companion.

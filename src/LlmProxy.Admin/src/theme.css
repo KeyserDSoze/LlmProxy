@@ -505,3 +505,11 @@ tbody tr:hover td{background:var(--row-hover)}
 .capacitySiblings{display:grid;gap:8px;margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:10px}
 .capacitySiblings legend{padding:0 6px;font-weight:600}
 .capacitySiblings p{margin:0}
+
+.docCardWide{grid-column:1/-1}
+.docCard .docNote{margin:0 0 10px;font-size:12px;line-height:1.5}
+.docCard{display:flex;flex-direction:column;gap:0}
+.docCard .payload{flex:1 1 auto;margin-bottom:10px}
+.docCard .copyButton,.docCard>button{align-self:flex-start}
+.tabs+.docGrid{margin-top:16px}
+.docGrid+h3{margin-top:22px}

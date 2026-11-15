@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import type { Model, SystemOneStatus } from './types'
-import { CopyButton } from './UiPrimitives'
+import { CopyButton, Tabs } from './UiPrimitives'
+import { useRouteTab } from './adminNavigation'
+import { modelKinds } from './modelKinds'
+import { buildHelpExamples, helpTabOrder, publishedCount } from './helpExamples'
+import type { HelpExample, HelpTab } from './helpExamples'
+
+const tabLabels: Record<HelpTab, string> = {
+  discover: 'Discover & limits', text: 'Text', images: 'Images', audio: 'Audio', embeddings: 'Embeddings', voice: 'Voice (streaming)', systemone: 'System One'
+}
+
+/** What each field of GET /v1/models/details means, for people who build a client against it. */
+const detailFields: Array<[string, string]> = [
+  ['id', 'The public name to put in "model". Provider and server names never appear.'],
+  ['type', 'chat, embedding, image, speech, transcription, realtime or classifier (use it with ?type=).'],
+  ['context_window', 'Longest prompt + answer one request can use. On llama.cpp this is the shared pool divided by the parallel slots. null: not declared.'],
+  ['max_output_tokens', 'Largest answer worth asking for (max_tokens). Chat models only. null: not declared.'],
+  ['input_modalities / output_modalities', 'What goes in and what comes out: text, image, audio or embedding.'],
+  ['endpoints', 'The paths that serve this model.'],
+  ['capabilities', 'streaming, tools, vision and reasoning, as declared on the model.']
+]
 
 export default function HelpPage({ models }: { models: Model[] }) {
   const [classifier, setClassifier] = useState<SystemOneStatus | null>(null)
@@ -11,22 +30,8 @@ export default function HelpPage({ models }: { models: Model[] }) {
     void api.systemOneStatus().then(setClassifier).catch(() => undefined)
   }, [])
 
-  const listModels = [
-    'curl "$BASE_URL/v1/models" \\',
-    '  -H "Authorization: Bearer $LLMPROXY_API_KEY"'
-  ].join('\n')
-  const chat = [
-    'curl "$BASE_URL/v1/chat/completions" \\',
-    '  -H "Authorization: Bearer $LLMPROXY_API_KEY" \\',
-    '  -H "Content-Type: application/json" \\',
-    '  -d \'{"model":"' + sampleModel + '","messages":[{"role":"user","content":"Hello"}],"stream":true}\''
-  ].join('\n')
-  const responses = [
-    'curl "$BASE_URL/v1/responses" \\',
-    '  -H "Authorization: Bearer $LLMPROXY_API_KEY" \\',
-    '  -H "Content-Type: application/json" \\',
-    '  -d \'{"model":"' + sampleModel + '","input":"Hello"}\''
-  ].join('\n')
+  const examples = useMemo(() => buildHelpExamples(models), [models])
+  const [tab, setTab] = useRouteTab<HelpTab>('tab', helpTabOrder, 'discover')
   const browserExample = [
     "const response = await fetch(BASE_URL + '/v1/chat/completions', {",
     "  method: 'POST',",
@@ -35,28 +40,32 @@ export default function HelpPage({ models }: { models: Model[] }) {
     '})',
     'const reader = response.body.getReader() // server-sent events, one chunk at a time'
   ].join('\n')
-  const classifierExample = [
-    'curl "$BASE_URL/v1/systemone" \\',
-    '  -H "Authorization: Bearer $LLMPROXY_API_KEY" \\',
-    '  -H "Content-Type: application/json" \\',
-    '  -d \'{"state":{"document":"duplicate card charge"},"questions":{"billing":{"type":"noul","instructions":"Is this billing?"}}}\''
-  ].join('\n')
 
   return <div className="stack">
-    <section className="panel formPanel">
-      <div className="panelTitle tuningTitle"><h2>Client endpoints</h2><span>OpenAI-compatible + System One</span></div>
+    <section className="panel formPanel" aria-label="Client endpoints">
+      <div className="panelTitle tuningTitle"><h2>Client endpoints</h2><span>Every API a client can call, with the model names you have published</span></div>
+      <Tabs value={tab} onChange={setTab} items={helpTabOrder.map(value => ({ value, label: tabLabels[value], count: value === 'discover' ? undefined : publishedCount(models, value) }))} />
       <div className="docGrid">
-        <Doc title="List models" code={listModels} />
-        <Doc title="Chat Completions" code={chat} />
-        <Doc title="Responses" code={responses} />
-        <Doc title="System One classifier" code={classifierExample} />
+        {examples[tab].map(example => <Doc key={example.id} example={example} />)}
       </div>
-      <p className="muted">The client sends the LlmProxy API key. For System One, LlmProxy replaces that credential with the classifier upstream bearer token configured on the server.</p>
+      {tab === 'discover' && <>
+        <h3>Fields of <code>/v1/models/details</code></h3>
+        <table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+          {detailFields.map(([field, meaning]) => <tr key={field}><td className="mono">{field}</td><td>{meaning}</td></tr>)}
+        </tbody></table>
+        <p className="muted">Administrators declare these values when a model is installed and change them later under <strong>Models → Installed → Published properties</strong> (and the context under <strong>Capacity</strong>). They describe the model; the gateway never blocks or rewrites a request because of them. The endpoint needs the same API key as the rest of <code>/v1</code>.</p>
+        <h3>One endpoint per kind of model</h3>
+        <table><thead><tr><th>Kind</th><th>Endpoint</th><th>Published</th></tr></thead><tbody>
+          {modelKinds.map(kind => <tr key={kind.kind}><td><code>{kind.apiType}</code></td><td className="mono">{kind.endpoint}</td>
+            <td>{models.filter(item => item.enabled && (item.surface ?? 'OpenAi') === kind.kind).length}</td></tr>)}
+        </tbody></table>
+      </>}
+      <p className="muted">The client sends the LlmProxy API key as <code>Authorization: Bearer</code>. The <code>model</code> field is always the public name and is routed only to models of the same kind. For System One, LlmProxy replaces that credential with the classifier upstream bearer token configured on the server.</p>
     </section>
 
     <section className="panel formPanel">
       <div className="panelTitle tuningTitle"><h2>Calling from a browser (CORS)</h2><span>Web apps that talk to LlmProxy directly</span></div>
-      <Doc title="Streaming chat from a web page" code={browserExample} />
+      <Doc example={{ id: 'browser', title: 'Streaming chat from a web page', code: browserExample }} />
       <p>A browser only reaches the API when its origin is allowed. Administrators list site-wide origins and each API key can list its own under <strong>Credentials → Origins</strong> (users manage their personal keys in <strong>My dashboard</strong>). Use <code>scheme://host[:port]</code> without a path, or <code>*</code> for any origin. A key that lists origins is rejected from any other origin.</p>
       <p className="muted">Never ship an administrator or shared key in a public front-end: CORS limits which pages may use a key in a browser, it does not hide the key. Prefer a personal key with its origin listed.</p>
     </section>
@@ -106,6 +115,11 @@ export default function HelpPage({ models }: { models: Model[] }) {
   </div>
 }
 
-function Doc({ title, code }: { title: string; code: string }) {
-  return <div className="docCard"><h3>{title}</h3><pre className="payload">{code}</pre><CopyButton className="secondary" value={code}>Copy</CopyButton></div>
+function Doc({ example }: { example: HelpExample }) {
+  return <div className={'docCard' + (example.wide ? ' docCardWide' : '')}>
+    <h3>{example.title}</h3>
+    {example.note && <p className="muted docNote">{example.note}</p>}
+    <pre className="payload">{example.code}</pre>
+    <CopyButton className="secondary" value={example.code}>Copy</CopyButton>
+  </div>
 }

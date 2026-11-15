@@ -170,6 +170,11 @@ export type Model = {
   supportsTools: boolean
   surface: 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
   enabled: boolean
+  /** Declared properties clients read on GET /v1/models/details; null when nobody declared them. */
+  supportsVision?: boolean
+  supportsReasoning?: boolean
+  contextWindowTokens?: number | null
+  maxOutputTokens?: number | null
 }
 
 export type Deployment = {

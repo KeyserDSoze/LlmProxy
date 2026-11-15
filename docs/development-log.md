@@ -1,4 +1,11 @@
-## 2026-11-15 — Capacity: raise context and parallelism from Installed, on a running model (local green; main CI pending)
+## 2026-11-15 — Help & endpoints: every client API, per kind of model
+
+- Request: the guide only showed list models, chat, responses and System One; the images, audio, embeddings and voice APIs and the model-limits endpoint (`/v1/models/details`) were not discoverable.
+- `helpExamples.ts` (pure): per-tab examples built from the published models (`sampleName`, `detailsResponse`, `promptBudgetSnippet`, `publishedCount`); parameters checked against the runtimes (Kokoro `af_heart`/`wav`, Diffusers `size` + `b64_json`, Whisper multipart `file`, `response_format`, `language`; embeddings `input` array; realtime WebSocket relay; System One `X-LlmProxy-Model`). `HelpPage` uses route tabs (`?tab=`), a field table and a kinds table; the CORS/security sections are unchanged.
+- Tests: Vitest `helpExamples` (names, counts, declared values vs null, every endpoint covered with its required parameters), Playwright `help.spec.ts` (discover tab, one example per kind, deep link and counts, copy equals what is shown); visual help baseline updated.
+- Not changed: gateway APIs. The values in the `/v1/models/details` example are those declared in Admin; undeclared ones are shown as `null`.
+
+## 2026-11-15 — Capacity: raise context and parallelism from Installed, on a running model (CI green, v0.2.84)
 
 - Trigger: a production request failed with llama.cpp `exceed_context_size_error` (`n_prompt_tokens` 35,354 > `n_ctx` 32,768, one slot). The existing *Edit limits* required stopping the model first and a typed number, and was not discoverable as a capacity control.
 - Answer to "can llama.cpp take more?": yes, `--ctx-size` (a pool shared by `--parallel` slots); the context is prompt + answer, there is no separate input limit; it needs a restart and more KV-cache memory; the model's own trained context is the sensible ceiling. The gateway does not enforce tokens.
