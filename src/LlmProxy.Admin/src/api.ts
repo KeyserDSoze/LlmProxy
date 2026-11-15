@@ -1,6 +1,6 @@
 import type { ModelCapabilityProfile, HuggingFaceDiscoveryResponse, HuggingFaceAccessStatus, HuggingFaceInspectionResponse, ModelRevisionStatus, NodeResourceSnapshot, GgufVariant, CorsSettings } from './types'
 import { readChatTestStream, type ChatTestProgress } from './chatTestStream'
-import type { EngineJob, EnginePolicy, EngineUpdateCheck, EnginesOverview, SuggestedModelProperties, ModelProperties, AdminOperation, ModelVerification, ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
+import type { EngineJob, EnginePolicy, EngineUpdateCheck, EnginesOverview, SuggestedModelProperties, ModelProperties, AdminOperation, CapacityRequest, ModelVerification, ModelRouteDiagnosis, ModelStartJob, ModelInstallJob, AgentDownloads, ManagedBenchmarkJob, AgentPairingInvitation, AgentRecoverySecret, PairedNodeStatus, ModelManagementOverview, ProductUpdateOverview, ProductUpdatePolicy, UpdateJobStatus } from './types'
 import type { AdminSession, AdminTestResult, ApiCredential, AuditEvent, CapacityProfileInput, CapacitySnapshot, ContentLogCleanupResult, ContentLogDetail, ContentLogPage, ContentLogSettings, ContentLogSummary, CreatedApiCredential, Deployment, DeploymentPerformanceSnapshot, GovernanceCredential, IdentityUserSummary, MetricsSummary, Model, Node, NodeConnectionTest, NodeHardwareMetricsSnapshot, NodeMaintenanceResponse, NodeMaintenanceStatus, NodeRuntimeMetricsSnapshot, Overview, PlatformUser, PlatformUserAccessSettings, RateLimitPolicy, RequestMetric, RevealedApiCredential, RoutingSettings, RoutingTuningSettings, SystemOneStatus, UsageGroup, UsageGroupRateLimitPolicy, UsageReport, UserRateLimitPolicy, UserUsageSummary } from './types'
 
 /** Never render an upstream HTML error page in an admin alert. */
@@ -358,8 +358,9 @@ export const api = {
     '/api/admin/systemone/default', { method: 'PUT', body: JSON.stringify({ model }) }),
   startManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/start`, { method: 'POST' }),
-  configureManagedDeployment: (deploymentId: string, body: { maxModelLen: number; maxNumSeqs: number; maxOutputTokens: number | null; gpuMemoryUtilization?: number | null }) =>
-    request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
+  /** 200 when the limits were only saved (model stopped); 202 with the background operation when the model restarts or starts. */
+  configureManagedDeployment: (deploymentId: string, body: CapacityRequest) =>
+    request<AdminOperation | { deployment: unknown; state: unknown }>(`/api/admin/model-management/deployments/${deploymentId}/configuration`, { method: 'PUT', body: JSON.stringify(body) }),
   activateManagedDeployment: (deploymentId: string) =>
     request<unknown>(`/api/admin/model-management/deployments/${deploymentId}/activate`, { method: 'POST' }),
   verifyManagedDeployment: (deploymentId: string) =>

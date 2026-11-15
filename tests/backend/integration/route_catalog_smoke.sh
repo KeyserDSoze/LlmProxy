@@ -124,6 +124,27 @@ for attempt in {1..30}; do
 done
 [[ "$restored" == true ]] || fail_with_diagnostics "Accepted start-job intent was not recovered after gateway restart with clock skew."
 
+# Capacity: raise the context of a running model. The gateway restarts it through the Agent (a mock here), keeps routing off while
+# it reloads, gives it back only when the job it asked for has finished, and the context clients read follows the runtime.
+limit_status="$(curl -sS -o /tmp/route-limits.json -w '%{http_code}' -X PUT -H 'Content-Type: application/json' \
+  -d '{"maxModelLen":16384,"maxNumSeqs":1,"maxOutputTokens":null,"applyNow":true,"syncPublishedContext":true}' \
+  "$BASE/api/admin/model-management/deployments/$deployment_id/configuration")"
+[[ "$limit_status" == "202" ]] || fail_with_diagnostics "Applying new limits should start a background operation; got HTTP ${limit_status}: $(cat /tmp/route-limits.json)"
+applied=false
+for attempt in {1..40}; do
+  if curl -fsS "$BASE/api/admin/operations" | jq -e 'map(select(.kind == "model.limits")) | length == 1 and .[0].status == "Succeeded"' >/dev/null; then applied=true; break; fi
+  curl -fsS "$BASE/api/admin/operations" | jq -e 'map(select(.kind == "model.limits" and .status == "Failed")) | length == 0' >/dev/null \
+    || fail_with_diagnostics "The capacity operation failed: $(curl -fsS "$BASE/api/admin/operations")"
+  sleep 1
+done
+[[ "$applied" == true ]] || fail_with_diagnostics "The capacity operation did not finish."
+curl -fsS "$BASE/api/admin/deployments" | jq -e '.[0].enabled and .[0].routingDesired and .[0].activationStartJobId == null' >/dev/null \
+  || fail_with_diagnostics "Routing was not given back after the capacity change."
+curl -fsS "$BASE/api/admin/models" | jq -e '.[0].contextWindowTokens == 16384' >/dev/null \
+  || fail_with_diagnostics "The published context did not follow the new runtime limits."
+curl -fsS "$BASE/api/admin/audit?take=50" | jq -e 'any(.[]; .action == "model.runtime.configure")' >/dev/null \
+  || fail_with_diagnostics "The capacity change was not audited."
+
 # Stop the durable store after startup. /readyz is expected to become unavailable,
 # but already-published inference authentication + route resolution must keep working.
 "${COMPOSE[@]}" stop postgres >/dev/null

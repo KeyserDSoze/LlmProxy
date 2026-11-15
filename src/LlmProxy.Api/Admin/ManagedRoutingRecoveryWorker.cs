@@ -48,6 +48,8 @@ public sealed class ManagedRoutingRecoveryWorker(IServiceScopeFactory scopes, IL
         var requested = jobs.FirstOrDefault(job => job.Id == id && job.InstallationId == deployment.ManagedInstallationId);
         if (requested is null) return false;
         if (requested.Status == "completed") return true;
+        // The new limits did not start and the Agent put the previous ones back: the model is running and was health-checked.
+        if (requested.Status == "failed" && requested.RolledBack) return true;
         // After an Agent reboot or a failed attempt the guarded bootstrap may finish a replacement job.
         // Both timestamps are from the same Agent; a queued/starting operation never accepts an older success.
         return requested.Status is "interrupted" or "failed" && jobs.Any(job =>

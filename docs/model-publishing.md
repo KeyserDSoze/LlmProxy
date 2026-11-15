@@ -29,6 +29,8 @@ Intent and a caller-generated start-job ID commit **before** contacting the Agen
 
 **Upgrade the Node Agent with the gateway.** It must accept `{"jobId":"<uuid>"}` on `/v1/models/{installationId}/start-jobs` and `/restart-jobs` (idempotent for the same ID/installation/action). An older Agent cannot provide durable job correlation; routing stays off with an upgrade message. Agent restarts preserve desired-running state; operator cancellation/Stop clears it.
 
+Capacity changes (`docs/model-capacity.md`) use the same Agent restart job with an attached `profile`; the activation barrier, drain and recovery rules are the same, and a job the Agent rolled back (`rolledBack`) counts as recovered because the model runs again with its earlier limits. The published context follows the runtime only on request.
+
 Engine updates use the Agent-owned restart job so its stop/start gap does not erase desired-running state. The gateway drains requests on its local replica first and refuses to restart if its 90-second drain times out. **Distributed multi-replica restart drain and a durable whole-engine restart queue remain open**: an accepted individual start survives a gateway restart, but later models in the sequence are not automatically resumed. See `docs/model-bootstrap.md`.
 
 Real Spark GPU/ARM64 reboot and engine-update acceptance requires an upgraded Agent and remains external validation; local mock, Docker and PostgreSQL evidence does not replace it.

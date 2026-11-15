@@ -7,6 +7,9 @@ import ModelCapabilityPanel, { ModelCapabilitySummary } from './ModelCapabilityP
 import ModelsDeployments from './ModelsDeployments'
 import HuggingFaceDiscoveryPanel from './HuggingFaceDiscoveryPanel'
 import InstalledModelCards from './InstalledModelCards'
+import CapacityForm from './CapacityForm'
+import type { CapacityPlan, CapacitySibling } from './CapacityForm'
+import { POLICY_CONTEXT_CEILING } from './capacityOptions'
 import ModelJobsTable from './ModelJobsTable'
 import SystemOneExperience from './SystemOneExperience'
 import { kindInfo, surfaceOf } from './modelKinds'
@@ -75,11 +78,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
   const [maxModelLen, setMaxModelLen] = useState(8192)
   const [maxOutputTokens, setMaxOutputTokens] = useState(256)
-  const [editingInstall, setEditingInstall] = useState<ManagedInstallation | null>(null)
-  const [editContext, setEditContext] = useState(8192)
-  const [editSequences, setEditSequences] = useState(1)
-  const [editOutput, setEditOutput] = useState(256)
-  const [editGpuMemoryFraction, setEditGpuMemoryFraction] = useState(0.7)
+  const [capacityFor, setCapacityFor] = useState<ManagedInstallation | null>(null)
   const [upstreamRevisions, setUpstreamRevisions] = useState<ModelRevisionStatus[]>([])
   const [revisionBusy, setRevisionBusy] = useState(false)
   const [kvCacheDtype, setKvCacheDtype] = useState<'auto' | 'fp8'>('auto')
@@ -99,8 +98,13 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   // What is being installed decides which properties make sense: chat models publish tools/vision/reasoning, embedding models only a context.
   const installKind: ModelKind = installCatalogId === 'custom' ? customSurface : surfaceOf(installDescriptor?.surface)
   const installContextCeiling = Math.min(262144, installDescriptor?.contextTokens ?? 262144)
-  const editCatalogMax = overview?.catalog.find(item => item.model.id === editingInstall?.catalogModelId)?.model.contextTokens
-  const editContextCeiling = Math.min(262144, editCatalogMax ?? 262144)
+  const capacityCatalogMax = overview?.catalog.find(item => item.model.id === capacityFor?.catalogModelId)?.model.contextTokens
+  const capacityCeiling = Math.min(POLICY_CONTEXT_CEILING, capacityCatalogMax ?? POLICY_CONTEXT_CEILING)
+  // The same logical model installed on other servers can be changed in the same step.
+  const capacitySiblings: CapacitySibling[] = capacityFor
+    ? deployments.filter(item => item.modelId === capacityFor.modelId && item.id !== capacityFor.id && item.managedInstallationId)
+      .map(deployment => ({ deployment, nodeName: nodes.find(node => node.id === deployment.nodeId)?.name ?? deployment.nodeId }))
+    : []
   const fixedMediaRuntime = runtimeChoice === 'faster-whisper' || runtimeChoice === 'laya' ||
     runtimeChoice === 'kokoro' || runtimeChoice === 'diffusers'
   const cpuMediaRuntime = runtimeChoice === 'faster-whisper' || runtimeChoice === 'laya' || runtimeChoice === 'kokoro'
@@ -200,7 +204,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   useEffect(() => {
     // Hardware can change via dropdown or browser history; never show a stale
     // inventory or let an old request re-enable installation on another node.
-    setOverview(null); setDownloadJobs([]); setStartJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setEditingInstall(null)
+    setOverview(null); setDownloadJobs([]); setStartJobs([]); setInstallCatalogId(null); setUpstreamRevisions([]); setCapacityFor(null)
     setResourcesOpen(false); setResources(null); setResourcesError(null)
     setMessage(null); setError(null)
   }, [nodeId])
@@ -638,28 +642,30 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   }
 
   function openProfileEdit(item: ManagedInstallation) {
-    setEditingInstall(item)
-    setEditContext(item.agentState?.maxModelLen ?? 8192)
-    setEditSequences(item.agentState?.maxNumSeqs ?? 1)
-    setEditOutput(item.agentState?.maxOutputTokens ?? 256)
-    setEditGpuMemoryFraction(item.agentState?.gpuMemoryUtilization ?? 0.7)
+    setCapacityFor(item)
     setMessage(null); setError(null)
   }
-  async function saveProfile(event: FormEvent) {
-    event.preventDefault()
-    if (!editingInstall) return
-    setBusy('edit:' + editingInstall.id); setError(null)
-    try {
-      await api.configureManagedDeployment(editingInstall.id, {
-        maxModelLen: editContext, maxNumSeqs: editSequences,
-        maxOutputTokens: editingInstall.runtime === 'airllm' ? editOutput : null,
-        gpuMemoryUtilization: editingInstall.runtime === 'vllm' ? editGpuMemoryFraction : null
-      })
-      setEditingInstall(null)
-      setMessage('Runtime limits updated without deleting model weights. Press Start to apply the new limits.')
-      await Promise.all([load(), refresh()])
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setBusy(null) }
+  /** Sends the change to every chosen server. The model on this page is the one the dialog closes on. */
+  async function applyCapacity(plan: CapacityPlan): Promise<string | null> {
+    const failures: string[] = []
+    let accepted = 0
+    for (const target of plan.targets) {
+      try {
+        const result = await api.configureManagedDeployment(target.deploymentId, target.body)
+        accepted++
+        if ('kind' in result) {
+          knownOperations.current.set(result.id, result.status)
+          if (result.nodeId === nodeId) setOperations(current => [result, ...current.filter(entry => entry.id !== result.id)])
+        }
+      } catch (reason) { failures.push(`${target.label}: ${reason instanceof Error ? reason.message : String(reason)}`) }
+    }
+    // Nothing went through: keep the dialog open with the reasons. If some did, close it and say what is left.
+    if (accepted === 0) return failures.join('\n')
+    setCapacityFor(null)
+    setMessage(plan.savedOnly ? t('capacity.savedOnly') : t('capacity.started'))
+    if (failures.length > 0) setError(t('capacity.partial') + ' ' + failures.join(' · '))
+    await Promise.all([load(), refresh()])
+    return null
   }
   async function checkRevisions() {
     setRevisionBusy(true); setError(null)
@@ -960,42 +966,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         logicalModel={capabilityDetails.logicalModel}/>}
     </Modal>
 
-    <Modal open={Boolean(editingInstall)} title={`${t('catalog.editTitle')} · ${editingInstall?.logicalModel ?? ''}`}
-      description={t('catalog.editDescription')}
-      onClose={() => setEditingInstall(null)}>
-      <form className="formPanel" onSubmit={event => void saveProfile(event)}>
-        <p className="notice">Current: {editingInstall?.agentState?.maxModelLen ?? 8192} context tokens,
-          {editingInstall?.runtime === 'airllm' ? ` ${editingInstall.agentState?.maxOutputTokens ?? 256} maximum output tokens` : ' output controlled by caller'}.
-          Higher values may increase memory usage, latency and GPU pressure.</p>
-        <label>Maximum context (prompt + completion) tokens
-          <input aria-label={t('model.editContext')} type="number" min="256"
-            max={editContextCeiling}
-            value={editContext} onChange={event => setEditContext(Number(event.target.value))} required />
-        </label>
-        <ContextPresets value={editContext} onChange={setEditContext}
-          ceiling={editContextCeiling} curated={editCatalogMax != null}
-          sharedPool={editingInstall?.runtime === 'llama.cpp'} />
-        {editingInstall?.runtime === 'airllm' && <label>Maximum output tokens per request
-          <input aria-label={t('model.editOutput')} type="number" min="1" max={Math.min(4096, editContext)}
-            value={editOutput} onChange={event => setEditOutput(Number(event.target.value))} required />
-        </label>}
-        <label>Maximum concurrent sequences / queue
-          <input aria-label={t('model.editSequences')} type="number" min="1" max="128"
-            value={editSequences} onChange={event => setEditSequences(Number(event.target.value))} required />
-        </label>
-        {editingInstall?.runtime === 'vllm' && <label>vLLM GPU memory utilization (0.10–0.95)
-          <input aria-label="vLLM GPU memory fraction" type="number" min="0.1" max="0.95" step="0.05"
-            value={editGpuMemoryFraction} onChange={event => setEditGpuMemoryFraction(Number(event.target.value))} required />
-          <span className="muted">Suggested conservative starting value on unified-memory systems: 0.70.
-            This reserves a fraction of GPU-visible memory; it does not guarantee that enough RAM is currently free.
-            Check competing GPU processes and hardware cooling before starting.</span>
-        </label>}
-        <p className="muted">{t('model.editNotice')}</p>
-        <div className="modalActions"><button className="secondary" type="button" onClick={() => setEditingInstall(null)}>Cancel</button>
-          <button className="primary" disabled={!canWrite || busy !== null || editOutput > editContext ||
-            (editingInstall?.runtime === 'vllm' &&
-              (!Number.isFinite(editGpuMemoryFraction) || editGpuMemoryFraction < 0.1 || editGpuMemoryFraction > 0.95))}>{t('catalog.saveLimits')}</button></div>
-      </form>
+    <Modal open={Boolean(capacityFor) && canWrite} title={`${t('catalog.editTitle')} · ${capacityFor?.logicalModel ?? ''}`}
+      description={t('catalog.editDescription')} className="capacityModal"
+      onClose={() => setCapacityFor(null)}>
+      {capacityFor && <CapacityForm key={capacityFor.id} item={capacityFor} nodeName={overview?.node.name ?? ''}
+        ceiling={capacityCeiling} curated={capacityCatalogMax != null} siblings={capacitySiblings}
+        onApply={applyCapacity} onCancel={() => setCapacityFor(null)} />}
     </Modal>
 
     <Modal open={propertiesFor !== null} title={t('props.edit')} description={propertiesFor?.logicalModel ?? ''} onClose={() => setPropertiesFor(null)}>

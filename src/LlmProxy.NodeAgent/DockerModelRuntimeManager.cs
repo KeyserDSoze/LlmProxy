@@ -552,7 +552,7 @@ for index, entry in enumerate(files):
         message.Contains("No such container", StringComparison.OrdinalIgnoreCase);
 
     public async Task<ManagedModelState> ConfigureAsync(string installationId,
-        ManagedProfileUpdate update, CancellationToken cancellationToken)
+        ManagedProfileUpdate update, CancellationToken cancellationToken, bool preserveDesiredRunning = false)
     {
         using var lease = AcquireInstallation(installationId);
         {
@@ -560,25 +560,23 @@ for index, entry in enumerate(files):
             if (await IsRunningAsync(record, cancellationToken))
                 throw new InvalidOperationException(
                     "Stop this installation from LLMProxy before editing runtime limits. Model files are kept.");
-            var request = new InstallRequest(record.CatalogModelId, record.ProviderModelName,
-                record.Port, record.TensorParallelSize, record.ExtraArguments,
-                record.Runtime, update.MaxNumSeqs, update.MaxModelLen,
-                record.KvCacheDtype, record.CpuOffloadGiB, null, record.GpuDevices,
-                update.MaxOutputTokens, false, update.GpuMemoryUtilization);
-            ManagedRuntimeProfiles.Validate(request);
-            var changed = record with {
-                MaxModelLen = update.MaxModelLen,
-                MaxNumSeqs = update.MaxNumSeqs,
-                MaxOutputTokens = update.MaxOutputTokens,
-                GpuMemoryUtilization = update.GpuMemoryUtilization,
+            if (ManagedRuntimeProfiles.LimitsProblem(record, update) is { } problem) throw new ArgumentException(problem);
+            var changed = ManagedRuntimeProfiles.WithLimits(record, update) with {
                 Status = "stopped",
                 RuntimeBaseAddress = null,
                 Error = null,
-                DesiredRunning = false
+                DesiredRunning = preserveDesiredRunning ? record.DesiredRunning : false
             };
             await registry.UpsertAsync(changed, cancellationToken);
             return ToState(changed, "stopped", null);
         }
+    }
+
+    /// <summary>Checks new limits against an installation without touching it, so a bad value never costs a restart.</summary>
+    public async Task ValidateLimitsAsync(string installationId, ManagedProfileUpdate update, CancellationToken cancellationToken)
+    {
+        var record = await RequireRecordAsync(installationId, cancellationToken);
+        if (ManagedRuntimeProfiles.LimitsProblem(record, update) is { } problem) throw new ArgumentException(problem);
     }
 
     public async Task RemoveAsync(string installationId, CancellationToken cancellationToken)

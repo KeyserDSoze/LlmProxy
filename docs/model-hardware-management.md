@@ -1,3 +1,7 @@
+## Unreleased — Capacity from Installed, on a running model (2026-11-15)
+
+- Installed → **Capacity** replaces *Edit limits*: dropdowns for context, parallel requests and, per engine, the AirLLM answer length or the vLLM GPU memory fraction. It works on a running model (**Apply and restart**, with automatic return to the earlier limits if the new ones do not start), on a stopped one (**Apply and start** / **Save limits**) and, optionally, on the same model on other servers. The earlier rule "stop the runtime before changing limits" no longer applies to this flow. Contract, per-engine flags and limits: `docs/model-capacity.md`.
+
 ## Unreleased — Configure memory reservation for existing vLLM installations (2026-10-25)
 
 - Admin *Edit limits* can now set vLLM's `--gpu-memory-utilization` as a typed fractional option (0.10–0.95), defaulting to a suggested conservative **0.70** when first editing on a unified-memory host; changing it does not delete model weights or reinstall the model.

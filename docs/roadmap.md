@@ -1,3 +1,13 @@
+## 2026-11-15 — Capacity from Installed
+- [x] Dropdown capacity dialog for every engine that has context/parallelism, on running and stopped models, with automatic rollback if the new limits do not start.
+- [x] Apply to the same model on other servers; update the advertised context on request; embedding batch follows the context.
+- [x] Local backend 833/833, Vitest 134/134, Playwright 104/104, visual 60/60, PostgreSQL smoke and a real Agent with a Docker test double.
+- [ ] Green main CI + immutable patch release for this source.
+- [ ] Upgrade the Spark Agent with the gateway (owner-authorized, backup first), then raise `muse-glimmer-30b` to 64K and observe real memory and start time.
+- [ ] Estimate KV-cache memory per context/slot from model metadata and show whether a value fits before applying (today the dialog only warns).
+- [ ] Surface the capacity dialog from the Playground/request diagnosis when an engine answers `exceed_context_size_error`.
+- [ ] Rollback after an Agent reboot mid-job (today only the guarded bootstrap retries).
+
 ## 2026-11-15 — Publishing review
 - [x] Registered names stay visible across restarts, including stopped/unrouted installations; public discovery stays active-only.
 - [x] Existing-model/server selector, current-name prefill and rename without reinstall; policy IDs/counters preserved; strict kind isolation.

@@ -5,9 +5,13 @@ namespace LlmProxy.NodeAgent;
 public sealed record ModelStartJob(
     Guid Id, string InstallationId, string Status, string Detail,
     string? Error, ManagedModelState? Result,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null, bool Restart = false);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null, bool Restart = false,
+    /// <summary>New limits applied between the stop and the start of this job, when the operator changed them.</summary>
+    ManagedProfileUpdate? Profile = null,
+    /// <summary>The new limits did not start; the previous ones were restored and the model is running again.</summary>
+    bool RolledBack = false);
 
-public sealed record ModelStartJobRequest(Guid JobId);
+public sealed record ModelStartJobRequest(Guid JobId, ManagedProfileUpdate? Profile = null);
 
 /// <summary>
 /// Persistent start operations survive browser/relay disconnections.
@@ -46,7 +50,7 @@ public sealed class ModelStartJobManager
         lock (_gate) return _jobs.Values.OrderByDescending(x => x.CreatedAtUtc).Take(50).ToArray();
     }
 
-    public ModelStartJob Enqueue(string installationId, bool restart = false, Guid? jobId = null)
+    public ModelStartJob Enqueue(string installationId, bool restart = false, Guid? jobId = null, ManagedProfileUpdate? profile = null)
     {
         if (string.IsNullOrWhiteSpace(installationId) || installationId.Length > 100 ||
             !System.Text.RegularExpressions.Regex.IsMatch(installationId, "^[a-z0-9-]+$"))
@@ -56,7 +60,7 @@ public sealed class ModelStartJobManager
             if (jobId == Guid.Empty) throw new ArgumentException("Start job id must not be empty.", nameof(jobId));
             if (jobId is { } requestedId && _jobs.TryGetValue(requestedId, out var existing))
             {
-                if (existing.InstallationId != installationId || existing.Restart != restart)
+                if (existing.InstallationId != installationId || existing.Restart != restart || existing.Profile != profile)
                     throw new InvalidOperationException("Start job id is already used by another operation.");
                 return existing;
             }
@@ -67,7 +71,7 @@ public sealed class ModelStartJobManager
                 _jobs.Remove(old.Id);
             var job = new ModelStartJob(jobId ?? Guid.NewGuid(), installationId, "queued",
                 "Queued on Agent; browser and tunnel disconnects cannot cancel this job.",
-                null, null, DateTimeOffset.UtcNow, Restart: restart);
+                null, null, DateTimeOffset.UtcNow, Restart: restart, Profile: profile);
             _jobs.Add(job.Id, job);
             Persist();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_host.ApplicationStopping);
@@ -98,6 +102,9 @@ public sealed class ModelStartJobManager
 
     private async Task ExecuteAsync(Guid id, CancellationTokenSource cts)
     {
+        // The limits the model had before this job changed them; set only once the model is stopped by this job, so a failed
+        // start with new limits can be undone without ever restarting a model that this job did not stop.
+        ManagedModelRecord? previous = null;
         try
         {
             var job = Get(id)!;
@@ -108,6 +115,14 @@ public sealed class ModelStartJobManager
             Update(id, x => x with { Status = "starting", Detail =
                 "Starting Docker runtime; waiting for model /health." });
             if (job.Restart) await _runtime.StopAsync(job.InstallationId, cts.Token, preserveDesiredRunning: true);
+            if (job.Profile is { } profile)
+            {
+                var before = await _registry.FindAsync(job.InstallationId, cts.Token);
+                if (job.Restart) previous = before;
+                Update(id, x => x with { Detail = "Saving the new limits; model files are kept." });
+                await _runtime.ConfigureAsync(job.InstallationId, profile, cts.Token, preserveDesiredRunning: true);
+                previous ??= before;
+            }
             var lastDetail = DateTimeOffset.MinValue;
             var result = await _runtime.StartAsync(job.InstallationId, cts.Token, detail =>
             {
@@ -140,16 +155,60 @@ public sealed class ModelStartJobManager
                 if (!string.IsNullOrWhiteSpace(state?.Error)) error = state.Error;
             }
             catch (Exception) { /* Keep the primary error. */ }
-            Update(id, x => x with { Status = "failed", Detail =
-                "Runtime start failed. Last Docker startup output is included when available.",
-                Error = error.Length > 3000 ? error[..3000] : error,
-                CompletedAtUtc = DateTimeOffset.UtcNow });
+            var (limitsRestored, restored) = previous is null ? (false, null) : await RollbackAsync(id, previous, cts.Token);
+            if (restored is not null)
+            {
+                Update(id, x => x with { Status = "failed", RolledBack = true, Result = restored,
+                    Detail = "The new limits did not start; the previous limits were restored and the model is running again.",
+                    Error = error.Length > 3000 ? error[..3000] : error,
+                    CompletedAtUtc = DateTimeOffset.UtcNow });
+            }
+            else
+            {
+                var suffix = previous is null ? ""
+                    : limitsRestored
+                        ? "\nThe previous limits were put back but the model could not start with them either; the Agent retries while the model is wanted."
+                        : "\nThe previous limits could not be restored automatically; check this model before starting it.";
+                var text = error + suffix;
+                Update(id, x => x with { Status = "failed", Detail =
+                    "Runtime start failed. Last Docker startup output is included when available.",
+                    Error = text.Length > 3000 ? text[..3000] : text,
+                    CompletedAtUtc = DateTimeOffset.UtcNow });
+            }
         }
         finally
         {
             lock (_gate) _active.Remove(id);
             cts.Dispose();
         }
+    }
+
+    /// <summary>Puts the earlier limits back, then starts the model again. Reports whether the limits are back and whether it runs.</summary>
+    private async Task<(bool LimitsRestored, ManagedModelState? Running)> RollbackAsync(Guid id, ManagedModelRecord previous, CancellationToken token)
+    {
+        var restored = false;
+        try
+        {
+            var current = await _registry.FindAsync(previous.InstallationId, CancellationToken.None);
+            if (current is null) return (false, null);
+            await _registry.UpsertAsync(ManagedRuntimeProfiles.RestoreLimits(current, previous) with
+                { Status = "stopped", Error = null, RuntimeBaseAddress = null, DesiredRunning = true }, CancellationToken.None);
+            restored = true;
+            Update(id, x => x with { Detail = "The new limits did not start; restoring the previous limits and starting again." });
+            return (true, await _runtime.StartAsync(previous.InstallationId, token));
+        }
+        catch (OperationCanceledException) when (!_host.ApplicationStopping.IsCancellationRequested)
+        {
+            // The operator cancelled while the previous limits were starting: respect it.
+            try
+            {
+                var record = await _registry.FindAsync(previous.InstallationId, CancellationToken.None);
+                if (record is not null) await _registry.UpsertAsync(record with { DesiredRunning = false }, CancellationToken.None);
+            }
+            catch (Exception) { /* Best effort. */ }
+            return (restored, null);
+        }
+        catch (Exception) { return (restored, null); }
     }
 
     private ModelStartJob? Get(Guid id)

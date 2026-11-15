@@ -95,7 +95,7 @@ internal static class RuntimeEngineRestarter
             .OrderBy(model => model.Port).ToArray();
     }
 
-    private static async Task WaitForDrainAsync(IRequestLoadTracker load, Guid deploymentId, string name, string step, Action<string> progress, CancellationToken token)
+    internal static async Task WaitForDrainAsync(IRequestLoadTracker load, Guid deploymentId, string name, string step, Action<string> progress, CancellationToken token)
     {
         var deadline = DateTimeOffset.UtcNow + DrainTimeout;
         while (load.GetActive(deploymentId) is var active and > 0 && DateTimeOffset.UtcNow < deadline)

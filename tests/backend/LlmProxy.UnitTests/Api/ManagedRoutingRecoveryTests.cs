@@ -96,6 +96,9 @@ public sealed class ManagedRoutingRecoveryTests
         Assert.True(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now.AddDays(-1), requestedId)])); // Remote clock skew is irrelevant.
         Assert.True(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now, requestedId, "interrupted"), Job(now.AddMinutes(1))]));
         Assert.False(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now, requestedId, "cancelled"), Job(now.AddMinutes(1))]));
+        // New limits that did not start were rolled back by the Agent: the model runs again and may return to routing.
+        Assert.True(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now, requestedId, "failed") with { RolledBack = true }]));
+        Assert.False(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now, requestedId, "failed")]));
         Assert.False(ManagedRoutingRecoveryWorker.CanRecover(deployment, state with { DesiredRunning = false }, [Job(now, requestedId)]));
         deployment.Disable();
         Assert.False(ManagedRoutingRecoveryWorker.CanRecover(deployment, state, [Job(now, requestedId)]));

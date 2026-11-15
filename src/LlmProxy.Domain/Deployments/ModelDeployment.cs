@@ -153,6 +153,14 @@ public sealed class ModelDeployment
     }
     public void SuspendRouting() => Enabled = false;
 
+    /// <summary>Puts back a routing state changed in anticipation of an Agent operation that the Agent then refused.</summary>
+    public void RestoreRouting(bool enabled, bool desired, Guid? startJobId)
+    {
+        Enabled = enabled;
+        RoutingDesired = desired;
+        ActivationStartJobId = startJobId;
+    }
+
     private static string? NormalizeOptional(string? value, int maxLength, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;

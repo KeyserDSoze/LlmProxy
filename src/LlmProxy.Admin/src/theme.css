@@ -493,3 +493,15 @@ tbody tr:hover td{background:var(--row-hover)}
 .publicationStates .pill{white-space:normal;line-height:1.4}
 .publicationTarget{display:grid;gap:8px;padding:14px;border:1px solid var(--border);border-radius:10px}
 .publicationTarget code{overflow-wrap:anywhere;font-size:12px}
+
+.capacityForm{display:grid;gap:14px}
+.capacityForm select{width:100%}
+.capacityForm p{margin:0;max-width:none}
+.capacityCurrent{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.capacityCurrent span:not(:last-child)::after{content:"·";margin-left:10px;opacity:.6}
+.capacityHint{margin-top:-6px!important}
+.modalBody .formPanel.capacityForm label.inlineCheck{display:flex;flex-direction:row;align-items:center;gap:10px;text-align:left}
+.modalBody .formPanel.capacityForm label.inlineCheck input{width:auto;margin:0;flex:0 0 auto}
+.capacitySiblings{display:grid;gap:8px;margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:10px}
+.capacitySiblings legend{padding:0 6px;font-weight:600}
+.capacitySiblings p{margin:0}

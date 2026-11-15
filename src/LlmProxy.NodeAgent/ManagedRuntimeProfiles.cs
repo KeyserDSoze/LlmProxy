@@ -138,6 +138,59 @@ public static class ManagedRuntimeProfiles
         }
     }
 
+    /// <summary>
+    /// A llama.cpp embedding model carries a physical batch as large as the per-slot context (it refuses a longer input).
+    /// When the context or the slot count changes, that batch has to follow, or the new context could not be used.
+    /// The formula is the one the gateway applies at install time.
+    /// </summary>
+    public static IReadOnlyList<string> WithEmbeddingBatch(string runtime, IReadOnlyList<string> arguments, int context, int sequences)
+    {
+        if (runtime != "llama.cpp" || !arguments.Contains("--embedding", StringComparer.Ordinal)) return arguments;
+        var kept = new List<string>();
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var argument = arguments[i];
+            if (argument is "--batch-size" or "--ubatch-size" or "-b" or "-ub") { i++; continue; }
+            if (argument.StartsWith("--batch-size=", StringComparison.Ordinal) || argument.StartsWith("--ubatch-size=", StringComparison.Ordinal)) continue;
+            kept.Add(argument);
+        }
+        var batch = Math.Clamp(context / Math.Max(1, sequences), 512, 8192).ToString(CultureInfo.InvariantCulture);
+        kept.AddRange(["--batch-size", batch, "--ubatch-size", batch]);
+        return kept;
+    }
+
+    /// <summary>Why this installation cannot take these limits, or null when it can. Checked before anything is stopped.</summary>
+    public static string? LimitsProblem(ManagedModelRecord record, ManagedProfileUpdate update)
+    {
+        try
+        {
+            Validate(new InstallRequest(record.CatalogModelId, record.ProviderModelName, record.Port, record.TensorParallelSize,
+                record.ExtraArguments, record.Runtime, update.MaxNumSeqs, update.MaxModelLen, record.KvCacheDtype, record.CpuOffloadGiB,
+                null, record.GpuDevices, update.MaxOutputTokens, false, update.GpuMemoryUtilization));
+            return null;
+        }
+        catch (ArgumentException error) { return error.Message; }
+    }
+
+    public static ManagedModelRecord WithLimits(ManagedModelRecord record, ManagedProfileUpdate update) => record with
+    {
+        MaxModelLen = update.MaxModelLen,
+        MaxNumSeqs = update.MaxNumSeqs,
+        MaxOutputTokens = update.MaxOutputTokens,
+        GpuMemoryUtilization = update.GpuMemoryUtilization,
+        ExtraArguments = WithEmbeddingBatch(record.Runtime, record.ExtraArguments, update.MaxModelLen, update.MaxNumSeqs)
+    };
+
+    /// <summary>Puts back the limits of an earlier record while keeping everything else of the current one.</summary>
+    public static ManagedModelRecord RestoreLimits(ManagedModelRecord current, ManagedModelRecord previous) => current with
+    {
+        MaxModelLen = previous.MaxModelLen,
+        MaxNumSeqs = previous.MaxNumSeqs,
+        MaxOutputTokens = previous.MaxOutputTokens,
+        GpuMemoryUtilization = previous.GpuMemoryUtilization,
+        ExtraArguments = previous.ExtraArguments
+    };
+
     public static ManagedModelRecord? FindMatchingInstallation(IReadOnlyList<ManagedModelRecord> rows, InstallRequest request) =>
         rows.FirstOrDefault(record =>
             string.Equals(record.CatalogModelId, request.CatalogModelId.Trim(), StringComparison.OrdinalIgnoreCase) &&

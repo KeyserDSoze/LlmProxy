@@ -114,7 +114,8 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
         self._json(404, {"error": "not_found", "path": self.path})
 
     def do_POST(self):
-        if self.path == self._expected('/publishing-management/v1/models/publishing-smoke/start-jobs'):
+        if self.path in {self._expected('/publishing-management/v1/models/publishing-smoke/start-jobs'),
+                         self._expected('/publishing-management/v1/models/publishing-smoke/restart-jobs')}:
             if not self._authorized():
                 return
             if self.headers.get('Transfer-Encoding', '').lower() == 'chunked':
@@ -132,7 +133,8 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
             payload = json.loads(raw)
             # Intentionally years behind the gateway: recovery must correlate by id, not compare remote clocks.
             job = {'id': payload['jobId'], 'installationId': 'publishing-smoke', 'status': 'completed',
-                   'detail': 'Healthy', 'createdAtUtc': '2020-01-01T00:00:00Z', 'completedAtUtc': '2020-01-01T00:00:01Z'}
+                   'detail': 'Healthy', 'createdAtUtc': '2020-01-01T00:00:00Z', 'completedAtUtc': '2020-01-01T00:00:01Z',
+                   'restart': self.path.endswith('/restart-jobs'), 'profile': payload.get('profile')}
             self.server.publishing_jobs = [job]
             self._json(202, job)
             return

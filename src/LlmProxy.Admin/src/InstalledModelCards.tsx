@@ -3,6 +3,7 @@ import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import StartupDiagnosis from './StartupDiagnosis'
 import { AdminLink, CopyButton, InfoIcon } from './UiPrimitives'
 import { surfaceOf, urlForModelKind } from './modelKinds'
+import { perRequestTokens, sharesContextPool } from './capacityOptions'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
 import type { AdminOperation, FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
@@ -81,7 +82,9 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
         <dl className="installedModelFacts" aria-label={t('model.factsLabel')}>
           {typed ? <div><dt>{t('model.factsLabel')}</dt><dd>{typedRuntimeSummary(item.runtime)}</dd></div> : <>
             <div><dt>{t('catalog.tokenContext')}</dt>
-              <dd>{item.agentState?.maxModelLen?.toLocaleString() ?? (item.runtime === 'airllm' ? '8,192' : 'default')} tokens</dd></div>
+              <dd>{item.agentState?.maxModelLen?.toLocaleString() ?? (item.runtime === 'airllm' ? '8,192' : 'default')} tokens
+                {item.agentState?.maxModelLen && sharesContextPool(item.runtime) && (item.agentState.maxNumSeqs ?? 1) > 1 &&
+                  <span className="muted"> · ≈{perRequestTokens(item.runtime, item.agentState.maxModelLen, item.agentState.maxNumSeqs ?? 1).toLocaleString()} {t('capacity.perSlot')}</span>}</dd></div>
             <div><dt>Seq</dt><dd>{item.agentState?.maxNumSeqs ?? 'default'}</dd></div>
             <div><dt>{t('catalog.output')}</dt>
               <dd>{item.runtime === 'airllm' ? (item.agentState?.maxOutputTokens ?? 256) : t('catalog.perRequest')}</dd></div>
@@ -164,9 +167,8 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <AdminLink className="buttonLink secondary" href={urlForModelKind(surfaceOf(item.surface), 'advanced') + '&publish=' + encodeURIComponent(item.modelId)}>{t('publishing.publish')}</AdminLink>
           <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !running}
             onClick={() => onAction('stop', item.id)}>{t('catalog.stop')}</button>
-          <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable || typed || running}
-            title={typed ? 'This typed media runtime has fixed concurrency and no Chat-token parameters.'
-              : running ? t('catalog.startStopped') : t('catalog.editStopped')}
+          <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable || typed || starting}
+            title={typed ? 'This typed media runtime has fixed concurrency and no Chat-token parameters.' : t('catalog.editStopped')}
             onClick={() => onEdit(item)}>{t('catalog.edit')}</button>
           {!typed && <button className="secondary" disabled={!running}
             onClick={() => onBenchmark(item.id)}>{t('catalog.benchmark')}</button>}

@@ -976,6 +976,20 @@ export type ProductUpdateOverview = {
   releases: AvailableProductRelease[]
 }
 
+/** What Installed → Capacity sends. A missing output cap or GPU fraction keeps the runtime's current value. */
+export type CapacityRequest = {
+  maxModelLen: number
+  maxNumSeqs: number
+  maxOutputTokens: number | null
+  gpuMemoryUtilization?: number | null
+  /** Restart (or start) the model now with the new limits; otherwise they are saved for the next start. */
+  applyNow?: boolean
+  /** With applyNow, a stopped model is only updated, not started. */
+  keepStopped?: boolean
+  /** Also change the context clients read on /v1/models/details. */
+  syncPublishedContext?: boolean
+}
+
 export type AdminOperation = {
   id: string
   kind: string

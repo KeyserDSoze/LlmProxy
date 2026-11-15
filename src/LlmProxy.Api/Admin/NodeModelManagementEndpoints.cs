@@ -736,14 +736,26 @@ public static class NodeModelManagementEndpoints
             try
             {
                 var requestedId = Guid.NewGuid();
+                var previousRouting = (deployment.Enabled, deployment.RoutingDesired, deployment.ActivationStartJobId);
                 deployment.AwaitStart(requestedId);
                 // Persist before contacting the Agent: a disconnect after acceptance must not lose activation intent.
                 await db.SaveChangesAsync(token);
                 var path = "/v1/models/" +
                     Uri.EscapeDataString(deployment.ManagedInstallationId) + "/start-jobs";
-                var job = await SendAgentAsync<ModelStartJob>(
-                    factory.CreateClient("node-management"), node, protector,
-                    HttpMethod.Post, path, new { jobId = requestedId }, token);
+                ModelStartJob job;
+                try
+                {
+                    job = await SendAgentAsync<ModelStartJob>(
+                        factory.CreateClient("node-management"), node, protector,
+                        HttpMethod.Post, path, new { jobId = requestedId }, token);
+                }
+                catch (AgentException refused) when (refused.StatusCode is not null)
+                {
+                    // The Agent answered with an error, so no job exists: do not leave activation waiting for it.
+                    deployment.RestoreRouting(previousRouting.Enabled, previousRouting.RoutingDesired, previousRouting.ActivationStartJobId);
+                    await db.SaveChangesAsync(CancellationToken.None);
+                    throw;
+                }
                 if (job.Id != requestedId)
                     throw new AgentException("Upgrade the Agent to support durable start-job identity, then check health and activate this model.");
                 AddAudit(db, context, "model.start_queued", "deployment", id.ToString(),
@@ -931,15 +943,12 @@ public static class NodeModelManagementEndpoints
         });
 
         var configureProfile = group.MapPut("/deployments/{id:guid}/configuration", async (
-            Guid id, ManagedProfileUpdate settings,
+            Guid id, ManagedLimitsRequest settings,
             GatewayDbContext db, IHttpClientFactory factory,
-            UpstreamCredentialProtector protector, HttpContext context, CancellationToken token) =>
+            UpstreamCredentialProtector protector, AdminOperationService operations,
+            HttpContext context, CancellationToken token) =>
         {
-            if (settings.MaxModelLen is < 256 or > 262144 ||
-                settings.MaxNumSeqs is < 1 or > 128 ||
-                settings.MaxOutputTokens is < 1 or > 4096 ||
-                settings.GpuMemoryUtilization is double fraction &&
-                (!double.IsFinite(fraction) || fraction < 0.1 || fraction > 0.95))
+            if (ManagedLimits.OutOfRange(settings))
                 return Results.BadRequest(new { error = "invalid_runtime_limits" });
             var deployment = await db.Deployments.FindAsync([id], token);
             if (deployment is null) return Results.NotFound();
@@ -956,24 +965,40 @@ public static class NodeModelManagementEndpoints
                 var state = existing.Models?.FirstOrDefault(x =>
                     string.Equals(x.InstallationId, deployment.ManagedInstallationId, StringComparison.Ordinal));
                 if (state is null) return Results.Conflict(new { error = "installation_not_found" });
-                if (string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase))
+                if (ManagedLimits.Problem(settings, state, DeployableModelCatalog.Find(deployment.CatalogModelId ?? "")) is { } problem)
+                    return problem;
+                var running = string.Equals(state.Status, "running", StringComparison.OrdinalIgnoreCase);
+
+                if (ManagedLimits.WantsRestart(settings, running))
+                {
+                    if (!node.Enabled || node.Status == LlmProxy.Domain.Nodes.NodeStatus.Draining)
+                        return Results.Conflict(new { error = "node_not_routable",
+                            message = "Enable the node and exit maintenance before restarting models." });
+                    var logical = await db.Models.AsNoTracking().SingleOrDefaultAsync(item => item.Id == deployment.ModelId, token);
+                    var caller = ManagedModelOperations.Caller.From(context);
+                    var operation = operations.StartWithProgress("model.limits",
+                        $"Apply limits · {logical?.PublicName ?? deployment.ManagedInstallationId}", node.Id, id,
+                        (services, progress, operationToken) => ManagedLimits.ApplyAsync(services, id, settings, caller, progress, operationToken),
+                        TimeSpan.FromMinutes(60));
+                    return operation is null
+                        ? Results.Conflict(new { error = "operation_in_progress", message = "Another operation is already running for this model." })
+                        : Results.Accepted($"/api/admin/operations/{operation.Id}", operation);
+                }
+
+                if (running)
                     return Results.Conflict(new { error = "stop_runtime_first",
-                        message = "Stop the runtime before changing input/output limits. No model files will be deleted." });
-                var descriptor = DeployableModelCatalog.Find(deployment.CatalogModelId ?? "");
-                if (descriptor is not null && settings.MaxModelLen > descriptor.ContextTokens)
-                    return Results.BadRequest(new { error = "context_exceeds_supported_profile", maxContextTokens = descriptor.ContextTokens });
-                if (state.Runtime != "vllm" && settings.GpuMemoryUtilization is not null)
-                    return Results.BadRequest(new { error = "gpu_memory_utilization_vllm_only" });
-                if (state.Runtime != "airllm" && settings.MaxOutputTokens is not null)
-                    return Results.BadRequest(new { error = "output_cap_supported_by_airllm_only",
-                        message = "For vLLM/SGLang/llama.cpp, output tokens are controlled by each inference request within the context window." });
+                        message = "The model is running. Use Apply and restart to change its limits now, or stop it first to save them for the next start. No model files are deleted." });
+                var merged = ManagedLimits.Merge(settings, state);
                 var path = $"/v1/models/{Uri.EscapeDataString(deployment.ManagedInstallationId)}/configuration";
                 var updated = await SendAgentAsync<ManagedModelState>(client, node, protector,
-                    HttpMethod.Put, path, settings, token);
+                    HttpMethod.Put, path, merged, token);
                 deployment.Disable();
+                if (settings.SyncPublishedContext)
+                    await ManagedLimits.SyncPublishedContextAsync(db, deployment, state.Runtime, merged, token);
                 AddAudit(db, context, "model.runtime.configure", "deployment", id.ToString(),
-                    new { node.Id, deployment.ManagedInstallationId, settings.MaxModelLen,
-                        settings.MaxNumSeqs, settings.MaxOutputTokens, settings.GpuMemoryUtilization });
+                    new { node.Id, deployment.ManagedInstallationId, merged.MaxModelLen,
+                        merged.MaxNumSeqs, merged.MaxOutputTokens, merged.GpuMemoryUtilization,
+                        applyNow = false, syncedPublishedContext = settings.SyncPublishedContext });
                 await db.SaveChangesAsync(token);
                 return Results.Ok(new { deployment, state = updated });
             }
@@ -1700,6 +1725,14 @@ public static class NodeModelManagementEndpoints
 
     public sealed record ManagedProfileUpdate(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
         double? GpuMemoryUtilization = null);
+    /// <summary>
+    /// What the operator asks for in Installed → Capacity. A missing output cap or GPU fraction keeps the current value, so changing
+    /// the context never clears a setting this runtime has. <see cref="ApplyNow"/> restarts the model (or starts it) with the
+    /// new limits; without it the limits are saved for the next start and the model must be stopped. <see cref="KeepStopped"/>
+    /// makes <see cref="ApplyNow"/> leave a stopped model stopped (it only saves), for servers that were not the one being worked on.
+    /// </summary>
+    public sealed record ManagedLimitsRequest(int MaxModelLen, int MaxNumSeqs, int? MaxOutputTokens,
+        double? GpuMemoryUtilization = null, bool ApplyNow = false, bool SyncPublishedContext = false, bool KeepStopped = false);
     public sealed record ConfigureManagementRequest(string? ManagementBaseAddress, string? BearerToken = null, bool ClearBearerToken = false);
     public sealed record HuggingFaceAccessRequest(string? Token);
     public sealed record InstallManagedModelRequest(string? PublicName = null, int? Port = null, bool Force = false,
@@ -1716,7 +1749,8 @@ public static class NodeModelManagementEndpoints
         bool StartAfterInstall = false);
     public sealed record ModelStartJob(Guid Id, string InstallationId, string Status, string Detail,
         string? Error, ManagedModelState? Result, DateTimeOffset CreatedAtUtc,
-        DateTimeOffset? CompletedAtUtc = null);
+        DateTimeOffset? CompletedAtUtc = null, bool Restart = false,
+        ManagedProfileUpdate? Profile = null, bool RolledBack = false);
     public sealed record ModelInstallJob(Guid Id, AgentInstallRequest Request, string Status, string Stage,
         double? Percent, string Detail, long? CompletedBytes, long? TotalBytes,
         ManagedModelState? Result, string? Error, DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null,

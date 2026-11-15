@@ -35,6 +35,10 @@ GPU containers (vLLM, SGLang, AirLLM, Diffusers and llama.cpp on GPU) are starte
 
 The gateway's `ManagedRoutingRecoveryWorker` observes each managed installation and its `/health`, suspending its routing while it is stopped/unready and restoring it from durable `RoutingDesired` after recovery. An intentional start/restart waits for the matching `ActivationStartJobId`, not an old start or the browser. Explicit Stop/disable clears intent and is never automatically undone. Detection is periodic, so there is still a detection window after an unexpected process crash. See `docs/model-publishing.md` for the contract and upgrade requirements.
 
+## After a capacity change
+
+A change of context or parallel requests (Installed → Capacity, `docs/model-capacity.md`) is an Agent restart job that carries the new limits. The Agent keeps the earlier limits aside and restores them if the new ones do not start, so a model is not left down by a value that does not fit. If the Agent restarts mid-job, the new limits stay saved and this bootstrap retries the model (it does not roll back); after five failed attempts it gives up like for any other model.
+
 ## After an engine update
 
 An update replaces the image but running models keep the old one. Admin offers **Restart the running models afterwards** (on the Update dialog and on each automatic-update policy, default on for scheduled updates). The gateway then, one model at a time: suspends routing while preserving intent, waits up to 90 seconds for its local in-flight requests, sends one persistent Agent `/restart-jobs` operation and restores routing after readiness. A drain timeout refuses the restart instead of interrupting requests. If one does not come back its routing stays off and the sequence stops; guarded bootstrap/recovery may retry it. It only restarts when the update really changed the image.

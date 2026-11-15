@@ -83,15 +83,28 @@ app.MapDelete("/v1/runtime-engines/{engineId}", async (string engineId, RuntimeE
 });
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
 app.MapGet("/v1/models/start-jobs", (ModelStartJobManager jobs) => Results.Ok(jobs.List()));
-app.MapPost("/v1/models/{installationId}/restart-jobs", (string installationId, ModelStartJobManager jobs, ModelStartJobRequest? request) =>
+app.MapPost("/v1/models/{installationId}/restart-jobs", async (string installationId, ModelStartJobManager jobs,
+    DockerModelRuntimeManager manager, ModelStartJobRequest? request, CancellationToken token) =>
 {
-    try { return Results.Accepted(value: jobs.Enqueue(installationId, restart: true, jobId: request?.JobId)); }
+    try
+    {
+        // A value the model cannot take is refused here, before anything is stopped.
+        if (request?.Profile is { } profile) await manager.ValidateLimitsAsync(installationId, profile, token);
+        return Results.Accepted(value: jobs.Enqueue(installationId, restart: true, jobId: request?.JobId, profile: request?.Profile));
+    }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
     catch (InvalidOperationException error) { return Results.Conflict(new { error = error.Message }); }
 });
-app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs, ModelStartJobRequest? request) =>
+app.MapPost("/v1/models/{installationId}/start-jobs", async (string installationId, ModelStartJobManager jobs,
+    DockerModelRuntimeManager manager, ModelStartJobRequest? request, CancellationToken token) =>
 {
-    try { return Results.Accepted(value: jobs.Enqueue(installationId, jobId: request?.JobId)); }
+    try
+    {
+        if (request?.Profile is { } profile) await manager.ValidateLimitsAsync(installationId, profile, token);
+        return Results.Accepted(value: jobs.Enqueue(installationId, jobId: request?.JobId, profile: request?.Profile));
+    }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
