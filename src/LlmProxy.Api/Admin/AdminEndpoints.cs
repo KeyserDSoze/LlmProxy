@@ -451,6 +451,8 @@ public static class AdminEndpoints
             var deployment = await dbContext.Deployments.FindAsync([id], cancellationToken);
             if (deployment is null) return Results.NotFound();
             var before = new { deployment.Weight, deployment.MaxConcurrency, deployment.Enabled };
+            if (request.Enabled && !deployment.Enabled && deployment.ManagedInstallationId is not null)
+                return Results.Conflict(new { error = "health_check_required", message = "Use Check health & activate for an Agent-managed runtime." });
             deployment.SetCapacity(request.Weight, request.MaxConcurrency);
             if (request.Enabled) deployment.Enable(); else deployment.Disable();
             AddAudit(dbContext, httpContext, "deployment.update", "deployment", deployment.Id.ToString(), new

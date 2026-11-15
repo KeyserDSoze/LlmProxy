@@ -125,6 +125,8 @@ public sealed class OutboundAgentRelayWorker(
                 (frame.Method == "POST" && (localPath is "/v1/models/install" or "/v1/models/install-jobs" or "/v1/system/prepare" or "/v1/runtime-engines/check-updates" ||
                     (localPath.StartsWith("/v1/runtime-engines/", StringComparison.Ordinal) && localPath.EndsWith("/jobs", StringComparison.Ordinal)) ||
                     (localPath.StartsWith("/v1/models/", StringComparison.Ordinal) &&
+                     localPath.EndsWith("/restart-jobs", StringComparison.Ordinal)) ||
+                    (localPath.StartsWith("/v1/models/", StringComparison.Ordinal) &&
                      (localPath.EndsWith("/start", StringComparison.Ordinal) || localPath.EndsWith("/start-jobs", StringComparison.Ordinal) || localPath.EndsWith("/stop", StringComparison.Ordinal) || localPath.EndsWith("/force-stop", StringComparison.Ordinal))))) ||
                 (frame.Method == "DELETE" && (localPath.StartsWith("/v1/models/", StringComparison.Ordinal) || localPath.StartsWith("/v1/runtime-engines/", StringComparison.Ordinal)));
             if (!valid) throw new InvalidDataException("Management path not allowed.");

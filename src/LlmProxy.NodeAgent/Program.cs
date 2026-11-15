@@ -83,9 +83,15 @@ app.MapDelete("/v1/runtime-engines/{engineId}", async (string engineId, RuntimeE
 });
 app.MapGet("/v1/models/install-jobs", (ModelInstallJobManager jobs) => Results.Ok(jobs.List()));
 app.MapGet("/v1/models/start-jobs", (ModelStartJobManager jobs) => Results.Ok(jobs.List()));
-app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs) =>
+app.MapPost("/v1/models/{installationId}/restart-jobs", (string installationId, ModelStartJobManager jobs, ModelStartJobRequest? request) =>
 {
-    try { return Results.Accepted(value: jobs.Enqueue(installationId)); }
+    try { return Results.Accepted(value: jobs.Enqueue(installationId, restart: true, jobId: request?.JobId)); }
+    catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
+    catch (InvalidOperationException error) { return Results.Conflict(new { error = error.Message }); }
+});
+app.MapPost("/v1/models/{installationId}/start-jobs", (string installationId, ModelStartJobManager jobs, ModelStartJobRequest? request) =>
+{
+    try { return Results.Accepted(value: jobs.Enqueue(installationId, jobId: request?.JobId)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
 });
@@ -123,15 +129,17 @@ app.MapPut("/v1/models/{installationId}/configuration", async (
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
 });
-app.MapPost("/v1/models/{installationId}/stop", async (string installationId, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
+app.MapPost("/v1/models/{installationId}/stop", async (string installationId, DockerModelRuntimeManager manager, ModelStartJobManager jobs, CancellationToken cancellationToken) =>
 {
+    jobs.CancelInstallation(installationId);
     try { return Results.Ok(await manager.StopAsync(installationId, cancellationToken)); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
     { return Results.Problem(error.Message, statusCode: StatusCodes.Status502BadGateway); }
 });
-app.MapPost("/v1/models/{installationId}/force-stop", async (string installationId, DockerModelRuntimeManager manager, CancellationToken cancellationToken) =>
+app.MapPost("/v1/models/{installationId}/force-stop", async (string installationId, DockerModelRuntimeManager manager, ModelStartJobManager jobs, CancellationToken cancellationToken) =>
 {
+    jobs.CancelInstallation(installationId);
     try { return Results.Ok(await manager.StopAsync(installationId, cancellationToken, force: true)); }
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (Exception error) when (error is InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)

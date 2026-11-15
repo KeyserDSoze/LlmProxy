@@ -100,6 +100,8 @@ public sealed class GatewayDbContext(DbContextOptions<GatewayDbContext> options)
 
         modelBuilder.Entity<ModelDeployment>(entity =>
         {
+            entity.Property(x => x.RoutingDesired).IsConcurrencyToken();
+            entity.Property(x => x.ActivationStartJobId).IsConcurrencyToken();
             entity.ToTable("deployments");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.BenchmarkSource).HasMaxLength(500);

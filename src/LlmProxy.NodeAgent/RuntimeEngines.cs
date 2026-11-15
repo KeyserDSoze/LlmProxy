@@ -48,6 +48,21 @@ public sealed record InspectedImage(string Id, DateTimeOffset? CreatedAtUtc, lon
 
 public static class RuntimeEngineParsing
 {
+    /// <summary>Union current-image containers with registered installations, including those on a previous image.</summary>
+    public static int CountRunning(string engineId, IReadOnlyList<ManagedModelRecord> records, string containers, string ancestry)
+    {
+        var names = records.Where(record => record.Runtime == engineId)
+            .Select(record => "llmproxy-" + record.InstallationId).ToHashSet(StringComparer.Ordinal);
+        var ids = ancestry.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+        foreach (var line in containers.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var fields = line.Split('\t');
+            if (fields.Length != 2) throw new InvalidOperationException("Cannot read Docker running-container inventory.");
+            if (names.Contains(fields[1])) ids.Add(fields[0]);
+        }
+        return ids.Count;
+    }
+
     public static InspectedImage? ParseInspect(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;

@@ -5,12 +5,13 @@ namespace LlmProxy.NodeAgent;
 public sealed record ModelStartJob(
     Guid Id, string InstallationId, string Status, string Detail,
     string? Error, ManagedModelState? Result,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null);
+    DateTimeOffset CreatedAtUtc, DateTimeOffset? CompletedAtUtc = null, bool Restart = false);
+
+public sealed record ModelStartJobRequest(Guid JobId);
 
 /// <summary>
 /// Persistent start operations survive browser/relay disconnections.
-/// Interrupted Agent restarts require an explicit new Start, never automatic
-/// GPU reinitialization after power or thermal incidents.
+/// Desired-running state survives Agent restarts; the guarded bootstrap worker owns recovery.
 /// </summary>
 public sealed class ModelStartJobManager
 {
@@ -34,7 +35,7 @@ public sealed class ModelStartJobManager
         var saved = AgentStateFile.ReadList<ModelStartJob>(_file, Json, logger);
         _jobs = saved.ToDictionary(j => j.Id, j => j.Status is "queued" or "starting"
             ? j with { Status = "interrupted", Detail = "Agent restarted during startup.",
-                Error = "No automatic GPU restart after an Agent reboot; check hardware before restarting.",
+                Error = "Startup interrupted; guarded model bootstrap will retry if the model is still wanted.",
                 CompletedAtUtc = DateTimeOffset.UtcNow }
             : j);
         Persist();
@@ -45,21 +46,28 @@ public sealed class ModelStartJobManager
         lock (_gate) return _jobs.Values.OrderByDescending(x => x.CreatedAtUtc).Take(50).ToArray();
     }
 
-    public ModelStartJob Enqueue(string installationId)
+    public ModelStartJob Enqueue(string installationId, bool restart = false, Guid? jobId = null)
     {
         if (string.IsNullOrWhiteSpace(installationId) || installationId.Length > 100 ||
             !System.Text.RegularExpressions.Regex.IsMatch(installationId, "^[a-z0-9-]+$"))
             throw new ArgumentException("Invalid model installation ID.", nameof(installationId));
         lock (_gate)
         {
+            if (jobId == Guid.Empty) throw new ArgumentException("Start job id must not be empty.", nameof(jobId));
+            if (jobId is { } requestedId && _jobs.TryGetValue(requestedId, out var existing))
+            {
+                if (existing.InstallationId != installationId || existing.Restart != restart)
+                    throw new InvalidOperationException("Start job id is already used by another operation.");
+                return existing;
+            }
             if (_jobs.Values.Any(x => x.Status is "queued" or "starting"))
                 throw new InvalidOperationException("A runtime start is already in progress. Inspect its job before retrying.");
             foreach (var old in _jobs.Values.Where(x => x.Status is not ("queued" or "starting"))
                 .OrderBy(x => x.CreatedAtUtc).Take(Math.Max(0, _jobs.Count - 99)).ToArray())
                 _jobs.Remove(old.Id);
-            var job = new ModelStartJob(Guid.NewGuid(), installationId, "queued",
+            var job = new ModelStartJob(jobId ?? Guid.NewGuid(), installationId, "queued",
                 "Queued on Agent; browser and tunnel disconnects cannot cancel this job.",
-                null, null, DateTimeOffset.UtcNow);
+                null, null, DateTimeOffset.UtcNow, Restart: restart);
             _jobs.Add(job.Id, job);
             Persist();
             var cts = CancellationTokenSource.CreateLinkedTokenSource(_host.ApplicationStopping);
@@ -79,13 +87,27 @@ public sealed class ModelStartJobManager
         }
     }
 
+    public void CancelInstallation(string installationId)
+    {
+        lock (_gate)
+        {
+            foreach (var job in _jobs.Values.Where(job => job.InstallationId == installationId))
+                if (_active.TryGetValue(job.Id, out var cancellation)) cancellation.Cancel();
+        }
+    }
+
     private async Task ExecuteAsync(Guid id, CancellationTokenSource cts)
     {
         try
         {
             var job = Get(id)!;
+            // Persist intent before stopping: an Agent reboot between stop and start must still recover this model.
+            var record = await _registry.FindAsync(job.InstallationId, cts.Token)
+                ?? throw new KeyNotFoundException("Installation no longer exists.");
+            await _registry.UpsertAsync(record with { DesiredRunning = true }, cts.Token);
             Update(id, x => x with { Status = "starting", Detail =
-                "Starting Docker runtime; waiting for model /health. No automatic crash restarts." });
+                "Starting Docker runtime; waiting for model /health." });
+            if (job.Restart) await _runtime.StopAsync(job.InstallationId, cts.Token, preserveDesiredRunning: true);
             var lastDetail = DateTimeOffset.MinValue;
             var result = await _runtime.StartAsync(job.InstallationId, cts.Token, detail =>
             {
@@ -100,7 +122,12 @@ public sealed class ModelStartJobManager
         }
         catch (OperationCanceledException)
         {
-            Update(id, x => x with { Status = "cancelled",
+            if (!_host.ApplicationStopping.IsCancellationRequested)
+            {
+                var record = await _registry.FindAsync(Get(id)!.InstallationId, CancellationToken.None);
+                if (record is not null) await _registry.UpsertAsync(record with { DesiredRunning = false }, CancellationToken.None);
+            }
+            Update(id, x => x with { Status = _host.ApplicationStopping.IsCancellationRequested ? "interrupted" : "cancelled",
                 Detail = "Startup cancelled by operator or Agent shutdown; cleanup requested.",
                 Error = "Startup cancelled before readiness.", CompletedAtUtc = DateTimeOffset.UtcNow });
         }

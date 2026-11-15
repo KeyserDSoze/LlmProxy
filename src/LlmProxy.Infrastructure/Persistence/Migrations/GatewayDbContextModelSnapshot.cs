@@ -86,6 +86,8 @@ partial class GatewayDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("LlmProxy.Domain.Deployments.ModelDeployment", b =>
         {
+            b.Property<bool>("RoutingDesired").IsConcurrencyToken().HasColumnType("boolean");
+            b.Property<Guid?>("ActivationStartJobId").IsConcurrencyToken().HasColumnType("uuid");
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
             b.Property<DateTimeOffset?>("BenchmarkMeasuredAtUtc").HasColumnType("timestamp with time zone");
             b.Property<double?>("BenchmarkP95DurationMilliseconds").HasColumnType("double precision");

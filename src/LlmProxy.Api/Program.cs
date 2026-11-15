@@ -53,6 +53,7 @@ builder.Services.AddSingleton<UpdateAgentClient>();
 builder.Services.AddHostedService<ProductAutoUpdateWorker>();
 builder.Services.AddHostedService<InferenceBenchmarkWorker>();
 builder.Services.AddHostedService<ManagedInstallFinalizationWorker>();
+builder.Services.AddHostedService<ManagedRoutingRecoveryWorker>();
 builder.Services.AddHostedService<NodeAgentUpgradeMaintenanceWorker>();
 builder.Services.AddHostedService<RuntimeEngineUpdateWorker>();
 

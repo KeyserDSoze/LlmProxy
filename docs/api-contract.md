@@ -4,6 +4,12 @@
 
 The public inference API follows the OpenAI-compatible shape required by GitHub Copilot custom model/BYOK integrations. Compatibility is treated as a product contract, not as an implementation detail.
 
+## Administrative publication and activation
+
+Publishing lists all registered names independently of public discovery. `GET /api/admin/model-publications/runtime-status` (`AdminRead`) reports observed process status per deployment/node. `PUT /api/admin/models/{id}/name` (`AdminWrite`, `{"publicName":"new-name"}`) renames in place, preserving deployment identity and model-specific policy IDs; conflicts return 409. Historical requests keep their original name. `PUT /api/admin/deployments/{id}` cannot enable a disabled Agent-managed deployment (`409 health_check_required`): use `POST /api/admin/model-management/deployments/{id}/activate` for health verification.
+
+Managed `/start-jobs` persists routing intent plus a generated job ID before calling the Agent. Background reconciliation completes activation without Admin being open. New Agent `/v1/models/{installationId}/restart-jobs` performs a persistent stop/start preserving desired-running state. Both Agent job routes accept optional `{"jobId":"<uuid>"}` for idempotent correlation; gateway recovery requires the upgraded Agent. Full semantics and limitations: `docs/model-publishing.md`.
+
 ## `GET /v1/models`
 
 Returns the logical models a client can use **right now**: the model is enabled and has at least one enabled deployment on an enabled server that is not Unhealthy or Draining (the same test routing applies). Registered models that are stopped are not listed; a request for one still answers `503 model_not_running`, not `404`. Capacity is not considered, so a busy model stays listed. `GET /v1/models/details` follows the same rule.

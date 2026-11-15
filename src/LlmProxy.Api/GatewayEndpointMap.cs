@@ -24,6 +24,7 @@ internal static class GatewayEndpointMap
         endpoints.MapPlatformUserAdminEndpoints(entraEnabled);
         endpoints.MapPlatformUserGroupEndpoints(entraEnabled);
         endpoints.MapAdminEndpoints(entraEnabled);
+        endpoints.MapModelPublishingEndpoints(entraEnabled);
         endpoints.MapCorsAdminEndpoints(entraEnabled);
         endpoints.MapNodeMaintenanceAdminEndpoints(entraEnabled);
         endpoints.MapCredentialRotationAdminEndpoints(entraEnabled);

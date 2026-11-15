@@ -27,12 +27,6 @@ type WorkspacePanel = 'catalog' | 'installed' | 'activity' | 'advanced' | 'setup
  * mode="models": install, run, troubleshoot and publish models on the selected server.
  * mode="hardware": the server's hardware, host readiness and Agent configuration.
  */
-/** A start job that completed in the last ten minutes, i.e. one this session is still waiting to activate. */
-export function finishedRecently(job: { completedAtUtc?: string | null }, nowMs = Date.now()): boolean {
-  const finished = job.completedAtUtc ? new Date(job.completedAtUtc).getTime() : NaN
-  return Number.isFinite(finished) && nowMs - finished <= 10 * 60_000
-}
-
 export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode = 'models', defaultPanel = 'catalog', onRecoverAgent, models = [], deployments = [], kind: modelKind = 'OpenAi' }: { nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; mode?: 'models' | 'hardware'; defaultPanel?: WorkspacePanel; onRecoverAgent?: () => void; models?: Model[]; deployments?: Deployment[]; kind?: ModelKind }) {
   const t = useT()
   const [panel, setPanel] = useRouteTab<WorkspacePanel>('panel',
@@ -77,7 +71,6 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
   const [propertiesDraft, setPropertiesDraft] = useState<DeclaredProperties>(emptyDeclared)
   const [propertiesSuggestion, setPropertiesSuggestion] = useState<SuggestedModelProperties | null>(null)
   const knownOperations = useRef(new Map<string, AdminOperation['status']>())
-  const activatingStarts = useRef(new Set<string>())
   const finalizing = useRef(new Set<string>())
   const [maxNumSeqs, setMaxNumSeqs] = useState(4)
   const [maxModelLen, setMaxModelLen] = useState(8192)
@@ -386,11 +379,8 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
     return () => { active = false; window.clearInterval(timer) }
   }, [nodeId, canWrite, load, refresh, overview?.installations])
 
-  // Agent-owned startup jobs survive WebSocket/Cloudflare and browser
-  // disconnections; polling is read-only. On completion, reuse the Gateway's
-  // explicit /health-verified Activate flow rather than assuming Docker
-  // running equals a routable model. A failed activation is never retried in
-  // a loop, and operators retain the manual health/activate control.
+  // Read-only observation. The gateway's durable recovery worker owns activation,
+  // so closing this page or restarting the gateway cannot lose a completed start.
   useEffect(() => {
     if (!nodeId) return
     let mounted = true
@@ -399,33 +389,12 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
         const jobs = await api.modelStartJobs(nodeId)
         if (!mounted || currentNodeId.current !== nodeId) return
         setStartJobs(jobs)
-        for (const job of jobs) {
-          if (!canWrite || job.status !== 'completed' || job.result?.status !== 'running') continue
-          // The Agent remembers its last 50 start jobs. A start that finished long ago says nothing about the model today:
-          // it may have been stopped on purpose, and activating it would only produce a false "model is running" error.
-          if (!finishedRecently(job)) continue
-          const installation = overview?.installations.find(x =>
-            x.managedInstallationId === job.installationId)
-          if (!installation || installation.enabled || installation.agentStatus?.toLowerCase() !== 'running') continue
-          const key = nodeId + ':' + job.id
-          if (activatingStarts.current.has(key)) continue
-          activatingStarts.current.add(key)
-          try {
-            await api.activateManagedDeployment(installation.id)
-            if (!mounted) return
-            setMessage('Startup completed. Runtime /health verified; routing enabled.')
-            await Promise.all([load(), refresh()])
-          } catch (error) {
-            if (mounted) setError('Model is running but routing activation needs attention: ' +
-              (error instanceof Error ? error.message : String(error)))
-          }
-        }
       } catch { /* Agent offline: keep last useful job state. */ }
     }
     void poll()
     const timer = window.setInterval(() => { void poll() }, 3000)
     return () => { mounted = false; window.clearInterval(timer) }
-  }, [nodeId, canWrite, overview?.installations, load, refresh])
+  }, [nodeId])
 
   // Stop, force stop and uninstall run on the gateway. Poll their state so the cards show progress and the result
   // (with the Agent's own message) appears here even after the operator has left and come back.
@@ -913,7 +882,7 @@ export default function ModelHardwareExperience({ nodes, canWrite, refresh, mode
       {panel === 'setup' && modelKind === 'SystemOne' &&
         <SystemOneExperience models={models} deployments={deployments} nodes={nodes} canWrite={canWrite} refresh={refresh} />}
       {panel === 'advanced' &&
-        <ModelsDeployments models={models} deployments={deployments} nodes={nodes}
+        <ModelsDeployments key={modelKind} models={models} deployments={deployments} nodes={nodes}
           canWrite={canWrite} refresh={refresh} embedded kind={modelKind} />}
     </>}
 

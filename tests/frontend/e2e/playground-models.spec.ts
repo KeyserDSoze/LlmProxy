@@ -25,7 +25,6 @@ test('Installed and Publishing show what runs and keep stopped models one tick a
 
   await page.goto('/admin/models?panel=advanced')
   await expect(page.getByRole('row').filter({ hasText: 'agic-code-fast' })).toHaveCount(1)
-  await expect(page.getByRole('row').filter({ hasText: 'gemma-vision-gguf' })).toHaveCount(0)
-  await page.getByLabel(/Show models that are not running/).check()
+  // Configuration remains visible even while a runtime is not serving requests.
   await expect(page.getByRole('row').filter({ hasText: 'gemma-vision-gguf' })).toHaveCount(1)
 })

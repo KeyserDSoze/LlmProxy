@@ -1,9 +1,10 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { useRouteTab } from './adminNavigation'
 import { Modal, Tabs } from './UiPrimitives'
-import { isRoutable } from './routableModels'
 import type { Deployment, Model, Node } from './types'
+import PublicationEditor, { runtimeStatusKey, type PublicationRuntime } from './PublicationEditor'
+import { useT } from './uiPreferences'
 
 type Surface = 'OpenAi' | 'SystemOne' | 'ImageGeneration' | 'SpeechSynthesis' | 'AudioTranscription' | 'Embedding' | 'Realtime'
 
@@ -21,13 +22,24 @@ const surfaceEndpoint: Record<Surface, string> = {
 
 /** `kind` limits the page to one workspace (text, images, voice, embeddings...) and preselects it when publishing. */
 export default function ModelsDeployments({ models: allModels, deployments: allDeployments, nodes, canWrite, refresh, embedded = false, kind: scope }: { models: Model[]; deployments: Deployment[]; nodes: Node[]; canWrite: boolean; refresh: () => Promise<void>; embedded?: boolean; kind?: Surface }) {
-  const [showAllTypes, setShowAllTypes] = useState(false)
-  const effectiveScope = showAllTypes ? undefined : scope
-  // Models that are registered but not running are hidden unless asked for: they cannot answer anything.
-  const [showInactive, setShowInactive] = useState(false)
+  const t = useT()
+  const effectiveScope = scope
   const scopedModels = useMemo(() => effectiveScope ? allModels.filter(model => (model.surface ?? 'OpenAi') === effectiveScope) : allModels, [allModels, effectiveScope])
-  const inactiveCount = useMemo(() => scopedModels.filter(model => !isRoutable(model, allDeployments, nodes)).length, [scopedModels, allDeployments, nodes])
-  const models = useMemo(() => showInactive ? scopedModels : scopedModels.filter(model => isRoutable(model, allDeployments, nodes)), [scopedModels, showInactive, allDeployments, nodes])
+  // Publishing is configuration, not public discovery: never hide a registered name because its runtime or routing is off.
+  const models = scopedModels
+  const [statuses, setStatuses] = useState<PublicationRuntime[]>([])
+  const [editorId, setEditorId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('publish'))
+  const [editorOpen, setEditorOpen] = useState(() => new URLSearchParams(window.location.search).has('publish'))
+  useEffect(() => {
+    let active = true
+    const poll = async () => {
+      try { const next = await api.publicationRuntimeStatus(); if (active && Array.isArray(next)) setStatuses(next) }
+      catch { if (active) setStatuses([]) /* Unknown is not the same as stopped (or a stale Running). */ }
+    }
+    void poll()
+    const timer = window.setInterval(() => void poll(), 10_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [])
   const deployments = useMemo(() => effectiveScope ? allDeployments.filter(item => scopedModels.some(model => model.id === item.modelId)) : allDeployments, [allDeployments, scopedModels, effectiveScope])
   const [tab, setTab] = useRouteTab<'models' | 'nodes'>(embedded ? 'advancedTab' : 'tab', ['models', 'nodes'], 'models')
   const [publishOpen, setPublishOpen] = useState(false)
@@ -38,7 +50,8 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
   const [settingsMaxConcurrency, setSettingsMaxConcurrency] = useState('')
   const [publicName, setPublicName] = useState('')
   const [providerModelName, setProviderModelName] = useState('')
-  const [surface, setSurface] = useState<Surface>(scope ?? 'OpenAi')
+  const [externalSurface, setSurface] = useState<Surface>(scope ?? 'OpenAi')
+  const surface = scope ?? externalSurface
   const [nodeId, setNodeId] = useState('')
   const [runtimeBaseAddress, setRuntimeBaseAddress] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -73,7 +86,7 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
         supportsTools: surface === 'OpenAi',
         surface
       })
-      setPublicName(''); setProviderModelName(''); setSurface('OpenAi'); setPublishOpen(false)
+      setPublicName(''); setProviderModelName(''); setSurface(scope ?? 'OpenAi'); setPublishOpen(false)
       setMessage(`${surface === 'SystemOne' ? 'System One' : surface === 'ImageGeneration' ? 'Image' : surface === 'SpeechSynthesis' ? 'TTS' : surface === 'AudioTranscription' ? 'STT' : 'OpenAI Chat'} logical model published.`)
       await refresh()
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -91,25 +104,13 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
-  async function deployEverywhere(model: Model) {
-    const existing = new Set((deploymentsByModel.get(model.id) ?? []).map(item => item.nodeId))
-    if (modelSurface(model) !== 'OpenAi') {
-      setError('Images, audio and classifier deployments require a known runtime service root on each target. Configure every node explicitly.')
-      return
-    }
-    const targets = activeNodes.filter(node => !existing.has(node.id))
-    if (targets.length === 0) { setMessage(`${model.publicName} is already deployed on every active node.`); return }
-    setBusy(`all:${model.id}`); setError(null)
-    try {
-      for (const node of targets) await api.createDeployment({ nodeId: node.id, modelId: model.id, weight: 1 })
-      setMessage(`${model.publicName} deployed on ${targets.length} additional active node${targets.length === 1 ? '' : 's'}.`)
-      await refresh()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
-  }
-
   async function toggleDeployment(deployment: Deployment, enabled: boolean) {
     setBusy(`deployment:${deployment.id}`); setError(null)
-    try { await api.updateDeployment(deployment.id, { weight: deployment.weight, maxConcurrency: deployment.maxConcurrency ?? null, enabled }); await refresh() }
+    try {
+      if (enabled && deployment.managedInstallationId) await api.activateManagedDeployment(deployment.id)
+      else await api.updateDeployment(deployment.id, { weight: deployment.weight, maxConcurrency: deployment.maxConcurrency ?? null, enabled })
+      await refresh()
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) } finally { setBusy(null) }
   }
 
@@ -142,12 +143,11 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
 
   return <div className="stack compactPage">
     <section className="panel pageToolbar modelExplainer">
-      <div><h2>Published models & routing</h2><p>These are the names your clients call. <strong>You normally do not publish anything by hand:</strong> installing a model under <em>Discover &amp; install</em> and starting it publishes it under the public name you chose, and switches it on once its health check passes. Use this page to connect a runtime you run yourself, to put a model on another server, to switch a model on or off, or to cap its capacity.</p><div className="actions"><a href="/admin/catalog?tab=deploy">Install an LLM on hardware →</a><a href="/admin/models?kind=SystemOne&panel=setup">Connect a System One classifier →</a></div></div>
-      {canWrite && <button className="primary" onClick={() => setPublishOpen(true)}>Publish logical model</button>}
+      <div><h2>{t('publishing.title')}</h2><p>{t('publishing.explain')}</p></div>
+      {canWrite && <div className="actions"><button className="primary" onClick={() => { setEditorId(null); setEditorOpen(true) }}>{t('publishing.publish')}</button>
+        <button className="secondary" onClick={() => setPublishOpen(true)}>{t('publishing.external')}</button></div>}
     </section>
     {message && <div className="notice">{message}</div>}{error && <div className="error" role="alert">{error}</div>}
-    {scope && <label className="inlineCheck"><input type="checkbox" checked={showAllTypes} onChange={event => setShowAllTypes(event.target.checked)} /> Show models of every type (text, images, voice, embeddings, System One)</label>}
-    {inactiveCount > 0 || showInactive ? <label className="inlineCheck"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /> Show models that are not running ({inactiveCount})</label> : null}
     <Tabs value={tab} onChange={setTab} items={[{ value: 'models', label: 'By model', count: models.length }, { value: 'nodes', label: 'By node', count: nodes.length }]} />
 
     {tab === 'models' && <section className="panel">
@@ -160,14 +160,17 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
           return <tr key={model.id}>
             <td><strong>{model.publicName}</strong><div className="muted">{kind === 'SystemOne' ? 'Selected by X-LlmProxy-Model (or default).' : kind === 'OpenAi' ? 'Client-facing OpenAI Chat/Responses model name.' : `Use this public model name on ${surfaceEndpoint[kind]}.`}</div></td>
             <td><span className={kind === 'SystemOne' ? 'scopeBadge scope-personal' : 'scopeBadge scope-org'}>{surfaceBadge[kind]}</span></td>
-            <td className="mono">{model.providerModelName}</td>
+            <td className="mono">{model.providerModelName}<div className="publicationStates">{modelDeployments.map(item => <span key={item.id} className={'pill ' + (item.enabled ? 'pill-success' : 'pill-neutral')}>
+              {nodeNames.get(item.nodeId)} · {t(runtimeStatusKey(statuses.find(status => status.deploymentId === item.id)?.status))} · {item.enabled ? t('publishing.apiOn') : item.routingDesired ? t('publishing.waiting') : t('publishing.apiOff')}</span>)}</div></td>
             <td>{kind === 'OpenAi' ? [model.supportsStreaming ? 'stream' : '', model.supportsTools ? 'tools' : ''].filter(Boolean).join(' ') || 'basic' : surfaceFlow[kind]}</td>
             <td><div className="chipList">{modelDeployments.map(item => <span key={item.id} className={item.enabled ? 'chip' : 'chip mutedChip'}>{nodeNames.get(item.nodeId) ?? item.nodeId} · max {item.maxConcurrency ?? nodeById.get(item.nodeId)?.maxConcurrency ?? '—'}{item.enabled ? '' : ' · off'}</span>)}</div>{modelDeployments.length === 0 && <span className="muted">Not deployed</span>}<div className="muted">{enabledCount} routing-enabled</div></td>
-            <td className="actions">{canWrite && <button onClick={() => openDeploy(model)}>Deploy…</button>}{canWrite && kind === 'OpenAi' && <button disabled={busy === `all:${model.id}`} onClick={() => void deployEverywhere(model)}>{busy === `all:${model.id}` ? 'Deploying…' : 'Deploy to all active'}</button>}
-              {canWrite && kind === 'SystemOne' && <a href="/admin/models?kind=SystemOne&panel=setup">Connect classifier →</a>}</td>
+             <td><div className="actions">{canWrite && <button className="secondary" onClick={() => { setEditorId(model.id); setEditorOpen(true) }}>{t('publishing.rename')}</button>}
+               {canWrite && modelDeployments.filter(item => item.managedInstallationId && !item.enabled).map(item => <button key={item.id} className="primary" disabled={busy !== null} onClick={() => void toggleDeployment(item, true)}>{t('publishing.check')}</button>)}
+               {canWrite && <button className="secondary" onClick={() => openDeploy(model)}>Deploy…</button>}
+              {canWrite && kind === 'SystemOne' && <a href="/admin/models?kind=SystemOne&panel=setup">Connect classifier →</a>}</div></td>
           </tr>
         })}
-        {models.length === 0 && <tr><td colSpan={6} className="muted">{inactiveCount > 0 ? `No model is running. ${inactiveCount} registered but not running: tick "Show models that are not running".` : 'No logical models published yet.'}</td></tr>}
+        {models.length === 0 && <tr><td colSpan={6} className="muted">{t('publishing.empty')}</td></tr>}
       </tbody></table></div>
     </section>}
 
@@ -184,9 +187,13 @@ export default function ModelsDeployments({ models: allModels, deployments: allD
       </tbody></table></div>
     </section>}
 
-    <Modal open={publishOpen} title="Publish logical model" description="Choose the API surface first; routing and deployment controls are shared." onClose={() => setPublishOpen(false)}>
+    <Modal open={editorOpen && canWrite} title={t('publishing.publish')} onClose={() => setEditorOpen(false)}>
+      {editorOpen && canWrite && <PublicationEditor models={models} deployments={deployments} nodes={nodes} statuses={statuses} initialId={editorId ?? undefined}
+        onCancel={() => setEditorOpen(false)} onSaved={async () => { await refresh(); setEditorOpen(false); setMessage(t('publishing.saved')) }} />}
+    </Modal>
+    <Modal open={publishOpen} title={t('publishing.external')} description="Advanced: register a runtime not installed by this gateway." onClose={() => setPublishOpen(false)}>
       <form className="formPanel" onSubmit={publish}>
-        <label>Surface<select aria-label="Model surface" value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option><option value="Embedding">Embeddings · /v1/embeddings</option><option value="Realtime">Voice (streaming) · /v1/realtime</option></select></label>
+        <label>Surface<select aria-label="Model surface" disabled={!!scope} value={surface} onChange={event => setSurface(event.target.value as Surface)}><option value="OpenAi">OpenAI · chat/responses</option><option value="SystemOne">System One · classifier</option><option value="ImageGeneration">Images · /v1/images/generations</option><option value="SpeechSynthesis">Text to speech · /v1/audio/speech</option><option value="AudioTranscription">Speech to text · /v1/audio/transcriptions</option><option value="Embedding">Embeddings · /v1/embeddings</option><option value="Realtime">Voice (streaming) · /v1/realtime</option></select></label>
         <label>Logical name<input value={publicName} onChange={event => setPublicName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'systemone-laya' : 'agic-code-fast'} /></label>
         <label>Provider / runtime model name<input value={providerModelName} onChange={event => setProviderModelName(event.target.value)} required placeholder={surface === 'SystemOne' ? 'convaiinnovations/laya' : 'Qwen/...'} /></label>
         {surface === 'SystemOne' && <p><a href="/admin/models?kind=SystemOne&panel=setup">Recommended: use the guided System One setup to publish and connect the classifier together →</a></p>}

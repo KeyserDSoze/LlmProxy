@@ -2,6 +2,8 @@
 
 Admin → *Models & inference* has a workspace for every kind of model. They all use the same pages (**Discover & install**, **Installed**, **Jobs**, **Publishing**) and the same components; only the catalog, the endpoint and the properties that make sense change.
 
+Publishing always lists all registered names of the current kind, even when stopped/unrouted. Its existing-model selector shows servers/process state and prefills the current public name; renaming never reinstalls a model. Background health/activation recovery is shared by every kind (`docs/model-publishing.md`). The external-runtime surface selector is fixed to the workspace; there is no cross-kind override.
+
 | Workspace | Surface (internal) | API | Runtime today | Published properties |
 | --- | --- | --- | --- | --- |
 | Text (chat) | `OpenAi` | `/v1/chat/completions`, `/v1/responses` | vLLM, SGLang, llama.cpp, AirLLM | tools, vision, reasoning, streaming, context, max output |

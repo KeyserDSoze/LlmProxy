@@ -1,7 +1,8 @@
 import { ModelCapabilitySummary } from './ModelCapabilityPanel'
 import HuggingFaceAccessGuide from './HuggingFaceAccessGuide'
 import StartupDiagnosis from './StartupDiagnosis'
-import { CopyButton, InfoIcon } from './UiPrimitives'
+import { AdminLink, CopyButton, InfoIcon } from './UiPrimitives'
+import { surfaceOf, urlForModelKind } from './modelKinds'
 import { useT } from './uiPreferences'
 import type { TranslationKey } from './uiPreferences'
 import type { AdminOperation, FamilyProfileInfo, ManagedInstallation, ModelRevisionStatus, ModelStartJob, ModelVerification } from './types'
@@ -140,8 +141,7 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           <p>{job.detail}</p>
           <button className="secondary" type="button" onClick={() => onCancelStart(job.id)}>Cancel startup</button>
         </div>}
-        {job?.status === 'completed' && !item.enabled &&
-          <p className="muted">Runtime started; verifying health and routing activation.</p>}
+        {running && !item.enabled && <p className="muted">{t('publishing.checkAlso')}</p>}
         {failure && !starting && <StartupDiagnosis
           title={job && (job.status === 'failed' || job.status === 'interrupted')
             ? t('model.startupFailedTitle') : t('model.lastError')}
@@ -160,7 +160,8 @@ export default function InstalledModelCards({ nodeId, installations, startJobs, 
           {running && !item.enabled &&
             <button className="primary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable}
               title={t('catalog.healthTip')}
-              onClick={() => onAction('activate', item.id)}>{t('catalog.activate')}</button>}
+               onClick={() => onAction('activate', item.id)}>{t('catalog.activate')}</button>}
+          <AdminLink className="buttonLink secondary" href={urlForModelKind(surfaceOf(item.surface), 'advanced') + '&publish=' + encodeURIComponent(item.modelId)}>{t('publishing.publish')}</AdminLink>
           <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !running}
             onClick={() => onAction('stop', item.id)}>{t('catalog.stop')}</button>
           <button className="secondary" disabled={!canWrite || (busy !== null || !!working) || !agentAvailable || typed || running}

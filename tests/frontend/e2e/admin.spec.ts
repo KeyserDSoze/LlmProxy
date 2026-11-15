@@ -771,7 +771,6 @@ test('System One does not offer unverified deploy-to-all routing or missing serv
   })
   await page.goto('/admin/models?kind=SystemOne')
   await page.getByRole('tab', { name: /Publishing/ }).click()
-  await page.getByLabel(/Show models that are not running/).check()
   const classifier = page.getByRole('row').filter({ hasText: 'systemone-laya' })
   await expect(classifier.getByRole('button', { name: 'Deploy to all active' })).toHaveCount(0)
   await expect(classifier.getByRole('link', { name: 'Connect classifier' })).toHaveAttribute('href', '/admin/models?kind=SystemOne&panel=setup')
@@ -887,9 +886,10 @@ test('image and audio models are published as isolated API surfaces, never as Ch
     ['SpeechSynthesis', 'voice-demo'],
     ['AudioTranscription', 'whisper-demo']
   ]) {
-    await page.getByRole('button', { name: 'Publish logical model', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Publish logical model' })
-    await dialog.getByLabel('Model surface').selectOption(surface)
+    await page.goto(`/admin/models?kind=${surface}&panel=advanced`)
+    await page.getByRole('button', { name: 'Connect external runtime', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Connect external runtime' })
+    await expect(dialog.getByLabel('Model surface')).toHaveValue(surface)
     await expect(dialog.getByText(/does not download or launch an image\/audio runtime/)).toBeVisible()
     await dialog.getByPlaceholder('agic-code-fast').fill(model)
     await dialog.getByPlaceholder('Qwen/...').fill('org/' + model)

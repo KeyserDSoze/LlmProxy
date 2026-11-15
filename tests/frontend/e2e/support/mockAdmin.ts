@@ -294,6 +294,10 @@ export async function installMockAdmin(page: Page) {
     if (/^\/api\/admin\/engines\/nodes\/[^/]+$/.test(path) && route.request().method() === 'GET') return json(route, enginesOverview)
     if (/^\/api\/admin\/engines\/nodes\/[^/]+\/jobs$/.test(path) && route.request().method() === 'GET') return json(route, enginesOverview.jobs)
 
+    if (path === '/api/admin/model-publications/runtime-status') return json(route, deployments.map(deployment => ({
+      deploymentId: deployment.id, nodeId: deployment.nodeId,
+      status: installations.find(item => item.id === deployment.id)?.agentStatus ?? 'external'
+    })))
     const nodeRoute = path.match(/^\/api\/admin\/model-management\/nodes\/([^/]+)\/(overview|install-jobs|start-jobs|upstream-updates|resources)$/)
     if (nodeRoute) {
       const node = nodes.find(item => item.id === nodeRoute[1])

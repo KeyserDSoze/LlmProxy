@@ -1,8 +1,19 @@
+## 2026-11-15 — Publishing review
+- [x] Registered names stay visible across restarts, including stopped/unrouted installations; public discovery stays active-only.
+- [x] Existing-model/server selector, current-name prefill and rename without reinstall; policy IDs/counters preserved; strict kind isolation.
+- [x] Durable per-installation readiness/activation independent of browser lifetime and correlated by Agent job ID (not wall clocks).
+- [x] Agent-owned persistent restart preserves desired-running; previous-image containers remain counted/protected after a pull.
+- [x] Local backend 792/792, Vitest 126/126, functional Playwright 97/97, visual 57/57, PostgreSQL restart/rename/outage smoke and live Agent HTTP correlation check.
+- [ ] Green main CI + immutable patch release for this source.
+- [ ] Owner-authorized gateway + Spark Agent upgrade (backup first), then real ARM64/GPU reboot and engine-update acceptance.
+- [ ] Durable whole-engine restart queue/resumption after gateway interruption (individual accepted starts recover already).
+- [ ] Distributed multi-replica restart drain; current request drain is local to the initiating replica.
+
 ## 2026-11-14 — Bootstrap
 - [x] Models that were running come back after a reboot or crash (Agent), engines ensured first.
 - [x] Engine installs/updates in the activity panel; optional restart of running models after an update.
 - [ ] Green CI, upgrade the Agent on the Spark, then reboot it once and confirm the models return without a first request.
-- [ ] Per-deployment readiness in routing: do not send requests to a model that is still loading (today the whole server counts as healthy).
+- [x] Per-deployment managed readiness in routing (periodic Agent + `/health` reconciliation, with durable wanted state and start-job barrier; see 2026-11-15).
 - [ ] Multi-replica drain for the restart (it waits on the local replica's active requests only).
 
 ## 2026-11-14 — Runtime engines

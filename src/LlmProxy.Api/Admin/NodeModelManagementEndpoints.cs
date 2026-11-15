@@ -735,11 +735,17 @@ public static class NodeModelManagementEndpoints
                     message = "Enable the node and exit maintenance before starting models." });
             try
             {
+                var requestedId = Guid.NewGuid();
+                deployment.AwaitStart(requestedId);
+                // Persist before contacting the Agent: a disconnect after acceptance must not lose activation intent.
+                await db.SaveChangesAsync(token);
                 var path = "/v1/models/" +
                     Uri.EscapeDataString(deployment.ManagedInstallationId) + "/start-jobs";
                 var job = await SendAgentAsync<ModelStartJob>(
                     factory.CreateClient("node-management"), node, protector,
-                    HttpMethod.Post, path, null, token);
+                    HttpMethod.Post, path, new { jobId = requestedId }, token);
+                if (job.Id != requestedId)
+                    throw new AgentException("Upgrade the Agent to support durable start-job identity, then check health and activate this model.");
                 AddAudit(db, context, "model.start_queued", "deployment", id.ToString(),
                     new { nodeId = node.Id, deployment.ManagedInstallationId, jobId = job.Id });
                 await db.SaveChangesAsync(token);
@@ -1227,30 +1233,33 @@ public static class NodeModelManagementEndpoints
     }
 
     // Shared by synchronous legacy installation and persistent-download finalization.
-    private static async Task<IResult> RegisterManagedInstallationAsync(
+    internal static async Task<IResult> RegisterManagedInstallationAsync(
         ManagedModelState state, InstallManagedModelRequest request, DeployableModelDescriptor descriptor,
         ModelCompatibility compatibility, InferenceNode node, GatewayDbContext dbContext,
         HttpContext httpContext, CancellationToken cancellationToken)
     {
         var publicName = string.IsNullOrWhiteSpace(request.PublicName) ? descriptor.Id : request.PublicName.Trim();
-        var model = await dbContext.Models.SingleOrDefaultAsync(item => item.PublicName == publicName, cancellationToken);
+        var deployment = await dbContext.Deployments.SingleOrDefaultAsync(
+            item => item.NodeId == node.Id && item.ManagedInstallationId == state.InstallationId, cancellationToken);
+        // Installation identity wins over the old name in an immutable Agent job after an administrator renames it.
+        var model = deployment is not null
+            ? await dbContext.Models.SingleAsync(item => item.Id == deployment.ModelId, cancellationToken)
+            : await dbContext.Models.SingleOrDefaultAsync(item => item.PublicName == publicName, cancellationToken);
         if (model is null)
         {
             model = new ModelDefinition(publicName, descriptor.ProviderModelName, descriptor.SupportsStreaming, descriptor.SupportsTools, descriptor.Surface);
             dbContext.Models.Add(model);
             await ApplyModelPropertiesAsync(model, descriptor, state, request, httpContext, cancellationToken);
         }
-        else if (request.Declared is not null)
-        {
-            await ApplyModelPropertiesAsync(model, descriptor, state, request, httpContext, cancellationToken);
-        }
         else if (!string.Equals(model.ProviderModelName, descriptor.ProviderModelName, StringComparison.Ordinal) || model.Surface != descriptor.Surface)
         {
             return Results.Conflict(new { error = "logical_model_name_conflict", publicName, model.ProviderModelName });
         }
-         var deployment = await dbContext.Deployments.SingleOrDefaultAsync(
-            item => item.NodeId == node.Id && item.ManagedInstallationId == state.InstallationId,
-            cancellationToken);
+        else if (deployment is null && request.Declared is not null)
+        {
+            await ApplyModelPropertiesAsync(model, descriptor, state, request, httpContext, cancellationToken);
+        }
+        var newlyRegistered = deployment is null;
         if (deployment is null)
         {
             deployment = new ModelDeployment(node.Id, model.Id);
@@ -1260,10 +1269,10 @@ public static class NodeModelManagementEndpoints
         {
             return Results.Conflict(new { error = "installation_owned_by_another_logical_model" });
         }
-         var runtimeAddress = OutboundRuntimeAddress(node, state);
+        var runtimeAddress = OutboundRuntimeAddress(node, state);
         deployment.ConfigureRuntime(runtimeAddress,
             descriptor.Id == "custom" ? "custom:" + state.Runtime : descriptor.Id, state.InstallationId);
-        if (IsAgentRuntimeRunnable(state) && node.Enabled &&
+        if (newlyRegistered && IsAgentRuntimeRunnable(state) && node.Enabled &&
             node.Status != LlmProxy.Domain.Nodes.NodeStatus.Draining && runtimeAddress is not null)
         {
             // The Agent finished a real Start/health check. Reconcile routing
@@ -1278,14 +1287,15 @@ public static class NodeModelManagementEndpoints
             }
             deployment.Enable();
         }
-        else deployment.Disable();
-         AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
+        else if (newlyRegistered) deployment.Disable();
+        // Replaying a completed install must not undo a Stop, a rename or an activation barrier.
+        AddAudit(dbContext, httpContext, "model.install", "deployment", deployment.Id.ToString(), new
         {
             nodeId = node.Id,
             node.Name,
             catalogModelId = descriptor.Id,
             descriptor.ProviderModelName,
-            publicName,
+            publicName = model.PublicName,
             state.InstallationId,
             agentStatus = state.Status,
             state.RuntimeBaseAddress,
@@ -1297,7 +1307,7 @@ public static class NodeModelManagementEndpoints
             request.CpuOffloadGiB
         });
         await dbContext.SaveChangesAsync(cancellationToken);
-         return Results.Ok(new
+        return Results.Ok(new
         {
             deployment,
             model,

@@ -38,36 +38,47 @@ internal static class RuntimeEngineRestarter
             var step = $"{done + 1} of {targets.Count}";
             var name = target.ProviderModelName ?? target.InstallationId;
             var deployment = await db.Deployments.SingleOrDefaultAsync(item => item.NodeId == nodeId && item.ManagedInstallationId == target.InstallationId, token);
-            var wasRouted = deployment?.Enabled == true;
+            // Temporary unready is not an operator disable. Preserve wanted routing even if it is currently suspended.
+            var restoreRouting = deployment?.RoutingDesired == true;
+            var restartJobId = Guid.NewGuid();
             try
             {
-                if (wasRouted)
+                if (restoreRouting)
                 {
                     progress($"Restarting {name} ({step}): taking it out of routing");
-                    deployment!.Disable();
+                    deployment!.AwaitStart(restartJobId);
                     await db.SaveChangesAsync(token);
                     await WaitForDrainAsync(load, deployment.Id, name, step, progress, token);
                 }
 
-                progress($"Restarting {name} ({step}): stopping");
                 var installation = Uri.EscapeDataString(target.InstallationId);
-                await NodeModelManagementEndpoints.SendAgentAsync<JsonElement>(client, node, protector, HttpMethod.Post, $"/v1/models/{installation}/stop", new { action = "stop" }, token);
-
-                progress($"Restarting {name} ({step}): starting on the new {engineLabel}");
+                if (restoreRouting)
+                {
+                    await db.Entry(deployment!).ReloadAsync(token);
+                    if (!deployment!.RoutingDesired || deployment.ActivationStartJobId != restartJobId)
+                        return new AdminOperationOutcome(false, $"Restart of {name} cancelled by a newer operator action. The other models were left running.");
+                }
+                progress($"Restarting {name} ({step}): restarting on the new {engineLabel}");
                 var job = await NodeModelManagementEndpoints.SendAgentAsync<NodeModelManagementEndpoints.ModelStartJob>(
-                    client, node, protector, HttpMethod.Post, $"/v1/models/{installation}/start-jobs", null, token);
+                    client, node, protector, HttpMethod.Post, $"/v1/models/{installation}/restart-jobs", new { jobId = restartJobId }, token);
+                if (job.Id != restartJobId) throw new NodeModelManagementEndpoints.AgentException("Upgrade the Agent to support durable restart-job identity");
                 await WaitForStartAsync(client, node, protector, job.Id, name, step, progress, token);
 
-                if (wasRouted)
+                if (restoreRouting)
                 {
-                    deployment!.Enable();
-                    await db.SaveChangesAsync(token);
+                    await db.Entry(deployment!).ReloadAsync(token);
+                    var currentNode = await db.Nodes.AsNoTracking().SingleAsync(item => item.Id == nodeId, token);
+                    if (deployment!.RoutingDesired && deployment.ActivationStartJobId == restartJobId && currentNode.Enabled && currentNode.Status != LlmProxy.Domain.Nodes.NodeStatus.Draining)
+                    {
+                        deployment.Enable();
+                        await db.SaveChangesAsync(token);
+                    }
                 }
                 done++;
             }
             catch (NodeModelManagementEndpoints.AgentException error)
             {
-                var routing = wasRouted ? " Routing for it stays off until you start it." : "";
+                var routing = restoreRouting ? " Routing for it stays off until a verified start succeeds." : "";
                 return new AdminOperationOutcome(false, $"{name} did not come back after the {engineLabel} update: {error.Message}.{routing}" +
                     (done > 0 ? $" {done} model{(done == 1 ? "" : "s")} before it restarted fine." : "") + " The other models were left running.");
             }
@@ -92,6 +103,8 @@ internal static class RuntimeEngineRestarter
             progress($"Restarting {name} ({step}): waiting for {active} request{(active == 1 ? "" : "s")} to finish");
             await Task.Delay(Poll < TimeSpan.FromSeconds(2) ? Poll : TimeSpan.FromSeconds(2), token);
         }
+        if (load.GetActive(deploymentId) > 0)
+            throw new NodeModelManagementEndpoints.AgentException("Requests are still active; restart deferred rather than interrupting inference");
     }
 
     private static async Task WaitForStartAsync(HttpClient client, LlmProxy.Domain.Nodes.InferenceNode node, UpstreamCredentialProtector protector,

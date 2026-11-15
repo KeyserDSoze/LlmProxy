@@ -489,3 +489,7 @@ tbody tr:hover td{background:var(--row-hover)}
 /* The bottom-right dock: the pill and a small close button when everything is finished. */
 .activityBar{display:flex;align-items:center;gap:6px}
 .activityDismiss{width:40px;height:40px;border-radius:999px;font-size:20px}
+.publicationStates{display:grid;gap:6px;margin-top:8px;font-family:var(--font-sans, sans-serif)}
+.publicationStates .pill{white-space:normal;line-height:1.4}
+.publicationTarget{display:grid;gap:8px;padding:14px;border:1px solid var(--border);border-radius:10px}
+.publicationTarget code{overflow-wrap:anywhere;font-size:12px}

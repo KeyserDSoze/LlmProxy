@@ -20,13 +20,13 @@ public sealed class RuntimeEngineRestarterTests
         public List<string> Calls { get; } = [];
         private readonly Dictionary<Guid, (string Installation, bool Fails)> _jobs = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var path = request.RequestUri!.AbsolutePath;
             Calls.Add(request.Method + " " + path);
             string Json(string body) => body;
             if (path == "/v1/models")
-                return Reply(Json("{\"models\":[" +
+                return await Reply(Json("{\"models\":[" +
                     "{\"installationId\":\"a\",\"providerModelName\":\"org/a\",\"status\":\"running\",\"runtime\":\"llama.cpp\",\"port\":18000}," +
                     "{\"installationId\":\"b\",\"providerModelName\":\"org/b\",\"status\":\"running\",\"runtime\":\"llama.cpp\",\"port\":18001}," +
                     "{\"installationId\":\"c\",\"providerModelName\":\"org/c\",\"status\":\"running\",\"runtime\":\"vllm\",\"port\":18002}," +
@@ -34,20 +34,22 @@ public sealed class RuntimeEngineRestarterTests
             if (path.EndsWith("/stop"))
             {
                 Assert.True(routingIsOff(path.Split('/')[3]), "routing must be off for a model before it is stopped");
-                return Reply("{}");
+                return await Reply("{}");
             }
-            if (path.EndsWith("/start-jobs") && request.Method == HttpMethod.Post)
+            if (path.EndsWith("/restart-jobs") && request.Method == HttpMethod.Post)
             {
                 var installation = path.Split('/')[3];
-                var id = Guid.NewGuid();
+                Assert.True(routingIsOff(installation));
+                using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+                var id = body.RootElement.GetProperty("jobId").GetGuid();
                 _jobs[id] = (installation, failing.Contains(installation));
-                return Reply("{\"id\":\"" + id + "\",\"installationId\":\"" + installation + "\",\"status\":\"queued\",\"detail\":\"\",\"createdAtUtc\":\"2026-11-14T10:00:00Z\"}");
+                return await Reply("{\"id\":\"" + id + "\",\"installationId\":\"" + installation + "\",\"status\":\"queued\",\"detail\":\"\",\"createdAtUtc\":\"2026-11-14T10:00:00Z\"}");
             }
             if (path == "/v1/models/start-jobs")
-                return Reply("[" + string.Join(",", _jobs.Select(job =>
+                return await Reply("[" + string.Join(",", _jobs.Select(job =>
                     "{\"id\":\"" + job.Key + "\",\"installationId\":\"" + job.Value.Installation + "\",\"status\":\"" + (job.Value.Fails ? "failed" : "completed") +
                     "\",\"detail\":\"done\",\"error\":" + (job.Value.Fails ? "\"out of memory\\nmore\"" : "null") + ",\"createdAtUtc\":\"2026-11-14T10:00:00Z\"}")) + "]");
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
         private static Task<HttpResponseMessage> Reply(string body) =>
@@ -106,8 +108,8 @@ public sealed class RuntimeEngineRestarterTests
 
         Assert.True(outcome.Succeeded, outcome.Message);
         Assert.Equal("2 models restarted on the new llama.cpp.", outcome.Message);
-        Assert.Equal(["POST /v1/models/a/stop", "POST /v1/models/a/start-jobs", "POST /v1/models/b/stop", "POST /v1/models/b/start-jobs"],
-            agent.Calls.Where(call => call.Contains("/stop") || (call.StartsWith("POST") && call.EndsWith("/start-jobs"))));
+        Assert.Equal(["POST /v1/models/a/restart-jobs", "POST /v1/models/b/restart-jobs"],
+            agent.Calls.Where(call => call.StartsWith("POST") && call.EndsWith("/restart-jobs")));
         Assert.All(new[] { "a", "b", "c" }, installation => Assert.True(Routed(services, installation)));
         Assert.Contains(progress, line => line.Contains("org/a") && line.Contains("1 of 2"));
         Assert.DoesNotContain(agent.Calls, call => call.Contains("/c/") || call.Contains("/d/"));
@@ -152,5 +154,21 @@ public sealed class RuntimeEngineRestarterTests
         Assert.Contains("No running model uses SGLang", outcome.Message);
         Assert.Equal(["GET /v1/models"], agent.Calls);
         Assert.All(new[] { "a", "b", "c" }, installation => Assert.True(Routed(services, installation)));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Restart_preserves_routing_intent_not_just_transient_readiness(bool desired)
+    {
+        var (services, nodeId, _) = Arrange(new HashSet<string>());
+        var db = services.GetRequiredService<GatewayDbContext>();
+        var deployment = await db.Deployments.SingleAsync(item => item.ManagedInstallationId == "a", TestContext.Current.CancellationToken);
+        if (desired) deployment.SuspendRouting(); else deployment.Disable();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var outcome = await RuntimeEngineRestarter.RestartRunningModelsAsync(services, nodeId, "llama.cpp", "llama.cpp", _ => { }, TestContext.Current.CancellationToken);
+        Assert.True(outcome.Succeeded, outcome.Message);
+        Assert.Equal(desired, Routed(services, "a"));
+        Assert.Equal(desired, (await db.Deployments.SingleAsync(item => item.ManagedInstallationId == "a", TestContext.Current.CancellationToken)).RoutingDesired);
     }
 }

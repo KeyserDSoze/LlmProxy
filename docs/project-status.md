@@ -1,3 +1,11 @@
+## 2026-11-15 — Publishing and durable activation review (local validation green; main CI pending)
+
+Publishing keeps every registered name visible across restarts; its existing-model selector shows server/process state and prefills the current name, with in-place rename and strict model-kind isolation. Public discovery and Playground remain active-only. Gateway reconciliation now owns per-installation health/activation from durable intent + exact Agent job identity; explicit Stop/disable wins. Engine restart preserves Agent desired-running state, and old-image running containers remain counted/protected after a pull. Details: `docs/model-publishing.md`, `docs/model-bootstrap.md`.
+
+Local evidence: backend **792/792**, Admin production build, Vitest **126/126**, functional Playwright **97/97**, visual/accessibility **57/57** (including dark/phone Publishing/editor); real PostgreSQL/gateway route-catalog smoke passed rename/live publication, wanted-routing recovery, explicit disable across restarts, correlated accepted-start recovery with an Agent clock set to 2020, and catalog/inference during a PostgreSQL outage. Live isolated Agent HTTP check passed caller job ID, idempotent retry, optional request body and persistent restart endpoint. The local standard Docker build hit Node 22 Alpine `npm ci`'s internal "Exit handler never called"; integration used current locally published API/Admin artifacts in a disposable image. CI must validate the standard build.
+
+Next: push this source with automatic patch release, require all main CI/release gates green, then **upgrade the Spark Agent alongside the gateway only after an explicit deployment request/backup** and validate real ARM64/GPU reboot + engine update. No production deployment was performed in this review. Whole-engine queue persistence and distributed multi-replica restart drain remain open. Last pre-review green main: `f45d72f`, CI `43645186398`, release `v0.2.82` / workflow `43645868753`.
+
 ## 2026-11-14 — Unpublish names from the dashboard; the activity pill closes (source; CI pending)
 A published name with no deployment can be removed from the dashboard (`DELETE /api/admin/models/{id}`, refused while a deployment exists). The bottom-right pill can be closed; it also closes by itself after a successful run. Production still on 0.2.79.
 

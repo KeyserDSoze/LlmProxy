@@ -33,12 +33,13 @@ test('a start the Agent remembers from long ago does not raise a false "model is
   await expect(page.getByText(/Model is running but routing activation needs attention/)).toHaveCount(0)
 })
 
-test('a start that has just finished on a running model is activated', async ({ page }) => {
+test('opening Installed only observes jobs: durable activation belongs to the gateway', async ({ page }) => {
   const activated = await arrange(page, new Date(Date.now() - 60_000), 'running')
   await page.goto('/admin/models?node=node-1&panel=installed')
 
-  await expect.poll(() => activated.length, { timeout: 10_000 }).toBeGreaterThan(0)
-  expect(activated[0]).toContain('/deployment-4/activate')
+  await expect(page.getByRole('article', { name: 'lfm25-24b' })).toBeVisible()
+  await page.waitForTimeout(3500)
+  expect(activated).toEqual([])
 })
 
 test('a recent start of a model that is no longer running is not activated either', async ({ page }) => {
@@ -77,9 +78,9 @@ test('Models on a server shows what is live and what is off, and keeps the unuse
   await expect(live.getByRole('button', { name: 'Deploy' })).toHaveCount(0)
 })
 
-test('the Publishing page says that installing a model already publishes it', async ({ page }) => {
+test('Publishing explains runtime state separately from API activation', async ({ page }) => {
   await installMockAdmin(page)
   await page.goto('/admin/models?node=node-1&panel=advanced')
 
-  await expect(page.getByText('You normally do not publish anything by hand')).toBeVisible()
+  await expect(page.getByText(/Registered names stay here across restarts/)).toBeVisible()
 })

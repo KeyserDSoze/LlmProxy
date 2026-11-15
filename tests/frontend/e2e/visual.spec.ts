@@ -23,6 +23,7 @@ const screens: Screen[] = [
   { name: 'models-discover', url: '/admin/catalog?node=node-1', ready: text('Qwen3 8B') },
   { name: 'models-activity', url: '/admin/models?node=node-1&panel=activity', ready: text(/LFM2\.5-24B-A2B-Q4_K_M\.gguf/) },
   { name: 'models-publishing', url: '/admin/models?node=node-1&panel=advanced', ready: text('agic-code-fast') },
+  { name: 'model-publication-editor', url: '/admin/models?panel=advanced&publish=model-1', ready: page => expect(page.getByRole('dialog').getByLabel('Public API name')).toHaveValue('agic-code-fast') },
   { name: 'servers-fleet', url: '/admin/infrastructure', ready: text('spark-02') },
   { name: 'servers-hardware', url: '/admin/infrastructure?section=hardware&node=node-1', ready: text('NVIDIA GB10') },
   { name: 'servers-engines', url: '/admin/infrastructure?section=engines', ready: text('Engines on this server') },
@@ -42,8 +43,8 @@ const screens: Screen[] = [
   { name: 'user-portal', url: '/admin/me', ready: text('lp_usr_3e1f') }
 ]
 
-const darkScreens = new Set(['dashboard', 'models-installed', 'models-discover', 'servers-fleet', 'metrics'])
-const phoneScreens = new Set(['dashboard', 'models-installed', 'servers-fleet'])
+const darkScreens = new Set(['dashboard', 'models-installed', 'models-discover', 'models-publishing', 'model-publication-editor', 'servers-fleet', 'metrics'])
+const phoneScreens = new Set(['dashboard', 'models-installed', 'models-publishing', 'model-publication-editor', 'servers-fleet'])
 
 async function open(page: Page, screen: Screen, theme: 'light' | 'dark') {
   const problems: string[] = []

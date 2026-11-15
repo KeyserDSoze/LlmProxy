@@ -7,6 +7,68 @@ public sealed class RuntimeEngineTests
     private const string Digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     [Fact]
+    public void Running_models_on_an_old_image_still_count_after_the_tag_moves_and_are_not_counted_twice()
+    {
+        ManagedModelRecord Record(string id, string runtime) => new()
+        {
+            InstallationId = id, Runtime = runtime, CatalogModelId = "custom", ProviderModelName = "org/model", Port = 18000, TensorParallelSize = 1
+        };
+        var records = new[] { Record("old", "llama.cpp"), Record("new", "llama.cpp"), Record("other", "vllm"), Record("stopped", "llama.cpp") };
+        var containers = "oldid\tllmproxy-old\nnewid\tllmproxy-new\notherid\tllmproxy-other\nexternalid\texternal\n";
+        Assert.Equal(3, RuntimeEngineParsing.CountRunning("llama.cpp", records, containers, "newid\nexternalid\n"));
+        Assert.Equal(2, RuntimeEngineParsing.CountRunning("llama.cpp", records, containers, ""));
+        Assert.Equal(1, RuntimeEngineParsing.CountRunning("vllm", records, containers, "otherid\n"));
+        Assert.Equal(0, RuntimeEngineParsing.CountRunning("kokoro", records, containers, ""));
+        Assert.Throws<InvalidOperationException>(() => RuntimeEngineParsing.CountRunning("llama.cpp", records, "[output truncated]", ""));
+    }
+
+    [Fact]
+    public async Task Docker_inventory_failure_is_not_reported_as_zero_running()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var directory = Path.Combine(Path.GetTempPath(), "llmproxy-engine-test-" + Guid.NewGuid());
+        try
+        {
+            var options = NodeAgentOptions.From(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()) with
+                { DataDirectory = directory, DockerExecutable = "/bin/false" };
+            var service = new RuntimeEngineService(options, new ProcessRunner(), new ManagedModelRegistry(options));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ListAsync(TestContext.Current.CancellationToken));
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task Inventory_and_uninstall_both_find_registered_containers_on_previous_images()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var directory = Path.Combine(Path.GetTempPath(), "llmproxy-engine-test-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var docker = Path.Combine(directory, "docker");
+            await File.WriteAllTextAsync(docker, """
+                #!/bin/sh
+                if [ "$1 $2" = "image inspect" ]; then echo '{"Id":"sha256:new"}'; exit 0; fi
+                if [ "$1 $2" = "ps --filter" ]; then exit 0; fi
+                if [ "$1" = "ps" ]; then printf 'oldid\tllmproxy-old\n'; exit 0; fi
+                exit 99
+                """, TestContext.Current.CancellationToken);
+            File.SetUnixFileMode(docker, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var options = NodeAgentOptions.From(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()) with
+                { DataDirectory = directory, DockerExecutable = docker };
+            var registry = new ManagedModelRegistry(options);
+            await registry.UpsertAsync(new ManagedModelRecord { InstallationId = "old", Runtime = "llama.cpp", CatalogModelId = "custom",
+                ProviderModelName = "org/model", Port = 18000, TensorParallelSize = 1 }, TestContext.Current.CancellationToken);
+            var service = new RuntimeEngineService(options, new ProcessRunner(), registry);
+            var inventory = await service.ListAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(1, inventory.Single(engine => engine.Id == "llama.cpp").RunningContainers);
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.RemoveAsync("llama.cpp", TestContext.Current.CancellationToken));
+            Assert.Contains("1 running model", error.Message);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public void Inspect_output_is_reduced_to_what_the_inventory_shows()
     {
         var json = "{\"Id\":\"sha256:abc\",\"Created\":\"2026-11-01T10:20:30.123456789Z\",\"Size\":123456789,"

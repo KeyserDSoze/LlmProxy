@@ -94,4 +94,11 @@ public sealed class ModelDefinition
 
     public void Enable() => Enabled = true;
     public void Disable() => Enabled = false;
+
+    public void Rename(string publicName)
+    {
+        if (string.IsNullOrWhiteSpace(publicName) || publicName.Trim().Length > 160 || publicName.Any(char.IsControl))
+            throw new ArgumentException("Public name must contain 1–160 characters and no control characters.", nameof(publicName));
+        PublicName = publicName.Trim();
+    }
 }

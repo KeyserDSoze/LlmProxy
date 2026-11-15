@@ -177,6 +177,8 @@ export type Deployment = {
   nodeId: string
   modelId: string
   enabled: boolean
+  routingDesired?: boolean
+  activationStartJobId?: string | null
   weight: number
   maxConcurrency?: number | null
   runtimeBaseAddress?: string | null

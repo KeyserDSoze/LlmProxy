@@ -19,7 +19,7 @@ public sealed class RuntimeEngineService(NodeAgentOptions options, ProcessRunner
         {
             var image = RuntimeEngineCatalog.Image(engine, options);
             var inspected = await InspectAsync(image, token);
-            var running = inspected is null ? 0 : await RunningContainersAsync(image, token);
+            var running = await RunningContainersAsync(engine.Id, image, records, token);
             states.Add(new RuntimeEngineState(engine.Id, engine.Label, engine.Description, engine.Built ? "built" : "pulled", image,
                 inspected is not null, inspected is null ? null : RuntimeEngineParsing.VersionOf(image, inspected),
                 inspected is null ? null : RuntimeEngineParsing.RevisionOf(inspected), inspected?.Id, inspected?.CreatedAtUtc, inspected?.SizeBytes,
@@ -95,7 +95,7 @@ public sealed class RuntimeEngineService(NodeAgentOptions options, ProcessRunner
         var engine = RuntimeEngineCatalog.Find(engineId) ?? throw new KeyNotFoundException($"Unknown engine '{engineId}'.");
         var image = RuntimeEngineCatalog.Image(engine, options);
         if (await InspectAsync(image, token) is null) return $"{engine.Label} was not installed.";
-        var running = await RunningContainersAsync(image, token);
+        var running = await RunningContainersAsync(engine.Id, image, await registry.ReadAsync(token), token);
         if (running > 0)
             throw new InvalidOperationException($"{running} running model{(running == 1 ? "" : "s")} use {engine.Label}. Stop {(running == 1 ? "it" : "them")} first.");
         var result = await runner.RunAsync(options.DockerExecutable, ["image", "rm", image], TimeSpan.FromMinutes(2), token);
@@ -112,10 +112,15 @@ public sealed class RuntimeEngineService(NodeAgentOptions options, ProcessRunner
         return result.Success ? RuntimeEngineParsing.ParseInspect(result.StandardOutput) : null;
     }
 
-    private async Task<int> RunningContainersAsync(string image, CancellationToken token)
+    private async Task<int> RunningContainersAsync(string engineId, string image, IReadOnlyList<ManagedModelRecord> records, CancellationToken token)
     {
-        var result = await runner.RunAsync(options.DockerExecutable, ["ps", "--filter", "ancestor=" + image, "--format", "{{.ID}}"], TimeSpan.FromSeconds(15), token);
-        return result.Success ? result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length : 0;
+        // After a pull the tag points to the new image, while running containers still use the old image id.
+        // Match registered container names too, and retain ancestry for containers started outside the Agent.
+        var managed = await runner.RunAsync(options.DockerExecutable, ["ps", "--format", "{{.ID}}\t{{.Names}}"], TimeSpan.FromSeconds(15), token);
+        if (!managed.Success) throw new InvalidOperationException("Cannot verify running models: " + Trim(managed.StandardError));
+        var ancestry = await runner.RunAsync(options.DockerExecutable, ["ps", "--filter", "ancestor=" + image, "--format", "{{.ID}}"], TimeSpan.FromSeconds(15), token);
+        if (!ancestry.Success) throw new InvalidOperationException("Cannot verify engine use: " + Trim(ancestry.StandardError));
+        return RuntimeEngineParsing.CountRunning(engineId, records, managed.StandardOutput, ancestry.StandardOutput);
     }
 
     private async Task RunStreamingAsync(IReadOnlyList<string> arguments, Action<string> progress, CancellationToken token)

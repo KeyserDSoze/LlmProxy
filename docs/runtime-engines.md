@@ -23,7 +23,7 @@ Model weights are separate from engines (Hugging Face cache, GGUF store). Instal
 
 - **Status**: Installed / Not installed / Installing / Updating.
 - **Version**: the OCI `org.opencontainers.image.version` label if the image has one (a repository path or a long commit hash in it is shortened), otherwise its tag; plus the short image id, an optional revision label, creation date and size. A moving tag such as `latest` or `server-cuda` is shown as the tag; the image id and date are what tell two pulls apart.
-- **Used by**: running containers started from the image and installed models that use the engine.
+- **Used by**: registered installations matched by runtime/container identity, plus running containers with current-image ancestry (deduplicated). After a pull, containers still running the previous image are counted too. Docker inventory failures are errors, never a false zero. Uninstall uses the same check.
 - **Updates**: filled in by *Check for updates*. For a pulled image the Agent asks the registry for the digest the tag points to (HEAD on the manifest with the anonymous token flow, the same request Docker makes; no Docker plugin, no download) and compares it with the digests the image was pulled with: *Update available*, *Up to date*, or *Cannot tell* (private repository, no internet from the server, or an image that was not pulled from a registry). Built engines have no registry; *Update* rebuilds them with fresh base layers.
 - **Actions**: Install, Update, Uninstall (refused while a running model uses the engine), Cancel for a running job.
 

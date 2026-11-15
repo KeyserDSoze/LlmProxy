@@ -29,6 +29,10 @@ public sealed class ModelDeployment
     public Guid NodeId { get; private set; }
     public Guid ModelId { get; private set; }
     public bool Enabled { get; private set; } = true;
+    /// <summary>Operator intent, independent of transient runtime readiness.</summary>
+    public bool RoutingDesired { get; private set; } = true;
+    /// <summary>During an intentional restart, wait for this Agent job, not a historical success or a remote clock.</summary>
+    public Guid? ActivationStartJobId { get; private set; }
     public int Weight { get; private set; } = 1;
     public int? MaxConcurrency { get; private set; }
     public string? RuntimeBaseAddress { get; private set; }
@@ -138,8 +142,16 @@ public sealed class ModelDeployment
         SetCapacity(Weight, recommended);
     }
 
-    public void Enable() => Enabled = true;
-    public void Disable() => Enabled = false;
+    public void Enable() { Enabled = true; RoutingDesired = true; ActivationStartJobId = null; }
+    public void Disable() { Enabled = false; RoutingDesired = false; ActivationStartJobId = null; }
+    public void AwaitStart(Guid jobId)
+    {
+        if (jobId == Guid.Empty) throw new ArgumentException("Start job id is required.", nameof(jobId));
+        Enabled = false;
+        RoutingDesired = true;
+        ActivationStartJobId = jobId;
+    }
+    public void SuspendRouting() => Enabled = false;
 
     private static string? NormalizeOptional(string? value, int maxLength, string parameterName)
     {

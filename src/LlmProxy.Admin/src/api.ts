@@ -146,6 +146,8 @@ export const api = {
       method: 'POST', body: JSON.stringify({ version: version ?? null })
     }),
   models: () => request<Model[]>('/api/admin/models'),
+  publicationRuntimeStatus: () => request<{ deploymentId: string; nodeId: string; status: string }[]>('/api/admin/model-publications/runtime-status'),
+  renameModel: (modelId: string, publicName: string) => request<Model>(`/api/admin/models/${modelId}/name`, { method: 'PUT', body: JSON.stringify({ publicName }) }),
   deployments: () => request<Deployment[]>('/api/admin/deployments'),
   apiCredentials: () => request<ApiCredential[]>('/api/admin/api-credentials'),
   governanceCredentials: () => request<GovernanceCredential[]>('/api/admin/governance/credentials'),

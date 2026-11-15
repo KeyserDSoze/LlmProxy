@@ -10,7 +10,7 @@ GPU containers (vLLM, SGLang, AirLLM, Diffusers and llama.cpp on GPU) are starte
 
 `ManagedModelBootstrapWorker` (Node Agent) starts the models that should be running. It keeps `--restart no` and takes over the decision.
 
-**What is "should be running".** Each installation records `desiredRunning`: true after a verified start, false after a stop (including force stop and a configuration change). A reboot or a crash leaves it true. Records from an older Agent have no value and count as wanted only if they were running when the Agent was upgraded.
+**What is "should be running".** Each installation records `desiredRunning`: true when a start job begins (and after a verified start), false after an operator cancellation or stop (including force stop and a configuration change). An intentional engine restart preserves it across the stop/start gap. A reboot or a crash leaves it true. Records from an older Agent have no value and count as wanted only if they were running when the Agent was upgraded.
 
 **Every 15 seconds, after a short delay at Agent start (`NodeAgent:BootstrapDelaySeconds`, default 20):**
 
@@ -33,10 +33,12 @@ GPU containers (vLLM, SGLang, AirLLM, Diffusers and llama.cpp on GPU) are starte
 
 ## What routing does meanwhile
 
-While a model is loading, the gateway still routes to it if the server is healthy, so requests to that model fail until it answers. The Agent only starts a model; it does not change routing. Marking a *single deployment* as not ready (instead of the whole server) is on the roadmap.
+The gateway's `ManagedRoutingRecoveryWorker` observes each managed installation and its `/health`, suspending its routing while it is stopped/unready and restoring it from durable `RoutingDesired` after recovery. An intentional start/restart waits for the matching `ActivationStartJobId`, not an old start or the browser. Explicit Stop/disable clears intent and is never automatically undone. Detection is periodic, so there is still a detection window after an unexpected process crash. See `docs/model-publishing.md` for the contract and upgrade requirements.
 
 ## After an engine update
 
-An update replaces the image but running models keep the old one. Admin offers **Restart the running models afterwards** (on the Update dialog and on each automatic-update policy, default on for scheduled updates). The gateway then, one model at a time: takes it out of routing, waits up to 90 seconds for its requests in flight, stops it, starts it again (the Agent waits for `/health`) and puts it back. If one does not come back its routing stays off and the others are left running. It only restarts when the update really changed the image. Progress is the *Restart models · <engine>* entry in the activity panel; it is kept on the gateway replica that started it and is lost if the gateway restarts mid-way (routing for that model is then still off, which is the safe state).
+An update replaces the image but running models keep the old one. Admin offers **Restart the running models afterwards** (on the Update dialog and on each automatic-update policy, default on for scheduled updates). The gateway then, one model at a time: suspends routing while preserving intent, waits up to 90 seconds for its local in-flight requests, sends one persistent Agent `/restart-jobs` operation and restores routing after readiness. A drain timeout refuses the restart instead of interrupting requests. If one does not come back its routing stays off and the sequence stops; guarded bootstrap/recovery may retry it. It only restarts when the update really changed the image.
+
+Progress is the *Restart models · <engine>* entry in the activity panel. The whole sequence is still gateway-replica-local: a gateway restart loses its progress and does not enqueue the remaining models. An already accepted individual Agent restart continues and its routing is recovered without the browser. A gateway interruption before the Agent accepts it leaves the model safely unrouted until a new Start or explicit health/activate. **Multi-replica distributed drain remains open**; this drain only counts the local replica's active requests.
 
 See also `docs/runtime-engines.md` and `docs/operations.md`.

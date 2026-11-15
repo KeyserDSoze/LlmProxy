@@ -4,6 +4,8 @@ Date: 2026-10-11. Intent: make system operations discoverable without obscuring 
 
 ## Mental model: distinguish four objects
 
+**2026-11-15 update:** the current per-kind Publishing flow and its durable activation/rename contract are in `docs/model-publishing.md`. Publishing keeps stopped/unrouted names visible; public discovery and Playground stay active-only. The browser now only observes start jobs; gateway reconciliation owns activation. Earlier navigation/design notes below are historical where they differ from the current per-kind workspace and managed Laya support.
+
 1. **Physical node / Agent** — a real machine, optionally connected through the outbound agent relay. Pair, recover and monitor it in **Infrastructure**.
 2. **Installed runtime** — a concrete inference process/container with weights and resource usage, on a selected physical node. Install/start/stop/edit/uninstall it in **Install & manage models**. Agent-capable local runtimes include supported OpenAI-compatible engines; this is not the same as publishing a client-facing model.
 3. **Logical model** — stable public alias with a protocol surface, used by applications, not a Docker image. Review aliases in **Models & Deployments**.

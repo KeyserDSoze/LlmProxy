@@ -56,6 +56,20 @@ class MockLlmHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._authorized():
             return
+        if self.path == self._expected('/publishing-management/v1/models'):
+            self._json(200, {'models': [{
+                'installationId': 'publishing-smoke', 'catalogModelId': 'custom',
+                'providerModelName': 'bootstrap-model', 'runtime': 'vllm', 'status': 'running',
+                'runtimeBaseAddress': f'http://host.docker.internal:{self.server.server_port}{self.server.prefix}',
+                'port': self.server.server_port,
+            }]})
+            return
+        if self.path == self._expected('/publishing-management/v1/models/start-jobs'):
+            self._json(200, getattr(self.server, 'publishing_jobs', []))
+            return
+        if self.path == self._expected('/publishing-management/v1/models/install-jobs'):
+            self._json(200, [])
+            return
         if self.path in {self._expected("/healthz"), self._expected("/readyz")}:
             self._json(200, {
                 "status": "ok",
@@ -100,6 +114,28 @@ vllm:generation_tokens_total{{model_name=\"{model}\"}} 567
         self._json(404, {"error": "not_found", "path": self.path})
 
     def do_POST(self):
+        if self.path == self._expected('/publishing-management/v1/models/publishing-smoke/start-jobs'):
+            if not self._authorized():
+                return
+            if self.headers.get('Transfer-Encoding', '').lower() == 'chunked':
+                chunks = []
+                while True:
+                    size = int(self.rfile.readline().strip().split(b';')[0], 16)
+                    if size == 0:
+                        self.rfile.readline()
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.read(2)
+                raw = b''.join(chunks)
+            else:
+                raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            payload = json.loads(raw)
+            # Intentionally years behind the gateway: recovery must correlate by id, not compare remote clocks.
+            job = {'id': payload['jobId'], 'installationId': 'publishing-smoke', 'status': 'completed',
+                   'detail': 'Healthy', 'createdAtUtc': '2020-01-01T00:00:00Z', 'completedAtUtc': '2020-01-01T00:00:01Z'}
+            self.server.publishing_jobs = [job]
+            self._json(202, job)
+            return
         if self.path.startswith("/__control/health/"):
             try:
                 status = int(self.path.rsplit("/", 1)[-1])

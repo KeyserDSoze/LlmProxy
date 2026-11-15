@@ -495,7 +495,7 @@ for index, entry in enumerate(files):
     // Force may only target a registered, managed installation; it does not touch
     // Docker containers or GPU processes owned by other services.
     public async Task<ManagedModelState> StopAsync(string installationId,
-        CancellationToken cancellationToken, bool force = false)
+        CancellationToken cancellationToken, bool force = false, bool preserveDesiredRunning = false)
     {
         // Force stop is the emergency path and must work even while a start is hanging.
         using var lease = force ? null : AcquireInstallation(installationId);
@@ -541,7 +541,7 @@ for index, entry in enumerate(files):
                         "Docker still reports the managed runtime as running. Memory is not confirmed released.");
                 if (attempt == 0) await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
-            record = record with { Status = "stopped", RuntimeBaseAddress = null, Error = null, DesiredRunning = false };
+            record = record with { Status = "stopped", RuntimeBaseAddress = null, Error = null, DesiredRunning = preserveDesiredRunning };
             await registry.UpsertAsync(record, cancellationToken);
             return ToState(record, "stopped", null);
         }
